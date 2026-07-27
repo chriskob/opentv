@@ -1,0 +1,270 @@
+/*
+ * This file is part of OpenTV.
+ * Copyright (C) 2026 The OpenTV Contributors
+ * Licensed under the GNU General Public License v3.0 or later.
+ */
+package app.opentv.player
+
+import android.content.Context
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+
+/**
+ * Owns the single [ExoPlayer] instance and everything about switching what it is playing.
+ *
+ * ## Why one player, reused
+ *
+ * The obvious implementation of "change channel" is release the player and build a new one.
+ * On a low-end TV box that takes long enough that a user pressing channel-up four times in a
+ * row can queue four constructions and four teardowns, and the codec ends up in a state where
+ * nothing plays until the app is killed. That is the "changing channels too quickly causes
+ * streams to fail" class of bug, and it is entirely self-inflicted.
+ *
+ * OpenTV keeps exactly one player for the lifetime of the screen and only ever swaps its
+ * media item. Requests are debounced, and an in-flight switch is cancelled the moment a newer
+ * one arrives, so holding channel-up costs one actual tune — the one the user stopped on.
+ */
+@OptIn(UnstableApi::class)
+class PlayerController(
+    context: Context,
+    private val scope: CoroutineScope,
+    httpClient: OkHttpClient,
+) {
+
+    sealed interface State {
+        data object Idle : State
+        data class Buffering(val title: String) : State
+        data class Playing(val title: String) : State
+        /** Playback stopped and retries are exhausted. [message] is written for humans. */
+        data class Error(val title: String, val message: String, val canRetry: Boolean) : State
+    }
+
+    data class Request(
+        val url: String,
+        val title: String,
+        val userAgent: String,
+        /** Live streams are never resumed; VOD is. */
+        val startPositionMillis: Long = 0L,
+        val isLive: Boolean = true,
+    )
+
+    private val _state = MutableStateFlow<State>(State.Idle)
+    val state: StateFlow<State> = _state.asStateFlow()
+
+    private var switchJob: Job? = null
+    private var current: Request? = null
+    private var consecutiveFailures = 0
+
+    /**
+     * Held so the User-Agent can be swapped per source before each tune.
+     *
+     * Providers commonly 403 any client whose UA they do not recognise, and the workaround —
+     * "try a different User-Agent" — is useless unless the setting actually reaches the
+     * player's HTTP layer. Setting it on the factory applies it to data sources created for
+     * subsequent loads, which is exactly the granularity we need.
+     */
+    private val httpFactory = OkHttpDataSource.Factory(httpClient).apply {
+        setDefaultRequestProperties(mapOf("User-Agent" to DEFAULT_USER_AGENT))
+    }
+
+    private val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+
+    /**
+     * Retry policy tuned for IPTV rather than for CDNs.
+     *
+     * A provider under load returns 403, 429 or 500 for a few seconds and then serves the
+     * stream perfectly well. ExoPlayer's default is to give up almost immediately on those,
+     * which surfaces to the user as a channel that "doesn't work" but plays fine on the
+     * second try. We retry them with backoff instead. 401 and 404 are not retried — those
+     * genuinely will not fix themselves.
+     */
+    private val loadErrorPolicy = object : DefaultLoadErrorHandlingPolicy() {
+        override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+            val statusCode =
+                (info.exception as? HttpDataSource.InvalidResponseCodeException)?.responseCode
+
+            return when (statusCode) {
+                401, 404, 410 -> C_TIME_UNSET
+                403, 405, 429, 500, 502, 503, 504 -> backoffFor(info.errorCount)
+                null -> backoffFor(info.errorCount) // network blips
+                else -> super.getRetryDelayMsFor(info)
+            }
+        }
+
+        override fun getMinimumLoadableRetryCount(dataType: Int): Int = MAX_LOAD_RETRIES
+
+        private fun backoffFor(errorCount: Int): Long =
+            if (errorCount > MAX_LOAD_RETRIES) C_TIME_UNSET
+            else minOf(INITIAL_BACKOFF_MILLIS * (1L shl (errorCount - 1)), MAX_BACKOFF_MILLIS)
+    }
+
+    val player: ExoPlayer = ExoPlayer.Builder(context)
+        .setMediaSourceFactory(
+            DefaultMediaSourceFactory(dataSourceFactory)
+                .setLoadErrorHandlingPolicy(loadErrorPolicy),
+        )
+        .setTrackSelector(
+            DefaultTrackSelector(context).apply {
+                parameters = buildUponParameters()
+                    // Honour the system caption preference and prefer the device language.
+                    .setPreferredTextLanguage(java.util.Locale.getDefault().language)
+                    .setSelectUndeterminedTextLanguage(true)
+                    .build()
+            },
+        )
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    MIN_BUFFER_MILLIS,
+                    MAX_BUFFER_MILLIS,
+                    BUFFER_FOR_PLAYBACK_MILLIS,
+                    BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS,
+                )
+                .build(),
+        )
+        .build()
+        .apply {
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    val title = current?.title.orEmpty()
+                    _state.value = when (playbackState) {
+                        Player.STATE_BUFFERING -> State.Buffering(title)
+                        Player.STATE_READY -> {
+                            consecutiveFailures = 0
+                            State.Playing(title)
+                        }
+                        Player.STATE_IDLE -> _state.value
+                        Player.STATE_ENDED -> State.Idle
+                        else -> _state.value
+                    }
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    consecutiveFailures++
+                    val request = current
+                    _state.value = State.Error(
+                        title = request?.title.orEmpty(),
+                        message = PlaybackErrors.describe(error),
+                        canRetry = consecutiveFailures < MAX_AUTO_RESTARTS,
+                    )
+                    // One silent restart covers the common case of a provider dropping the
+                    // connection when another device on the account starts streaming.
+                    if (consecutiveFailures < MAX_AUTO_RESTARTS && request != null) {
+                        scope.launch {
+                            delay(AUTO_RESTART_DELAY_MILLIS)
+                            if (current == request) play(request, debounce = false)
+                        }
+                    }
+                }
+            })
+        }
+
+    /**
+     * Switches playback.
+     *
+     * @param debounce when true (the default for channel surfing) the switch waits briefly so
+     * that rapid presses collapse into a single tune. Pass false for a deliberate selection.
+     */
+    fun play(request: Request, debounce: Boolean = true) {
+        // Cancelling here is what makes fast channel-changing safe: the previous switch never
+        // reaches the player, so we never stack prepares.
+        switchJob?.cancel()
+        current = request
+
+        switchJob = scope.launch {
+            if (debounce) delay(SWITCH_DEBOUNCE_MILLIS)
+
+            consecutiveFailures = 0
+            httpFactory.setDefaultRequestProperties(mapOf("User-Agent" to request.userAgent))
+            _state.value = State.Buffering(request.title)
+
+            val mediaItem = MediaItem.Builder()
+                .setUri(request.url)
+                .apply {
+                    // Only meaningful for live streams; setting it on VOD skews seeking.
+                    if (request.isLive) {
+                        setLiveConfiguration(
+                            MediaItem.LiveConfiguration.Builder()
+                                .setTargetOffsetMs(LIVE_TARGET_OFFSET_MILLIS)
+                                .build(),
+                        )
+                    }
+                }
+                .build()
+
+            with(player) {
+                // stop() rather than release(): keeps the codec and the surface alive.
+                stop()
+                clearMediaItems()
+                setMediaItem(mediaItem)
+                if (!request.isLive && request.startPositionMillis > 0) {
+                    seekTo(request.startPositionMillis)
+                }
+                playWhenReady = true
+                prepare()
+            }
+        }
+    }
+
+    fun retry() {
+        current?.let { play(it, debounce = false) }
+    }
+
+    fun stop() {
+        switchJob?.cancel()
+        current = null
+        player.stop()
+        player.clearMediaItems()
+        _state.value = State.Idle
+    }
+
+    fun release() {
+        switchJob?.cancel()
+        player.release()
+    }
+
+    private companion object {
+        const val DEFAULT_USER_AGENT = "OpenTV/0.1 (Android)"
+
+        /** ExoPlayer's "do not retry" sentinel. */
+        const val C_TIME_UNSET = androidx.media3.common.C.TIME_UNSET
+
+        const val SWITCH_DEBOUNCE_MILLIS = 350L
+        const val INITIAL_BACKOFF_MILLIS = 500L
+        const val MAX_BACKOFF_MILLIS = 8_000L
+        const val MAX_LOAD_RETRIES = 5
+        const val MAX_AUTO_RESTARTS = 3
+        const val AUTO_RESTART_DELAY_MILLIS = 1_500L
+
+        /**
+         * Larger than ExoPlayer's defaults. IPTV sources are much twitchier than a CDN, and a
+         * deeper buffer is the difference between a momentary hiccup and a visible stall.
+         */
+        const val MIN_BUFFER_MILLIS = 15_000
+        const val MAX_BUFFER_MILLIS = 60_000
+        const val BUFFER_FOR_PLAYBACK_MILLIS = 2_500
+        const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 5_000
+
+        const val LIVE_TARGET_OFFSET_MILLIS = 10_000L
+    }
+}

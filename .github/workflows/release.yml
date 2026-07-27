@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew test
+
+      # Unsigned on purpose for now. Signing needs a keystore in repository secrets;
+      # see docs/RELEASING.md before enabling it.
+      - name: Assemble release APK
+        run: ./gradlew assembleRelease
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/*.apk
+          generate_release_notes: true
+          body: |
+            Built by GitHub Actions from the tagged commit. The workflow that produced this
+            APK is public, so you can verify it against the source rather than taking anyone's
+            word for it.

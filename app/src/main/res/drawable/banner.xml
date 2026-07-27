@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV home-screen banner. Replace with real artwork before a public release. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path
+        android:fillColor="#07080C"
+        android:pathData="M0,0h320v180h-320z" />
+    <path
+        android:fillColor="#7C93FF"
+        android:pathData="M110,62h100a10,10 0,0 1,10 10v46a10,10 0,0 1,-10 10h-100a10,10 0,0 1,-10 -10v-46a10,10 0,0 1,10 -10z" />
+    <path
+        android:fillColor="#07080C"
+        android:pathData="M148,80l32,18l-32,18z" />
+</vector>
