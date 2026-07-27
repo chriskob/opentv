@@ -46,12 +46,24 @@ keep it alive. That is the entire point.
 
 ## Install
 
-Grab the APK from [Releases](../../releases) and sideload it.
+**→ [Install page](https://OWNER.github.io/opentv/)** — step-by-step for Chromecast with
+Google TV, Android TV boxes, Fire TV Sticks, and phones.
 
-**Fire TV / Android TV:** use the Downloader app, or `adb install opentv.apk`.
+On a TV, the quickest route is the **Downloader** app pointed at:
+
+```
+OWNER.github.io/opentv/apk
+```
+
+That address always redirects to the newest APK, so it never goes stale. Or grab it straight
+from [Releases](../../releases).
 
 Every release is built by GitHub Actions from a tagged commit, and the workflow that built it
-is public. You can check the APK against the source rather than trusting anyone's word.
+is public — you can check the APK against the source, or rebuild it yourself, rather than
+trusting anyone's word.
+
+New to this? [SETUP.md](SETUP.md) walks through getting the repo, the install page and the
+first build running.
 
 ## Build it yourself
 

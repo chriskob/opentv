@@ -12,20 +12,42 @@ GitHub release.
 
 ## Signing
 
-The release APK is currently **unsigned**, so Android will refuse to install it as an upgrade
-over a differently-signed build. Before the first public release, set up signing:
+**Right now, release builds are signed with the Android debug key.** This is deliberate, and
+it is temporary.
 
-1. Generate a keystore and keep it somewhere safe and backed up. If it is lost, no future
-   build can upgrade an installed copy — every user has to uninstall and reinstall, losing
-   their settings.
-2. Add these repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+An *unsigned* APK cannot be installed on Android at all — the installer rejects it before the
+user sees anything, with an error that explains nothing. That would mean no one can test the
+app until signing infrastructure exists. So `app/build.gradle.kts` falls back to the debug key
+when no keystore is configured, and the result installs fine.
+
+The cost, stated plainly: **when the project moves to a real keystore, Android will refuse to
+upgrade over a debug-signed install.** Everyone testing today will have to uninstall and
+reinstall, losing their settings. That is fine for a handful of early testers and completely
+unacceptable once there are hundreds. **Set up real signing before announcing the project
+publicly.**
+
+### Setting up real signing
+
+1. Generate a keystore:
+
+   ```bash
+   keytool -genkeypair -v -keystore upload.jks -keyalg RSA -keysize 4096 \
+     -validity 10000 -alias opentv
+   ```
+
+2. Add these repository secrets under **Settings → Secrets and variables → Actions**:
+   `KEYSTORE_BASE64` (the output of `base64 -i upload.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
    `KEY_PASSWORD`.
-3. Add a `signingConfigs` block to `app/build.gradle.kts` reading them from the environment,
-   and wire it to the `release` build type.
+
+3. That is all — `release.yml` and `build.gradle.kts` already pick them up. The release notes
+   will report `signed: yes` instead of `debug-key`.
 
 **The keystore must belong to the project, not to one person.** A single maintainer holding
 the only copy is the same single point of failure this project exists to avoid — if they go
-quiet, nobody can ship an upgrade. Share it among at least two maintainers.
+quiet, nobody can ship an upgrade, and every user is stranded on whatever version they have.
+Share it among at least two maintainers, and back it up somewhere that is not one laptop.
+
+Losing the keystore is unrecoverable. There is no reset.
 
 ## Version numbers
 
