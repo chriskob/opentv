@@ -4,7 +4,7 @@
 
 No account. No subscription. No server of ours between you and your provider.
 
-[![Build](https://github.com/OWNER/opentv/actions/workflows/build.yml/badge.svg)](https://github.com/OWNER/opentv/actions/workflows/build.yml)
+[![Build](https://github.com/legionnaireneyland/opentv/actions/workflows/build.yml/badge.svg)](https://github.com/legionnaireneyland/opentv/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 ---
@@ -46,13 +46,13 @@ keep it alive. That is the entire point.
 
 ## Install
 
-**→ [Install page](https://OWNER.github.io/opentv/)** — step-by-step for Chromecast with
+**→ [Install page](https://legionnaireneyland.github.io/opentv/)** — step-by-step for Chromecast with
 Google TV, Android TV boxes, Fire TV Sticks, and phones.
 
 On a TV, the quickest route is the **Downloader** app pointed at:
 
 ```
-OWNER.github.io/opentv/apk
+legionnaireneyland.github.io/opentv/apk
 ```
 
 That address always redirects to the newest APK, so it never goes stale. Or grab it straight
@@ -68,7 +68,7 @@ first build running.
 ## Build it yourself
 
 ```bash
-git clone https://github.com/OWNER/opentv.git
+git clone https://github.com/legionnaireneyland/opentv.git
 cd opentv
 ./gradlew assembleDebug
 ```

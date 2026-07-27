@@ -17,11 +17,11 @@ On [github.com/new](https://github.com/new):
 
 ## 2. Push it
 
-From the unzipped `opentv` folder. Replace `YOUR-USERNAME`:
+From the unzipped `opentv` folder:
 
 ```bash
 cd opentv
-git remote add origin https://github.com/YOUR-USERNAME/opentv.git
+git remote add origin https://github.com/legionnaireneyland/opentv.git
 git push -u origin main
 ```
 
@@ -32,17 +32,10 @@ GitHub stopped accepting passwords over HTTPS. Generate one at
 **Settings → Developer settings → Personal access tokens → Tokens (classic)** with the `repo`
 scope, and paste that when prompted.
 
-## 3. Fix the two placeholder links
+## 3. Add your coffee links
 
-The README has two `OWNER` placeholders in the build badge. One command:
-
-```bash
-sed -i '' 's/OWNER/YOUR-USERNAME/g' README.md .github/ISSUE_TEMPLATE/config.yml   # macOS
-git commit -am "Point links at the real repo" && git push
-```
-
-While you're there, put your own handle in `.github/FUNDING.yml` — that's what turns on the
-"Sponsor" button and the coffee links.
+Put your own handles in `.github/FUNDING.yml` — that's what turns on the "Sponsor" button on
+the repo page. Everything else already points at `legionnaireneyland/opentv`.
 
 ## 4. Turn on Pages
 
@@ -54,7 +47,7 @@ That's the only setting. Don't pick "Deploy from a branch" — the workflow in
 Your install page will be at:
 
 ```
-https://YOUR-USERNAME.github.io/opentv/
+https://legionnaireneyland.github.io/opentv/
 ```
 
 It goes live a minute or two after the first push.
@@ -86,7 +79,7 @@ Open the install page and follow the steps there. The short address to type into
 **Downloader** app is:
 
 ```
-YOUR-USERNAME.github.io/opentv/apk
+legionnaireneyland.github.io/opentv/apk
 ```
 
 That link always redirects to the newest APK, so it never needs changing between releases.
