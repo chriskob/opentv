@@ -59,11 +59,27 @@ object ChannelNameNormalizer {
         "HDR", "DOLBY", "VISION", "PLUS",
     )
 
-    /** Superscript/decorated variants some panels use, folded to ASCII before tokenising. */
-    private val SUPERSCRIPT_MAP = mapOf(
-        'ᴴ' to 'H', 'ᴰ' to 'D', 'ᵁ' to 'U', 'ᶠ' to 'F', 'ᴷ' to 'K',
-        'ᔆ' to 'S', 'ˢ' to 'S', '⁴' to '4', '⁸' to '8',
-    )
+    /**
+     * Unicode modifier/superscript letters folded to ASCII before tokenising.
+     *
+     * Providers love these as anti-copy decoration: `ᴴᴰ`, `ʰᵉᵛᶜ`, `ᴿᴬᵂ`, `ᵁᴴᴰ`, `⁸ᴷ`,
+     * `³⁸⁴⁰ᴾ`. Both cases exist in the wild — often in the SAME list — so this covers the
+     * full A–Z in both the uppercase modifier block and the lowercase superscript block,
+     * plus superscript digits. Without the lowercase half, `ʰᵉᵛᶜ`/`ᴿᴬᵂ` survive into the
+     * channel name and read as junk, which is the single biggest source of a "messy" list.
+     */
+    private val SUPERSCRIPT_MAP: Map<Char, Char> = buildMap {
+        // Uppercase modifier letters (U+1D2C block, plus strays).
+        val upper = "ᴬ:A,ᴮ:B,ꟲ:C,ᴰ:D,ᴱ:E,ꟳ:F,ᴳ:G,ᴴ:H,ᴵ:I,ᴶ:J,ᴷ:K,ᴸ:L,ᴹ:M,ᴺ:N," +
+            "ᴼ:O,ᴾ:P,ꟴ:Q,ᴿ:R,ᵀ:T,ᵁ:U,ⱽ:V,ᵂ:W,ᔆ:S"
+        // Lowercase superscript/modifier letters.
+        val lower = "ᵃ:a,ᵇ:b,ᶜ:c,ᵈ:d,ᵉ:e,ᶠ:f,ᵍ:g,ʰ:h,ᶦ:i,ʲ:j,ᵏ:k,ˡ:l,ᵐ:m,ⁿ:n," +
+            "ᵒ:o,ᵖ:p,ʳ:r,ˢ:s,ᵗ:t,ᵘ:u,ᵛ:v,ʷ:w,ˣ:x,ʸ:y,ᶻ:z"
+        val digits = "⁰:0,¹:1,²:2,³:3,⁴:4,⁵:5,⁶:6,⁷:7,⁸:8,⁹:9"
+        for (chunk in "$upper,$lower,$digits".split(',')) {
+            if (chunk.length >= 3) put(chunk[0], chunk[2])
+        }
+    }
 
     /**
      * Leading country tag: `UK|`, `UK -`, `UK:`, `[UK]`, `(US)`, `USA |` and so on.
@@ -78,8 +94,14 @@ object ChannelNameNormalizer {
         """^\s*(?:[\[(]([A-Z]{2,3})[\])]\s*[|:\-–—]?|([A-Z]{2,3})\s*[|:\-–—])\s*"""
     )
 
-    /** Decorations providers use as separators or eye-catchers. */
-    private val DECORATION = Regex("""[#*•●▪►▶✦★☆~_=]+""")
+    /**
+     * Decorations providers use as separators or eye-catchers — stripped from the display
+     * name. Broad on purpose: anything outside letters, digits, spaces and the handful of
+     * punctuation marks that appear inside real names (& - + . / : | ( )) is decoration.
+     * The groupKey ignores all of it anyway, so matching is unaffected either way; this is
+     * purely so the name on screen reads like a channel and not a ransom note.
+     */
+    private val DECORATION = Regex("""[^\p{L}\p{Nd} &+.\-/:|()']+""")
 
     private val MULTI_SPACE = Regex("""\s+""")
 
