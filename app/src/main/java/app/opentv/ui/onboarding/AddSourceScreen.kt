@@ -56,6 +56,19 @@ fun AddSourceScreen(
     viewModel: SourcesViewModel,
     onFinished: () -> Unit,
 ) {
+    // Offered first, because typing a server address and password with a d-pad is the worst
+    // moment in every app of this kind. Typing on the TV is still there for anyone who
+    // prefers it, or who has no phone to hand.
+    var usePhone by remember { mutableStateOf(true) }
+
+    if (usePhone) {
+        PhonePairingScreen(
+            onReceived = { draft -> viewModel.saveAndSync(draft) { ok -> if (ok) onFinished() } },
+            onCancel = { usePhone = false },
+        )
+        return
+    }
+
     val ui by viewModel.ui.collectAsState()
 
     var kind by remember { mutableStateOf(SourceKind.XTREAM) }
@@ -239,6 +252,11 @@ fun AddSourceScreen(
                 ) {
                     Text(if (ui.syncing) "Working…" else "Save and load")
                 }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            OutlinedButton(onClick = { usePhone = true }) {
+                Text("Use my phone instead")
             }
 
             Spacer(Modifier.height(28.dp))
