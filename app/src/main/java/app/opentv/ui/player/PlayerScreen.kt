@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -173,26 +175,65 @@ fun PlayerScreen(
             else -> Unit
         }
 
-        // Quality switch, top-right, only when this channel actually has variants.
-        if (variants.size > 1) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                variants.forEach { variant ->
-                    val selected = variant.id == currentId
-                    TextButton(onClick = { if (!selected) tuneTo(variant) }) {
-                        Text(
-                            variant.qualityLabel.ifEmpty { "Standard" },
-                            color = if (selected) MaterialTheme.colorScheme.primary
-                            else Color.White.copy(alpha = 0.8f),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
+        // Quality control, always present so "where do I change quality?" has one
+        // answer — top-right, labelled. Tap it to expand the list of qualities; a
+        // single-quality channel just shows its label with nothing to expand.
+        QualityControl(
+            variants = variants,
+            currentId = currentId,
+            onPick = { tuneTo(it) },
+            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun QualityControl(
+    variants: List<Channel>,
+    currentId: Long?,
+    onPick: (Channel) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (variants.isEmpty()) return
+    var expanded by remember { mutableStateOf(false) }
+    val current = variants.firstOrNull { it.id == currentId } ?: variants.first()
+    val currentLabel = current.qualityLabel.ifEmpty { "Standard" }
+    val multi = variants.size > 1
+
+    Column(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.66f), RoundedCornerShape(12.dp))
+            .padding(6.dp),
+        horizontalAlignment = Alignment.End,
+    ) {
+        // The header button. Always shows the current quality; the ▾ only when there is
+        // something to open.
+        Button(
+            onClick = { if (multi) expanded = !expanded },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+            ),
+        ) {
+            Text(
+                text = "Quality: $currentLabel" + if (multi) (if (expanded) "  ▲" else "  ▾") else "",
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+
+        if (expanded && multi) {
+            Spacer(Modifier.height(6.dp))
+            variants.forEach { variant ->
+                val selected = variant.id == currentId
+                TextButton(
+                    onClick = { onPick(variant); expanded = false },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        variant.qualityLabel.ifEmpty { "Standard" },
+                        color = if (selected) MaterialTheme.colorScheme.primary
+                        else Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                 }
             }
         }
