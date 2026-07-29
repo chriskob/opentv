@@ -120,6 +120,12 @@ class EpgRepository(
         programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
         sourceDao.markEpgSynced(source.id, nowUtcMillis)
 
+        Log.i(
+            TAG,
+            "EPG for source ${source.id}: wrote $written programmes across $channels " +
+                "guide channels",
+        )
+
         SyncResult.Success(programmeCount = written, channelCount = channels)
     }
 

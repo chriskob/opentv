@@ -132,6 +132,16 @@ class CatalogRepository(
         val seriesCategories = runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
         val series = runCatching { api.series(source) }.getOrDefault(emptyList())
 
+        // A channel with no epg_channel_id can never be matched to a guide entry, no matter
+        // how well the EPG downloads. Logged because "no guide information" on every row
+        // has two completely different causes and the UI cannot distinguish them.
+        val withEpgId = channels.count { !it.epgChannelId.isNullOrBlank() }
+        Log.i(
+            TAG,
+            "Source ${source.id}: ${channels.size} channels, $withEpgId carry an epg id " +
+                "(${if (channels.isEmpty()) 0 else withEpgId * 100 / channels.size}%)",
+        )
+
         categoryDao.upsertAll(liveCategories + movieCategories + seriesCategories)
         channelDao.replaceCatalogue(source.id, channels, nowUtcMillis)
         if (movies.isNotEmpty()) movieDao.upsertAll(movies)

@@ -87,6 +87,8 @@ private fun OpenTvApp(isTelevision: Boolean) {
             composable(Routes.HOME) {
                 HomeScreen(
                     isTelevision = isTelevision,
+                    hasSources = sourcesUi.sources.isNotEmpty(),
+                    isSyncing = sourcesUi.syncing,
                     onPlayChannel = { channel -> navController.navigate(Routes.player(channel.id)) },
                     onAddSource = { navController.navigate(Routes.ADD_SOURCE) },
                     onRefresh = sourcesViewModel::refreshAll,

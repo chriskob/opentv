@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -64,6 +67,13 @@ import kotlinx.coroutines.delay
 @Composable
 fun HomeScreen(
     isTelevision: Boolean,
+    /**
+     * Whether a provider is configured. Distinguishes "you haven't set anything up yet" from
+     * "your channels are on their way" — two situations that look identical from an empty
+     * list, and which need completely different messages.
+     */
+    hasSources: Boolean,
+    isSyncing: Boolean,
     onPlayChannel: (Channel) -> Unit,
     onAddSource: () -> Unit,
     onRefresh: () -> Unit,
@@ -123,7 +133,13 @@ fun HomeScreen(
         }
 
         if (rows.isEmpty()) {
-            EmptyState(onAddSource)
+            when {
+                // The important case. A large provider takes a while to sync, and showing
+                // "No channels yet" during it reads as failure — which is how someone
+                // concludes an app is broken thirty seconds after installing it.
+                isSyncing || hasSources -> LoadingState(isSyncing)
+                else -> EmptyState(onAddSource)
+            }
         } else {
             LazyColumn(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -222,6 +238,30 @@ private fun ChannelRow(
                 imageVector = if (row.channel.favourite) Icons.Default.Star
                 else Icons.Outlined.StarOutline,
                 contentDescription = if (row.channel.favourite) "Remove favourite" else "Favourite",
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoadingState(isSyncing: Boolean) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(Modifier.height(20.dp))
+            Text("Loading your channels", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (isSyncing) {
+                    "Fetching the channel list and guide from your provider. A large " +
+                        "provider can take a couple of minutes the first time."
+                } else {
+                    "Nothing came back from your provider last time. Press refresh to " +
+                        "try again."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 460.dp),
             )
         }
     }
