@@ -61,6 +61,9 @@ class CatalogRepository(
     fun observeChannels(sourceId: Long? = null, categoryId: String? = null): Flow<List<Channel>> =
         channelDao.observe(sourceId, categoryId)
 
+    fun observeChannelsIn(categoryIds: List<String>): Flow<List<Channel>> =
+        channelDao.observeInCategories(categoryIds)
+
     fun observeFavouriteChannels(): Flow<List<Channel>> = channelDao.observeFavourites()
 
     fun observeCategories(kind: StreamKind): Flow<List<Category>> = categoryDao.observe(kind)
@@ -225,6 +228,9 @@ class CatalogRepository(
                 groupKey = n.groupKey,
                 qualityRank = rank,
                 qualityLabel = label,
+                // Providers ship decorative separator rows ('#### UK GENERAL ####') as
+                // channels. They are headings, not channels — hide them on import.
+                hidden = channel.hidden || isSeparatorRow(channel.name),
             )
         }
 
@@ -252,6 +258,14 @@ class CatalogRepository(
         }
     }
 
+    /** Decorative list headings: starts AND ends with a run of banner characters. */
+    private fun isSeparatorRow(rawName: String): Boolean {
+        val t = rawName.trim()
+        return t.length >= 6 &&
+            t.take(3).all { it in SEPARATOR_CHARS } &&
+            t.takeLast(3).all { it in SEPARATOR_CHARS }
+    }
+
     /** Every quality variant of the same logical channel, best first. */
     suspend fun variants(channel: Channel): List<Channel> =
         if (channel.groupKey.isEmpty()) listOf(channel)
@@ -268,5 +282,6 @@ class CatalogRepository(
 
     private companion object {
         const val TAG = "CatalogRepository"
+        val SEPARATOR_CHARS = setOf('#', '*', '=', '~', '-', '_', '•', '█', '▓', '|')
     }
 }

@@ -18,6 +18,7 @@ import app.opentv.data.model.Series
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
 import app.opentv.data.model.StreamKind
+import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.repo.CatalogRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -158,8 +159,28 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private val query = MutableStateFlow("")
     private val nowTick = MutableStateFlow(System.currentTimeMillis())
 
-    val categories: StateFlow<List<Category>> =
+    /**
+     * One rail entry = one *logical* category.
+     *
+     * Providers split categories by codec — 'UK| GENERAL HD/RAW' and 'UK| GENERAL hevc'
+     * are the same shelf twice. Fold them by normalised name, show the clean label, and
+     * filter across every underlying id at once. This is the on-device version of what
+     * Viewella did on a server it had to pay for.
+     */
+    data class CategoryGroup(val key: String, val label: String, val ids: List<String>)
+
+    val categoryGroups: StateFlow<List<CategoryGroup>> =
         graph.catalogRepository.observeCategories(StreamKind.LIVE)
+            .map { raw ->
+                val groups = LinkedHashMap<String, Pair<String, MutableList<String>>>()
+                for (category in raw) {
+                    val n = ChannelNameNormalizer.normalize(category.name)
+                    val key = n.groupKey.ifEmpty { category.id }
+                    val entry = groups.getOrPut(key) { n.baseName to mutableListOf() }
+                    entry.second += category.id
+                }
+                groups.map { (key, value) -> CategoryGroup(key, value.first, value.second) }
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
@@ -180,14 +201,16 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val rows: StateFlow<List<Row>> =
-        combine(selectedCategory, favouritesOnly, query) { category, favs, q ->
-            Triple(category, favs, q)
+        combine(selectedCategory, favouritesOnly, query, categoryGroups) { category, favs, q, groups ->
+            val ids = category?.let { key -> groups.firstOrNull { it.key == key }?.ids }
+            Triple(ids, favs, q)
         }
-            .flatMapLatest { (category, favs, q) ->
+            .flatMapLatest { (categoryIds, favs, q) ->
                 val channelFlow = when {
                     q.isNotBlank() -> graph.catalogRepository.searchChannels(q)
                     favs -> graph.catalogRepository.observeFavouriteChannels()
-                    else -> graph.catalogRepository.observeChannels(categoryId = category)
+                    categoryIds != null -> graph.catalogRepository.observeChannelsIn(categoryIds)
+                    else -> graph.catalogRepository.observeChannels()
                 }
                 combine(channelFlow, nowTick) { channels, now -> channels to now }
                     .flatMapLatest { (channels, now) ->

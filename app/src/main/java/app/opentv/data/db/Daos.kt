@@ -68,6 +68,21 @@ interface ChannelDao {
     @Query("SELECT * FROM channels WHERE favourite = 1 AND hidden = 0 ORDER BY sortIndex, displayName")
     fun observeFavourites(): Flow<List<Channel>>
 
+    /**
+     * Channels across a SET of provider categories. Needed because one logical category
+     * ("General") is often shipped as several codec-split ones ("UK| GENERAL HD/RAW",
+     * "UK| GENERAL hevc") — the UI merges them into a single rail entry. The list is a
+     * handful of ids, nowhere near SQLite's bound-variable cap.
+     */
+    @Query(
+        """
+        SELECT * FROM channels
+        WHERE hidden = 0 AND categoryId IN (:categoryIds)
+        ORDER BY sortIndex, displayName
+        """
+    )
+    fun observeInCategories(categoryIds: List<String>): Flow<List<Channel>>
+
     @Query(
         """
         SELECT * FROM channels
@@ -150,7 +165,10 @@ interface ChannelDao {
                 channel.copy(
                     id = previous.id,
                     favourite = previous.favourite,
-                    hidden = previous.hidden,
+                    // OR, not overwrite: the importer hides separator rows ('### UK ###')
+                    // at parse time, and that decision must stick even for rows that
+                    // predate the rule. User hides are preserved the same way.
+                    hidden = previous.hidden || channel.hidden,
                     sortIndex = previous.sortIndex,
                     epgOverrideId = previous.epgOverrideId,
                     matchedEpgId = previous.matchedEpgId,

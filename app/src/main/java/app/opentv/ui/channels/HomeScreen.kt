@@ -81,7 +81,7 @@ fun HomeScreen(
     onGuideSettings: () -> Unit,
     viewModel: ChannelsViewModel = viewModel(),
 ) {
-    val categories by viewModel.categories.collectAsState()
+    val categories by viewModel.categoryGroups.collectAsState()
     val rows by viewModel.rows.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
@@ -130,11 +130,11 @@ fun HomeScreen(
                         onClick = { viewModel.selectCategory(null) },
                     )
                 }
-                items(categories, key = { "${it.sourceId}:${it.id}" }) { category ->
+                items(categories, key = { it.key }) { group ->
                     RailEntry(
-                        label = category.name,
-                        selected = !favouritesOnly && selectedCategory == category.id,
-                        onClick = { viewModel.selectCategory(category.id) },
+                        label = group.label,
+                        selected = !favouritesOnly && selectedCategory == group.key,
+                        onClick = { viewModel.selectCategory(group.key) },
                     )
                 }
             }
@@ -244,31 +244,14 @@ private fun ChannelRow(
         Spacer(Modifier.width(14.dp))
 
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    row.primary.displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                // One logical channel, several qualities: say so quietly. The switch
-                // itself lives in the player, where the decision is actually made.
-                if (row.variants.size > 1) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "${row.variants.size} qualities",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                } else if (row.primary.qualityLabel.isNotEmpty()) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        row.primary.qualityLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            // Logo, name, guide — and nothing else. Quality is a playback decision;
+            // its switch lives in the player, not as clutter on every row.
+            Text(
+                row.primary.displayName,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(Modifier.height(2.dp))
             Text(
                 text = row.now?.let { "${formatTime(it.startUtcMillis)}  ${it.title}" }
