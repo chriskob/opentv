@@ -134,7 +134,8 @@ class CatalogRepository(
         val series = runCatching { api.series(source) }.getOrDefault(emptyList())
 
         categoryDao.upsertAll(liveCategories + movieCategories + seriesCategories)
-        channelDao.replaceCatalogue(source.id, normalized(channels), nowUtcMillis)
+        val categoryNames = liveCategories.associate { it.id to it.name }
+        channelDao.replaceCatalogue(source.id, normalized(channels, categoryNames), nowUtcMillis)
         if (movies.isNotEmpty()) movieDao.upsertAll(movies)
         if (series.isNotEmpty()) seriesDao.upsertAll(series)
 
@@ -180,7 +181,8 @@ class CatalogRepository(
             }
 
         categoryDao.upsertAll(categories)
-        channelDao.replaceCatalogue(source.id, normalized(parsed.channels), nowUtcMillis)
+        val categoryNames = categories.associate { it.id to it.name }
+        channelDao.replaceCatalogue(source.id, normalized(parsed.channels, categoryNames), nowUtcMillis)
 
         // If the playlist declared its own guide URL and the user did not set one, adopt it.
         if (source.epgUrl.isNullOrBlank() && !parsed.declaredEpgUrl.isNullOrBlank()) {
@@ -198,14 +200,56 @@ class CatalogRepository(
      * variants of a channel into a single row and is the join key for EPG matching, and
      * [Channel.displayName] is the cleaned name the UI shows instead of `UK| BBC ONE FHD`.
      */
-    private fun normalized(channels: List<Channel>): List<Channel> = channels.map { channel ->
-        val n = ChannelNameNormalizer.normalize(channel.name)
-        channel.copy(
-            displayName = n.baseName,
-            groupKey = n.groupKey,
-            qualityRank = n.qualityRank,
-            qualityLabel = n.qualityLabel,
-        )
+    private fun normalized(
+        channels: List<Channel>,
+        categoryNames: Map<String, String>,
+    ): List<Channel> {
+        val stamped = channels.map { channel ->
+            val n = ChannelNameNormalizer.normalize(channel.name)
+            var rank = n.qualityRank
+            var label = n.qualityLabel
+            if (label.isEmpty() || rank == 0) {
+                // Some providers put the quality in the CATEGORY, not the channel:
+                // 'UK| GENERAL HD/RAW' and 'UK| GENERAL hevc' holding identically named
+                // channels. Without this, the player's switch is four buttons all
+                // reading 'Standard' — grouped correctly, labelled uselessly.
+                val categoryName = channel.categoryId?.let { categoryNames[it] }
+                if (categoryName != null) {
+                    val c = ChannelNameNormalizer.normalize(categoryName)
+                    if (label.isEmpty()) label = c.qualityLabel
+                    if (rank == 0) rank = c.qualityRank
+                }
+            }
+            channel.copy(
+                displayName = n.baseName,
+                groupKey = n.groupKey,
+                qualityRank = rank,
+                qualityLabel = label,
+            )
+        }
+
+        // Disambiguate within each group: identical labels switch nothing anyone can name.
+        return stamped.groupBy { it.groupKey.ifEmpty { it.streamId } }.values.flatMap { group ->
+            if (group.size <= 1) return@flatMap group
+            val seen = HashMap<String, Int>()
+            group.map { channel ->
+                val base = channel.qualityLabel.ifEmpty { "Standard" }
+                val nth = seen.merge(base, 1, Int::plus) ?: 1
+                if (nth == 1) {
+                    channel
+                } else {
+                    // Second copy with the same label: tell them apart by category, or
+                    // failing that by number. 'Standard · GENERAL' beats 'Standard (2)'.
+                    val category = channel.categoryId?.let { categoryNames[it] }
+                        ?.let { ChannelNameNormalizer.normalize(it).baseName }
+                        ?.takeIf { it.isNotBlank() }
+                    channel.copy(
+                        qualityLabel = if (category != null) "$base · $category"
+                        else "$base ($nth)",
+                    )
+                }
+            }
+        }
     }
 
     /** Every quality variant of the same logical channel, best first. */

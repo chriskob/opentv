@@ -138,6 +138,7 @@ class EpgRepository(
     suspend fun syncAll(nowUtcMillis: Long, force: Boolean = false): SyncSummary =
         withContext(Dispatchers.IO) {
             ensureFeeds()
+            maybeAutoEnableRegionalFeed()
 
             var succeeded = 0
             var failed = 0
@@ -306,6 +307,40 @@ class EpgRepository(
     suspend fun setManualOverride(channelId: Long, epgId: String?) =
         channelDao.setEpgOverride(channelId, epgId)
 
+    /**
+     * Turns on the free guide for the user's region, once, on a pristine install.
+     *
+     * The reasoning: a provider guide is usually empty, and "go and find Guide settings"
+     * is a hurdle most people meet as a blank guide and give up on. The app already knows
+     * the region — the normaliser reads it off the `UK|` prefixes the provider itself
+     * ships — so when a clear majority of channels agree, enable that region's built-in.
+     *
+     * Guard rails: only when every built-in is untouched (never enabled, never synced)
+     * and no custom feed exists. Switch it off and it stays off — a choice the user has
+     * made is never overridden.
+     */
+    private suspend fun maybeAutoEnableRegionalFeed() {
+        val all = feedDao.all()
+        val builtIns = all.filter { it.builtIn }
+        if (builtIns.isEmpty()) return
+        val pristine = builtIns.all { !it.enabled && it.lastSyncMillis == 0L } &&
+            all.none { !it.builtIn && it.providerSourceId == null }
+        if (!pristine) return
+
+        val regionCounts = HashMap<String, Int>()
+        for (channel in channelDao.allForMatching()) {
+            val region = ChannelNameNormalizer.normalize(channel.name).region ?: continue
+            regionCounts.merge(region, 1, Int::plus)
+        }
+        val top = regionCounts.maxByOrNull { it.value } ?: return
+        if (top.value < MIN_CHANNELS_FOR_AUTO_REGION) return
+
+        val feedName = REGION_TO_FEED[top.key] ?: return
+        val feed = builtIns.firstOrNull { it.name == feedName } ?: return
+        feedDao.setEnabled(feed.id, true)
+        Log.i(TAG, "Auto-enabled '${feed.name}' — ${top.value} channels tagged ${top.key}")
+    }
+
     companion object {
         private const val TAG = "EpgRepository"
 
@@ -326,6 +361,20 @@ class EpgRepository(
          * The UK Freeview entry is GPL-3.0 (same licence as OpenTV), regenerated every
          * 12 h, ~270 channels with logos — verified working before it earned this slot.
          */
+        /** A region needs at least this many prefixed channels before we act on it. */
+        const val MIN_CHANNELS_FOR_AUTO_REGION = 5
+
+        /** Region tag (as providers write it) → built-in feed name to auto-enable. */
+        val REGION_TO_FEED: Map<String, String> = mapOf(
+            "UK" to "UK — Freeview (free-to-air)",
+            "GB" to "UK — Freeview (free-to-air)",
+            "US" to "USA — epgshare01",
+            "USA" to "USA — epgshare01",
+            "CA" to "Canada — epgshare01",
+            "AU" to "Australia — epgshare01",
+            "AUS" to "Australia — epgshare01",
+        )
+
         val BUILT_IN_FEEDS: List<Pair<String, String>> = listOf(
             "UK — Freeview (free-to-air)" to
                 "https://raw.githubusercontent.com/dp247/Freeview-EPG/master/epg.xml",

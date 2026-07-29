@@ -152,7 +152,9 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
 class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = ServiceLocator.get(app)
 
-    private val selectedCategory = MutableStateFlow<String?>(null)
+    /** null = All. Exposed so the sidebar can highlight the active entry. */
+    val selectedCategory = MutableStateFlow<String?>(null)
+    val favouritesOnly = MutableStateFlow(false)
     private val query = MutableStateFlow("")
     private val nowTick = MutableStateFlow(System.currentTimeMillis())
 
@@ -178,12 +180,14 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val rows: StateFlow<List<Row>> =
-        combine(selectedCategory, query) { category, q -> category to q }
-            .flatMapLatest { (category, q) ->
-                val channelFlow = if (q.isBlank()) {
-                    graph.catalogRepository.observeChannels(categoryId = category)
-                } else {
-                    graph.catalogRepository.searchChannels(q)
+        combine(selectedCategory, favouritesOnly, query) { category, favs, q ->
+            Triple(category, favs, q)
+        }
+            .flatMapLatest { (category, favs, q) ->
+                val channelFlow = when {
+                    q.isNotBlank() -> graph.catalogRepository.searchChannels(q)
+                    favs -> graph.catalogRepository.observeFavouriteChannels()
+                    else -> graph.catalogRepository.observeChannels(categoryId = category)
                 }
                 combine(channelFlow, nowTick) { channels, now -> channels to now }
                     .flatMapLatest { (channels, now) ->
@@ -236,7 +240,15 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         graph.catalogRepository.observeFavouriteChannels()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun selectCategory(id: String?) { selectedCategory.value = id }
+    fun selectCategory(id: String?) {
+        favouritesOnly.value = false
+        selectedCategory.value = id
+    }
+
+    fun selectFavourites() {
+        favouritesOnly.value = true
+        selectedCategory.value = null
+    }
 
     fun search(text: String) { query.value = text }
 
