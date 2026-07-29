@@ -190,12 +190,19 @@ interface CategoryDao {
     @Query("SELECT * FROM categories WHERE kind = :kind ORDER BY sortIndex, name")
     fun observe(kind: StreamKind): Flow<List<Category>>
 
+    /** Minimal id+name rows for the re-normalise pass. */
+    @Query("SELECT id, name FROM categories WHERE id IN (:ids)")
+    suspend fun namesFor(ids: Set<String>): List<CategoryName>
+
     @Upsert
     suspend fun upsertAll(categories: List<Category>)
 
     @Query("DELETE FROM categories WHERE sourceId = :sourceId")
     suspend fun deleteForSource(sourceId: Long)
 }
+
+/** Projection for [CategoryDao.namesFor]. */
+data class CategoryName(val id: String, val name: String)
 
 @Dao
 interface EpgFeedDao {

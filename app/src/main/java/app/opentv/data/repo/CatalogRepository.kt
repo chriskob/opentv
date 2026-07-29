@@ -266,6 +266,47 @@ class CatalogRepository(
             t.takeLast(3).all { it in SEPARATOR_CHARS }
     }
 
+    /**
+     * Re-cleans every stored channel with the current normaliser, no network needed.
+     *
+     * displayName, groupKey, quality and separator-hiding are computed at import time, so a
+     * change to the normaliser (a new superscript char, a new junk pattern) does not reach
+     * channels already in the database until the next full catalogue sync — which can be
+     * hours away. This runs the same pass over existing rows locally, so a code fix shows up
+     * on the next launch instead of the next sync. Bump [NORMALIZER_VERSION] to trigger it.
+     */
+    suspend fun renormalizeAll(): Int = withContext(Dispatchers.IO) {
+        val existing = channelDao.allForMatching()
+        if (existing.isEmpty()) return@withContext 0
+
+        val bySource = existing.groupBy { it.sourceId }
+        var changed = 0
+        for ((_, channels) in bySource) {
+            val names = channelCategoryNames(channels)
+            val renamed = normalized(channels, names)
+            // Only write rows that actually changed, to keep the write small.
+            val diff = renamed.filterIndexed { i, c ->
+                val old = channels[i]
+                c.displayName != old.displayName || c.groupKey != old.groupKey ||
+                    c.qualityLabel != old.qualityLabel || c.qualityRank != old.qualityRank ||
+                    c.hidden != old.hidden
+            }
+            if (diff.isNotEmpty()) {
+                diff.chunked(500).forEach { channelDao.upsertAll(it) }
+                changed += diff.size
+            }
+        }
+        Log.i(TAG, "Re-normalised $changed channels with the current normaliser")
+        changed
+    }
+
+    /** Best-effort category-id → name map for a set of channels. */
+    private suspend fun channelCategoryNames(channels: List<Channel>): Map<String, String> {
+        val ids = channels.mapNotNull { it.categoryId }.toSet()
+        if (ids.isEmpty()) return emptyMap()
+        return categoryDao.namesFor(ids).associate { it.id to it.name }
+    }
+
     /** Every quality variant of the same logical channel, best first. */
     suspend fun variants(channel: Channel): List<Channel> =
         if (channel.groupKey.isEmpty()) listOf(channel)
@@ -280,8 +321,15 @@ class CatalogRepository(
         sourceDao.delete(sourceId)
     }
 
-    private companion object {
-        const val TAG = "CatalogRepository"
+    companion object {
+        private const val TAG = "CatalogRepository"
         val SEPARATOR_CHARS = setOf('#', '*', '=', '~', '-', '_', '•', '█', '▓', '|')
+
+        /**
+         * Bump this whenever the normaliser changes in a way that should re-process
+         * already-imported channels. The app compares it against a stored value on launch
+         * and runs [renormalizeAll] once when it moves.
+         */
+        const val NORMALIZER_VERSION = 2
     }
 }
