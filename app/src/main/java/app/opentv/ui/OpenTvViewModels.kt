@@ -20,6 +20,7 @@ import app.opentv.data.model.SourceKind
 import app.opentv.data.model.StreamKind
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.repo.CatalogRepository
+import app.opentv.data.repo.distinctByQuality
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -250,8 +251,11 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             groups.getOrPut(key) { mutableListOf() } += channel
         }
 
-        return groups.values.map { variants ->
-            variants.sortByDescending { it.qualityRank }
+        return groups.values.map { group ->
+            group.sortByDescending { it.qualityRank }
+            // Only genuinely different qualities are switchable; identical-quality dupes
+            // (same stream in two categories) collapse to one, so no false "2 qualities".
+            val variants = distinctByQuality(group)
             val primary = variants.first()
 
             // Walk every variant's guide-id candidates (override → provider → matched)

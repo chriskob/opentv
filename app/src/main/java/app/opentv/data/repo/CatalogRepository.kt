@@ -31,6 +31,19 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /**
+ * Keeps one channel per distinct quality signature, preserving order (so "best first" is
+ * preserved when the caller has already sorted by rank).
+ *
+ * Two streams with the same rank AND the same label are treated as the same quality — one is
+ * kept, the rest dropped. This is what collapses "RAW / RAW" and "HD / HD" duplicates down to
+ * a single option, and turns a falsely-multi-quality channel back into a single one.
+ */
+internal fun distinctByQuality(channels: List<app.opentv.data.model.Channel>): List<app.opentv.data.model.Channel> {
+    val seen = HashSet<String>()
+    return channels.filter { seen.add("${it.qualityRank}|${it.qualityLabel.lowercase()}") }
+}
+
+/**
  * Channels, movies and series.
  *
  * Same principle as [EpgRepository]: a refresh that fails must never leave the user with less
@@ -234,28 +247,7 @@ class CatalogRepository(
             )
         }
 
-        // Disambiguate within each group: identical labels switch nothing anyone can name.
-        return stamped.groupBy { it.groupKey.ifEmpty { it.streamId } }.values.flatMap { group ->
-            if (group.size <= 1) return@flatMap group
-            val seen = HashMap<String, Int>()
-            group.map { channel ->
-                val base = channel.qualityLabel.ifEmpty { "Standard" }
-                val nth = seen.merge(base, 1, Int::plus) ?: 1
-                if (nth == 1) {
-                    channel
-                } else {
-                    // Second copy with the same label: tell them apart by category, or
-                    // failing that by number. 'Standard · GENERAL' beats 'Standard (2)'.
-                    val category = channel.categoryId?.let { categoryNames[it] }
-                        ?.let { ChannelNameNormalizer.normalize(it).baseName }
-                        ?.takeIf { it.isNotBlank() }
-                    channel.copy(
-                        qualityLabel = if (category != null) "$base · $category"
-                        else "$base ($nth)",
-                    )
-                }
-            }
-        }
+        return stamped
     }
 
     /** Decorative list headings: starts AND ends with a run of banner characters. */
@@ -307,10 +299,20 @@ class CatalogRepository(
         return categoryDao.namesFor(ids).associate { it.id to it.name }
     }
 
-    /** Every quality variant of the same logical channel, best first. */
-    suspend fun variants(channel: Channel): List<Channel> =
-        if (channel.groupKey.isEmpty()) listOf(channel)
-        else channelDao.variantsInGroup(channel.groupKey).ifEmpty { listOf(channel) }
+    /**
+     * The switchable quality variants of a channel, best first, ONE per distinct quality.
+     *
+     * A provider often lists the same stream in several categories — PRIME American Crimes
+     * shows up twice, both RAW. Those are not "qualities"; offering a switch between two
+     * identical (and sometimes one dead) feeds is worse than useless. So variants are
+     * de-duplicated by their quality signature: only genuinely different qualities survive,
+     * and a channel that is really single-quality gets no switch at all.
+     */
+    suspend fun variants(channel: Channel): List<Channel> {
+        if (channel.groupKey.isEmpty()) return listOf(channel)
+        val all = channelDao.variantsInGroup(channel.groupKey)
+        return distinctByQuality(all).ifEmpty { listOf(channel) }
+    }
 
     suspend fun deleteSource(sourceId: Long) = withContext(Dispatchers.IO) {
         channelDao.deleteForSource(sourceId)
