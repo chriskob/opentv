@@ -68,10 +68,15 @@ object ChannelNameNormalizer {
     /**
      * Leading country tag: `UK|`, `UK -`, `UK:`, `[UK]`, `(US)`, `USA |` and so on.
      * Two or three capitals only — long enough for ISO codes and `USA`, short enough that
-     * `BEIN| SPORTS` or `SKY| NEWS` are left alone.
+     * `BEIN| SPORTS` is left alone.
+     *
+     * Two alternatives on purpose. Brackets are themselves the delimiter, so `[UK] ITV`
+     * needs no separator after them; a bare code **must** have one, or `BBC ONE` would
+     * lose its BBC.
      */
-    private val COUNTRY_PREFIX =
-        Regex("""^\s*[\[(]?([A-Z]{2,3})[\])]?\s*[|:\-–—]\s*""")
+    private val COUNTRY_PREFIX = Regex(
+        """^\s*(?:[\[(]([A-Z]{2,3})[\])]\s*[|:\-–—]?|([A-Z]{2,3})\s*[|:\-–—])\s*"""
+    )
 
     /** Decorations providers use as separators or eye-catchers. */
     private val DECORATION = Regex("""[#*•●▪►▶✦★☆~_=]+""")
@@ -92,7 +97,7 @@ object ChannelNameNormalizer {
 
         var region: String? = null
         COUNTRY_PREFIX.find(working)?.let { match ->
-            region = match.groupValues[1]
+            region = match.groupValues[1].ifEmpty { match.groupValues[2] }
             working = working.removeRange(match.range)
         }
 
@@ -137,10 +142,20 @@ object ChannelNameNormalizer {
      * users actually notice. The word-number folding handles `BBC ONE` vs `BBC 1`.
      */
     fun groupKeyOf(name: String): String {
-        val lower = name.lowercase()
-            .replace(" one", " 1").replace(" two", " 2").replace(" three", " 3")
-            .replace(" four", " 4").replace(" five", " 5").replace(" six", " 6")
-            .replace(" seven", " 7").replace(" eight", " 8").replace(" nine", " 9")
-        return lower.filter { it.isLetterOrDigit() }
+        // Split CamelCase first so `BbcOne` sees the same words as `BBC One`, then fold
+        // number WORDS to digits — whole words only, never substrings, or `money` becomes
+        // `m1y` on one side of a match and not the other.
+        val spaced = CAMEL_BOUNDARY.replace(name, "$1 $2")
+        return spaced.lowercase()
+            .split(NON_ALNUM)
+            .filter { it.isNotEmpty() }
+            .joinToString("") { word -> NUMBER_WORDS[word] ?: word }
     }
+
+    private val CAMEL_BOUNDARY = Regex("""([a-z])([A-Z])""")
+    private val NON_ALNUM = Regex("""[^a-zA-Z0-9]+""")
+    private val NUMBER_WORDS = mapOf(
+        "one" to "1", "two" to "2", "three" to "3", "four" to "4", "five" to "5",
+        "six" to "6", "seven" to "7", "eight" to "8", "nine" to "9",
+    )
 }
