@@ -115,13 +115,15 @@ object ChannelNameNormalizer {
             }
         }
 
-        working = DECORATION.replace(working, " ")
-
+        // Country prefix BEFORE decoration stripping: the brackets in `[UK]` are the
+        // delimiter, and the decoration pass would eat them and lose the tag.
         var region: String? = null
         COUNTRY_PREFIX.find(working)?.let { match ->
             region = match.groupValues[1].ifEmpty { match.groupValues[2] }
             working = working.removeRange(match.range)
         }
+
+        working = DECORATION.replace(working, " ")
 
         // Tokenise and pull out quality/extra markers wherever they appear.
         var bestRank = 0
