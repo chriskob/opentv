@@ -85,6 +85,7 @@ fun HomeScreen(
     val rows by viewModel.rows.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
+    val windowStart by viewModel.windowStartMillis.collectAsState()
     var selected by remember { mutableLongStateOf(-1L) }
 
     // Re-evaluate "now" once a minute so progress bars advance without leaving the screen.
@@ -170,22 +171,15 @@ fun HomeScreen(
                     else -> EmptyState(onAddSource)
                 }
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(start = 16.dp, end = 24.dp, bottom = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(rows, key = { it.key }) { row ->
-                        ChannelRow(
-                            row = row,
-                            isSelected = selected == row.primary.id,
-                            onClick = {
-                                selected = row.primary.id
-                                onPlayChannel(row.primary)
-                            },
-                            onToggleFavourite = { viewModel.toggleFavourite(row) },
-                        )
-                    }
-                }
+                GuideGrid(
+                    rows = rows,
+                    windowStartMillis = windowStart,
+                    onPlay = { channel ->
+                        selected = channel.id
+                        onPlayChannel(channel)
+                    },
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp),
+                )
             }
         }
     }

@@ -195,9 +195,20 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         val variants: List<Channel>,
         val now: Programme?,
         val next: Programme?,
+        /** Every programme for this channel inside the guide window, start-ordered. */
+        val programmes: List<Programme>,
     ) {
         val key: Any get() = if (primary.groupKey.isEmpty()) primary.id else primary.groupKey
     }
+
+    /**
+     * The guide's left edge: the current half-hour, rounded down. Programme block positions
+     * are measured from here. Recomputed on each tick so the grid drifts with real time.
+     */
+    val windowStartMillis: StateFlow<Long> = nowTick
+        .map { now -> now - (now % HALF_HOUR_MILLIS) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS })
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val rows: StateFlow<List<Row>> =
@@ -217,6 +228,8 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                         graph.epgRepository
                             .observeWindow(now, now + GUIDE_LOOKAHEAD_MILLIS)
                             .map { programmes -> buildRows(channels, programmes, now) }
+                            // Recompute rows each minute so now/next and progress advance.
+                            .let { it }
                     }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -255,6 +268,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                 variants = variants,
                 now = list.firstOrNull { it.isLiveAt(now) },
                 next = list.firstOrNull { it.startUtcMillis > now },
+                programmes = list,
             )
         }
     }
@@ -293,7 +307,8 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
-        const val GUIDE_LOOKAHEAD_MILLIS = 6 * 60 * 60 * 1000L
+        const val GUIDE_LOOKAHEAD_MILLIS = 12 * 60 * 60 * 1000L
+        const val HALF_HOUR_MILLIS = 30 * 60 * 1000L
     }
 }
 
