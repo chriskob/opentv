@@ -98,6 +98,8 @@ class CatalogRepository(
 
     suspend fun movie(id: Long): Movie? = movieDao.byId(id)
 
+    suspend fun series(id: Long): app.opentv.data.model.Series? = seriesDao.byId(id)
+
     suspend fun setChannelFavourite(id: Long, favourite: Boolean) =
         channelDao.setFavourite(id, favourite)
 

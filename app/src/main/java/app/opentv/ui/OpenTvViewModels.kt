@@ -420,4 +420,18 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
 
     fun episodes(series: Series) =
         graph.catalogRepository.observeEpisodes(series.sourceId, series.seriesId)
+
+    /** For the series detail screen: look the series up by row id. */
+    fun seriesById(id: Long): kotlinx.coroutines.flow.Flow<Series?> =
+        kotlinx.coroutines.flow.flow { emit(graph.catalogRepository.series(id)) }
+
+    /** An always-empty episode flow, so the detail screen has something before a series loads. */
+    val noEpisodes: kotlinx.coroutines.flow.Flow<List<app.opentv.data.model.Episode>> =
+        kotlinx.coroutines.flow.flowOf(emptyList())
+
+    suspend fun movieById(id: Long): Movie? = graph.catalogRepository.movie(id)
+
+    /** The user-agent to play a movie/episode with (per source). */
+    suspend fun userAgentForSource(sourceId: Long): String =
+        graph.sourceRepository.byId(sourceId)?.userAgent ?: "OpenTV/0.1 (Android)"
 }

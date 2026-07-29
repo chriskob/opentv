@@ -1,0 +1,273 @@
+/*
+ * This file is part of OpenTV.
+ * Copyright (C) 2026 The OpenTV Contributors
+ * Licensed under the GNU General Public License v3.0 or later.
+ */
+package app.opentv.ui.vod
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.data.model.Movie
+import app.opentv.data.model.Series
+import app.opentv.ui.VodViewModel
+import coil.compose.AsyncImage
+
+/**
+ * Movies: a category rail on the left, a poster grid on the right. Click a poster to play,
+ * resuming where you left off. The rail mirrors Live TV's so the app feels of a piece.
+ */
+@Composable
+fun MoviesScreen(
+    onPlayMovie: (Movie) -> Unit,
+    viewModel: VodViewModel = viewModel(),
+) {
+    val categories by viewModel.movieCategories.collectAsState()
+    val movies by viewModel.movies.collectAsState()
+
+    Row(Modifier.fillMaxSize()) {
+        CategoryRail(
+            title = "Movies",
+            entries = categories.map { it.id to it.name },
+            onSelect = { viewModel.selectMovieCategory(it) },
+        )
+        if (movies.isEmpty()) {
+            EmptyVod("No movies", "This provider returned no movies, or they are still loading.")
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 150.dp),
+                contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(movies, key = { it.id }) { movie ->
+                    Poster(
+                        title = movie.name,
+                        posterUrl = movie.posterUrl,
+                        subtitle = movie.year?.toString(),
+                        onClick = { onPlayMovie(movie) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Shows: poster grid → a series' episode list → play. Episodes are fetched on demand the
+ * first time a series is opened, because pulling every episode of every series up front is
+ * what makes a first sync take forever.
+ */
+@Composable
+fun SeriesScreen(
+    onOpenSeries: (Series) -> Unit,
+    viewModel: VodViewModel = viewModel(),
+) {
+    val categories by viewModel.seriesCategories.collectAsState()
+    val series by viewModel.series.collectAsState()
+
+    Row(Modifier.fillMaxSize()) {
+        CategoryRail(
+            title = "Shows",
+            entries = categories.map { it.id to it.name },
+            onSelect = { viewModel.selectSeriesCategory(it) },
+        )
+        if (series.isEmpty()) {
+            EmptyVod("No shows", "This provider returned no series, or they are still loading.")
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 150.dp),
+                contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(series, key = { it.id }) { item ->
+                    Poster(
+                        title = item.name,
+                        posterUrl = item.posterUrl,
+                        subtitle = item.year?.toString(),
+                        onClick = { onOpenSeries(item) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** A series' episodes, grouped by season, each a row that plays on click. */
+@Composable
+fun SeriesDetailScreen(
+    seriesId: Long,
+    onPlayEpisode: (mediaKey: String, url: String, title: String) -> Unit,
+    viewModel: VodViewModel = viewModel(),
+) {
+    val series by viewModel.seriesById(seriesId).collectAsState(initial = null)
+    val episodes by (series?.let { viewModel.episodes(it) } ?: viewModel.noEpisodes)
+        .collectAsState(initial = emptyList())
+
+    androidx.compose.runtime.LaunchedEffect(series) {
+        series?.let { viewModel.loadEpisodes(it) }
+    }
+
+    Column(Modifier.fillMaxSize().padding(24.dp)) {
+        Text(series?.name ?: "…", style = MaterialTheme.typography.headlineMedium)
+        series?.plot?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3,
+                overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.height(16.dp))
+
+        if (episodes.isEmpty()) {
+            Text("Loading episodes…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(episodes, key = { it.id }) { ep ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .clickable {
+                                onPlayEpisode("ep:${ep.id}", ep.streamUrl,
+                                    "S${ep.season}E${ep.episodeNumber} · ${ep.title}")
+                            }
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("S${ep.season}E${ep.episodeNumber}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.width(72.dp))
+                        Text(ep.title, style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---- Shared bits -------------------------------------------------------------------------
+
+@Composable
+private fun CategoryRail(
+    title: String,
+    entries: List<Pair<String, String>>,
+    onSelect: (String?) -> Unit,
+) {
+    Column(
+        Modifier
+            .width(230.dp)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(vertical = 16.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(horizontal = 20.dp))
+        Spacer(Modifier.height(12.dp))
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            item {
+                RailText("All", true) { onSelect(null) }
+            }
+            items(entries, key = { it.first }) { (id, name) ->
+                RailText(name, false) { onSelect(id) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailText(label: String, bold: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    )
+}
+
+@Composable
+private fun Poster(title: String, posterUrl: String?, subtitle: String?, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(2f / 3f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            AsyncImage(
+                model = posterUrl,
+                contentDescription = title,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+            overflow = TextOverflow.Ellipsis)
+        subtitle?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun EmptyVod(title: String, body: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
