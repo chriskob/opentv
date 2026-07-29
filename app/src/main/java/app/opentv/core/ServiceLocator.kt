@@ -67,7 +67,15 @@ object ServiceLocator {
         }
 
         val epgRepository: EpgRepository by lazy {
-            EpgRepository(database.programmes(), database.sources(), xtreamApi)
+            EpgRepository(
+                programmeDao = database.programmes(),
+                feedDao = database.epgFeeds(),
+                aliasDao = database.epgAliases(),
+                channelDao = database.channels(),
+                sourceDao = database.sources(),
+                api = xtreamApi,
+                http = httpClient,
+            )
         }
 
         val playbackPositions get() = database.positions()

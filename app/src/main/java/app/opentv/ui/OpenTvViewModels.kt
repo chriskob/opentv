@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Category
 import app.opentv.data.model.Channel
+import app.opentv.data.model.EpgFeed
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Programme
 import app.opentv.data.model.Series
@@ -18,7 +19,6 @@ import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
 import app.opentv.data.model.StreamKind
 import app.opentv.data.repo.CatalogRepository
-import app.opentv.data.repo.EpgRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -99,16 +99,17 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            val refreshed = graph.sourceRepository.byId(id) ?: saved
-            val epg = graph.epgRepository.sync(refreshed, now)
+            val summary = graph.epgRepository.syncAll(now)
             _ui.value = _ui.value.copy(
                 syncing = false,
-                syncMessage = when (epg) {
-                    is EpgRepository.SyncResult.Success ->
-                        "Ready. ${epg.programmeCount} guide entries."
-                    // Not a failure the user needs to act on: channels work without a guide.
-                    is EpgRepository.SyncResult.Failed ->
-                        "Channels are ready. Guide unavailable: ${epg.reason}"
+                syncMessage = when {
+                    summary.channelsMatched > 0 ->
+                        "Ready. Guide matched ${summary.channelsMatched} of " +
+                            "${summary.channelsTotal} channels."
+                    // Channels work without a guide; say what to do rather than failing.
+                    else ->
+                        "Channels are ready. No guide data matched yet — add a free guide " +
+                            "under Guide settings."
                 },
             )
             onDone(true)
@@ -130,15 +131,17 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                     is CatalogRepository.SyncResult.Success -> channels += result.channelCount
                     is CatalogRepository.SyncResult.Failed -> problems++
                 }
-                val refreshed = graph.sourceRepository.byId(source.id) ?: source
-                if (graph.epgRepository.sync(refreshed, now) is EpgRepository.SyncResult.Failed) {
-                    problems++
-                }
             }
+            val summary = graph.epgRepository.syncAll(now, force = true)
+            problems += summary.feedsFailed
             _ui.value = _ui.value.copy(
                 syncing = false,
-                syncMessage = if (problems == 0) "Refreshed $channels channels."
-                else "Refreshed $channels channels, $problems source(s) had problems.",
+                syncMessage = if (problems == 0) {
+                    "Refreshed $channels channels, guide matched " +
+                        "${summary.channelsMatched} of ${summary.channelsTotal}."
+                } else {
+                    "Refreshed $channels channels, $problems problem(s) — see Guide settings."
+                },
             )
         }
     }
@@ -157,7 +160,21 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         graph.catalogRepository.observeCategories(StreamKind.LIVE)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    data class Row(val channel: Channel, val now: Programme?, val next: Programme?)
+    /**
+     * One row on screen = one *logical* channel.
+     *
+     * [primary] is the best-quality variant and what plays on click; [variants] is every
+     * quality of the same channel, for the in-player switch. `UK| BBC ONE SD/HD/FHD/RAW`
+     * is one row, not four — the guide has one BBC One, and so should we.
+     */
+    data class Row(
+        val primary: Channel,
+        val variants: List<Channel>,
+        val now: Programme?,
+        val next: Programme?,
+    ) {
+        val key: Any get() = if (primary.groupKey.isEmpty()) primary.id else primary.groupKey
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val rows: StateFlow<List<Row>> =
@@ -172,25 +189,48 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                     .flatMapLatest { (channels, now) ->
                         graph.epgRepository
                             .observeWindow(now, now + GUIDE_LOOKAHEAD_MILLIS)
-                            .map { programmes ->
-                                // Grouped here rather than in SQL: the query cannot take a
-                                // channel-id list without hitting SQLite's bound-variable cap.
-                                val byChannel = programmes.groupBy { it.epgChannelId }
-                                channels.map { channel ->
-                                    val list = channel.epgChannelId
-                                        ?.let { byChannel[it] }
-                                        ?.sortedBy { it.startUtcMillis }
-                                        .orEmpty()
-                                    Row(
-                                        channel = channel,
-                                        now = list.firstOrNull { it.isLiveAt(now) },
-                                        next = list.firstOrNull { it.startUtcMillis > now },
-                                    )
-                                }
-                            }
+                            .map { programmes -> buildRows(channels, programmes, now) }
                     }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private fun buildRows(
+        channels: List<Channel>,
+        programmes: List<Programme>,
+        now: Long,
+    ): List<Row> {
+        // Grouped here rather than in SQL: the programme query cannot take a channel-id
+        // list without hitting SQLite's bound-variable cap, and quality-variant folding
+        // is pure list work anyway.
+        val byEpgChannel = programmes.groupBy { it.epgChannelId }
+
+        val groups = LinkedHashMap<Any, MutableList<Channel>>()
+        for (channel in channels) {
+            val key: Any = channel.groupKey.ifEmpty { channel.id }
+            groups.getOrPut(key) { mutableListOf() } += channel
+        }
+
+        return groups.values.map { variants ->
+            variants.sortByDescending { it.qualityRank }
+            val primary = variants.first()
+
+            // Walk every variant's guide-id candidates (override → provider → matched)
+            // and use the first that actually has programmes. An id that never lights up
+            // must not shadow a sibling variant whose id does.
+            val list = variants
+                .flatMap { it.epgCandidates }
+                .firstNotNullOfOrNull { id -> byEpgChannel[id] }
+                ?.sortedBy { it.startUtcMillis }
+                .orEmpty()
+
+            Row(
+                primary = primary,
+                variants = variants,
+                now = list.firstOrNull { it.isLiveAt(now) },
+                next = list.firstOrNull { it.startUtcMillis > now },
+            )
+        }
+    }
 
     val favourites: StateFlow<List<Channel>> =
         graph.catalogRepository.observeFavouriteChannels()
@@ -202,18 +242,78 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun tick() { nowTick.value = System.currentTimeMillis() }
 
-    fun toggleFavourite(channel: Channel) {
+    fun toggleFavourite(row: Row) {
         viewModelScope.launch {
-            graph.catalogRepository.setChannelFavourite(channel.id, !channel.favourite)
+            // Favouriting the row favourites the logical channel: every variant follows,
+            // so the choice survives switching quality.
+            val target = !row.primary.favourite
+            row.variants.forEach { graph.catalogRepository.setChannelFavourite(it.id, target) }
         }
     }
 
-    fun hide(channel: Channel) {
-        viewModelScope.launch { graph.catalogRepository.setChannelHidden(channel.id, true) }
+    fun hide(row: Row) {
+        viewModelScope.launch {
+            row.variants.forEach { graph.catalogRepository.setChannelHidden(it.id, true) }
+        }
     }
 
     private companion object {
         const val GUIDE_LOOKAHEAD_MILLIS = 6 * 60 * 60 * 1000L
+    }
+}
+
+/** Backs the Guide settings screen: feed list, toggles, custom URLs, match report. */
+class EpgViewModel(app: Application) : AndroidViewModel(app) {
+    private val graph = ServiceLocator.get(app)
+
+    data class UiState(
+        val feeds: List<EpgFeed> = emptyList(),
+        val syncing: Boolean = false,
+        val statusLine: String? = null,
+    )
+
+    private val _ui = MutableStateFlow(UiState())
+    val ui: StateFlow<UiState> = _ui.asStateFlow()
+
+    init {
+        viewModelScope.launch { graph.epgRepository.ensureFeeds() }
+        viewModelScope.launch {
+            graph.epgRepository.observeFeeds().collect { feeds ->
+                _ui.value = _ui.value.copy(feeds = feeds)
+            }
+        }
+    }
+
+    fun setEnabled(feed: EpgFeed, enabled: Boolean) {
+        viewModelScope.launch {
+            graph.epgRepository.setFeedEnabled(feed.id, enabled)
+            if (enabled) refresh() // turning a guide on should visibly do something
+        }
+    }
+
+    fun addCustom(name: String, url: String) {
+        viewModelScope.launch {
+            graph.epgRepository.addCustomFeed(name, url)
+            refresh()
+        }
+    }
+
+    fun remove(feed: EpgFeed) {
+        viewModelScope.launch { graph.epgRepository.removeFeed(feed) }
+    }
+
+    fun refresh() {
+        if (_ui.value.syncing) return
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(syncing = true, statusLine = "Downloading guides…")
+            val summary = graph.epgRepository.syncAll(System.currentTimeMillis(), force = true)
+            _ui.value = _ui.value.copy(
+                syncing = false,
+                statusLine = "Guide matched ${summary.channelsMatched} of " +
+                    "${summary.channelsTotal} channels" +
+                    if (summary.feedsFailed > 0) " · ${summary.feedsFailed} feed(s) failed" else "",
+            )
+        }
     }
 }
 

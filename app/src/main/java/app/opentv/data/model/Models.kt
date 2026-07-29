@@ -49,7 +49,6 @@ data class Source(
     val userAgent: String = DEFAULT_USER_AGENT,
     val enabled: Boolean = true,
     val lastCatalogSyncMillis: Long = 0,
-    val lastEpgSyncMillis: Long = 0,
 ) {
     companion object {
         const val DEFAULT_USER_AGENT: String = "OpenTV/0.1 (Android)"
@@ -75,7 +74,7 @@ data class Category(
     indices = [
         Index(value = ["sourceId", "streamId"], unique = true),
         Index(value = ["sourceId", "categoryId"]),
-        Index(value = ["epgChannelId"]),
+        Index(value = ["groupKey"]),
         Index(value = ["favourite"]),
     ],
 )
@@ -84,11 +83,28 @@ data class Channel(
     val sourceId: Long,
     /** Provider's own stream id (Xtream) or the tvg-id/url hash (M3U). Stable per source. */
     val streamId: String,
+    /** The provider's name, verbatim: `UK| BBC ONE FHD`. Kept for search and debugging. */
     val name: String,
+    /** Cleaned display name: `BBC One`. What the UI shows. */
+    val displayName: String = name,
+    /**
+     * Normalised join key: `bbcone`. Channels sharing a groupKey are quality variants of
+     * one logical channel — shown as a single row, switchable during playback — and this is
+     * also the key the EPG matcher joins on. See ChannelNameNormalizer.
+     */
+    val groupKey: String = "",
+    /** Higher plays by default. 0 = the name said nothing about quality. */
+    val qualityRank: Int = 0,
+    /** `FHD`, `HD`, `RAW 60fps`… empty when unknown. */
+    val qualityLabel: String = "",
     val categoryId: String?,
     val logoUrl: String?,
-    /** The id used to join against EPG data. Often differs from [streamId]. */
+    /** Guide id supplied by the provider, when it bothers. Often blank. */
     val epgChannelId: String?,
+    /** Guide id found by the name matcher. Recomputed after every guide sync. */
+    val matchedEpgId: String? = null,
+    /** Guide id chosen by the user by hand. Beats both of the above, survives resyncs. */
+    val epgOverrideId: String? = null,
     val number: Int?,
     /** Fully-resolved playback URL. */
     val streamUrl: String,
@@ -104,6 +120,55 @@ data class Channel(
      * has 40,000 channels. A stamp comparison has no such limit.
      */
     val lastSeenMillis: Long = 0,
+) {
+    /**
+     * The guide ids worth trying for this channel, most trustworthy first. The UI walks
+     * them in order and uses the first that actually has programmes — a provider-supplied
+     * id pointing at a guide the provider never ships must not shadow a working match.
+     */
+    val epgCandidates: List<String>
+        get() = listOfNotNull(epgOverrideId, epgChannelId, matchedEpgId)
+}
+
+/**
+ * One guide feed: where XMLTV comes from.
+ *
+ * Three kinds share the table. Provider feeds are created automatically from each source's
+ * panel. Built-in feeds are the curated free sources shipped with the app, off by default.
+ * Custom feeds are URLs the user adds. All enabled feeds are downloaded and merged into a
+ * single guide, and the matcher runs across the lot.
+ */
+@Entity(tableName = "epg_feeds")
+data class EpgFeed(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    /** Null for provider feeds — their URL is derived from the source's credentials. */
+    val url: String? = null,
+    /** Set when this feed belongs to a provider source. */
+    val providerSourceId: Long? = null,
+    /** Shipped with the app (as opposed to user-added). Used only for display. */
+    val builtIn: Boolean = false,
+    val enabled: Boolean = true,
+    val lastSyncMillis: Long = 0,
+    /** Human-readable outcome of the last sync attempt, shown in settings. */
+    val lastResult: String = "",
+)
+
+/**
+ * One `<channel>` element from a guide: the raw material for name matching.
+ * (epgId, displayName) pairs, kept per feed so a removed feed takes its aliases with it.
+ */
+@Entity(
+    tableName = "epg_channels",
+    primaryKeys = ["feedId", "epgId"],
+    indices = [Index(value = ["normalizedKey"])],
+)
+data class EpgChannelAlias(
+    val feedId: Long,
+    val epgId: String,
+    val displayName: String,
+    /** ChannelNameNormalizer.groupKeyOf(displayName), precomputed for the matcher. */
+    val normalizedKey: String,
 )
 
 /**
@@ -116,13 +181,15 @@ data class Channel(
 @Entity(
     tableName = "programmes",
     indices = [
-        Index(value = ["sourceId", "epgChannelId", "startUtcMillis"], unique = true),
+        Index(value = ["feedId", "epgChannelId", "startUtcMillis"], unique = true),
         Index(value = ["endUtcMillis"]),
+        Index(value = ["epgChannelId"]),
     ],
 )
 data class Programme(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val sourceId: Long,
+    /** The [EpgFeed] this came from. */
+    val feedId: Long,
     val epgChannelId: String,
     val startUtcMillis: Long,
     val endUtcMillis: Long,

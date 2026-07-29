@@ -20,6 +20,7 @@ import app.opentv.data.model.Series
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
 import app.opentv.data.model.StreamKind
+import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.parser.M3uParser
 import app.opentv.data.remote.XtreamApi
 import kotlinx.coroutines.CancellationException
@@ -132,18 +133,8 @@ class CatalogRepository(
         val seriesCategories = runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
         val series = runCatching { api.series(source) }.getOrDefault(emptyList())
 
-        // A channel with no epg_channel_id can never be matched to a guide entry, no matter
-        // how well the EPG downloads. Logged because "no guide information" on every row
-        // has two completely different causes and the UI cannot distinguish them.
-        val withEpgId = channels.count { !it.epgChannelId.isNullOrBlank() }
-        Log.i(
-            TAG,
-            "Source ${source.id}: ${channels.size} channels, $withEpgId carry an epg id " +
-                "(${if (channels.isEmpty()) 0 else withEpgId * 100 / channels.size}%)",
-        )
-
         categoryDao.upsertAll(liveCategories + movieCategories + seriesCategories)
-        channelDao.replaceCatalogue(source.id, channels, nowUtcMillis)
+        channelDao.replaceCatalogue(source.id, normalized(channels), nowUtcMillis)
         if (movies.isNotEmpty()) movieDao.upsertAll(movies)
         if (series.isNotEmpty()) seriesDao.upsertAll(series)
 
@@ -189,7 +180,7 @@ class CatalogRepository(
             }
 
         categoryDao.upsertAll(categories)
-        channelDao.replaceCatalogue(source.id, parsed.channels, nowUtcMillis)
+        channelDao.replaceCatalogue(source.id, normalized(parsed.channels), nowUtcMillis)
 
         // If the playlist declared its own guide URL and the user did not set one, adopt it.
         if (source.epgUrl.isNullOrBlank() && !parsed.declaredEpgUrl.isNullOrBlank()) {
@@ -199,6 +190,28 @@ class CatalogRepository(
         sourceDao.markCatalogSynced(source.id, nowUtcMillis)
         return SyncResult.Success(parsed.channels.size, 0, 0)
     }
+
+    /**
+     * Stamps every channel with its normalised identity before it is stored.
+     *
+     * This one pass powers both headline features: [Channel.groupKey] folds quality
+     * variants of a channel into a single row and is the join key for EPG matching, and
+     * [Channel.displayName] is the cleaned name the UI shows instead of `UK| BBC ONE FHD`.
+     */
+    private fun normalized(channels: List<Channel>): List<Channel> = channels.map { channel ->
+        val n = ChannelNameNormalizer.normalize(channel.name)
+        channel.copy(
+            displayName = n.baseName,
+            groupKey = n.groupKey,
+            qualityRank = n.qualityRank,
+            qualityLabel = n.qualityLabel,
+        )
+    }
+
+    /** Every quality variant of the same logical channel, best first. */
+    suspend fun variants(channel: Channel): List<Channel> =
+        if (channel.groupKey.isEmpty()) listOf(channel)
+        else channelDao.variantsInGroup(channel.groupKey).ifEmpty { listOf(channel) }
 
     suspend fun deleteSource(sourceId: Long) = withContext(Dispatchers.IO) {
         channelDao.deleteForSource(sourceId)

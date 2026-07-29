@@ -13,6 +13,8 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import app.opentv.data.model.Category
 import app.opentv.data.model.Channel
+import app.opentv.data.model.EpgChannelAlias
+import app.opentv.data.model.EpgFeed
 import app.opentv.data.model.Episode
 import app.opentv.data.model.Movie
 import app.opentv.data.model.PlaybackPosition
@@ -39,13 +41,15 @@ class Converters {
         Source::class,
         Category::class,
         Channel::class,
+        EpgFeed::class,
+        EpgChannelAlias::class,
         Programme::class,
         Movie::class,
         Series::class,
         Episode::class,
         PlaybackPosition::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -53,6 +57,8 @@ abstract class OpenTvDatabase : RoomDatabase() {
     abstract fun sources(): SourceDao
     abstract fun categories(): CategoryDao
     abstract fun channels(): ChannelDao
+    abstract fun epgFeeds(): EpgFeedDao
+    abstract fun epgAliases(): EpgChannelAliasDao
     abstract fun programmes(): ProgrammeDao
     abstract fun movies(): MovieDao
     abstract fun series(): SeriesDao
@@ -65,6 +71,14 @@ abstract class OpenTvDatabase : RoomDatabase() {
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
                 // refresh cannot make the UI stutter on a slow TV box.
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
+                /*
+                 * Pre-1.0 policy: schema changes drop and rebuild the database. Everything
+                 * in it is re-derivable from the provider (one sync away) except favourites
+                 * and overrides, which is a real but small loss for testers. The policy
+                 * flips to real migrations at the first tagged release — from then on,
+                 * every schema change ships a Migration and this line is deleted.
+                 */
+                .fallbackToDestructiveMigration()
                 .build()
     }
 }

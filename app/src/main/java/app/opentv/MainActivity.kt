@@ -28,6 +28,7 @@ import androidx.navigation.compose.rememberNavController
 import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.channels.HomeScreen
 import app.opentv.ui.onboarding.AddSourceScreen
+import app.opentv.ui.settings.EpgSettingsScreen
 import app.opentv.ui.player.PlayerScreen
 import app.opentv.ui.theme.OpenTvTheme
 
@@ -55,6 +56,7 @@ object Routes {
     const val HOME = "home"
     const val ADD_SOURCE = "add-source"
     const val PLAYER = "player/{channelId}"
+    const val EPG_SETTINGS = "epg-settings"
 
     fun player(channelId: Long) = "player/$channelId"
 }
@@ -92,7 +94,12 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onPlayChannel = { channel -> navController.navigate(Routes.player(channel.id)) },
                     onAddSource = { navController.navigate(Routes.ADD_SOURCE) },
                     onRefresh = sourcesViewModel::refreshAll,
+                    onGuideSettings = { navController.navigate(Routes.EPG_SETTINGS) },
                 )
+            }
+
+            composable(Routes.EPG_SETTINGS) {
+                EpgSettingsScreen(onBack = { navController.popBackStack() })
             }
 
             composable(Routes.PLAYER) { entry ->

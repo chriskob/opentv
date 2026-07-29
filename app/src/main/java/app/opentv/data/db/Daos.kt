@@ -14,6 +14,8 @@ import androidx.room.Update
 import androidx.room.Upsert
 import app.opentv.data.model.Category
 import app.opentv.data.model.Channel
+import app.opentv.data.model.EpgChannelAlias
+import app.opentv.data.model.EpgFeed
 import app.opentv.data.model.Episode
 import app.opentv.data.model.Movie
 import app.opentv.data.model.PlaybackPosition
@@ -48,9 +50,6 @@ interface SourceDao {
 
     @Query("UPDATE sources SET lastCatalogSyncMillis = :millis WHERE id = :id")
     suspend fun markCatalogSynced(id: Long, millis: Long)
-
-    @Query("UPDATE sources SET lastEpgSyncMillis = :millis WHERE id = :id")
-    suspend fun markEpgSynced(id: Long, millis: Long)
 }
 
 @Dao
@@ -61,19 +60,20 @@ interface ChannelDao {
         WHERE hidden = 0
           AND (:sourceId IS NULL OR sourceId = :sourceId)
           AND (:categoryId IS NULL OR categoryId = :categoryId)
-        ORDER BY sortIndex, name
+        ORDER BY sortIndex, displayName
         """
     )
     fun observe(sourceId: Long?, categoryId: String?): Flow<List<Channel>>
 
-    @Query("SELECT * FROM channels WHERE favourite = 1 AND hidden = 0 ORDER BY sortIndex, name")
+    @Query("SELECT * FROM channels WHERE favourite = 1 AND hidden = 0 ORDER BY sortIndex, displayName")
     fun observeFavourites(): Flow<List<Channel>>
 
     @Query(
         """
         SELECT * FROM channels
-        WHERE hidden = 0 AND name LIKE '%' || :query || '%'
-        ORDER BY favourite DESC, sortIndex, name
+        WHERE hidden = 0
+          AND (displayName LIKE '%' || :query || '%' OR name LIKE '%' || :query || '%')
+        ORDER BY favourite DESC, sortIndex, displayName
         LIMIT :limit
         """
     )
@@ -81,6 +81,16 @@ interface ChannelDao {
 
     @Query("SELECT * FROM channels WHERE id = :id")
     suspend fun byId(id: Long): Channel?
+
+    /** Every quality variant of one logical channel, best first. */
+    @Query(
+        """
+        SELECT * FROM channels
+        WHERE groupKey = :groupKey AND groupKey != '' AND hidden = 0
+        ORDER BY qualityRank DESC, displayName
+        """
+    )
+    suspend fun variantsInGroup(groupKey: String): List<Channel>
 
     @Query("SELECT COUNT(*) FROM channels WHERE sourceId = :sourceId")
     suspend fun countForSource(sourceId: Long): Int
@@ -90,6 +100,16 @@ interface ChannelDao {
 
     @Query("UPDATE channels SET hidden = :hidden WHERE id = :id")
     suspend fun setHidden(id: Long, hidden: Boolean)
+
+    @Query("UPDATE channels SET matchedEpgId = :epgId WHERE id = :id")
+    suspend fun setMatchedEpgId(id: Long, epgId: String?)
+
+    @Query("UPDATE channels SET epgOverrideId = :epgId WHERE id = :id")
+    suspend fun setEpgOverride(id: Long, epgId: String?)
+
+    /** The matcher's working set: id, group key, and what is already known. */
+    @Query("SELECT * FROM channels")
+    suspend fun allForMatching(): List<Channel>
 
     @Upsert
     suspend fun upsertAll(channels: List<Channel>)
@@ -113,8 +133,9 @@ interface ChannelDao {
     suspend fun deleteForSource(sourceId: Long)
 
     /**
-     * Preserves user state (favourites, hidden, manual order) across a catalogue refresh.
-     * Upsert would otherwise overwrite them with the defaults from the freshly parsed rows.
+     * Preserves user state (favourites, hidden, manual order, EPG overrides) across a
+     * catalogue refresh. Upsert would otherwise overwrite them with the defaults from the
+     * freshly parsed rows.
      */
     @Transaction
     suspend fun replaceCatalogue(sourceId: Long, incoming: List<Channel>, syncStamp: Long) {
@@ -131,6 +152,8 @@ interface ChannelDao {
                     favourite = previous.favourite,
                     hidden = previous.hidden,
                     sortIndex = previous.sortIndex,
+                    epgOverrideId = previous.epgOverrideId,
+                    matchedEpgId = previous.matchedEpgId,
                     lastSeenMillis = syncStamp,
                 )
             }
@@ -154,6 +177,54 @@ interface CategoryDao {
 
     @Query("DELETE FROM categories WHERE sourceId = :sourceId")
     suspend fun deleteForSource(sourceId: Long)
+}
+
+@Dao
+interface EpgFeedDao {
+    @Query("SELECT * FROM epg_feeds ORDER BY builtIn DESC, id")
+    fun observeAll(): Flow<List<EpgFeed>>
+
+    @Query("SELECT * FROM epg_feeds")
+    suspend fun all(): List<EpgFeed>
+
+    @Query("SELECT * FROM epg_feeds WHERE enabled = 1")
+    suspend fun enabled(): List<EpgFeed>
+
+    @Query("SELECT * FROM epg_feeds WHERE providerSourceId = :sourceId")
+    suspend fun forProvider(sourceId: Long): EpgFeed?
+
+    @Query("SELECT * FROM epg_feeds WHERE url = :url")
+    suspend fun byUrl(url: String): EpgFeed?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(feed: EpgFeed): Long
+
+    @Update
+    suspend fun update(feed: EpgFeed)
+
+    @Query("UPDATE epg_feeds SET enabled = :enabled WHERE id = :id")
+    suspend fun setEnabled(id: Long, enabled: Boolean)
+
+    @Query("UPDATE epg_feeds SET lastSyncMillis = :millis, lastResult = :result WHERE id = :id")
+    suspend fun markSynced(id: Long, millis: Long, result: String)
+
+    @Query("DELETE FROM epg_feeds WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface EpgChannelAliasDao {
+    @Query("SELECT * FROM epg_channels")
+    suspend fun all(): List<EpgChannelAlias>
+
+    @Query("SELECT COUNT(*) FROM epg_channels")
+    suspend fun count(): Int
+
+    @Upsert
+    suspend fun upsertAll(aliases: List<EpgChannelAlias>)
+
+    @Query("DELETE FROM epg_channels WHERE feedId = :feedId")
+    suspend fun deleteForFeed(feedId: Long)
 }
 
 @Dao
@@ -194,8 +265,12 @@ interface ProgrammeDao {
     )
     suspend fun upcoming(channelId: String, nowUtcMillis: Long, limit: Int): List<Programme>
 
-    @Query("SELECT COUNT(*) FROM programmes WHERE sourceId = :sourceId")
-    suspend fun countForSource(sourceId: Long): Int
+    @Query("SELECT COUNT(*) FROM programmes WHERE feedId = :feedId")
+    suspend fun countForFeed(feedId: Long): Int
+
+    /** Distinct guide channels that actually have programmes — the match report's baseline. */
+    @Query("SELECT DISTINCT epgChannelId FROM programmes")
+    suspend fun channelIdsWithProgrammes(): List<String>
 
     @Upsert
     suspend fun upsertAll(programmes: List<Programme>)
@@ -204,8 +279,8 @@ interface ProgrammeDao {
     @Query("DELETE FROM programmes WHERE endUtcMillis < :beforeUtcMillis")
     suspend fun deleteEndedBefore(beforeUtcMillis: Long)
 
-    @Query("DELETE FROM programmes WHERE sourceId = :sourceId")
-    suspend fun deleteForSource(sourceId: Long)
+    @Query("DELETE FROM programmes WHERE feedId = :feedId")
+    suspend fun deleteForFeed(feedId: Long)
 }
 
 @Dao

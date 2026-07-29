@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.FilterChip
@@ -77,6 +78,7 @@ fun HomeScreen(
     onPlayChannel: (Channel) -> Unit,
     onAddSource: () -> Unit,
     onRefresh: () -> Unit,
+    onGuideSettings: () -> Unit,
     viewModel: ChannelsViewModel = viewModel(),
 ) {
     val categories by viewModel.categories.collectAsState()
@@ -103,6 +105,9 @@ fun HomeScreen(
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onRefresh) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+            }
+            IconButton(onClick = onGuideSettings) {
+                Icon(Icons.Default.Settings, contentDescription = "Guide settings")
             }
             IconButton(onClick = onAddSource) {
                 Icon(Icons.Default.Add, contentDescription = "Add source")
@@ -148,15 +153,15 @@ fun HomeScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                items(rows, key = { it.channel.id }) { row ->
+                items(rows, key = { it.key }) { row ->
                     ChannelRow(
                         row = row,
-                        isSelected = selected == row.channel.id,
+                        isSelected = selected == row.primary.id,
                         onClick = {
-                            selected = row.channel.id
-                            onPlayChannel(row.channel)
+                            selected = row.primary.id
+                            onPlayChannel(row.primary)
                         },
-                        onToggleFavourite = { viewModel.toggleFavourite(row.channel) },
+                        onToggleFavourite = { viewModel.toggleFavourite(row) },
                     )
                 }
             }
@@ -186,7 +191,7 @@ private fun ChannelRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
-            model = row.channel.logoUrl,
+            model = row.primary.logoUrl,
             contentDescription = null,
             modifier = Modifier
                 .size(48.dp)
@@ -195,12 +200,31 @@ private fun ChannelRow(
         Spacer(Modifier.width(14.dp))
 
         Column(Modifier.weight(1f)) {
-            Text(
-                row.channel.name,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    row.primary.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // One logical channel, several qualities: say so quietly. The switch
+                // itself lives in the player, where the decision is actually made.
+                if (row.variants.size > 1) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "${row.variants.size} qualities",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else if (row.primary.qualityLabel.isNotEmpty()) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        row.primary.qualityLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Spacer(Modifier.height(2.dp))
             Text(
                 text = row.now?.let { "${formatTime(it.startUtcMillis)}  ${it.title}" }
@@ -235,9 +259,9 @@ private fun ChannelRow(
 
         IconButton(onClick = onToggleFavourite) {
             Icon(
-                imageVector = if (row.channel.favourite) Icons.Default.Star
+                imageVector = if (row.primary.favourite) Icons.Default.Star
                 else Icons.Outlined.StarOutline,
-                contentDescription = if (row.channel.favourite) "Remove favourite" else "Favourite",
+                contentDescription = if (row.primary.favourite) "Remove favourite" else "Favourite",
             )
         }
     }

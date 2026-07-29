@@ -53,7 +53,7 @@ object XmltvParser {
      */
     suspend fun parse(
         input: InputStream,
-        sourceId: Long,
+        feedId: Long,
         onChannelAlias: (id: String, displayName: String?) -> Unit = { _, _ -> },
         onProgramme: suspend (Programme) -> Unit,
     ): Stats {
@@ -79,7 +79,7 @@ object XmltvParser {
                     }
 
                     "programme" -> {
-                        val programme = readProgramme(parser, sourceId)
+                        val programme = readProgramme(parser, feedId)
                         if (programme != null) {
                             programmeCount++
                             onProgramme(programme)
@@ -114,7 +114,7 @@ object XmltvParser {
         return displayName
     }
 
-    private fun readProgramme(parser: XmlPullParser, sourceId: Long): Programme? {
+    private fun readProgramme(parser: XmlPullParser, feedId: Long): Programme? {
         val channelId = parser.getAttributeValue(null, "channel")
         val start = parseXmltvTime(parser.getAttributeValue(null, "start"))
         val stop = parseXmltvTime(parser.getAttributeValue(null, "stop"))
@@ -170,7 +170,7 @@ object XmltvParser {
         if (end <= start) return null
 
         return Programme(
-            sourceId = sourceId,
+            feedId = feedId,
             epgChannelId = channelId,
             startUtcMillis = start,
             endUtcMillis = end,
