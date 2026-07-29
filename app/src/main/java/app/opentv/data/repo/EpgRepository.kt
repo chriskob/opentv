@@ -197,7 +197,7 @@ class EpgRepository(
                             feedId = feed.id,
                             epgId = id,
                             displayName = displayName ?: id,
-                            normalizedKey = ChannelNameNormalizer.groupKeyOf(displayName ?: id),
+                            normalizedKey = ChannelNameNormalizer.normalize(displayName ?: id).groupKey,
                         )
                     },
                     onProgramme = { programme ->

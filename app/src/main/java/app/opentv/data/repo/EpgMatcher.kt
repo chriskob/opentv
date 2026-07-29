@@ -74,7 +74,10 @@ object EpgMatcher {
 
         for ((epgId, name) in aliases) {
             for (candidate in listOf(name, epgId)) {
-                val key = ChannelNameNormalizer.groupKeyOf(candidate)
+                // Full normalise, not bare groupKeyOf: free guides append 'HD' to display
+                // names ('BBC One East HD'), which would otherwise never key-match a
+                // provider's 'BBC ONE EAST'. normalize() strips the quality token.
+                val key = ChannelNameNormalizer.normalize(candidate).groupKey
                 if (key.length < MIN_KEY_LENGTH) continue
                 all += Alias(epgId, key)
                 val existing = exact.putIfAbsent(key, epgId)

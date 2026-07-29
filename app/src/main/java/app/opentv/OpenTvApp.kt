@@ -31,9 +31,13 @@ class OpenTvApp : Application() {
             val seen = prefs.getInt("normalizer_version", 0)
             if (seen < CatalogRepository.NORMALIZER_VERSION) {
                 graph.catalogRepository.renormalizeAll()
-                graph.epgRepository.runMatcher()
                 prefs.edit().putInt("normalizer_version", CatalogRepository.NORMALIZER_VERSION).apply()
             }
+            // Runs on every launch. It is cheap when nothing is stale (feeds within their
+            // refresh window are skipped), but it is what makes the free regional guide turn
+            // itself on and download the first time — without waiting for the user to find
+            // the refresh button. ensureFeeds + auto-enable-by-region + matcher all live here.
+            graph.epgRepository.syncAll(System.currentTimeMillis(), force = false)
         }
     }
 }
