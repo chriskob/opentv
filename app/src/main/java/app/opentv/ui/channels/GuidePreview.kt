@@ -5,11 +5,8 @@
  */
 package app.opentv.ui.channels
 
-import android.view.ViewGroup
-import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,15 +25,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,10 +38,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.PlayerView
-import app.opentv.player.PlayerController
 import app.opentv.ui.ChannelsViewModel
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
@@ -55,71 +45,52 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * The live preview at the top of the guide.
+ * The detail pane at the top of the guide.
  *
- * As focus moves down the channel list, [row] follows it and the shared [PlayerController] tunes
- * to that channel — debounced, so surfing the list costs one real tune, the one you stop on.
- * The pane doubles as the EPG detail view: what's on now, how far through it is, what's next, and
- * a synopsis when the guide carries one — which is exactly the "info on the EPG" people ask for
- * before they'll judge a guide. Clicking the video goes full-screen.
+ * As focus moves down the channel list, [row] follows it and the pane shows that channel's
+ * logo alongside what's on now, how far through it is, what's next, and a synopsis when the
+ * guide carries one — the "info on the EPG" people ask for before they'll judge a guide.
+ * Pressing it plays the channel full-screen.
+ *
+ * ## Why no inline video here
+ * An earlier version auto-played the highlighted channel as a live thumbnail. On low-end TV
+ * boxes (a Chromecast, a cheap stick) running a second video decoder behind the UI floods the
+ * codec and locks the whole app up. A logo-and-info pane gives the same "what am I about to
+ * watch" answer with none of that risk; the one player the device can handle lives full-screen.
  */
-@OptIn(UnstableApi::class)
 @Composable
 fun GuidePreview(
-    controller: PlayerController,
     row: ChannelsViewModel.Row?,
     nowMillis: Long,
-    onFullscreen: () -> Unit,
+    onWatch: () -> Unit,
     onRefresh: () -> Unit,
     onGuideSettings: () -> Unit,
     onAddSource: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by controller.state.collectAsState()
-
     Row(
         modifier
             .fillMaxWidth()
-            .height(232.dp)
+            .height(212.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        // ---- Video ------------------------------------------------------------------------
+        // ---- Logo / "watch" card ----------------------------------------------------------
         Box(
             Modifier
                 .fillMaxHeight()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color.Black)
-                .clickable(onClick = onFullscreen),
+                .clickable(onClick = onWatch),
             contentAlignment = Alignment.Center,
         ) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = controller.player
-                        useController = false
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                        )
-                    }
-                },
-            )
-
-            when (state) {
-                is PlayerController.State.Buffering ->
-                    CircularProgressIndicator(strokeWidth = 3.dp, modifier = Modifier.size(40.dp))
-                is PlayerController.State.Error ->
-                    Text(
-                        "Preview unavailable",
-                        color = Color.White.copy(alpha = 0.85f),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                else -> Unit
+            if (row != null) {
+                AsyncImage(
+                    model = row.primary.logoUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(0.6f),
+                )
             }
-
-            // A quiet affordance so it reads as "press to watch", not a dead thumbnail.
             Row(
                 Modifier
                     .align(Alignment.BottomStart)
@@ -143,7 +114,6 @@ fun GuidePreview(
 
         // ---- Now / next detail ------------------------------------------------------------
         Column(Modifier.weight(1f).fillMaxHeight()) {
-            // Toolbar lives here so the actions are reachable without stealing guide space.
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = onRefresh) {
@@ -160,7 +130,7 @@ fun GuidePreview(
             if (row == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
                     Text(
-                        "Highlight a channel to preview it",
+                        "Highlight a channel to see what's on",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.titleMedium,
                     )
@@ -169,12 +139,6 @@ fun GuidePreview(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = row.primary.logoUrl,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)),
-                )
-                Spacer(Modifier.width(12.dp))
                 Text(
                     row.primary.displayName,
                     style = MaterialTheme.typography.headlineSmall,

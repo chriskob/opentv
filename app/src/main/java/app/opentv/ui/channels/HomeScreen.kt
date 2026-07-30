@@ -93,19 +93,13 @@ fun HomeScreen(
     onGuideSettings: () -> Unit,
     viewModel: ChannelsViewModel = viewModel(),
 ) {
-    val context = LocalContext.current
-    val graph = remember { ServiceLocator.get(context) }
-    val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
-    // One reused player for the whole guide — see PlayerController for why one, not per-tune.
-    val preview = remember { PlayerController(context, scope, graph.httpClient) }
-
     val categories by viewModel.categoryGroups.collectAsState()
     val rows by viewModel.rows.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
     val windowStart by viewModel.windowStartMillis.collectAsState()
 
-    // The channel the preview shows — driven by d-pad focus (TV) or tap (touch).
+    // The channel whose info the pane shows — driven by d-pad focus (TV) or tap (touch).
     var focusedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -122,44 +116,6 @@ fun HomeScreen(
     // the same channel if it's still present, otherwise fall back to the top of the new list.
     LaunchedEffect(rows) {
         focusedRow = rows.firstOrNull { it.key == focusedRow?.key } ?: rows.firstOrNull()
-    }
-
-    // Tune the preview to the highlighted channel. play() debounces, so scrolling the list fast
-    // only ever tunes the one you settle on.
-    LaunchedEffect(focusedRow?.primary?.id) {
-        val channel = focusedRow?.primary ?: return@LaunchedEffect
-        val source = graph.sourceRepository.byId(channel.sourceId)
-        preview.play(
-            PlayerController.Request(
-                url = channel.streamUrl,
-                title = channel.displayName,
-                userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
-                isLive = true,
-            ),
-            debounce = true,
-        )
-    }
-
-    // Pause the preview when we leave for full-screen (or the app backgrounds) so two players
-    // aren't fighting over audio and bandwidth; resume it on return.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> preview.player.playWhenReady = false
-                Lifecycle.Event.ON_RESUME -> preview.player.playWhenReady = true
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            preview.release()
-            scope.cancel()
-        }
     }
 
     Row(Modifier.fillMaxSize()) {
@@ -220,10 +176,9 @@ fun HomeScreen(
                 }
             } else {
                 GuidePreview(
-                    controller = preview,
                     row = focusedRow,
                     nowMillis = nowMillis,
-                    onFullscreen = { focusedRow?.let { onPlayChannel(it.primary) } },
+                    onWatch = { focusedRow?.let { onPlayChannel(it.primary) } },
                     onRefresh = onRefresh,
                     onGuideSettings = onGuideSettings,
                     onAddSource = onAddSource,
