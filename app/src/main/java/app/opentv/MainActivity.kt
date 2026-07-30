@@ -14,8 +14,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -83,11 +85,20 @@ private fun OpenTvApp(isTelevision: Boolean) {
     val vodViewModel: VodViewModel = viewModel()
     val sourcesUi by sourcesViewModel.ui.collectAsState()
 
+    // Until the saved sources have loaded from the database, we cannot tell a first run from a
+    // returning user — and guessing "first run" drops a returning user on the setup screen and
+    // asks for their provider again. NavHost locks in its start destination on first
+    // composition, so wait for that first load before building it.
+    if (!sourcesUi.loaded) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
     // First run goes straight to setup — an empty channel list with no explanation is the
     // worst possible first impression.
-    val start = remember(sourcesUi.sources.isEmpty()) {
-        if (sourcesUi.sources.isEmpty()) Routes.ADD_SOURCE else Routes.HOME
-    }
+    val start = if (sourcesUi.sources.isEmpty()) Routes.ADD_SOURCE else Routes.HOME
 
     Box(Modifier.fillMaxSize()) {
         NavHost(navController = navController, startDestination = start) {

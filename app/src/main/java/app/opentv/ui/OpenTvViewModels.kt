@@ -44,6 +44,13 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     data class UiState(
         val sources: List<Source> = emptyList(),
+        /**
+         * False until the saved sources have been read from the database once. Distinguishing
+         * "no sources yet loaded" from "loaded, and there are none" is what stops a returning
+         * user being sent to the setup screen — and asked for their provider again — during the
+         * brief moment before the database responds on a cold launch.
+         */
+        val loaded: Boolean = false,
         val testing: Boolean = false,
         val testResult: String? = null,
         val testError: String? = null,
@@ -57,7 +64,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             graph.sourceRepository.observeAll().collect { sources ->
-                _ui.value = _ui.value.copy(sources = sources)
+                _ui.value = _ui.value.copy(sources = sources, loaded = true)
             }
         }
     }
