@@ -82,6 +82,19 @@ Run the tests:
 ./gradlew test
 ```
 
+## How it was built
+
+OpenTV was written with **Claude**, Anthropic's AI assistant, working from a human's
+direction — the design decisions, the priorities, the "no server, ever" rule, and every
+review of what shipped were the maintainer's; Claude did the bulk of the drafting, wiring and
+debugging against that direction.
+
+That is relevant here for one specific reason: **it kept the project genuinely clean-room.**
+Nothing was decompiled or copied from any existing IPTV app. The code was written from public
+specifications (the Xtream Codes request format, the XMLTV and M3U formats, the Kodi catch-up
+tags) and from describing how other apps *behave* as a user — never from their source. That is
+the legal footing that lets anyone fork this and keep it alive, which is the whole point.
+
 ## Contributing
 
 Please do. See [CONTRIBUTING.md](CONTRIBUTING.md).
