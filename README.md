@@ -49,14 +49,16 @@ keep it alive. That is the entire point.
 **→ [Install page](https://opentvproject.github.io/opentv/)** — step-by-step for Chromecast with
 Google TV, Android TV boxes, Fire TV Sticks, and phones.
 
-On a TV, the quickest route is the **Downloader** app pointed at:
+On a TV, the quickest route is the **[Downloader app](https://www.aftvnews.com/downloader/)** —
+enter the code:
 
 ```
-opentvproject.github.io/opentv/apk
+6398449
 ```
 
-That address always redirects to the newest APK, so it never goes stale. Or grab it straight
-from [Releases](../../releases).
+That code (or `aftv.news/6398449` in a browser) always points at the newest APK, so it never
+goes stale. On a phone, the [install page](https://opentvproject.github.io/opentv/) is a
+one-tap download. Or grab the APK straight from [Releases](../../releases).
 
 Every release is built by GitHub Actions from a tagged commit, and the workflow that built it
 is public — you can check the APK against the source, or rebuild it yourself, rather than

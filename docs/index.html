@@ -161,12 +161,13 @@
   </div>
 
   <div class="card">
-    <p class="url-label">On a TV, type this into the <strong>Downloader</strong> app:</p>
+    <p class="url-label">On a TV, open the <strong>Downloader</strong> app and enter this code:</p>
     <div class="url-row">
       <code class="url" id="short-url">…</code>
       <button class="copy" id="copy-btn" type="button">Copy</button>
     </div>
-    <p class="meta">It redirects straight to the newest APK, so it never goes out of date.</p>
+    <p class="meta">Always points at the newest APK, so it never goes out of date. In a browser you
+      can use <strong>aftv.news/6398449</strong> instead.</p>
   </div>
 
   <h2>How to install</h2>
@@ -202,7 +203,7 @@
 
     <h3>3. Download and install</h3>
     <ol>
-      <li>Open Downloader and type the address from the box above into the URL field.</li>
+      <li>Open Downloader and enter the code from the box above in the URL field.</li>
       <li>Press <strong>Go</strong>. It'll download the APK.</li>
       <li>When it finishes, choose <strong>Install</strong>, then <strong>Done</strong>.</li>
       <li>Choose <strong>Delete</strong> when Downloader offers — it's just clearing the copy it saved.</li>
@@ -222,7 +223,7 @@
       <li>Install <strong>Downloader</strong> from the Play Store.</li>
       <li>Go to <span class="path">Settings → Apps → Security &amp; restrictions → Unknown sources</span> and enable <strong>Downloader</strong>.
         On older Android TV builds it's <span class="path">Settings → Device Preferences → Security &amp; restrictions</span>.</li>
-      <li>Open Downloader, type the address from the box above, press <strong>Go</strong>.</li>
+      <li>Open Downloader, enter the code from the box above, press <strong>Go</strong>.</li>
       <li>Choose <strong>Install</strong> when the download finishes.</li>
     </ol>
     <h3>Or, if you have adb set up</h3>
@@ -241,7 +242,7 @@
         <strong>Install unknown apps</strong> (older sticks call it <strong>Apps from Unknown Sources</strong>).</li>
       <li>Install <strong>Downloader</strong> from the Amazon Appstore.</li>
       <li>If you turned on <em>Install unknown apps</em>, enable the switch for <strong>Downloader</strong> in that list.</li>
-      <li>Open Downloader, type the address from the box above, press <strong>Go</strong>, then <strong>Install</strong>.</li>
+      <li>Open Downloader, enter the code from the box above, press <strong>Go</strong>, then <strong>Install</strong>.</li>
     </ol>
     <p class="muted small">
       Fire TV Stick Lite and older 1st-gen sticks are slow with large channel lists. It'll work;
@@ -327,9 +328,12 @@
   var metaEl = document.getElementById("release-meta");
   var shortUrlEl = document.getElementById("short-url");
 
-  // ---- The short URL people type into Downloader ------------------------------------------
-  var shortUrl = location.host + location.pathname.replace(/\/?$/, "/") + "apk";
-  shortUrlEl.textContent = shortUrl;
+  // ---- The Downloader code people type in ------------------------------------------
+  // AFTVnews short code for this project's stable release URL
+  // (github.com/opentvproject/opentv/releases/latest/download/opentv.apk). Unlike the JS
+  // /apk redirect, a numeric code resolves inside the Downloader app itself.
+  var downloaderCode = "6398449";
+  shortUrlEl.textContent = downloaderCode;
 
   document.getElementById("copy-btn").addEventListener("click", function () {
     var button = this;
@@ -338,7 +342,7 @@
       setTimeout(function () { button.textContent = "Copy"; }, 1600);
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText("https://" + shortUrl).then(done, done);
+      navigator.clipboard.writeText(downloaderCode).then(done, done);
     } else {
       done();
     }
