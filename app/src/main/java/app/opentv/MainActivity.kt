@@ -35,6 +35,7 @@ import app.opentv.ui.settings.EpgSettingsScreen
 import app.opentv.ui.theme.OpenTvTheme
 import app.opentv.ui.vod.SeriesDetailScreen
 import app.opentv.ui.vod.VodPlayerScreen
+import app.opentv.update.UpdateGate
 
 class MainActivity : ComponentActivity() {
 
@@ -163,6 +164,9 @@ private fun OpenTvApp(isTelevision: Boolean) {
                 )
             }
         }
+
+        // Sits above the whole nav graph so a found update can prompt from any screen.
+        UpdateGate()
     }
 }
 

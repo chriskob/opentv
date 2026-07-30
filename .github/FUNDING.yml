@@ -1,5 +1,6 @@
 # OpenTV is free and always will be. Nothing is gated behind a tip and nobody is owed a
-# feature for one. Replace these with the maintainers' own handles before going public.
-buy_me_a_coffee: # your-handle
-ko_fi: # your-handle
-github: # [your-username]
+# feature for one. The Sponsor button uses GitHub Sponsors for now; add a Buy Me a Coffee
+# or Ko-fi handle below once you have one and it will appear alongside.
+github: [legionnaireneyland]
+# buy_me_a_coffee: your-handle
+# ko_fi: your-handle
