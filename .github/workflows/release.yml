@@ -60,13 +60,19 @@ jobs:
           fi
           mkdir -p dist
           cp "$SOURCE" "dist/opentv-${TAG}.apk"
+          # Stable, version-less copy too. The Downloader app (and the /apk short link) need a
+          # URL whose filename never changes between releases, so people never re-type a code:
+          #   https://github.com/OWNER/REPO/releases/latest/download/opentv.apk
+          cp "$SOURCE" "dist/opentv.apk"
           echo "path=dist/opentv-${TAG}.apk" >> "$GITHUB_OUTPUT"
           echo "signed=$([ -n "$KEYSTORE_PATH" ] && echo yes || echo debug-key)" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.artifact.outputs.path }}
+          files: |
+            dist/opentv-${{ github.ref_name }}.apk
+            dist/opentv.apk
           generate_release_notes: true
           body: |
             Built by GitHub Actions from the tagged commit. The workflow that produced this
