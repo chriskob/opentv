@@ -50,13 +50,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Channel
+import app.opentv.player.PlayerController
 import app.opentv.ui.ChannelsViewModel
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 
 /**
@@ -81,18 +93,72 @@ fun HomeScreen(
     onGuideSettings: () -> Unit,
     viewModel: ChannelsViewModel = viewModel(),
 ) {
+    val context = LocalContext.current
+    val graph = remember { ServiceLocator.get(context) }
+    val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+    // One reused player for the whole guide — see PlayerController for why one, not per-tune.
+    val preview = remember { PlayerController(context, scope, graph.httpClient) }
+
     val categories by viewModel.categoryGroups.collectAsState()
     val rows by viewModel.rows.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
     val windowStart by viewModel.windowStartMillis.collectAsState()
-    var selected by remember { mutableLongStateOf(-1L) }
+
+    // The channel the preview shows — driven by d-pad focus (TV) or tap (touch).
+    var focusedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     // Re-evaluate "now" once a minute so progress bars advance without leaving the screen.
     LaunchedEffect(Unit) {
         while (true) {
+            nowMillis = System.currentTimeMillis()
             viewModel.tick()
             delay(60_000)
+        }
+    }
+
+    // Keep the highlighted channel valid as the list changes (e.g. switching category): stay on
+    // the same channel if it's still present, otherwise fall back to the top of the new list.
+    LaunchedEffect(rows) {
+        focusedRow = rows.firstOrNull { it.key == focusedRow?.key } ?: rows.firstOrNull()
+    }
+
+    // Tune the preview to the highlighted channel. play() debounces, so scrolling the list fast
+    // only ever tunes the one you settle on.
+    LaunchedEffect(focusedRow?.primary?.id) {
+        val channel = focusedRow?.primary ?: return@LaunchedEffect
+        val source = graph.sourceRepository.byId(channel.sourceId)
+        preview.play(
+            PlayerController.Request(
+                url = channel.streamUrl,
+                title = channel.displayName,
+                userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
+                isLive = true,
+            ),
+            debounce = true,
+        )
+    }
+
+    // Pause the preview when we leave for full-screen (or the app backgrounds) so two players
+    // aren't fighting over audio and bandwidth; resume it on return.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> preview.player.playWhenReady = false
+                Lifecycle.Event.ON_RESUME -> preview.player.playWhenReady = true
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            preview.release()
+            scope.cancel()
         }
     }
 
@@ -141,26 +207,8 @@ fun HomeScreen(
             }
         }
 
-        // ---- Channel list ------------------------------------------------------------------
+        // ---- Preview + guide ---------------------------------------------------------------
         Column(Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = onRefresh) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                }
-                IconButton(onClick = onGuideSettings) {
-                    Icon(Icons.Default.Settings, contentDescription = "Guide settings")
-                }
-                IconButton(onClick = onAddSource) {
-                    Icon(Icons.Default.Add, contentDescription = "Add source")
-                }
-            }
-
             if (rows.isEmpty()) {
                 when {
                     favouritesOnly -> NoFavouritesState()
@@ -171,14 +219,21 @@ fun HomeScreen(
                     else -> EmptyState(onAddSource)
                 }
             } else {
+                GuidePreview(
+                    controller = preview,
+                    row = focusedRow,
+                    nowMillis = nowMillis,
+                    onFullscreen = { focusedRow?.let { onPlayChannel(it.primary) } },
+                    onRefresh = onRefresh,
+                    onGuideSettings = onGuideSettings,
+                    onAddSource = onAddSource,
+                )
                 GuideGrid(
                     rows = rows,
                     windowStartMillis = windowStart,
-                    onPlay = { channel ->
-                        selected = channel.id
-                        onPlayChannel(channel)
-                    },
-                    modifier = Modifier.padding(start = 12.dp, end = 12.dp),
+                    onPlay = { channel -> onPlayChannel(channel) },
+                    onFocusRow = { focusedRow = it },
+                    modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
                 )
             }
         }

@@ -28,9 +28,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -60,6 +66,7 @@ fun GuideGrid(
     rows: List<ChannelsViewModel.Row>,
     windowStartMillis: Long,
     onPlay: (Channel) -> Unit,
+    onFocusRow: (ChannelsViewModel.Row) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
@@ -79,6 +86,7 @@ fun GuideGrid(
                     nowMillis = now,
                     scroll = scroll,
                     onPlay = { onPlay(row.primary) },
+                    onFocus = { onFocusRow(row) },
                 )
             }
         }
@@ -120,7 +128,12 @@ private fun GuideRow(
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     onPlay: () -> Unit,
+    onFocus: () -> Unit,
 ) {
+    // Focus drives the preview: highlighting a row (d-pad) or hovering it is what tunes the
+    // pane above, and the border makes it obvious which channel you're previewing.
+    var focused by remember { mutableStateOf(false) }
+
     Row(Modifier.fillMaxWidth().height(ROW_HEIGHT)) {
 
         // ---- Fixed channel cell (does not scroll) --------------------------------------
@@ -130,6 +143,15 @@ private fun GuideRow(
                 .fillMaxSize()
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surface)
+                .then(
+                    if (focused) Modifier.border(
+                        2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp),
+                    ) else Modifier,
+                )
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) onFocus()
+                }
                 .clickable(onClick = onPlay)
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -196,6 +218,7 @@ private fun GuideRow(
                         title = programme.title,
                         width = widthFor(start, end),
                         isNow = isNow,
+                        progress = if (isNow) programme.progressAt(nowMillis) else 0f,
                     )
                     cursor = end
                 }
@@ -205,7 +228,7 @@ private fun GuideRow(
 }
 
 @Composable
-private fun ProgrammeBlock(title: String, width: Dp, isNow: Boolean) {
+private fun ProgrammeBlock(title: String, width: Dp, isNow: Boolean, progress: Float) {
     Box(
         Modifier
             .width(width)
@@ -220,9 +243,7 @@ private fun ProgrammeBlock(title: String, width: Dp, isNow: Boolean) {
                 if (isNow) Modifier.border(
                     1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp),
                 ) else Modifier,
-            )
-            .padding(horizontal = 8.dp),
-        contentAlignment = Alignment.CenterStart,
+            ),
     ) {
         Text(
             title,
@@ -231,7 +252,18 @@ private fun ProgrammeBlock(title: String, width: Dp, isNow: Boolean) {
             else MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 8.dp),
         )
+        // How far through the current programme we are — a live fill along the bottom edge.
+        if (isNow && progress > 0f) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .height(3.dp)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
     }
 }
 
