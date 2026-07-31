@@ -7,9 +7,12 @@ package app.opentv.player
 
 import android.content.Context
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
@@ -49,6 +52,7 @@ class PlayerController(
     context: Context,
     private val scope: CoroutineScope,
     httpClient: OkHttpClient,
+    subtitlesEnabled: Boolean = true,
 ) {
 
     sealed interface State {
@@ -70,6 +74,10 @@ class PlayerController(
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
+
+    /** The current stream's tracks (audio/text/video), for the in-player pickers. */
+    private val _tracks = MutableStateFlow(Tracks.EMPTY)
+    val tracks: StateFlow<Tracks> = _tracks.asStateFlow()
 
     private var switchJob: Job? = null
     private var current: Request? = null
@@ -118,20 +126,26 @@ class PlayerController(
             else minOf(INITIAL_BACKOFF_MILLIS * (1L shl (errorCount - 1)), MAX_BACKOFF_MILLIS)
     }
 
+    /**
+     * Held so captions can be turned on and off at runtime. Prefer the device language when
+     * captions are on; [setSubtitlesEnabled] flips the text renderer off entirely.
+     */
+    private val trackSelector = DefaultTrackSelector(context).apply {
+        parameters = buildUponParameters()
+            .setPreferredTextLanguage(java.util.Locale.getDefault().language)
+            .setSelectUndeterminedTextLanguage(true)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled)
+            .build()
+    }
+
     val player: ExoPlayer = ExoPlayer.Builder(context)
+        .setSeekBackIncrementMs(SEEK_INCREMENT_MILLIS)
+        .setSeekForwardIncrementMs(SEEK_INCREMENT_MILLIS)
         .setMediaSourceFactory(
             DefaultMediaSourceFactory(dataSourceFactory)
                 .setLoadErrorHandlingPolicy(loadErrorPolicy),
         )
-        .setTrackSelector(
-            DefaultTrackSelector(context).apply {
-                parameters = buildUponParameters()
-                    // Honour the system caption preference and prefer the device language.
-                    .setPreferredTextLanguage(java.util.Locale.getDefault().language)
-                    .setSelectUndeterminedTextLanguage(true)
-                    .build()
-            },
-        )
+        .setTrackSelector(trackSelector)
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
@@ -145,6 +159,10 @@ class PlayerController(
         .build()
         .apply {
             addListener(object : Player.Listener {
+                override fun onTracksChanged(tracks: Tracks) {
+                    _tracks.value = tracks
+                }
+
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     val title = current?.title.orEmpty()
                     _state.value = when (playbackState) {
@@ -230,6 +248,61 @@ class PlayerController(
         current?.let { play(it, debounce = false) }
     }
 
+    /**
+     * The quick captions toggle. On is *not* merely "allow the text renderer" — that leaves it
+     * to the selector to guess a language, which for a lot of IPTV streams guesses nothing and
+     * the user sees no captions even though they turned them on. So On explicitly selects the
+     * first available subtitle track; Off disables text entirely.
+     */
+    fun setSubtitlesEnabled(enabled: Boolean) {
+        if (!enabled) {
+            disableText()
+            return
+        }
+        val firstText = _tracks.value.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
+        if (firstText != null) {
+            selectTrack(firstText, firstSupportedIndex(firstText))
+        } else {
+            // Nothing to select yet — allow the renderer so a track that arrives later can be
+            // picked up, and re-assert once tracks change.
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .build()
+        }
+    }
+
+    /** Force a specific audio or text track on (used by the in-player pickers). */
+    fun selectTrack(group: Tracks.Group, trackIndex: Int) {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+            .setTrackTypeDisabled(group.type, false)
+            .build()
+    }
+
+    /** Turn subtitles off entirely. */
+    fun disableText() {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            .build()
+    }
+
+    fun seekBackward() {
+        if (player.isCurrentMediaItemSeekable) player.seekBack()
+    }
+
+    fun seekForward() {
+        if (player.isCurrentMediaItemSeekable) player.seekForward()
+    }
+
+    val isSeekable: Boolean get() = player.isCurrentMediaItemSeekable
+
+    private fun firstSupportedIndex(group: Tracks.Group): Int {
+        for (i in 0 until group.length) if (group.isTrackSupported(i)) return i
+        return 0
+    }
+
     fun stop() {
         switchJob?.cancel()
         current = null
@@ -250,6 +323,7 @@ class PlayerController(
         const val C_TIME_UNSET = androidx.media3.common.C.TIME_UNSET
 
         const val SWITCH_DEBOUNCE_MILLIS = 350L
+        const val SEEK_INCREMENT_MILLIS = 15_000L
         const val INITIAL_BACKOFF_MILLIS = 500L
         const val MAX_BACKOFF_MILLIS = 8_000L
         const val MAX_LOAD_RETRIES = 5

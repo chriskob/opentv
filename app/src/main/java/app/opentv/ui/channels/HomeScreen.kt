@@ -10,24 +10,25 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -43,109 +44,245 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Channel
+import app.opentv.player.PlayerController
 import app.opentv.ui.ChannelsViewModel
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 
 /**
- * The channel list.
+ * Live TV: a category rail on the left, the channel list on the right.
  *
- * Shows what is on *now* and what is on *next* against every channel. That sounds obvious,
- * and it is exactly what people miss when a guide silently stops updating — so the "now"
- * line doubles as a permanent, glanceable health indicator for the EPG.
+ * The rail is vertical because provider category lists run to dozens of entries and a
+ * horizontal chip row hides all but the first few — on a d-pad, anything you cannot see
+ * you cannot reach. Favourites and All are pinned at the top.
+ *
+ * The list shows what is on *now* and *next* against every channel. That doubles as a
+ * permanent, glanceable health indicator for the guide: when the EPG stops updating, these
+ * lines say so honestly instead of going quietly stale.
  */
 @Composable
 fun HomeScreen(
     isTelevision: Boolean,
+    hasSources: Boolean,
+    isSyncing: Boolean,
     onPlayChannel: (Channel) -> Unit,
     onAddSource: () -> Unit,
     onRefresh: () -> Unit,
+    onOpenSearch: () -> Unit,
     viewModel: ChannelsViewModel = viewModel(),
 ) {
-    val categories by viewModel.categories.collectAsState()
-    val rows by viewModel.rows.collectAsState()
-    var selected by remember { mutableLongStateOf(-1L) }
+    val context = LocalContext.current
+    val graph = remember { ServiceLocator.get(context) }
+    val settings = remember { graph.settings }
+    val previewEnabled by settings.guidePreviewVideo.collectAsState()
 
-    // Re-evaluate "now" once a minute so the progress bars advance without the user
-    // having to leave and come back.
+    val categories by viewModel.visibleCategoryGroups.collectAsState()
+    val rows by viewModel.rows.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val favouritesOnly by viewModel.favouritesOnly.collectAsState()
+    val windowStart by viewModel.windowStartMillis.collectAsState()
+
+    // The channel whose info the pane shows — driven by d-pad focus (TV) or tap (touch).
+    var focusedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    // Re-evaluate "now" once a minute so progress bars advance without leaving the screen.
     LaunchedEffect(Unit) {
         while (true) {
+            nowMillis = System.currentTimeMillis()
             viewModel.tick()
             delay(60_000)
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Live TV", style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onRefresh) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-            }
-            IconButton(onClick = onAddSource) {
-                Icon(Icons.Default.Add, contentDescription = "Add source")
+    // Keep the highlighted channel valid as the list changes (e.g. switching category): stay on
+    // the same channel if it's still present, otherwise fall back to the top of the new list.
+    LaunchedEffect(rows) {
+        focusedRow = rows.firstOrNull { it.key == focusedRow?.key } ?: rows.firstOrNull()
+    }
+
+    // ---- Live preview player -----------------------------------------------------------------
+    // One muted player, reused. It only ever decodes while the guide is the foreground screen,
+    // and is stopped before any hand-off to full-screen, so the box never runs two decoders at
+    // once — the thing that used to lock up cheap sticks.
+    val previewScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+    val previewController = remember {
+        PlayerController(context, previewScope, graph.httpClient, subtitlesEnabled = false)
+            .also { it.player.volume = 0f }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            previewController.release()
+            previewScope.cancel()
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var screenResumed by remember { mutableStateOf(true) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> screenResumed = true
+                Lifecycle.Event.ON_PAUSE -> {
+                    screenResumed = false
+                    previewController.stop()
+                }
+                else -> Unit
             }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
-        if (categories.isNotEmpty()) {
-            LazyRow(
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+    // Tune the preview to the highlighted channel. The controller debounces, so moving quickly
+    // down the list costs one real tune — the channel you stop on.
+    LaunchedEffect(focusedRow?.key, previewEnabled, screenResumed) {
+        val row = focusedRow
+        if (!previewEnabled || !screenResumed || row == null) {
+            previewController.stop()
+            return@LaunchedEffect
+        }
+        val channel = row.primary
+        val source = graph.sourceRepository.byId(channel.sourceId)
+        previewController.play(
+            PlayerController.Request(
+                url = channel.streamUrl,
+                title = channel.displayName,
+                userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
+                isLive = true,
+            ),
+            debounce = true,
+        )
+    }
+
+    Row(Modifier.fillMaxSize()) {
+
+        // ---- Category rail -----------------------------------------------------------------
+        Column(
+            Modifier
+                .width(240.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(vertical = 16.dp),
+        ) {
+            Text(
+                "Live TV",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+
+            RailEntry(
+                label = "🔍  Search channels",
+                selected = false,
+                onClick = onOpenSearch,
+            )
+            Spacer(Modifier.height(10.dp))
+
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 item {
-                    FilterChip(
-                        selected = true,
-                        onClick = { viewModel.selectCategory(null) },
-                        label = { Text("All") },
+                    RailEntry(
+                        label = "★ Favourites",
+                        selected = favouritesOnly,
+                        onClick = viewModel::selectFavourites,
                     )
                 }
-                items(categories, key = { "${it.sourceId}:${it.id}" }) { category ->
-                    FilterChip(
-                        selected = false,
-                        onClick = { viewModel.selectCategory(category.id) },
-                        label = { Text(category.name, maxLines = 1) },
+                item {
+                    RailEntry(
+                        label = "All channels",
+                        selected = !favouritesOnly && selectedCategory == null,
+                        onClick = { viewModel.selectCategory(null) },
+                    )
+                }
+                items(categories, key = { it.key }) { group ->
+                    RailEntry(
+                        label = group.label,
+                        selected = !favouritesOnly && selectedCategory == group.key,
+                        onClick = { viewModel.selectCategory(group.key) },
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
         }
 
-        if (rows.isEmpty()) {
-            EmptyState(onAddSource)
-        } else {
-            LazyColumn(
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = 24.dp,
-                    vertical = 8.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(rows, key = { it.channel.id }) { row ->
-                    ChannelRow(
-                        row = row,
-                        isSelected = selected == row.channel.id,
-                        onClick = {
-                            selected = row.channel.id
-                            onPlayChannel(row.channel)
-                        },
-                        onToggleFavourite = { viewModel.toggleFavourite(row.channel) },
-                    )
+        // ---- Preview + guide ---------------------------------------------------------------
+        Column(Modifier.weight(1f)) {
+            if (rows.isEmpty()) {
+                when {
+                    favouritesOnly -> NoFavouritesState()
+                    // A large provider takes a while to sync, and showing "No channels"
+                    // during it reads as failure — which is how someone concludes an app
+                    // is broken thirty seconds after installing it.
+                    isSyncing || hasSources -> LoadingState(isSyncing)
+                    else -> EmptyState(onAddSource)
                 }
+            } else {
+                GuidePreview(
+                    row = focusedRow,
+                    nowMillis = nowMillis,
+                    onWatch = {
+                        // Free the preview decoder before full-screen claims one.
+                        previewController.stop()
+                        focusedRow?.let { onPlayChannel(it.primary) }
+                    },
+                    onRefresh = onRefresh,
+                    onAddSource = onAddSource,
+                    previewPlayer = if (previewEnabled) previewController.player else null,
+                )
+                GuideGrid(
+                    rows = rows,
+                    windowStartMillis = windowStart,
+                    onPlay = { channel -> onPlayChannel(channel) },
+                    onFocusRow = { focusedRow = it },
+                    modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
+                )
             }
         }
     }
+}
+
+@Composable
+private fun RailEntry(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surface,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    )
 }
 
 @Composable
@@ -158,7 +295,7 @@ private fun ChannelRow(
     val now = System.currentTimeMillis()
     val background =
         if (isSelected) MaterialTheme.colorScheme.surfaceVariant
-        else MaterialTheme.colorScheme.surface
+        else MaterialTheme.colorScheme.background
 
     Row(
         modifier = Modifier
@@ -170,7 +307,7 @@ private fun ChannelRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
-            model = row.channel.logoUrl,
+            model = row.primary.logoUrl,
             contentDescription = null,
             modifier = Modifier
                 .size(48.dp)
@@ -179,8 +316,10 @@ private fun ChannelRow(
         Spacer(Modifier.width(14.dp))
 
         Column(Modifier.weight(1f)) {
+            // Logo, name, guide — and nothing else. Quality is a playback decision;
+            // its switch lives in the player, not as clutter on every row.
             Text(
-                row.channel.name,
+                row.primary.displayName,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -219,9 +358,47 @@ private fun ChannelRow(
 
         IconButton(onClick = onToggleFavourite) {
             Icon(
-                imageVector = if (row.channel.favourite) Icons.Default.Star
+                imageVector = if (row.primary.favourite) Icons.Default.Star
                 else Icons.Outlined.StarOutline,
-                contentDescription = if (row.channel.favourite) "Remove favourite" else "Favourite",
+                contentDescription = if (row.primary.favourite) "Remove favourite" else "Favourite",
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoadingState(isSyncing: Boolean) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(Modifier.height(20.dp))
+            Text("Loading your channels", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (isSyncing) {
+                    "Fetching the channel list and guide from your provider. A large " +
+                        "provider can take a couple of minutes the first time."
+                } else {
+                    "Nothing came back from your provider last time. Press refresh to " +
+                        "try again."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 460.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NoFavouritesState() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("No favourites yet", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Press the star on any channel and it lands here.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

@@ -20,6 +20,7 @@ import app.opentv.data.model.Series
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
 import app.opentv.data.model.StreamKind
+import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.parser.M3uParser
 import app.opentv.data.remote.XtreamApi
 import kotlinx.coroutines.CancellationException
@@ -28,6 +29,19 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+
+/**
+ * Keeps one channel per distinct quality signature, preserving order (so "best first" is
+ * preserved when the caller has already sorted by rank).
+ *
+ * Two streams with the same rank AND the same label are treated as the same quality — one is
+ * kept, the rest dropped. This is what collapses "RAW / RAW" and "HD / HD" duplicates down to
+ * a single option, and turns a falsely-multi-quality channel back into a single one.
+ */
+internal fun distinctByQuality(channels: List<app.opentv.data.model.Channel>): List<app.opentv.data.model.Channel> {
+    val seen = HashSet<String>()
+    return channels.filter { seen.add("${it.qualityRank}|${it.qualityLabel.lowercase()}") }
+}
 
 /**
  * Channels, movies and series.
@@ -60,6 +74,9 @@ class CatalogRepository(
     fun observeChannels(sourceId: Long? = null, categoryId: String? = null): Flow<List<Channel>> =
         channelDao.observe(sourceId, categoryId)
 
+    fun observeChannelsIn(categoryIds: List<String>): Flow<List<Channel>> =
+        channelDao.observeInCategories(categoryIds)
+
     fun observeFavouriteChannels(): Flow<List<Channel>> = channelDao.observeFavourites()
 
     fun observeCategories(kind: StreamKind): Flow<List<Category>> = categoryDao.observe(kind)
@@ -73,6 +90,9 @@ class CatalogRepository(
 
     fun searchChannels(query: String): Flow<List<Channel>> = channelDao.search(query)
 
+    fun searchChannelsIncludingHidden(query: String): Flow<List<Channel>> =
+        channelDao.searchIncludingHidden(query)
+
     fun searchMovies(query: String): Flow<List<Movie>> = movieDao.search(query)
 
     fun searchSeries(query: String): Flow<List<Series>> = seriesDao.search(query)
@@ -80,6 +100,14 @@ class CatalogRepository(
     suspend fun channel(id: Long): Channel? = channelDao.byId(id)
 
     suspend fun movie(id: Long): Movie? = movieDao.byId(id)
+
+    suspend fun episode(id: Long): Episode? = episodeDao.byId(id)
+
+    suspend fun movieByStreamUrl(url: String): Movie? = movieDao.byStreamUrl(url)
+
+    suspend fun episodeByStreamUrl(url: String): Episode? = episodeDao.byStreamUrl(url)
+
+    suspend fun series(id: Long): app.opentv.data.model.Series? = seriesDao.byId(id)
 
     suspend fun setChannelFavourite(id: Long, favourite: Boolean) =
         channelDao.setFavourite(id, favourite)
@@ -133,7 +161,8 @@ class CatalogRepository(
         val series = runCatching { api.series(source) }.getOrDefault(emptyList())
 
         categoryDao.upsertAll(liveCategories + movieCategories + seriesCategories)
-        channelDao.replaceCatalogue(source.id, channels, nowUtcMillis)
+        val categoryNames = liveCategories.associate { it.id to it.name }
+        channelDao.replaceCatalogue(source.id, normalized(channels, categoryNames), nowUtcMillis)
         if (movies.isNotEmpty()) movieDao.upsertAll(movies)
         if (series.isNotEmpty()) seriesDao.upsertAll(series)
 
@@ -179,7 +208,8 @@ class CatalogRepository(
             }
 
         categoryDao.upsertAll(categories)
-        channelDao.replaceCatalogue(source.id, parsed.channels, nowUtcMillis)
+        val categoryNames = categories.associate { it.id to it.name }
+        channelDao.replaceCatalogue(source.id, normalized(parsed.channels, categoryNames), nowUtcMillis)
 
         // If the playlist declared its own guide URL and the user did not set one, adopt it.
         if (source.epgUrl.isNullOrBlank() && !parsed.declaredEpgUrl.isNullOrBlank()) {
@@ -188,6 +218,111 @@ class CatalogRepository(
 
         sourceDao.markCatalogSynced(source.id, nowUtcMillis)
         return SyncResult.Success(parsed.channels.size, 0, 0)
+    }
+
+    /**
+     * Stamps every channel with its normalised identity before it is stored.
+     *
+     * This one pass powers both headline features: [Channel.groupKey] folds quality
+     * variants of a channel into a single row and is the join key for EPG matching, and
+     * [Channel.displayName] is the cleaned name the UI shows instead of `UK| BBC ONE FHD`.
+     */
+    private fun normalized(
+        channels: List<Channel>,
+        categoryNames: Map<String, String>,
+    ): List<Channel> {
+        val stamped = channels.map { channel ->
+            val n = ChannelNameNormalizer.normalize(channel.name)
+            var rank = n.qualityRank
+            var label = n.qualityLabel
+            if (label.isEmpty() || rank == 0) {
+                // Some providers put the quality in the CATEGORY, not the channel:
+                // 'UK| GENERAL HD/RAW' and 'UK| GENERAL hevc' holding identically named
+                // channels. Without this, the player's switch is four buttons all
+                // reading 'Standard' — grouped correctly, labelled uselessly.
+                val categoryName = channel.categoryId?.let { categoryNames[it] }
+                if (categoryName != null) {
+                    val c = ChannelNameNormalizer.normalize(categoryName)
+                    if (label.isEmpty()) label = c.qualityLabel
+                    if (rank == 0) rank = c.qualityRank
+                }
+            }
+            channel.copy(
+                displayName = n.baseName,
+                groupKey = n.groupKey,
+                qualityRank = rank,
+                qualityLabel = label,
+                // Providers ship decorative separator rows ('#### UK GENERAL ####') as
+                // channels. They are headings, not channels — hide them on import.
+                hidden = channel.hidden || isSeparatorRow(channel.name),
+            )
+        }
+
+        return stamped
+    }
+
+    /** Decorative list headings: starts AND ends with a run of banner characters. */
+    private fun isSeparatorRow(rawName: String): Boolean {
+        val t = rawName.trim()
+        return t.length >= 6 &&
+            t.take(3).all { it in SEPARATOR_CHARS } &&
+            t.takeLast(3).all { it in SEPARATOR_CHARS }
+    }
+
+    /**
+     * Re-cleans every stored channel with the current normaliser, no network needed.
+     *
+     * displayName, groupKey, quality and separator-hiding are computed at import time, so a
+     * change to the normaliser (a new superscript char, a new junk pattern) does not reach
+     * channels already in the database until the next full catalogue sync — which can be
+     * hours away. This runs the same pass over existing rows locally, so a code fix shows up
+     * on the next launch instead of the next sync. Bump [NORMALIZER_VERSION] to trigger it.
+     */
+    suspend fun renormalizeAll(): Int = withContext(Dispatchers.IO) {
+        val existing = channelDao.allForMatching()
+        if (existing.isEmpty()) return@withContext 0
+
+        val bySource = existing.groupBy { it.sourceId }
+        var changed = 0
+        for ((_, channels) in bySource) {
+            val names = channelCategoryNames(channels)
+            val renamed = normalized(channels, names)
+            // Only write rows that actually changed, to keep the write small.
+            val diff = renamed.filterIndexed { i, c ->
+                val old = channels[i]
+                c.displayName != old.displayName || c.groupKey != old.groupKey ||
+                    c.qualityLabel != old.qualityLabel || c.qualityRank != old.qualityRank ||
+                    c.hidden != old.hidden
+            }
+            if (diff.isNotEmpty()) {
+                diff.chunked(500).forEach { channelDao.upsertAll(it) }
+                changed += diff.size
+            }
+        }
+        Log.i(TAG, "Re-normalised $changed channels with the current normaliser")
+        changed
+    }
+
+    /** Best-effort category-id → name map for a set of channels. */
+    private suspend fun channelCategoryNames(channels: List<Channel>): Map<String, String> {
+        val ids = channels.mapNotNull { it.categoryId }.toSet()
+        if (ids.isEmpty()) return emptyMap()
+        return categoryDao.namesFor(ids).associate { it.id to it.name }
+    }
+
+    /**
+     * The switchable quality variants of a channel, best first, ONE per distinct quality.
+     *
+     * A provider often lists the same stream in several categories — PRIME American Crimes
+     * shows up twice, both RAW. Those are not "qualities"; offering a switch between two
+     * identical (and sometimes one dead) feeds is worse than useless. So variants are
+     * de-duplicated by their quality signature: only genuinely different qualities survive,
+     * and a channel that is really single-quality gets no switch at all.
+     */
+    suspend fun variants(channel: Channel): List<Channel> {
+        if (channel.groupKey.isEmpty()) return listOf(channel)
+        val all = channelDao.variantsInGroup(channel.groupKey)
+        return distinctByQuality(all).ifEmpty { listOf(channel) }
     }
 
     suspend fun deleteSource(sourceId: Long) = withContext(Dispatchers.IO) {
@@ -199,7 +334,15 @@ class CatalogRepository(
         sourceDao.delete(sourceId)
     }
 
-    private companion object {
-        const val TAG = "CatalogRepository"
+    companion object {
+        private const val TAG = "CatalogRepository"
+        val SEPARATOR_CHARS = setOf('#', '*', '=', '~', '-', '_', '•', '█', '▓', '|')
+
+        /**
+         * Bump this whenever the normaliser changes in a way that should re-process
+         * already-imported channels. The app compares it against a stored value on launch
+         * and runs [renormalizeAll] once when it moves.
+         */
+        const val NORMALIZER_VERSION = 2
     }
 }

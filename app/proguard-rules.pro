@@ -3,12 +3,42 @@
 # Room entities are constructed reflectively by generated code.
 -keep class app.opentv.data.model.** { *; }
 
-# kotlinx.serialization
+# kotlinx.serialization -----------------------------------------------------------------
+# The generated $$serializer classes and Companion.serializer() accessors are reached
+# reflectively, so R8 must not rename or strip them. Without these a minified release
+# crashes the moment it parses a JSON payload — which every source load does.
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.**
--keepclassmembers class kotlinx.serialization.json.** {
-    *** Companion;
+
+-keep,includedescriptorclasses class **$$serializer { *; }
+
+# Keep `Companion` object fields of serializable classes.
+-if @kotlinx.serialization.Serializable class **
+-keepclassmembers class <1> {
+    static <1>$Companion Companion;
 }
+# Keep `serializer()` on companion objects.
+-if @kotlinx.serialization.Serializable class ** {
+    static **$Companion Companion;
+}
+-keepclassmembers class <1>$Companion {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+# Keep `INSTANCE.serializer()` of serializable objects.
+-if @kotlinx.serialization.Serializable class ** {
+    public static ** INSTANCE;
+}
+-keepclassmembers class <1> {
+    public static <1> INSTANCE;
+    kotlinx.serialization.KSerializer serializer(...);
+}
+
+# Our own @Serializable DTOs (Xtream API models, GitHub release model). Belt-and-braces on
+# top of the generic rules above, because these are the payloads a broken release fails on.
+-keep class app.opentv.data.remote.** { *; }
+-keepclassmembers class app.opentv.data.remote.** { *; }
+-keep class app.opentv.sync.** { *; }
+-keepclassmembers class app.opentv.sync.** { *; }
 
 # OkHttp pulls in optional Conscrypt/BouncyCastle providers it does not need on Android.
 -dontwarn okhttp3.internal.platform.**

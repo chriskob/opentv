@@ -45,8 +45,9 @@ private val DarkScheme = darkColorScheme(
 )
 
 /**
- * Light mode exists for phones and tablets. TV always uses the dark scheme regardless of the
- * system setting — a white living-room screen at night is nobody's friend.
+ * Light mode for anyone who wants it. By default TV boxes stay dark (a white living-room
+ * screen at night is nobody's friend) — that default lives at the call site, so a user who
+ * explicitly picks Light in settings gets it on any device.
  */
 private val LightScheme = lightColorScheme(
     primary = Color(0xFF3B4FCC),
@@ -74,12 +75,11 @@ private val OpenTvTypography = Typography(
 
 @Composable
 fun OpenTvTheme(
-    isTelevision: Boolean = false,
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
-        colorScheme = if (isTelevision || darkTheme) DarkScheme else LightScheme,
+        colorScheme = if (darkTheme) DarkScheme else LightScheme,
         typography = OpenTvTypography,
         content = content,
     )

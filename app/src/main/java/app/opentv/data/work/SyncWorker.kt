@@ -16,7 +16,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import app.opentv.core.ServiceLocator
 import app.opentv.data.repo.CatalogRepository
-import app.opentv.data.repo.EpgRepository
 import java.util.concurrent.TimeUnit
 
 /**
@@ -49,20 +48,17 @@ class SyncWorker(
                 }
             }
 
-            // Refreshed on its own schedule: guides are far heavier than catalogues and
-            // providers publish them on a slower cadence.
-            val refreshed = graph.sourceRepository.byId(source.id) ?: source
-            if (graph.epgRepository.isStale(refreshed, now)) {
-                when (val result = graph.epgRepository.sync(refreshed, now)) {
-                    is EpgRepository.SyncResult.Success ->
-                        Log.i(TAG, "Guide for ${source.name}: ${result.programmeCount} programmes")
-                    is EpgRepository.SyncResult.Failed -> {
-                        anyFailed = true
-                        Log.w(TAG, "Guide for ${source.name} failed: ${result.reason}")
-                    }
-                }
-            }
         }
+
+        // Guides sync as one pass across every enabled feed — provider guides, built-in
+        // free sources and user URLs merge into a single guide, then the matcher runs.
+        val summary = graph.epgRepository.syncAll(now)
+        if (summary.feedsFailed > 0) anyFailed = true
+        Log.i(
+            TAG,
+            "Guide: ${summary.programmesWritten} programmes from ${summary.feedsSucceeded} " +
+                "feed(s), ${summary.channelsMatched}/${summary.channelsTotal} channels matched",
+        )
 
         // A partial failure is still a retry — but the user keeps everything already on disk.
         return if (anyFailed) Result.retry() else Result.success()

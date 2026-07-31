@@ -12,11 +12,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -25,11 +29,28 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import app.opentv.core.AppSettings
+import app.opentv.core.ServiceLocator
+import app.opentv.ui.MainScreen
+import app.opentv.ui.ProfilesViewModel
 import app.opentv.ui.SourcesViewModel
-import app.opentv.ui.channels.HomeScreen
+import app.opentv.ui.channels.ChannelManagerScreen
+import app.opentv.ui.channels.SearchScreen
+import app.opentv.ui.VodViewModel
 import app.opentv.ui.onboarding.AddSourceScreen
 import app.opentv.ui.player.PlayerScreen
+import app.opentv.ui.settings.AboutScreen
+import app.opentv.ui.settings.AppSettingsScreen
+import app.opentv.ui.settings.EpgSettingsScreen
+import app.opentv.ui.settings.ParentalControlsScreen
+import app.opentv.ui.settings.ProfilesScreen
+import app.opentv.ui.settings.ProvidersScreen
+import app.opentv.ui.settings.SyncScreen
+import app.opentv.ui.settings.SettingsHubScreen
 import app.opentv.ui.theme.OpenTvTheme
+import app.opentv.ui.vod.SeriesDetailScreen
+import app.opentv.ui.vod.VodPlayerScreen
+import app.opentv.update.UpdateGate
 
 class MainActivity : ComponentActivity() {
 
@@ -39,7 +60,15 @@ class MainActivity : ComponentActivity() {
         val isTelevision = isRunningOnTelevision(this)
 
         setContent {
-            OpenTvTheme(isTelevision = isTelevision) {
+            val settings = remember { ServiceLocator.get(this).settings }
+            val themeMode by settings.themeMode.collectAsState()
+            val darkTheme = when (themeMode) {
+                AppSettings.ThemeMode.DARK -> true
+                AppSettings.ThemeMode.LIGHT -> false
+                // A living-room screen defaults to dark; a phone/tablet follows the system.
+                AppSettings.ThemeMode.SYSTEM -> isTelevision || isSystemInDarkTheme()
+            }
+            OpenTvTheme(darkTheme = darkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
@@ -55,21 +84,55 @@ object Routes {
     const val HOME = "home"
     const val ADD_SOURCE = "add-source"
     const val PLAYER = "player/{channelId}"
+    const val SEARCH = "search"
+    const val EPG_SETTINGS = "epg-settings"
+    const val APP_SETTINGS = "app-settings"
+    const val SETTINGS_HUB = "settings"
+    const val PROVIDERS = "providers"
+    const val CHANNELS = "channels"
+    const val PROFILES = "profiles"
+    const val PARENTAL = "parental"
+    const val SYNC = "sync"
+    const val ABOUT = "about"
+    const val SERIES_DETAIL = "series/{seriesId}"
+
+    // VOD plays carry the stream inline; a movie/episode is a one-off URL, not a stored id
+    // the player can look up the way a channel is.
+    const val VOD_PLAYER = "vod?key={key}&url={url}&title={title}&ua={ua}"
 
     fun player(channelId: Long) = "player/$channelId"
+    fun seriesDetail(seriesId: Long) = "series/$seriesId"
+    fun vodPlayer(key: String, url: String, title: String, ua: String): String {
+        fun e(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
+        return "vod?key=${e(key)}&url=${e(url)}&title=${e(title)}&ua=${e(ua)}"
+    }
 }
 
 @Composable
 private fun OpenTvApp(isTelevision: Boolean) {
     val navController = rememberNavController()
     val sourcesViewModel: SourcesViewModel = viewModel()
+    val vodViewModel: VodViewModel = viewModel()
+    val profilesViewModel: ProfilesViewModel = viewModel()
     val sourcesUi by sourcesViewModel.ui.collectAsState()
+    val profiles by profilesViewModel.profiles.collectAsState()
+    val activeProfileId by profilesViewModel.activeProfileId.collectAsState()
+    val activeProfileName = profiles.firstOrNull { it.id == activeProfileId }?.name ?: "Me"
+
+    // Until the saved sources have loaded from the database, we cannot tell a first run from a
+    // returning user — and guessing "first run" drops a returning user on the setup screen and
+    // asks for their provider again. NavHost locks in its start destination on first
+    // composition, so wait for that first load before building it.
+    if (!sourcesUi.loaded) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
 
     // First run goes straight to setup — an empty channel list with no explanation is the
     // worst possible first impression.
-    val start = remember(sourcesUi.sources.isEmpty()) {
-        if (sourcesUi.sources.isEmpty()) Routes.ADD_SOURCE else Routes.HOME
-    }
+    val start = if (sourcesUi.sources.isEmpty()) Routes.ADD_SOURCE else Routes.HOME
 
     Box(Modifier.fillMaxSize()) {
         NavHost(navController = navController, startDestination = start) {
@@ -85,12 +148,106 @@ private fun OpenTvApp(isTelevision: Boolean) {
             }
 
             composable(Routes.HOME) {
-                HomeScreen(
+                MainScreen(
                     isTelevision = isTelevision,
+                    hasSources = sourcesUi.sources.isNotEmpty(),
+                    isSyncing = sourcesUi.syncing,
                     onPlayChannel = { channel -> navController.navigate(Routes.player(channel.id)) },
+                    onPlayMovie = { movie ->
+                        navController.navigate(
+                            Routes.vodPlayer(
+                                key = "movie:${movie.id}",
+                                url = movie.streamUrl,
+                                title = movie.name,
+                                ua = "OpenTV/0.1 (Android)",
+                            ),
+                        )
+                    },
+                    onOpenSeries = { series ->
+                        navController.navigate(Routes.seriesDetail(series.id))
+                    },
+                    onResume = { key, url, title ->
+                        navController.navigate(
+                            Routes.vodPlayer(key, url, title, "OpenTV/0.1 (Android)"),
+                        )
+                    },
                     onAddSource = { navController.navigate(Routes.ADD_SOURCE) },
                     onRefresh = sourcesViewModel::refreshAll,
+                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
+                    onOpenProfiles = { navController.navigate(Routes.PROFILES) },
+                    activeProfileName = activeProfileName,
                 )
+            }
+
+            composable(Routes.PROFILES) {
+                ProfilesScreen(
+                    viewModel = profilesViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Routes.SEARCH) {
+                SearchScreen(
+                    onPlayChannel = { channel -> navController.navigate(Routes.player(channel.id)) },
+                    onPlayMovie = { movie ->
+                        navController.navigate(
+                            Routes.vodPlayer(
+                                key = "movie:${movie.id}",
+                                url = movie.streamUrl,
+                                title = movie.name,
+                                ua = "OpenTV/0.1 (Android)",
+                            ),
+                        )
+                    },
+                    onOpenSeries = { series -> navController.navigate(Routes.seriesDetail(series.id)) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Routes.SETTINGS_HUB) {
+                SettingsHubScreen(
+                    onOpenProviders = { navController.navigate(Routes.PROVIDERS) },
+                    onOpenGuide = { navController.navigate(Routes.EPG_SETTINGS) },
+                    onOpenChannels = { navController.navigate(Routes.CHANNELS) },
+                    onOpenDisplay = { navController.navigate(Routes.APP_SETTINGS) },
+                    onOpenParental = { navController.navigate(Routes.PARENTAL) },
+                    onOpenSync = { navController.navigate(Routes.SYNC) },
+                    onOpenAbout = { navController.navigate(Routes.ABOUT) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Routes.SYNC) {
+                SyncScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable(Routes.CHANNELS) {
+                ChannelManagerScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable(Routes.PARENTAL) {
+                ParentalControlsScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable(Routes.PROVIDERS) {
+                ProvidersScreen(
+                    viewModel = sourcesViewModel,
+                    onAddSource = { navController.navigate(Routes.ADD_SOURCE) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Routes.ABOUT) {
+                AboutScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable(Routes.EPG_SETTINGS) {
+                EpgSettingsScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable(Routes.APP_SETTINGS) {
+                AppSettingsScreen(onBack = { navController.popBackStack() })
             }
 
             composable(Routes.PLAYER) { entry ->
@@ -100,7 +257,35 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onBack = { navController.popBackStack() },
                 )
             }
+
+            composable(Routes.SERIES_DETAIL) { entry ->
+                val seriesId = entry.arguments?.getString("seriesId")?.toLongOrNull() ?: return@composable
+                SeriesDetailScreen(
+                    seriesId = seriesId,
+                    viewModel = vodViewModel,
+                    onPlayEpisode = { key, url, title ->
+                        navController.navigate(
+                            Routes.vodPlayer(key, url, title, "OpenTV/0.1 (Android)"),
+                        )
+                    },
+                )
+            }
+
+            composable(Routes.VOD_PLAYER) { entry ->
+                fun arg(name: String) = entry.arguments?.getString(name)
+                    ?.let { java.net.URLDecoder.decode(it, "UTF-8") }.orEmpty()
+                VodPlayerScreen(
+                    mediaKey = arg("key"),
+                    streamUrl = arg("url"),
+                    title = arg("title"),
+                    userAgent = arg("ua").ifEmpty { "OpenTV/0.1 (Android)" },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
+
+        // Sits above the whole nav graph so a found update can prompt from any screen.
+        UpdateGate()
     }
 }
 

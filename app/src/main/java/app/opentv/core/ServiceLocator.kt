@@ -33,6 +33,10 @@ object ServiceLocator {
         }
 
     class Graph(context: Context) {
+        private val appContext = context.applicationContext
+
+        val settings: AppSettings by lazy { AppSettings.get(appContext) }
+
         val database: OpenTvDatabase by lazy { OpenTvDatabase.build(context) }
 
         val httpClient: OkHttpClient by lazy {
@@ -67,9 +71,19 @@ object ServiceLocator {
         }
 
         val epgRepository: EpgRepository by lazy {
-            EpgRepository(database.programmes(), database.sources(), xtreamApi)
+            EpgRepository(
+                programmeDao = database.programmes(),
+                feedDao = database.epgFeeds(),
+                aliasDao = database.epgAliases(),
+                channelDao = database.channels(),
+                sourceDao = database.sources(),
+                api = xtreamApi,
+                http = httpClient,
+            )
         }
 
         val playbackPositions get() = database.positions()
+
+        val profiles get() = database.profiles()
     }
 }

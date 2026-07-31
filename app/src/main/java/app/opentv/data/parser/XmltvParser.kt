@@ -41,12 +41,21 @@ object XmltvParser {
     /**
      * @param onChannelAlias called with (channelId, displayName) for each `<channel>` element.
      * @param onProgramme called for each successfully parsed `<programme>`.
+     *
+     * [onProgramme] is a suspending callback, and this function is therefore suspending too.
+     * That is deliberate: the whole point of streaming programmes out one at a time is that the
+     * caller writes them to the database as they arrive, and Room's DAO methods suspend. A
+     * plain callback would force the caller into either `runBlocking` on every batch or
+     * buffering the entire guide in memory — and a week of data for a large provider is
+     * comfortably 150 MB of XML, which is exactly what this design exists to avoid.
+     *
+     * The XML reading itself is blocking, so call this from a coroutine on an IO dispatcher.
      */
-    fun parse(
+    suspend fun parse(
         input: InputStream,
-        sourceId: Long,
+        feedId: Long,
         onChannelAlias: (id: String, displayName: String?) -> Unit = { _, _ -> },
-        onProgramme: (Programme) -> Unit,
+        onProgramme: suspend (Programme) -> Unit,
     ): Stats {
         var channelCount = 0
         var programmeCount = 0
@@ -70,7 +79,7 @@ object XmltvParser {
                     }
 
                     "programme" -> {
-                        val programme = readProgramme(parser, sourceId)
+                        val programme = readProgramme(parser, feedId)
                         if (programme != null) {
                             programmeCount++
                             onProgramme(programme)
@@ -105,7 +114,7 @@ object XmltvParser {
         return displayName
     }
 
-    private fun readProgramme(parser: XmlPullParser, sourceId: Long): Programme? {
+    private fun readProgramme(parser: XmlPullParser, feedId: Long): Programme? {
         val channelId = parser.getAttributeValue(null, "channel")
         val start = parseXmltvTime(parser.getAttributeValue(null, "start"))
         val stop = parseXmltvTime(parser.getAttributeValue(null, "stop"))
@@ -161,7 +170,7 @@ object XmltvParser {
         if (end <= start) return null
 
         return Programme(
-            sourceId = sourceId,
+            feedId = feedId,
             epgChannelId = channelId,
             startUtcMillis = start,
             endUtcMillis = end,
