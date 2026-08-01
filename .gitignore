@@ -11,3 +11,5 @@ captures/
 *.aab
 *.keystore
 !debug.keystore
+
+.claude/

@@ -70,6 +70,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -78,6 +79,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import app.opentv.core.ServiceLocator
+import app.opentv.core.SleepTimer
 import app.opentv.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -105,6 +107,7 @@ fun VodPlayerScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
@@ -144,8 +147,12 @@ fun VodPlayerScreen(
         }
     }
 
+    // Keep the screen awake during playback — see the note in PlayerScreen; a film is exactly when
+    // the screensaver must not fire.
     DisposableEffect(Unit) {
+        view.keepScreenOn = true
         onDispose {
+            view.keepScreenOn = false
             scope.launch { savePosition() }
             controller.release()
             scope.cancel()
@@ -169,6 +176,16 @@ fun VodPlayerScreen(
             delay(15_000)
             savePosition()
         }
+    }
+
+    // Sleep timer: leave the film when the armed deadline passes (position is saved on dispose).
+    val sleepDeadline by SleepTimer.deadline.collectAsState()
+    LaunchedEffect(sleepDeadline) {
+        val d = sleepDeadline ?: return@LaunchedEffect
+        val wait = d - System.currentTimeMillis()
+        if (wait > 0) delay(wait)
+        SleepTimer.clear()
+        onBack()
     }
 
     // Poll position/duration for the seek bar while the film plays.

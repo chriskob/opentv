@@ -57,6 +57,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Channel
+import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
 import app.opentv.ui.ChannelsViewModel
 import coil.compose.AsyncImage
@@ -102,8 +103,13 @@ fun HomeScreen(
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
     val windowStart by viewModel.windowStartMillis.collectAsState()
 
-    // The channel whose info the pane shows — driven by d-pad focus (TV) or tap (touch).
-    var focusedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+    // Two separate ideas, on purpose:
+    //  - highlightedRow: where the d-pad is in the grid. Moves freely with up/down.
+    //  - selectedRow: what the preview pane plays. Only changes when you press OK, so scrolling
+    //    the list is calm and silent instead of re-tuning a stream on every keypress.
+    var highlightedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+    var selectedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+    val previewSound by settings.guidePreviewSound.collectAsState()
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     // Re-evaluate "now" once a minute so progress bars advance without leaving the screen.
@@ -115,10 +121,11 @@ fun HomeScreen(
         }
     }
 
-    // Keep the highlighted channel valid as the list changes (e.g. switching category): stay on
-    // the same channel if it's still present, otherwise fall back to the top of the new list.
+    // Keep both valid as the list changes (e.g. switching category): stay on the same channel if
+    // it's still present, otherwise fall back to the top of the new list.
     LaunchedEffect(rows) {
-        focusedRow = rows.firstOrNull { it.key == focusedRow?.key } ?: rows.firstOrNull()
+        highlightedRow = rows.firstOrNull { it.key == highlightedRow?.key } ?: rows.firstOrNull()
+        selectedRow = rows.firstOrNull { it.key == selectedRow?.key } ?: rows.firstOrNull()
     }
 
     // ---- Live preview player -----------------------------------------------------------------
@@ -154,10 +161,14 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Tune the preview to the highlighted channel. The controller debounces, so moving quickly
-    // down the list costs one real tune — the channel you stop on.
-    LaunchedEffect(focusedRow?.key, previewEnabled, screenResumed) {
-        val row = focusedRow
+    // Preview audio follows the setting; muted by default so browsing stays quiet.
+    LaunchedEffect(previewSound) {
+        previewController.player.volume = if (previewSound) 1f else 0f
+    }
+
+    // Tune the preview to the *selected* channel (the one you pressed OK on), never the highlight.
+    LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed) {
+        val row = selectedRow
         if (!previewEnabled || !screenResumed || row == null) {
             previewController.stop()
             return@LaunchedEffect
@@ -239,14 +250,19 @@ fun HomeScreen(
                     else -> EmptyState(onAddSource)
                 }
             } else {
+                // Hand the player the list you're browsing so it can zap channel up/down.
+                fun goFullscreen(channel: Channel) {
+                    PlaybackQueue.items = rows.map {
+                        PlaybackQueue.Item(it.primary.id, it.primary.displayName, it.primary.logoUrl)
+                    }
+                    previewController.stop()
+                    onPlayChannel(channel)
+                }
+
                 GuidePreview(
-                    row = focusedRow,
+                    row = selectedRow,
                     nowMillis = nowMillis,
-                    onWatch = {
-                        // Free the preview decoder before full-screen claims one.
-                        previewController.stop()
-                        focusedRow?.let { onPlayChannel(it.primary) }
-                    },
+                    onWatch = { selectedRow?.let { goFullscreen(it.primary) } },
                     onRefresh = onRefresh,
                     onAddSource = onAddSource,
                     previewPlayer = if (previewEnabled) previewController.player else null,
@@ -254,8 +270,16 @@ fun HomeScreen(
                 GuideGrid(
                     rows = rows,
                     windowStartMillis = windowStart,
-                    onPlay = { channel -> onPlayChannel(channel) },
-                    onFocusRow = { focusedRow = it },
+                    selectedKey = selectedRow?.key,
+                    // First OK previews; OK again on the already-previewing channel goes full-screen.
+                    onSelectRow = { row ->
+                        if (row.key == selectedRow?.key) {
+                            goFullscreen(row.primary)
+                        } else {
+                            selectedRow = row
+                        }
+                    },
+                    onFocusRow = { highlightedRow = it },
                     modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
                 )
             }

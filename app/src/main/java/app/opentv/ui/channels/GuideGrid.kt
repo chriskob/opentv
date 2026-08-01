@@ -72,7 +72,8 @@ import java.util.Locale
 fun GuideGrid(
     rows: List<ChannelsViewModel.Row>,
     windowStartMillis: Long,
-    onPlay: (Channel) -> Unit,
+    selectedKey: Any?,
+    onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -120,7 +121,8 @@ fun GuideGrid(
                     windowStartMillis = windowStartMillis,
                     nowMillis = now,
                     scroll = scroll,
-                    onPlay = { onPlay(row.primary) },
+                    isSelected = row.key == selectedKey,
+                    onSelect = { onSelectRow(row) },
                     onFocus = { onFocusRow(row) },
                 )
             }
@@ -201,11 +203,12 @@ private fun GuideRow(
     windowStartMillis: Long,
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
-    onPlay: () -> Unit,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
     onFocus: () -> Unit,
 ) {
-    // Focus drives the preview: highlighting a row (d-pad) or hovering it is what tunes the
-    // pane above, and the border makes it obvious which channel you're previewing.
+    // Focus (the d-pad border) just moves the highlight. Selection (the filled cell) is the
+    // channel the preview is playing — it only changes when you press OK.
     var focused by remember { mutableStateOf(false) }
 
     Row(Modifier.fillMaxWidth().height(ROW_HEIGHT)) {
@@ -216,7 +219,10 @@ private fun GuideRow(
                 .width(CHANNEL_COLUMN)
                 .fillMaxSize()
                 .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surface)
+                .background(
+                    if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surface,
+                )
                 .then(
                     if (focused) Modifier.border(
                         2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp),
@@ -226,7 +232,7 @@ private fun GuideRow(
                     focused = it.isFocused
                     if (it.isFocused) onFocus()
                 }
-                .clickable(onClick = onPlay)
+                .clickable(onClick = onSelect)
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -279,18 +285,31 @@ private fun GuideRow(
                 }
             } else {
                 var cursor = windowStartMillis
+                // A programme almost over (or a very short one) would otherwise be a sliver too
+                // thin to read its name — the "Poi n..." problem. We floor each block at
+                // [MIN_BLOCK_WIDTH] so the title stays legible, then carry the borrowed width as
+                // `debt` and repay it out of the following gaps, so everything downstream stays
+                // aligned with the time header instead of drifting right.
+                var debt = 0.dp
                 for (programme in programmes) {
                     // Clamp to the window's left edge; a programme that started earlier is
                     // drawn from `windowStart` so its block does not push everything right.
                     val start = programme.startUtcMillis.coerceAtLeast(windowStartMillis)
-                    if (start > cursor) {
-                        Spacer(Modifier.width(widthFor(cursor, start)))
+                    val gap = widthFor(cursor, start)
+                    val repaid = minOf(debt, gap)
+                    debt -= repaid
+                    val spacer = gap - repaid
+                    if (spacer > 0.dp) {
+                        Spacer(Modifier.width(spacer))
                     }
                     val end = programme.endUtcMillis
                     val isNow = nowMillis in programme.startUtcMillis until end
+                    val trueWidth = widthFor(start, end)
+                    val drawnWidth = maxOf(trueWidth, MIN_BLOCK_WIDTH)
+                    debt += drawnWidth - trueWidth
                     ProgrammeBlock(
                         title = programme.title,
-                        width = widthFor(start, end),
+                        width = drawnWidth,
                         isNow = isNow,
                         progress = if (isNow) programme.progressAt(nowMillis) else 0f,
                     )
@@ -353,6 +372,8 @@ private const val HOURS_IN_WINDOW = 12
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
 private val CHANNEL_COLUMN = 220.dp
 private val ROW_HEIGHT = 64.dp
+// Floor for a programme block so a nearly-finished or very short show still shows its name.
+private val MIN_BLOCK_WIDTH = 72.dp
 private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 
 private val clockFormat = SimpleDateFormat("HH:mm", Locale.getDefault())

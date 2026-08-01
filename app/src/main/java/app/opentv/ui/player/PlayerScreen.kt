@@ -21,13 +21,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -71,6 +76,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,8 +87,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.opentv.core.ServiceLocator
+import app.opentv.core.SleepTimer
 import app.opentv.data.model.Channel
+import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
+import coil.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -110,6 +119,7 @@ fun PlayerScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
@@ -120,8 +130,13 @@ fun PlayerScreen(
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
 
+    // Hold the screen awake while the player is on screen. With Media3's own controller we'd get
+    // this for free, but we drive a custom control bar over a bare surface, so nothing was telling
+    // the system the user is still watching — hence the screensaver kicking in mid-programme.
     DisposableEffect(Unit) {
+        view.keepScreenOn = true
         onDispose {
+            view.keepScreenOn = false
             controller.release()
             scope.cancel()
         }
@@ -134,10 +149,16 @@ fun PlayerScreen(
 
     var controlsVisible by remember { mutableStateOf(true) }
     var panel by remember { mutableStateOf(Panel.NONE) }
+    var channelListVisible by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
     val barFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
     val rootFocus = remember { FocusRequester() }
+    val listFocus = remember { FocusRequester() }
+
+    // The channel list you were browsing, for channel up/down and the in-player list. Snapshotted
+    // on entry so it doesn't shift under you mid-session.
+    val queue = remember { PlaybackQueue.items }
 
     fun reveal() {
         controlsVisible = true
@@ -161,11 +182,38 @@ fun PlayerScreen(
         }
     }
 
+    fun playChannelId(id: Long) {
+        scope.launch {
+            val channel = graph.catalogRepository.channel(id) ?: return@launch
+            variants = graph.catalogRepository.variants(channel)
+            tuneTo(variants.firstOrNull { it.id == channel.id } ?: channel)
+        }
+    }
+
+    fun zapBy(delta: Int) {
+        if (queue.isEmpty()) return
+        val cur = queue.indexOfFirst { it.id == currentId }.let { if (it < 0) 0 else it }
+        val next = (cur + delta).coerceIn(0, queue.size - 1)
+        if (next != cur) playChannelId(queue[next].id)
+    }
+
     LaunchedEffect(channelId) {
         val id = channelId ?: return@LaunchedEffect
         val channel = graph.catalogRepository.channel(id) ?: return@LaunchedEffect
         variants = graph.catalogRepository.variants(channel)
         tuneTo(variants.firstOrNull { it.id == channel.id } ?: channel)
+    }
+
+    // Sleep timer: when the armed deadline passes, stop and leave the player. Re-arming from
+    // settings restarts this effect with the new deadline.
+    val sleepDeadline by SleepTimer.deadline.collectAsState()
+    LaunchedEffect(sleepDeadline) {
+        val d = sleepDeadline ?: return@LaunchedEffect
+        val wait = d - System.currentTimeMillis()
+        if (wait > 0) delay(wait)
+        SleepTimer.clear()
+        controller.stop()
+        onBack()
     }
 
     // Apply the saved captions default once the stream's tracks arrive. Only auto-selects when
@@ -199,15 +247,29 @@ fun PlayerScreen(
         }
     }
 
-    // Back always leaves the player (closing an open picker first). It is deliberately kept out
-    // of the "wake the bar" key handling below — swallowing Back to reveal controls is exactly
-    // how a player traps you with no way out.
+    // Back steps back out one layer at a time — channel list, then picker, then the control bar —
+    // and only leaves the player once nothing is on screen. From immersive it's a single press out,
+    // so it never traps you, but it also no longer throws you all the way to the guide just because
+    // you wanted to dismiss the bar.
     BackHandler {
-        if (panel != Panel.NONE) {
-            panel = Panel.NONE
-        } else {
-            controller.stop()
-            onBack()
+        when {
+            channelListVisible -> channelListVisible = false
+            panel != Panel.NONE -> panel = Panel.NONE
+            controlsVisible -> controlsVisible = false
+            else -> {
+                controller.stop()
+                onBack()
+            }
+        }
+    }
+
+    // Focus the channel list when it opens; hand focus back to the video catcher when it closes.
+    LaunchedEffect(channelListVisible) {
+        if (channelListVisible) {
+            delay(40)
+            runCatching { listFocus.requestFocus() }
+        } else if (!controlsVisible) {
+            runCatching { rootFocus.requestFocus() }
         }
     }
 
@@ -216,18 +278,31 @@ fun PlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
             .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when {
                     // Never swallow Back/Escape — they must reach the back handler.
                     event.key == Key.Back || event.key == Key.Escape -> false
-                    event.type == KeyEventType.KeyDown && !controlsVisible -> {
-                        reveal()
-                        true
-                    }
-                    event.type == KeyEventType.KeyDown -> {
+                    // A picker or the channel list owns the whole d-pad while it's up.
+                    channelListVisible || panel != Panel.NONE -> {
                         interaction++
                         false
                     }
-                    else -> false
+                    // Channel up/down works whether or not the bar is showing — this remote has no
+                    // CH+/CH- keys, so up/down IS the channel changer. Each zap flashes the bar as a
+                    // channel banner, then it auto-hides.
+                    event.key == Key.DirectionUp || event.key == Key.ChannelUp -> { zapBy(-1); reveal(); true }
+                    event.key == Key.DirectionDown || event.key == Key.ChannelDown -> { zapBy(1); reveal(); true }
+                    // With the bar up, left/right drive its buttons; let them through.
+                    controlsVisible -> {
+                        interaction++
+                        false
+                    }
+                    // Immersive: left opens the channel list, right the quality picker.
+                    event.key == Key.DirectionLeft -> { if (queue.isNotEmpty()) channelListVisible = true; true }
+                    event.key == Key.DirectionRight -> {
+                        if (variants.size > 1) { reveal(); panel = Panel.QUALITY }; true
+                    }
+                    else -> { reveal(); true }
                 }
             }
             .focusRequester(rootFocus)
@@ -384,6 +459,80 @@ fun PlayerScreen(
                 }
             }
         }
+
+        // Left-side transparent channel list — d-pad Left opens it, pick a channel to switch.
+        AnimatedVisibility(
+            visible = channelListVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.CenterStart),
+        ) {
+            val currentIndex = queue.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
+            val listState = rememberLazyListState()
+            LaunchedEffect(Unit) { runCatching { listState.scrollToItem(currentIndex) } }
+            Column(
+                Modifier
+                    .fillMaxHeight()
+                    .width(380.dp)
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .padding(vertical = 16.dp),
+            ) {
+                Text(
+                    "Channels",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                LazyColumn(state = listState) {
+                    itemsIndexed(queue, key = { _, item -> item.id }) { index, item ->
+                        ChannelListRow(
+                            item = item,
+                            playing = item.id == currentId,
+                            focusRequester = if (index == currentIndex) listFocus else null,
+                            onClick = {
+                                playChannelId(item.id)
+                                channelListVisible = false
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChannelListRow(
+    item: PlaybackQueue.Item,
+    playing: Boolean,
+    focusRequester: FocusRequester?,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> MaterialTheme.colorScheme.primary
+        playing -> MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+        else -> Color.Transparent
+    }
+    val fg = if (focused) MaterialTheme.colorScheme.onPrimary else Color.White
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = item.logoUrl,
+            contentDescription = null,
+            modifier = Modifier.size(32.dp).clip(RoundedCornerShape(4.dp)),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(item.name, style = MaterialTheme.typography.titleMedium, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

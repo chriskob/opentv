@@ -32,9 +32,13 @@ class AppSettings private constructor(context: Context) {
     private val _subtitlesEnabled = MutableStateFlow(prefs.getBoolean(KEY_SUBTITLES, true))
     val subtitlesEnabled: StateFlow<Boolean> = _subtitlesEnabled.asStateFlow()
 
-    /** Whether the highlighted channel plays live inside the guide's preview pane. */
+    /** Whether the selected channel plays live inside the guide's preview pane. */
     private val _guidePreviewVideo = MutableStateFlow(prefs.getBoolean(KEY_PREVIEW_VIDEO, true))
     val guidePreviewVideo: StateFlow<Boolean> = _guidePreviewVideo.asStateFlow()
+
+    /** Whether the guide preview plays sound (off by default — quieter while browsing). */
+    private val _guidePreviewSound = MutableStateFlow(prefs.getBoolean(KEY_PREVIEW_SOUND, false))
+    val guidePreviewSound: StateFlow<Boolean> = _guidePreviewSound.asStateFlow()
 
     /** The profile whose watch history is active. Defaults to the built-in profile (id 1). */
     private val _activeProfileId = MutableStateFlow(prefs.getLong(KEY_ACTIVE_PROFILE, 1L))
@@ -109,6 +113,11 @@ class AppSettings private constructor(context: Context) {
         _guidePreviewVideo.value = enabled
     }
 
+    fun setGuidePreviewSound(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PREVIEW_SOUND, enabled).apply()
+        _guidePreviewSound.value = enabled
+    }
+
     private fun readThemeMode(): ThemeMode =
         runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "") }
             .getOrDefault(ThemeMode.SYSTEM)
@@ -117,6 +126,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_SUBTITLES = "subtitles_enabled"
         private const val KEY_PREVIEW_VIDEO = "guide_preview_video"
+        private const val KEY_PREVIEW_SOUND = "guide_preview_sound"
         private const val KEY_PIN_HASH = "parental_pin_hash"
         private const val KEY_HIDDEN_CATS = "hidden_categories"
         private const val KEY_ACTIVE_PROFILE = "active_profile_id"

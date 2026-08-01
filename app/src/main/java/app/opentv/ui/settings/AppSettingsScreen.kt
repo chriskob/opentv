@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -32,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.opentv.core.AppSettings
+import app.opentv.core.SleepTimer
 
 /**
  * Display & playback preferences: the app-behaviour settings, kept apart from the guide/data
@@ -44,11 +47,13 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val settings = remember { AppSettings.get(context) }
     val themeMode by settings.themeMode.collectAsState()
     val previewVideo by settings.guidePreviewVideo.collectAsState()
+    val previewSound by settings.guidePreviewSound.collectAsState()
     val captions by settings.subtitlesEnabled.collectAsState()
 
     Column(
         Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 32.dp, vertical = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -82,10 +87,16 @@ fun AppSettingsScreen(onBack: () -> Unit) {
         SettingsSection("Guide") {
             ToggleRow(
                 title = "Live preview in the guide",
-                subtitle = "Play the highlighted channel in the preview pane. Turn this off " +
+                subtitle = "Play the selected channel in the preview pane. Turn this off " +
                     "if the guide stutters on an older box.",
                 checked = previewVideo,
                 onToggle = settings::setGuidePreviewVideo,
+            )
+            ToggleRow(
+                title = "Preview sound",
+                subtitle = "Play the preview channel's audio too, not just the picture.",
+                checked = previewSound,
+                onToggle = settings::setGuidePreviewSound,
             )
         }
 
@@ -100,6 +111,61 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 onToggle = settings::setSubtitlesEnabled,
             )
         }
+
+        Spacer(Modifier.height(16.dp))
+
+        SleepTimerSection()
+    }
+}
+
+@Composable
+private fun SleepTimerSection() {
+    val deadline by SleepTimer.deadline.collectAsState()
+    val remaining = deadline?.let {
+        val left = it - System.currentTimeMillis()
+        if (left <= 0L) 0 else ((left + 59_999L) / 60_000L).toInt()
+    }
+
+    Text(
+        "Sleep timer",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(Modifier.height(8.dp))
+    Card {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                if (remaining == null) "Off — playback keeps going until you stop it."
+                else "On — playback will stop in about $remaining min.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            SleepOption("Off", selected = remaining == null) { SleepTimer.clear() }
+            SleepTimer.presets.forEach { mins ->
+                SleepOption("$mins minutes", selected = false) { SleepTimer.armMinutes(mins) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SleepOption(label: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, onClick = onSelect)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onSelect)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium)
     }
 }
 
