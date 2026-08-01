@@ -6,6 +6,7 @@
 package app.opentv.ui.player
 
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -88,6 +89,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
+import app.opentv.core.findActivity
 import app.opentv.data.model.Channel
 import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
@@ -130,12 +132,16 @@ fun PlayerScreen(
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
 
-    // Hold the screen awake while the player is on screen. With Media3's own controller we'd get
-    // this for free, but we drive a custom control bar over a bare surface, so nothing was telling
-    // the system the user is still watching — hence the screensaver kicking in mid-programme.
+    // Hold the screen awake while the player is on screen. A view-level keepScreenOn flag isn't
+    // reliable on every TV box, so we set the window flag on the Activity directly — that's what
+    // actually stops the system screensaver from firing mid-programme. keepScreenOn stays on too,
+    // as a belt-and-braces backstop.
     DisposableEffect(Unit) {
+        val window = context.findActivity()?.window
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         view.keepScreenOn = true
         onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             view.keepScreenOn = false
             controller.release()
             scope.cancel()
