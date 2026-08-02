@@ -136,6 +136,16 @@ private fun OpenTvApp(isTelevision: Boolean) {
     // worst possible first impression.
     val start = if (sourcesUi.sources.isEmpty()) Routes.ADD_SOURCE else Routes.HOME
 
+    // Boot to last channel: if enabled and we have one, jump straight into the player on launch.
+    // Runs once; backing out returns to the guide and doesn't re-trigger.
+    val bootContext = androidx.compose.ui.platform.LocalContext.current
+    val bootSettings = remember { ServiceLocator.get(bootContext).settings }
+    LaunchedEffect(start) {
+        if (start == Routes.HOME && bootSettings.resumeLastChannel.value && bootSettings.lastChannelId != 0L) {
+            navController.navigate(Routes.player(bootSettings.lastChannelId))
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         NavHost(navController = navController, startDestination = start) {
             composable(Routes.ADD_SOURCE) {
@@ -192,6 +202,10 @@ private fun OpenTvApp(isTelevision: Boolean) {
                                 ua = rec.userAgent,
                             ),
                         )
+                    },
+                    onPlayCatchup = { key, url, title, ua ->
+                        // Catch-up is a seekable archive stream — plays through the VOD player.
+                        navController.navigate(Routes.vodPlayer(key, url, title, ua))
                     },
                     activeProfileName = activeProfileName,
                 )

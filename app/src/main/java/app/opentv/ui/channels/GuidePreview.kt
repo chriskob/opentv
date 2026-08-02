@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -156,10 +157,11 @@ fun GuidePreview(
                 Spacer(Modifier.weight(1f))
                 if (row != null) {
                     IconButton(onClick = onRecord) {
-                        // Always red — the universal "record" colour, so it reads as a record
-                        // button at a glance rather than a neutral dot.
+                        // Red throughout — the record convention — but the glyph switches to a
+                        // stop square while a recording is running, so a press visibly does
+                        // something (● start → ■ stop) rather than looking inert.
                         Icon(
-                            Icons.Default.FiberManualRecord,
+                            if (isRecording) Icons.Default.Stop else Icons.Default.FiberManualRecord,
                             contentDescription = if (isRecording) "Stop recording" else "Record what's on now",
                             tint = Color(0xFFE53935),
                         )

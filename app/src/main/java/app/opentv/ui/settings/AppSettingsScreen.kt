@@ -49,6 +49,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val previewVideo by settings.guidePreviewVideo.collectAsState()
     val previewSound by settings.guidePreviewSound.collectAsState()
     val captions by settings.subtitlesEnabled.collectAsState()
+    val resumeLast by settings.resumeLastChannel.collectAsState()
 
     Column(
         Modifier
@@ -109,6 +110,13 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                     "on the player lets you pick a specific track or turn them off.",
                 checked = captions,
                 onToggle = settings::setSubtitlesEnabled,
+            )
+            ToggleRow(
+                title = "Resume last channel on startup",
+                subtitle = "Open the app straight into the channel you were last watching, " +
+                    "instead of the guide. Press Back to reach the guide.",
+                checked = resumeLast,
+                onToggle = settings::setResumeLastChannel,
             )
         }
 

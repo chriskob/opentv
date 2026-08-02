@@ -63,7 +63,7 @@ class Converters {
         Recording::class,
         SeriesRule::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -159,12 +159,23 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 → v5: catch-up. Adds the archive columns to channels. Additive; the DEFAULT 0 matches
+         * the entity's @ColumnInfo(defaultValue = "0") so the schema-identity check passes.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `channels` ADD COLUMN `tvArchive` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `channels` ADD COLUMN `tvArchiveDays` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
                 // refresh cannot make the UI stutter on a slow TV box.
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 /*
                  * Pre-1.0 policy: schema changes drop and rebuild the database. Everything
                  * in it is re-derivable from the provider (one sync away) except favourites

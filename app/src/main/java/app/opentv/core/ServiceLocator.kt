@@ -111,7 +111,10 @@ object ServiceLocator {
         }
 
         val recordingEngine: RecordingEngine by lazy {
-            RecordingEngine(appContext, recordingRepository, sourceRepository, settings)
+            RecordingEngine(
+                appContext, recordingRepository, sourceRepository, settings,
+                database.channels(), epgRepository,
+            )
         }
     }
 }

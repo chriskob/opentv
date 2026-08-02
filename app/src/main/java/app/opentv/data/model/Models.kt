@@ -5,6 +5,7 @@
  */
 package app.opentv.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -105,6 +106,9 @@ data class Channel(
     val matchedEpgId: String? = null,
     /** Guide id chosen by the user by hand. Beats both of the above, survives resyncs. */
     val epgOverrideId: String? = null,
+    /** Whether the provider offers catch-up/archive on this channel, and how many days back. */
+    @ColumnInfo(defaultValue = "0") val tvArchive: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val tvArchiveDays: Int = 0,
     val number: Int?,
     /** Fully-resolved playback URL. */
     val streamUrl: String,

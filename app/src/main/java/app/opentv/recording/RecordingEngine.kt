@@ -12,7 +12,9 @@ import app.opentv.data.model.Programme
 import app.opentv.data.model.Recording
 import app.opentv.data.model.RecordingStatus
 import app.opentv.data.model.SeriesRule
+import app.opentv.data.db.ChannelDao
 import app.opentv.data.model.Source
+import app.opentv.data.repo.EpgRepository
 import app.opentv.data.repo.RecordingRepository
 import app.opentv.data.repo.SourceRepository
 
@@ -26,6 +28,8 @@ class RecordingEngine(
     private val repo: RecordingRepository,
     private val sources: SourceRepository,
     private val settings: AppSettings,
+    private val channelDao: ChannelDao,
+    private val epgRepository: EpgRepository,
 ) {
 
     /** Start recording [channel] now. [programme], when given, names and time-bounds the capture. */
@@ -141,6 +145,25 @@ class RecordingEngine(
 
     /** Loose title match key — case- and punctuation-insensitive, so "Countryfile" == "countryfile". */
     fun titleKeyOf(title: String): String = title.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+    /**
+     * Re-scan every series-link rule against the freshly-synced guide and book any new matching
+     * airings. Run after each EPG refresh, so a weekly show gets its next episode booked as soon
+     * as the guide reveals it — not just the airings that happened to be in the window when you
+     * first set the rule.
+     */
+    suspend fun rescanSeriesRules() {
+        val rules = repo.enabledRules()
+        if (rules.isEmpty()) return
+        val now = System.currentTimeMillis()
+        for (rule in rules) {
+            val channel = channelDao.byId(rule.channelId) ?: continue
+            val upcoming = channel.epgCandidates
+                .flatMap { epgId -> epgRepository.upcoming(epgId, now, 200) }
+                .distinctBy { it.startUtcMillis to it.title }
+            scheduleMatching(channel, rule.titleKey, rule.id, upcoming)
+        }
+    }
 
     /**
      * Live Xtream URLs are cached as `.m3u8` (HLS) for playback, but the raw `.ts` MPEG-TS variant

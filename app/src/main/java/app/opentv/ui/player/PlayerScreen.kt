@@ -155,6 +155,8 @@ fun PlayerScreen(
     var currentId by remember { mutableStateOf<Long?>(null) }
     // The channel we were on before this one — powers the "Last channel" recall in the list.
     var previousId by remember { mutableStateOf<Long?>(null) }
+    // Digits typed on the remote accumulate here, then jump to that channel number after a beat.
+    var numberEntry by remember { mutableStateOf("") }
     var paused by remember { mutableStateOf(false) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
 
@@ -179,6 +181,7 @@ fun PlayerScreen(
     fun tuneTo(channel: Channel) {
         currentId = channel.id
         paused = false
+        settings.lastChannelId = channel.id
         scope.launch {
             val source = graph.sourceRepository.byId(channel.sourceId)
             controller.play(
@@ -288,6 +291,16 @@ fun PlayerScreen(
         }
     }
 
+    // Number entry: once digits stop coming, jump to that channel number in the browsing list.
+    LaunchedEffect(numberEntry) {
+        if (numberEntry.isEmpty()) return@LaunchedEffect
+        delay(NUMBER_ENTRY_TIMEOUT_MILLIS)
+        val num = numberEntry.toIntOrNull()
+        numberEntry = ""
+        val target = num?.let { n -> queue.firstOrNull { it.number == n } }
+        if (target != null) playChannelId(target.id)
+    }
+
     // Focus the channel list when it opens; hand focus back to the video catcher when it closes.
     LaunchedEffect(channelListVisible) {
         if (channelListVisible) {
@@ -304,9 +317,15 @@ fun PlayerScreen(
             .background(Color.Black)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val digit = keyToDigit(event.key)
                 when {
                     // Never swallow Back/Escape — they must reach the back handler.
                     event.key == Key.Back || event.key == Key.Escape -> false
+                    // Typing a channel number jumps to it, TiviMate-style.
+                    digit != null -> {
+                        numberEntry = (numberEntry + digit).take(4)
+                        reveal(); interaction++; true
+                    }
                     // A picker or the channel list owns the whole d-pad while it's up.
                     channelListVisible || panel != Panel.NONE -> {
                         interaction++
@@ -352,6 +371,20 @@ fun PlayerScreen(
             },
             update = { it.resizeMode = resizeMode },
         )
+
+        // The channel number as you type it, top-right, until it resolves.
+        if (numberEntry.isNotEmpty()) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(32.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = 0.82f))
+                    .padding(horizontal = 28.dp, vertical = 16.dp),
+            ) {
+                Text(numberEntry, color = Color.White, style = MaterialTheme.typography.displaySmall)
+            }
+        }
 
         when (val current = state) {
             is PlayerController.State.Buffering -> {
@@ -793,3 +826,19 @@ private fun BarChip(
 }
 
 private const val CONTROLS_TIMEOUT_MILLIS = 5_000L
+private const val NUMBER_ENTRY_TIMEOUT_MILLIS = 2_000L
+
+/** Maps a remote's number keys (top row and numeric keypad) to a digit, or null for other keys. */
+private fun keyToDigit(key: Key): Char? = when (key) {
+    Key.Zero, Key.NumPad0 -> '0'
+    Key.One, Key.NumPad1 -> '1'
+    Key.Two, Key.NumPad2 -> '2'
+    Key.Three, Key.NumPad3 -> '3'
+    Key.Four, Key.NumPad4 -> '4'
+    Key.Five, Key.NumPad5 -> '5'
+    Key.Six, Key.NumPad6 -> '6'
+    Key.Seven, Key.NumPad7 -> '7'
+    Key.Eight, Key.NumPad8 -> '8'
+    Key.Nine, Key.NumPad9 -> '9'
+    else -> null
+}

@@ -60,7 +60,9 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.content.Intent
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.compose.ui.window.Dialog
 import app.opentv.core.ServiceLocator
 import app.opentv.core.findActivity
@@ -100,6 +102,7 @@ fun HomeScreen(
     onAddSource: () -> Unit,
     onRefresh: () -> Unit,
     onOpenSearch: () -> Unit,
+    onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit = { _, _, _, _ -> },
     viewModel: ChannelsViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -297,8 +300,10 @@ fun HomeScreen(
                     val active = activeRecordings.firstOrNull { it.channelId == row.primary.id }
                     if (active != null) {
                         graph.recordingEngine.stop(active.id)
+                        Toast.makeText(context, "Recording stopped", Toast.LENGTH_SHORT).show()
                     } else {
                         recordScope.launch { graph.recordingEngine.startChannel(row.primary, row.now) }
+                        Toast.makeText(context, "● Recording ${row.primary.displayName} — see the Recordings tab", Toast.LENGTH_LONG).show()
                     }
                 }
 
@@ -357,16 +362,40 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(16.dp))
 
+                val isPast = programme.endUtcMillis <= nowMillis
                 when {
-                    liveNow && recordingThis != null -> RecordActionRow("Stop recording") {
-                        graph.recordingEngine.stop(recordingThis.id); recordTarget = null
+                    liveNow && recordingThis != null -> RecordActionRow("■ Stop recording", primary = true) {
+                        graph.recordingEngine.stop(recordingThis.id)
+                        Toast.makeText(context, "Recording stopped", Toast.LENGTH_SHORT).show()
+                        recordTarget = null
                     }
                     liveNow -> RecordActionRow("● Record now", primary = true) {
                         recordScope.launch { graph.recordingEngine.startChannel(channel, programme) }
+                        Toast.makeText(context, "● Recording ${channel.displayName}", Toast.LENGTH_LONG).show()
                         recordTarget = null
                     }
-                    else -> RecordActionRow("● Schedule recording", primary = true) {
+                    // A finished programme on a catch-up channel plays back from the archive.
+                    isPast && channel.tvArchive -> RecordActionRow("▶  Watch from start (catch-up)", primary = true) {
+                        recordScope.launch {
+                            val source = graph.sourceRepository.byId(channel.sourceId)
+                            if (source == null) {
+                                Toast.makeText(context, "Couldn't build the catch-up link", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val mins = (programme.durationMillis / 60000).toInt().coerceAtLeast(1)
+                                val url = graph.xtreamApi.catchupUrl(source, channel.streamId, programme.startUtcMillis, mins)
+                                onPlayCatchup(
+                                    "catchup:${channel.id}:${programme.startUtcMillis}",
+                                    url,
+                                    "${channel.displayName} — ${programme.title}",
+                                    source.userAgent,
+                                )
+                            }
+                        }
+                        recordTarget = null
+                    }
+                    !isPast -> RecordActionRow("● Schedule recording", primary = true) {
                         recordScope.launch { graph.recordingEngine.scheduleProgramme(channel, programme) }
+                        Toast.makeText(context, "Scheduled: ${programme.title}", Toast.LENGTH_LONG).show()
                         recordTarget = null
                     }
                 }
@@ -435,13 +464,37 @@ fun HomeScreen(
                         previewController.stop()
                         onPlayChannel(channel)
                     }
+                    RecordActionRow("Open in external player") {
+                        channelMenu = null
+                        recordScope.launch {
+                            val ua = graph.sourceRepository.byId(channel.sourceId)?.userAgent ?: "OpenTV/0.1 (Android)"
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(android.net.Uri.parse(channel.streamUrl), "video/*")
+                                putExtra("title", channel.displayName)
+                                // MX Player / VLC read the User-Agent from this header extra.
+                                putExtra("headers", arrayOf("User-Agent", ua))
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            runCatching {
+                                context.startActivity(
+                                    Intent.createChooser(intent, "Play channel with")
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }.onFailure {
+                                Toast.makeText(context, "No external player installed", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
                     if (recordingThis != null) {
                         RecordActionRow("■  Stop recording", primary = true) {
-                            graph.recordingEngine.stop(recordingThis.id); channelMenu = null
+                            graph.recordingEngine.stop(recordingThis.id)
+                            Toast.makeText(context, "Recording stopped", Toast.LENGTH_SHORT).show()
+                            channelMenu = null
                         }
                     } else {
                         RecordActionRow("●  Record what's on now", primary = true) {
                             recordScope.launch { graph.recordingEngine.startChannel(channel, nowProg) }
+                            Toast.makeText(context, "● Recording ${channel.displayName} — see the Recordings tab", Toast.LENGTH_LONG).show()
                             channelMenu = null
                         }
                     }
@@ -450,6 +503,7 @@ fun HomeScreen(
                             recordScope.launch {
                                 graph.recordingEngine.recordSeries(channel, nowProg, menuRow.programmes)
                             }
+                            Toast.makeText(context, "Series recording set for \"${nowProg.title}\"", Toast.LENGTH_LONG).show()
                             channelMenu = null
                         }
                     }
@@ -464,6 +518,7 @@ fun HomeScreen(
                         upcoming.forEach { programme ->
                             RecordActionRow("${formatTime(programme.startUtcMillis)}   ${programme.title}") {
                                 recordScope.launch { graph.recordingEngine.scheduleProgramme(channel, programme) }
+                                Toast.makeText(context, "Scheduled: ${programme.title} at ${formatTime(programme.startUtcMillis)}", Toast.LENGTH_LONG).show()
                                 channelMenu = null
                             }
                         }

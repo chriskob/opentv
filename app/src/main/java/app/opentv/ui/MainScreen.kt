@@ -91,6 +91,7 @@ fun MainScreen(
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
     onPlayRecording: (Recording) -> Unit,
+    onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit,
     activeProfileName: String,
 ) {
     var tab by remember { mutableStateOf(Tab.LIVE) }
@@ -124,6 +125,7 @@ fun MainScreen(
                     onAddSource = onAddSource,
                     onRefresh = onRefresh,
                     onOpenSearch = onOpenSearch,
+                    onPlayCatchup = onPlayCatchup,
                 )
                 Tab.MOVIES -> MoviesScreen(
                     onPlayMovie = onPlayMovie,

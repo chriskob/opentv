@@ -118,6 +118,20 @@ class AppSettings private constructor(context: Context) {
         _guidePreviewSound.value = enabled
     }
 
+    /** Whether launching the app jumps straight back to the last channel you watched. */
+    private val _resumeLastChannel = MutableStateFlow(prefs.getBoolean(KEY_RESUME_LAST, false))
+    val resumeLastChannel: StateFlow<Boolean> = _resumeLastChannel.asStateFlow()
+
+    fun setResumeLastChannel(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_RESUME_LAST, enabled).apply()
+        _resumeLastChannel.value = enabled
+    }
+
+    /** The last channel played, for boot-to-last-channel. Not a flow — only read once at launch. */
+    var lastChannelId: Long
+        get() = prefs.getLong(KEY_LAST_CHANNEL, 0L)
+        set(value) { prefs.edit().putLong(KEY_LAST_CHANNEL, value).apply() }
+
     private fun readThemeMode(): ThemeMode =
         runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "") }
             .getOrDefault(ThemeMode.SYSTEM)
@@ -179,6 +193,8 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_PIN_HASH = "parental_pin_hash"
         private const val KEY_HIDDEN_CATS = "hidden_categories"
         private const val KEY_ACTIVE_PROFILE = "active_profile_id"
+        private const val KEY_RESUME_LAST = "resume_last_channel"
+        private const val KEY_LAST_CHANNEL = "last_channel_id"
         private const val KEY_REC_TARGET = "recording_target"
         private const val KEY_SMB_HOST = "smb_host"
         private const val KEY_SMB_SHARE = "smb_share"

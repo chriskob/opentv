@@ -112,6 +112,8 @@ class XtreamApi(
                 // epg_channel_id is what joins to XMLTV; it is frequently blank, in which
                 // case the channel simply has no guide rather than the guide being broken.
                 epgChannelId = obj["epg_channel_id"].asStringOrNull?.takeIf { it.isNotBlank() },
+                tvArchive = obj["tv_archive"].asIntOrNull == 1,
+                tvArchiveDays = obj["tv_archive_duration"].asIntOrNull ?: 0,
                 number = obj["num"].asIntOrNull,
                 streamUrl = liveStreamUrl(source, streamId),
                 sortIndex = obj["num"].asIntOrNull ?: index,
@@ -229,6 +231,19 @@ class XtreamApi(
 
     fun seriesStreamUrl(source: Source, episodeId: String, extension: String?): String =
         "${source.url}/series/${source.username}/${source.password}/$episodeId.${extension ?: "mp4"}"
+
+    /**
+     * Catch-up / archive stream for a past programme. Uses the widely-supported path form
+     * `/timeshift/{user}/{pass}/{durationMinutes}/{yyyy-MM-dd:HH-mm}/{streamId}.ts`, which returns a
+     * seekable MPEG-TS just like a recording. The start time is formatted in the device's local
+     * zone, matching how the guide shows programme times.
+     */
+    fun catchupUrl(source: Source, streamId: String, startUtcMillis: Long, durationMinutes: Int): String {
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd:HH-mm", java.util.Locale.US)
+            .format(java.util.Date(startUtcMillis))
+        val minutes = durationMinutes.coerceAtLeast(1)
+        return "${source.url}/timeshift/${source.username}/${source.password}/$minutes/$stamp/$streamId.ts"
+    }
 
     private fun xmltvUrl(source: Source): HttpUrl =
         baseUrl(source).newBuilder()
