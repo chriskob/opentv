@@ -122,6 +122,55 @@ class AppSettings private constructor(context: Context) {
         runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "") }
             .getOrDefault(ThemeMode.SYSTEM)
 
+    // ---- Recording ---------------------------------------------------------------------------
+
+    /** Where recordings are written. USB (SAF) is added in a later build. */
+    enum class RecordingTarget { INTERNAL, SMB }
+
+    private val _recordingTarget = MutableStateFlow(readRecordingTarget())
+    val recordingTarget: StateFlow<RecordingTarget> = _recordingTarget.asStateFlow()
+
+    /** SMB / NAS connection. Stored on-device only, exactly like provider credentials. */
+    private val _smbHost = MutableStateFlow(prefs.getString(KEY_SMB_HOST, "").orEmpty())
+    val smbHost: StateFlow<String> = _smbHost.asStateFlow()
+
+    private val _smbShare = MutableStateFlow(prefs.getString(KEY_SMB_SHARE, "").orEmpty())
+    val smbShare: StateFlow<String> = _smbShare.asStateFlow()
+
+    /** Sub-folder within the share, e.g. `Recordings`. Blank = share root. */
+    private val _smbFolder = MutableStateFlow(prefs.getString(KEY_SMB_FOLDER, "OpenTV").orEmpty())
+    val smbFolder: StateFlow<String> = _smbFolder.asStateFlow()
+
+    private val _smbUser = MutableStateFlow(prefs.getString(KEY_SMB_USER, "").orEmpty())
+    val smbUser: StateFlow<String> = _smbUser.asStateFlow()
+
+    private val _smbPassword = MutableStateFlow(prefs.getString(KEY_SMB_PASS, "").orEmpty())
+    val smbPassword: StateFlow<String> = _smbPassword.asStateFlow()
+
+    fun setRecordingTarget(target: RecordingTarget) {
+        prefs.edit().putString(KEY_REC_TARGET, target.name).apply()
+        _recordingTarget.value = target
+    }
+
+    fun setSmbConfig(host: String, share: String, folder: String, user: String, password: String) {
+        prefs.edit()
+            .putString(KEY_SMB_HOST, host.trim())
+            .putString(KEY_SMB_SHARE, share.trim())
+            .putString(KEY_SMB_FOLDER, folder.trim())
+            .putString(KEY_SMB_USER, user)
+            .putString(KEY_SMB_PASS, password)
+            .apply()
+        _smbHost.value = host.trim()
+        _smbShare.value = share.trim()
+        _smbFolder.value = folder.trim()
+        _smbUser.value = user
+        _smbPassword.value = password
+    }
+
+    private fun readRecordingTarget(): RecordingTarget =
+        runCatching { RecordingTarget.valueOf(prefs.getString(KEY_REC_TARGET, null) ?: "") }
+            .getOrDefault(RecordingTarget.INTERNAL)
+
     companion object {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_SUBTITLES = "subtitles_enabled"
@@ -130,6 +179,12 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_PIN_HASH = "parental_pin_hash"
         private const val KEY_HIDDEN_CATS = "hidden_categories"
         private const val KEY_ACTIVE_PROFILE = "active_profile_id"
+        private const val KEY_REC_TARGET = "recording_target"
+        private const val KEY_SMB_HOST = "smb_host"
+        private const val KEY_SMB_SHARE = "smb_share"
+        private const val KEY_SMB_FOLDER = "smb_folder"
+        private const val KEY_SMB_USER = "smb_user"
+        private const val KEY_SMB_PASS = "smb_password"
 
         @Volatile private var instance: AppSettings? = null
 

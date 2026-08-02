@@ -53,6 +53,11 @@ class PlayerController(
     private val scope: CoroutineScope,
     httpClient: OkHttpClient,
     subtitlesEnabled: Boolean = true,
+    /**
+     * When set, `smb://` media (a recording on a NAS) is read through this source so it plays and
+     * seeks in-app. Null for the live/VOD players, which never see an smb URI.
+     */
+    smbDataSourceFactory: androidx.media3.datasource.DataSource.Factory? = null,
 ) {
 
     sealed interface State {
@@ -95,7 +100,11 @@ class PlayerController(
         setDefaultRequestProperties(mapOf("User-Agent" to DEFAULT_USER_AGENT))
     }
 
-    private val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+    private val dataSourceFactory: androidx.media3.datasource.DataSource.Factory =
+        DefaultDataSource.Factory(context, httpFactory).let { default ->
+            if (smbDataSourceFactory != null) RoutingDataSourceFactory(default, smbDataSourceFactory)
+            else default
+        }
 
     /**
      * Retry policy tuned for IPTV rather than for CDNs.

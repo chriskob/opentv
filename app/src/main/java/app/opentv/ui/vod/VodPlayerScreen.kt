@@ -113,7 +113,14 @@ fun VodPlayerScreen(
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
-    val controller = remember { PlayerController(context, scope, graph.streamingHttpClient, subtitlesEnabled = false) }
+    // The SMB source lets a recording stored on a NAS play and seek in-app; harmless for the
+    // http/file URLs of ordinary VOD.
+    val controller = remember {
+        PlayerController(
+            context, scope, graph.streamingHttpClient, subtitlesEnabled = false,
+            smbDataSourceFactory = app.opentv.player.SmbDataSource.Factory(graph.settings),
+        )
+    }
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
 

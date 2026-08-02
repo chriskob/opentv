@@ -1,0 +1,219 @@
+/*
+ * This file is part of OpenTV.
+ * Copyright (C) 2026 The OpenTV Contributors
+ * Licensed under the GNU General Public License v3.0 or later.
+ */
+package app.opentv.recording
+
+import com.hierynomus.msdtyp.AccessMask
+import com.hierynomus.mssmb2.SMB2CreateDisposition
+import com.hierynomus.mssmb2.SMB2ShareAccess
+import com.hierynomus.smbj.SMBClient
+import com.hierynomus.smbj.auth.AuthenticationContext
+import com.hierynomus.smbj.connection.Connection
+import com.hierynomus.smbj.session.Session
+import com.hierynomus.smbj.share.DiskShare
+import java.io.Closeable
+import java.io.OutputStream
+import java.util.EnumSet
+
+/**
+ * A NAS / SMB share to record to. Stored on-device (SharedPreferences), exactly like a provider's
+ * credentials — it never leaves the device except to talk to the user's own server.
+ */
+data class SmbConfig(
+    val host: String,
+    val share: String,
+    /** Sub-folder within the share, e.g. `OpenTV`. Blank = the share root. */
+    val folder: String,
+    val username: String,
+    val password: String,
+) {
+    val isConfigured: Boolean get() = host.isNotBlank() && share.isNotBlank()
+}
+
+/** An open SMB file being written to. Closing tears the whole SMB stack down cleanly. */
+class SmbWriteHandle(
+    private val client: SMBClient,
+    private val connection: Connection,
+    private val session: Session,
+    private val share: DiskShare,
+    private val file: com.hierynomus.smbj.share.File,
+    val output: OutputStream,
+    /** The `smb://host/share/path` locator stored on the recording row. */
+    val locator: String,
+) : Closeable {
+    override fun close() {
+        runCatching { output.flush() }
+        runCatching { output.close() }
+        runCatching { file.close() }
+        runCatching { share.close() }
+        runCatching { session.close() }
+        runCatching { connection.close() }
+        runCatching { client.close() }
+    }
+}
+
+/**
+ * A random-access reader over an SMB file, for playing a NAS recording back in-app. Media3's
+ * data source seeks by asking for bytes at an offset; SMB supports exactly that.
+ */
+class SmbReadHandle(
+    private val client: SMBClient,
+    private val connection: Connection,
+    private val session: Session,
+    private val share: DiskShare,
+    private val file: com.hierynomus.smbj.share.File,
+    val length: Long,
+) : Closeable {
+    /** Reads up to [length] bytes at [fileOffset]; returns bytes read or -1 at EOF. */
+    fun readAt(buffer: ByteArray, fileOffset: Long, bufferOffset: Int, length: Int): Int =
+        file.read(buffer, fileOffset, bufferOffset, length)
+
+    override fun close() {
+        runCatching { file.close() }
+        runCatching { share.close() }
+        runCatching { session.close() }
+        runCatching { connection.close() }
+        runCatching { client.close() }
+    }
+}
+
+/**
+ * Thin SMB2/3 client over SMBJ. One connection per operation (recording holds it for the
+ * capture; playback holds it for the play). Deliberately not pooled — an IPTV box records one or
+ * two things at a time, and a fresh connection is simpler and robust against a NAS that drops idle
+ * sessions.
+ */
+object SmbClient {
+
+    private fun connect(config: SmbConfig): Quad {
+        val client = SMBClient()
+        val connection = client.connect(config.host)
+        val auth = AuthenticationContext(config.username, config.password.toCharArray(), null)
+        val session = connection.authenticate(auth)
+        val share = session.connectShare(config.share) as DiskShare
+        return Quad(client, connection, session, share)
+    }
+
+    private class Quad(
+        val client: SMBClient,
+        val connection: Connection,
+        val session: Session,
+        val share: DiskShare,
+    )
+
+    /** SMB paths use backslashes; the folder may be nested and is created if missing. */
+    private fun ensureFolder(share: DiskShare, folder: String) {
+        if (folder.isBlank()) return
+        val parts = folder.split('/', '\\').filter { it.isNotBlank() }
+        var acc = ""
+        for (part in parts) {
+            acc = if (acc.isEmpty()) part else "$acc\\$part"
+            if (!share.folderExists(acc)) runCatching { share.mkdir(acc) }
+        }
+    }
+
+    /** Build the `smb://host/share/folder/filename` locator a recording will be stored at. */
+    fun locator(config: SmbConfig, filename: String): String {
+        val f = config.folder.split('/', '\\').filter { it.isNotBlank() }.joinToString("/")
+        val path = if (f.isEmpty()) filename else "$f/$filename"
+        return "smb://${config.host}/${config.share}/$path"
+    }
+
+    /** Open the file named by [locator] for writing. Caller writes to [SmbWriteHandle.output]. */
+    fun openForWrite(config: SmbConfig, locator: String): SmbWriteHandle {
+        val parsed = parse(locator)
+        val cfg = config.copy(host = parsed.host, share = parsed.share)
+        val q = connect(cfg)
+        try {
+            val folder = parsed.path.substringBeforeLast('/', "")
+            ensureFolder(q.share, folder)
+            val file = q.share.openFile(
+                parsed.path.replace('/', '\\'),
+                EnumSet.of(AccessMask.GENERIC_WRITE),
+                null,
+                SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OVERWRITE_IF,
+                null,
+            )
+            return SmbWriteHandle(
+                q.client, q.connection, q.session, q.share, file,
+                file.outputStream, locator,
+            )
+        } catch (t: Throwable) {
+            runCatching { q.share.close() }
+            runCatching { q.session.close() }
+            runCatching { q.connection.close() }
+            runCatching { q.client.close() }
+            throw t
+        }
+    }
+
+    /** Open an existing `smb://host/share/path` locator for random-access reading (playback). */
+    fun openForRead(config: SmbConfig, locator: String): SmbReadHandle {
+        val parsed = parse(locator)
+        val cfg = config.copy(host = parsed.host, share = parsed.share)
+        val q = connect(cfg)
+        try {
+            val file = q.share.openFile(
+                parsed.path.replace('/', '\\'),
+                EnumSet.of(AccessMask.GENERIC_READ),
+                null,
+                SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OPEN,
+                null,
+            )
+            val size = file.fileInformation.standardInformation.endOfFile
+            return SmbReadHandle(q.client, q.connection, q.session, q.share, file, size)
+        } catch (t: Throwable) {
+            runCatching { q.share.close() }
+            runCatching { q.session.close() }
+            runCatching { q.connection.close() }
+            runCatching { q.client.close() }
+            throw t
+        }
+    }
+
+    /** Delete a recording from the NAS. */
+    fun delete(config: SmbConfig, locator: String) {
+        val parsed = parse(locator)
+        val cfg = config.copy(host = parsed.host, share = parsed.share)
+        val q = connect(cfg)
+        try {
+            runCatching { q.share.rm(parsed.path.replace('/', '\\')) }
+        } finally {
+            runCatching { q.share.close() }
+            runCatching { q.session.close() }
+            runCatching { q.connection.close() }
+            runCatching { q.client.close() }
+        }
+    }
+
+    /** Prove the settings work: connect, authenticate, open the share. Throws on failure. */
+    fun test(config: SmbConfig) {
+        val q = connect(config)
+        try {
+            ensureFolder(q.share, config.folder)
+        } finally {
+            runCatching { q.share.close() }
+            runCatching { q.session.close() }
+            runCatching { q.connection.close() }
+            runCatching { q.client.close() }
+        }
+    }
+
+    data class Parsed(val host: String, val share: String, val path: String)
+
+    /** smb://host/share/a/b/c.ts → (host, share, "a/b/c.ts"). */
+    fun parse(locator: String): Parsed {
+        val body = locator.removePrefix("smb://")
+        val segments = body.split('/').filter { it.isNotEmpty() }
+        val host = segments.getOrElse(0) { "" }
+        val share = segments.getOrElse(1) { "" }
+        val path = segments.drop(2).joinToString("/")
+        return Parsed(host, share, path)
+    }
+
+    fun isSmb(locator: String): Boolean = locator.startsWith("smb://")
+}

@@ -8,6 +8,7 @@ package app.opentv.ui.channels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import app.opentv.data.model.Channel
+import app.opentv.data.model.Programme
 import app.opentv.ui.ChannelsViewModel
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
@@ -75,6 +77,7 @@ fun GuideGrid(
     selectedKey: Any?,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row) -> Unit,
+    onProgramme: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
@@ -124,6 +127,7 @@ fun GuideGrid(
                     isSelected = row.key == selectedKey,
                     onSelect = { onSelectRow(row) },
                     onFocus = { onFocusRow(row) },
+                    onProgramme = { programme -> onProgramme(row, programme) },
                 )
             }
         }
@@ -206,6 +210,7 @@ private fun GuideRow(
     isSelected: Boolean,
     onSelect: () -> Unit,
     onFocus: () -> Unit,
+    onProgramme: (Programme) -> Unit,
 ) {
     // Focus (the d-pad border) just moves the highlight. Selection (the filled cell) is the
     // channel the preview is playing — it only changes when you press OK.
@@ -321,6 +326,7 @@ private fun GuideRow(
                         width = drawnWidth,
                         isNow = isNow,
                         progress = if (isNow) programme.progressAt(nowMillis) else 0f,
+                        onClick = { onProgramme(programme) },
                     )
                     cursor = end
                 }
@@ -330,7 +336,8 @@ private fun GuideRow(
 }
 
 @Composable
-private fun ProgrammeBlock(title: String, width: Dp, isNow: Boolean, progress: Float) {
+private fun ProgrammeBlock(title: String, width: Dp, isNow: Boolean, progress: Float, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
     Box(
         Modifier
             .width(width)
@@ -338,20 +345,31 @@ private fun ProgrammeBlock(title: String, width: Dp, isNow: Boolean, progress: F
             .padding(end = 3.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(
-                if (isNow) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surfaceVariant,
+                when {
+                    focused -> MaterialTheme.colorScheme.primary
+                    isNow -> MaterialTheme.colorScheme.primaryContainer
+                    else -> MaterialTheme.colorScheme.surfaceVariant
+                },
             )
             .then(
-                if (isNow) Modifier.border(
-                    1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp),
+                if (focused || isNow) Modifier.border(
+                    if (focused) 2.dp else 1.dp,
+                    MaterialTheme.colorScheme.primary,
+                    RoundedCornerShape(6.dp),
                 ) else Modifier,
-            ),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .clickable(onClick = onClick),
     ) {
         Text(
             title,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (isNow) MaterialTheme.colorScheme.onPrimaryContainer
-            else MaterialTheme.colorScheme.onSurface,
+            color = when {
+                focused -> MaterialTheme.colorScheme.onPrimary
+                isNow -> MaterialTheme.colorScheme.onPrimaryContainer
+                else -> MaterialTheme.colorScheme.onSurface
+            },
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 8.dp),

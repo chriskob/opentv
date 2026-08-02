@@ -21,7 +21,10 @@ import app.opentv.data.model.Movie
 import app.opentv.data.model.PlaybackPosition
 import app.opentv.data.model.Profile
 import app.opentv.data.model.Programme
+import app.opentv.data.model.Recording
+import app.opentv.data.model.RecordingStatus
 import app.opentv.data.model.Series
+import app.opentv.data.model.SeriesRule
 import app.opentv.data.model.Source
 import app.opentv.data.model.StreamKind
 import kotlinx.coroutines.flow.Flow
@@ -463,4 +466,83 @@ interface ProfileDao {
     /** Removing a profile takes its watch history with it. */
     @Query("DELETE FROM playback_positions WHERE profileId = :id")
     suspend fun deletePositions(id: Long)
+}
+
+@Dao
+interface RecordingDao {
+    /** The library, newest first — scheduled and in-progress float to the top by recency. */
+    @Query("SELECT * FROM recordings ORDER BY COALESCE(NULLIF(startedAtMillis, 0), scheduledStartMillis) DESC, id DESC")
+    fun observeAll(): Flow<List<Recording>>
+
+    /** Just the ones capturing right now — the player watches this to light its Record button. */
+    @Query("SELECT * FROM recordings WHERE status = 'RECORDING'")
+    fun observeActive(): Flow<List<Recording>>
+
+    @Query("SELECT * FROM recordings WHERE status = 'RECORDING'")
+    suspend fun active(): List<Recording>
+
+    @Query("SELECT * FROM recordings WHERE status = 'SCHEDULED' ORDER BY scheduledStartMillis")
+    suspend fun scheduled(): List<Recording>
+
+    @Query("SELECT * FROM recordings WHERE id = :id")
+    suspend fun byId(id: Long): Recording?
+
+    /** For series-link de-dup: has this rule already booked this programme window on this channel? */
+    @Query(
+        """
+        SELECT COUNT(*) FROM recordings
+        WHERE seriesRuleId = :ruleId AND channelId = :channelId AND scheduledStartMillis = :startMillis
+        """
+    )
+    suspend fun countForRuleAt(ruleId: Long, channelId: Long, startMillis: Long): Int
+
+    @Insert
+    suspend fun insert(recording: Recording): Long
+
+    @Update
+    suspend fun update(recording: Recording)
+
+    @Query("UPDATE recordings SET status = :status, error = :error WHERE id = :id")
+    suspend fun setStatus(id: Long, status: RecordingStatus, error: String? = null)
+
+    @Query("UPDATE recordings SET sizeBytes = :bytes WHERE id = :id")
+    suspend fun setSize(id: Long, bytes: Long)
+
+    @Query(
+        "UPDATE recordings SET status = :status, startedAtMillis = :startedAt WHERE id = :id"
+    )
+    suspend fun markStarted(id: Long, status: RecordingStatus, startedAt: Long)
+
+    @Query(
+        "UPDATE recordings SET status = :status, endedAtMillis = :endedAt, sizeBytes = :bytes, error = :error WHERE id = :id"
+    )
+    suspend fun markFinished(id: Long, status: RecordingStatus, endedAt: Long, bytes: Long, error: String?)
+
+    @Query("DELETE FROM recordings WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    /**
+     * On a cold start, any row still marked RECORDING is a leftover from a process that was
+     * killed mid-capture — reconcile it to FAILED so the UI never shows a phantom "recording".
+     */
+    @Query("UPDATE recordings SET status = 'FAILED', error = 'Interrupted' WHERE status = 'RECORDING'")
+    suspend fun failInterrupted()
+}
+
+@Dao
+interface SeriesRuleDao {
+    @Query("SELECT * FROM series_rules ORDER BY createdAtMillis DESC")
+    fun observeAll(): Flow<List<SeriesRule>>
+
+    @Query("SELECT * FROM series_rules WHERE enabled = 1")
+    suspend fun enabled(): List<SeriesRule>
+
+    @Query("SELECT * FROM series_rules WHERE channelId = :channelId AND titleKey = :titleKey LIMIT 1")
+    suspend fun forChannelTitle(channelId: Long, titleKey: String): SeriesRule?
+
+    @Insert
+    suspend fun insert(rule: SeriesRule): Long
+
+    @Query("DELETE FROM series_rules WHERE id = :id")
+    suspend fun delete(id: Long)
 }

@@ -303,3 +303,87 @@ data class Profile(
     val name: String,
     val createdAtMillis: Long = 0,
 )
+
+/** Where a recording is in its lifecycle. */
+enum class RecordingStatus {
+    /** Booked from the guide, waiting for its start time. */
+    SCHEDULED,
+
+    /** Capturing right now. */
+    RECORDING,
+
+    /** Finished and playable. */
+    COMPLETED,
+
+    /** Stopped early or hit an error; the file may be partial or missing. */
+    FAILED,
+}
+
+/**
+ * One recording — scheduled, in progress, or finished.
+ *
+ * The channel name, logo and stream URL are snapshotted at record time so the library still
+ * reads correctly even if the provider later drops or renames the channel. The captured file is
+ * a raw MPEG-TS (`.ts`) written straight from the live stream; it plays back through the same
+ * player as VOD, with full seeking once complete.
+ */
+@Entity(
+    tableName = "recordings",
+    indices = [Index(value = ["status"]), Index(value = ["channelId"])],
+)
+data class Recording(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** The channel row this came from (may since have been re-synced away). */
+    val channelId: Long,
+    val sourceId: Long,
+    /** Channel name at record time — the library shows this, not a live lookup. */
+    val channelName: String,
+    val logoUrl: String? = null,
+    /** Programme title when tied to a guide entry; otherwise the channel name. */
+    val title: String,
+    val description: String? = null,
+    /** Absolute path of the captured `.ts` file on this device. */
+    val filePath: String,
+    /** The stream URL being captured. */
+    val streamUrl: String,
+    /** User-Agent to capture with (some panels only serve a UA they recognise). */
+    val userAgent: String = Source.DEFAULT_USER_AGENT,
+    /** Planned window, for scheduled recordings (0 when started on the spot). */
+    val scheduledStartMillis: Long = 0,
+    val scheduledEndMillis: Long = 0,
+    val startedAtMillis: Long = 0,
+    val endedAtMillis: Long = 0,
+    val status: RecordingStatus,
+    val sizeBytes: Long = 0,
+    /** Set when this recording was booked by a series-link rule (for de-dup). */
+    val seriesRuleId: Long? = null,
+    /** Human-readable reason when [status] is FAILED. */
+    val error: String? = null,
+) {
+    /** Best available length: actual if finished, else the planned window. */
+    val durationMillis: Long
+        get() = when {
+            endedAtMillis > startedAtMillis -> endedAtMillis - startedAtMillis
+            scheduledEndMillis > scheduledStartMillis -> scheduledEndMillis - scheduledStartMillis
+            else -> 0
+        }
+}
+
+/**
+ * A series-link rule: record every future airing of a programme on a channel.
+ *
+ * Xtream/XMLTV rarely give a stable series id, so matching is by normalised title on a specific
+ * channel. A periodic scan turns matching upcoming programmes into scheduled recordings.
+ */
+@Entity(tableName = "series_rules", indices = [Index(value = ["channelId"])])
+data class SeriesRule(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val channelId: Long,
+    val channelName: String,
+    /** Normalised programme title to match upcoming airings against. */
+    val titleKey: String,
+    /** The title as shown to the user. */
+    val title: String,
+    val createdAtMillis: Long = 0,
+    val enabled: Boolean = true,
+)

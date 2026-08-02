@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Tv
@@ -60,6 +61,7 @@ fun SettingsHubScreen(
     onOpenDisplay: () -> Unit,
     onOpenParental: () -> Unit,
     onOpenSync: () -> Unit,
+    onOpenRecordings: () -> Unit,
     onOpenAbout: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -68,6 +70,7 @@ fun SettingsHubScreen(
         HubEntry(Icons.Filled.LiveTv, "TV guide", "Guide sources and free XMLTV feeds", onOpenGuide),
         HubEntry(Icons.Filled.GridView, "Channels", "Hide or favourite individual channels", onOpenChannels),
         HubEntry(Icons.Filled.Tune, "Display & playback", "Theme, subtitles, live guide preview", onOpenDisplay),
+        HubEntry(Icons.Filled.Storage, "Recording", "Where recordings are saved — this box or a NAS", onOpenRecordings),
         HubEntry(Icons.Filled.Lock, "Parental controls", "PIN lock and hide adult categories", onOpenParental),
         HubEntry(Icons.Filled.Sync, "Sync watch history", "Copy continue-watching to another device over wifi", onOpenSync),
         HubEntry(Icons.Filled.Info, "About", "Version, updates, licence and links", onOpenAbout),

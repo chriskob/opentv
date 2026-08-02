@@ -45,3 +45,14 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+
+# SMBJ (NAS recording) and its transitive deps. It uses reflection (mbassador event bus) and
+# pulls optional bits R8 would otherwise trip over. Keep its classes and silence the warnings so
+# the shrunk release still connects to a NAS.
+-keep class com.hierynomus.** { *; }
+-keep class net.engio.mbassy.** { *; }
+-dontwarn com.hierynomus.**
+-dontwarn net.engio.mbassy.**
+-dontwarn org.slf4j.**
+-dontwarn org.ietf.jgss.**
+-dontwarn javax.security.**

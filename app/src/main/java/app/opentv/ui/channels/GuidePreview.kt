@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
@@ -77,6 +78,8 @@ fun GuidePreview(
     onRefresh: () -> Unit,
     onAddSource: () -> Unit,
     previewPlayer: ExoPlayer?,
+    isRecording: Boolean = false,
+    onRecord: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -151,6 +154,17 @@ fun GuidePreview(
         Column(Modifier.weight(1f).fillMaxHeight()) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(1f))
+                if (row != null) {
+                    IconButton(onClick = onRecord) {
+                        // Always red — the universal "record" colour, so it reads as a record
+                        // button at a glance rather than a neutral dot.
+                        Icon(
+                            Icons.Default.FiberManualRecord,
+                            contentDescription = if (isRecording) "Stop recording" else "Record what's on now",
+                            tint = Color(0xFFE53935),
+                        )
+                    }
+                }
                 IconButton(onClick = onRefresh) {
                     Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                 }

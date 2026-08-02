@@ -80,7 +80,7 @@ class UpdateChecker(
 
     companion object {
         /** The single place the project's GitHub location is written down. */
-        const val REPO_SLUG = "legionnaireneyland/opentv"
+        const val REPO_SLUG = "opentvproject/opentv"
 
         /**
          * True when [tag] names a strictly higher version than [current].

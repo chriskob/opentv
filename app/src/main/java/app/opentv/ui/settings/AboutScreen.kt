@@ -119,6 +119,21 @@ fun AboutScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
+        Section("Support the project") {
+            Text(
+                "OpenTV is free and always will be — nothing is gated. If it's useful to you " +
+                    "and you'd like to chip in, a coffee helps keep the updates coming: new " +
+                    "features, fixes and support all come out of spare evenings. Entirely " +
+                    "optional, and genuinely appreciated.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+            LinkLine("Buy me a coffee", "buymeacoffee.com/opentvproject")
+        }
+
+        Spacer(Modifier.height(16.dp))
+
         Section("Licence & links") {
             LinkLine("Licence", "GNU General Public License v3.0")
             LinkLine("Source code", "github.com/opentvproject/opentv")

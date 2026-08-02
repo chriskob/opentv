@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -131,6 +132,8 @@ fun PlayerScreen(
     }
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
+    // What's recording right now, so the Record button can show as armed for this channel.
+    val activeRecordings by graph.recordingRepository.observeActive().collectAsState(initial = emptyList())
 
     // Hold the screen awake while the player is on screen. A view-level keepScreenOn flag isn't
     // reliable on every TV box, so we set the window flag on the Activity directly — that's what
@@ -206,6 +209,17 @@ fun PlayerScreen(
         val cur = queue.indexOfFirst { it.id == currentId }.let { if (it < 0) 0 else it }
         val next = (cur + delta).coerceIn(0, queue.size - 1)
         if (next != cur) playChannelId(queue[next].id)
+    }
+
+    fun toggleRecord() {
+        val active = activeRecordings.firstOrNull { it.channelId == currentId }
+        if (active != null) {
+            graph.recordingEngine.stop(active.id)
+        } else {
+            val channel = variants.firstOrNull { it.id == currentId } ?: return
+            scope.launch { graph.recordingEngine.startChannel(channel) }
+        }
+        interaction++
     }
 
     LaunchedEffect(channelId) {
@@ -467,6 +481,14 @@ fun PlayerScreen(
                     BarChip(Icons.Filled.AspectRatio, "Aspect", panel == Panel.ASPECT) {
                         panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT; interaction++
                     }
+                    Spacer(Modifier.width(10.dp))
+                    val recordingThis = activeRecordings.any { it.channelId == currentId }
+                    BarChip(
+                        icon = Icons.Filled.FiberManualRecord,
+                        label = if (recordingThis) "Stop" else "Record",
+                        selected = recordingThis,
+                        iconTint = Color(0xFFE53935),
+                    ) { toggleRecord() }
                 }
             }
         }
@@ -739,6 +761,7 @@ private fun BarChip(
     label: String,
     selected: Boolean,
     focusRequester: FocusRequester? = null,
+    iconTint: Color? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -763,7 +786,7 @@ private fun BarChip(
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = label, tint = content)
+        Icon(icon, contentDescription = label, tint = if (focused) content else (iconTint ?: content))
         Spacer(Modifier.width(6.dp))
         Text(label, style = MaterialTheme.typography.labelLarge, color = content)
     }

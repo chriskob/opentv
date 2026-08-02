@@ -22,7 +22,10 @@ import app.opentv.data.model.Movie
 import app.opentv.data.model.PlaybackPosition
 import app.opentv.data.model.Profile
 import app.opentv.data.model.Programme
+import app.opentv.data.model.Recording
+import app.opentv.data.model.RecordingStatus
 import app.opentv.data.model.Series
+import app.opentv.data.model.SeriesRule
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
 import app.opentv.data.model.StreamKind
@@ -37,6 +40,11 @@ class Converters {
 
     @TypeConverter fun stringToStreamKind(value: String): StreamKind =
         runCatching { StreamKind.valueOf(value) }.getOrDefault(StreamKind.LIVE)
+
+    @TypeConverter fun recordingStatusToString(value: RecordingStatus): String = value.name
+
+    @TypeConverter fun stringToRecordingStatus(value: String): RecordingStatus =
+        runCatching { RecordingStatus.valueOf(value) }.getOrDefault(RecordingStatus.FAILED)
 }
 
 @Database(
@@ -52,8 +60,10 @@ class Converters {
         Episode::class,
         PlaybackPosition::class,
         Profile::class,
+        Recording::class,
+        SeriesRule::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -69,6 +79,8 @@ abstract class OpenTvDatabase : RoomDatabase() {
     abstract fun episodes(): EpisodeDao
     abstract fun positions(): PlaybackPositionDao
     abstract fun profiles(): ProfileDao
+    abstract fun recordings(): RecordingDao
+    abstract fun seriesRules(): SeriesRuleDao
 
     companion object {
         /**
@@ -102,12 +114,57 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 → v4: recordings. Purely additive — two new tables (recordings, series_rules) and
+         * their indices, nothing existing is touched. Written to match Room's generated DDL so
+         * the schema-identity check passes and favourites/overrides survive the upgrade (rather
+         * than falling through to the destructive rebuild below).
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `recordings` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`channelId` INTEGER NOT NULL, " +
+                        "`sourceId` INTEGER NOT NULL, " +
+                        "`channelName` TEXT NOT NULL, " +
+                        "`logoUrl` TEXT, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`description` TEXT, " +
+                        "`filePath` TEXT NOT NULL, " +
+                        "`streamUrl` TEXT NOT NULL, " +
+                        "`userAgent` TEXT NOT NULL, " +
+                        "`scheduledStartMillis` INTEGER NOT NULL, " +
+                        "`scheduledEndMillis` INTEGER NOT NULL, " +
+                        "`startedAtMillis` INTEGER NOT NULL, " +
+                        "`endedAtMillis` INTEGER NOT NULL, " +
+                        "`status` TEXT NOT NULL, " +
+                        "`sizeBytes` INTEGER NOT NULL, " +
+                        "`seriesRuleId` INTEGER, " +
+                        "`error` TEXT)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recordings_status` ON `recordings` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recordings_channelId` ON `recordings` (`channelId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `series_rules` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`channelId` INTEGER NOT NULL, " +
+                        "`channelName` TEXT NOT NULL, " +
+                        "`titleKey` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`createdAtMillis` INTEGER NOT NULL, " +
+                        "`enabled` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_series_rules_channelId` ON `series_rules` (`channelId`)")
+            }
+        }
+
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
                 // refresh cannot make the UI stutter on a slow TV box.
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 /*
                  * Pre-1.0 policy: schema changes drop and rebuild the database. Everything
                  * in it is re-derivable from the provider (one sync away) except favourites

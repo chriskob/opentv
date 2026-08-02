@@ -45,6 +45,7 @@ import app.opentv.ui.settings.EpgSettingsScreen
 import app.opentv.ui.settings.ParentalControlsScreen
 import app.opentv.ui.settings.ProfilesScreen
 import app.opentv.ui.settings.ProvidersScreen
+import app.opentv.ui.settings.RecordingSettingsScreen
 import app.opentv.ui.settings.SyncScreen
 import app.opentv.ui.settings.SettingsHubScreen
 import app.opentv.ui.theme.OpenTvTheme
@@ -93,6 +94,7 @@ object Routes {
     const val PROFILES = "profiles"
     const val PARENTAL = "parental"
     const val SYNC = "sync"
+    const val REC_SETTINGS = "recording-settings"
     const val ABOUT = "about"
     const val SERIES_DETAIL = "series/{seriesId}"
 
@@ -176,6 +178,21 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onOpenSearch = { navController.navigate(Routes.SEARCH) },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
                     onOpenProfiles = { navController.navigate(Routes.PROFILES) },
+                    onPlayRecording = { rec ->
+                        // A NAS recording plays straight off its smb:// locator; an internal one
+                        // through a file:// uri. Both go through the VOD player, which seeks.
+                        val url =
+                            if (app.opentv.recording.SmbClient.isSmb(rec.filePath)) rec.filePath
+                            else android.net.Uri.fromFile(java.io.File(rec.filePath)).toString()
+                        navController.navigate(
+                            Routes.vodPlayer(
+                                key = "rec:${rec.id}",
+                                url = url,
+                                title = rec.title,
+                                ua = rec.userAgent,
+                            ),
+                        )
+                    },
                     activeProfileName = activeProfileName,
                 )
             }
@@ -213,6 +230,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onOpenDisplay = { navController.navigate(Routes.APP_SETTINGS) },
                     onOpenParental = { navController.navigate(Routes.PARENTAL) },
                     onOpenSync = { navController.navigate(Routes.SYNC) },
+                    onOpenRecordings = { navController.navigate(Routes.REC_SETTINGS) },
                     onOpenAbout = { navController.navigate(Routes.ABOUT) },
                     onBack = { navController.popBackStack() },
                 )
@@ -220,6 +238,10 @@ private fun OpenTvApp(isTelevision: Boolean) {
 
             composable(Routes.SYNC) {
                 SyncScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable(Routes.REC_SETTINGS) {
+                RecordingSettingsScreen(onBack = { navController.popBackStack() })
             }
 
             composable(Routes.CHANNELS) {

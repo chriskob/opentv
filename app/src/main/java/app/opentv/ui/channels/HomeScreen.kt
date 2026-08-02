@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -37,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,8 +60,12 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.view.WindowManager
+import androidx.compose.ui.window.Dialog
 import app.opentv.core.ServiceLocator
+import app.opentv.core.findActivity
 import app.opentv.data.model.Channel
+import app.opentv.data.model.Programme
 import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
 import app.opentv.ui.ChannelsViewModel
@@ -69,6 +78,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Live TV: a category rail on the left, the channel list on the right.
@@ -111,6 +121,14 @@ fun HomeScreen(
     var selectedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
     val previewSound by settings.guidePreviewSound.collectAsState()
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    // Recording from the guide: what's capturing now, and a scope to kick a capture off.
+    val activeRecordings by graph.recordingRepository.observeActive().collectAsState(initial = emptyList())
+    val recordScope = rememberCoroutineScope()
+    // The programme the user pressed OK on in the grid — drives the per-programme record menu.
+    var recordTarget by remember { mutableStateOf<Pair<ChannelsViewModel.Row, Programme>?>(null) }
+    // The channel whose OK menu (Watch / Record / Schedule) is open.
+    var channelMenu by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
 
     // Re-evaluate "now" once a minute so progress bars advance without leaving the screen.
     LaunchedEffect(Unit) {
@@ -161,14 +179,27 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // Hold the screen awake while the guide's live preview is playing — otherwise the box's
+    // screensaver fires while you're browsing with a channel running in the preview pane.
+    DisposableEffect(previewEnabled, screenResumed) {
+        val window = context.findActivity()?.window
+        if (previewEnabled && screenResumed) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
+
     // Preview audio follows the setting; muted by default so browsing stays quiet.
     LaunchedEffect(previewSound) {
         previewController.player.volume = if (previewSound) 1f else 0f
     }
 
-    // Tune the preview to the *selected* channel (the one you pressed OK on), never the highlight.
-    LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed) {
-        val row = selectedRow
+    // Tune the preview to the highlighted channel, so it follows the d-pad as you browse — the
+    // standard TV-guide behaviour. Debounced, so holding a direction doesn't re-tune every step.
+    LaunchedEffect(highlightedRow?.key, previewEnabled, screenResumed) {
+        val row = highlightedRow
         if (!previewEnabled || !screenResumed || row == null) {
             previewController.stop()
             return@LaunchedEffect
@@ -259,32 +290,218 @@ fun HomeScreen(
                     onPlayChannel(channel)
                 }
 
+                // Record the highlighted channel's now-programme (bounded to its end), or stop it
+                // if it's already recording. Powers the preview pane's quick record dot.
+                fun recordSelected() {
+                    val row = highlightedRow ?: return
+                    val active = activeRecordings.firstOrNull { it.channelId == row.primary.id }
+                    if (active != null) {
+                        graph.recordingEngine.stop(active.id)
+                    } else {
+                        recordScope.launch { graph.recordingEngine.startChannel(row.primary, row.now) }
+                    }
+                }
+
                 GuidePreview(
-                    row = selectedRow,
+                    row = highlightedRow,
                     nowMillis = nowMillis,
-                    onWatch = { selectedRow?.let { goFullscreen(it.primary) } },
+                    onWatch = { highlightedRow?.let { goFullscreen(it.primary) } },
                     onRefresh = onRefresh,
                     onAddSource = onAddSource,
                     previewPlayer = if (previewEnabled) previewController.player else null,
+                    isRecording = highlightedRow?.primary?.id?.let { id ->
+                        activeRecordings.any { it.channelId == id }
+                    } == true,
+                    onRecord = { recordSelected() },
                 )
                 GuideGrid(
                     rows = rows,
                     windowStartMillis = windowStart,
-                    selectedKey = selectedRow?.key,
-                    // First OK previews; OK again on the already-previewing channel goes full-screen.
-                    onSelectRow = { row ->
-                        if (row.key == selectedRow?.key) {
-                            goFullscreen(row.primary)
-                        } else {
-                            selectedRow = row
-                        }
-                    },
+                    selectedKey = highlightedRow?.key,
+                    // OK on a channel opens its menu: Watch, Record now, Schedule a later show,
+                    // Record series. The preview already follows the highlight as you browse.
+                    onSelectRow = { row -> channelMenu = row },
                     onFocusRow = { highlightedRow = it },
+                    onProgramme = { row, programme -> recordTarget = row to programme },
                     modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
                 )
             }
         }
     }
+
+    // The record menu for a programme picked in the grid.
+    recordTarget?.let { (targetRow, programme) ->
+        val channel = targetRow.primary
+        val liveNow = nowMillis in programme.startUtcMillis until programme.endUtcMillis
+        val recordingThis = activeRecordings.firstOrNull { it.channelId == channel.id }
+        Dialog(onDismissRequest = { recordTarget = null }) {
+            Column(
+                Modifier
+                    .width(440.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(24.dp),
+            ) {
+                Text(
+                    programme.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${formatTime(programme.startUtcMillis)}–${formatTime(programme.endUtcMillis)}   ${channel.displayName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+
+                when {
+                    liveNow && recordingThis != null -> RecordActionRow("Stop recording") {
+                        graph.recordingEngine.stop(recordingThis.id); recordTarget = null
+                    }
+                    liveNow -> RecordActionRow("● Record now", primary = true) {
+                        recordScope.launch { graph.recordingEngine.startChannel(channel, programme) }
+                        recordTarget = null
+                    }
+                    else -> RecordActionRow("● Schedule recording", primary = true) {
+                        recordScope.launch { graph.recordingEngine.scheduleProgramme(channel, programme) }
+                        recordTarget = null
+                    }
+                }
+                RecordActionRow("Record whole series") {
+                    recordScope.launch {
+                        graph.recordingEngine.recordSeries(channel, programme, targetRow.programmes)
+                    }
+                    recordTarget = null
+                }
+                RecordActionRow("Watch channel") {
+                    recordTarget = null
+                    PlaybackQueue.items = rows.map {
+                        PlaybackQueue.Item(it.primary.id, it.primary.displayName, it.primary.logoUrl, it.primary.number)
+                    }
+                    previewController.stop()
+                    onPlayChannel(channel)
+                }
+                RecordActionRow("Cancel") { recordTarget = null }
+            }
+        }
+    }
+
+    // The channel menu — opened by pressing OK on a channel. Watch, record what's on now, schedule
+    // a later programme, or record the whole series. A plain vertical list, so it's reliable on any
+    // remote — no fiddly timeline navigation needed.
+    channelMenu?.let { menuRow ->
+        val channel = menuRow.primary
+        val nowProg = menuRow.now
+        val recordingThis = activeRecordings.firstOrNull { it.channelId == channel.id }
+        val upcoming = menuRow.programmes.filter { it.startUtcMillis > nowMillis }.take(8)
+        Dialog(onDismissRequest = { channelMenu = null }) {
+            Column(
+                Modifier
+                    .width(480.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(20.dp),
+            ) {
+                Text(
+                    channel.displayName,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                nowProg?.let {
+                    Text(
+                        "Now: ${it.title}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+
+                Column(
+                    Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    RecordActionRow("▶  Watch") {
+                        channelMenu = null
+                        PlaybackQueue.items = rows.map {
+                            PlaybackQueue.Item(it.primary.id, it.primary.displayName, it.primary.logoUrl, it.primary.number)
+                        }
+                        previewController.stop()
+                        onPlayChannel(channel)
+                    }
+                    if (recordingThis != null) {
+                        RecordActionRow("■  Stop recording", primary = true) {
+                            graph.recordingEngine.stop(recordingThis.id); channelMenu = null
+                        }
+                    } else {
+                        RecordActionRow("●  Record what's on now", primary = true) {
+                            recordScope.launch { graph.recordingEngine.startChannel(channel, nowProg) }
+                            channelMenu = null
+                        }
+                    }
+                    if (nowProg != null) {
+                        RecordActionRow("Record whole series — ${nowProg.title}") {
+                            recordScope.launch {
+                                graph.recordingEngine.recordSeries(channel, nowProg, menuRow.programmes)
+                            }
+                            channelMenu = null
+                        }
+                    }
+                    if (upcoming.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Schedule a later programme",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
+                        upcoming.forEach { programme ->
+                            RecordActionRow("${formatTime(programme.startUtcMillis)}   ${programme.title}") {
+                                recordScope.launch { graph.recordingEngine.scheduleProgramme(channel, programme) }
+                                channelMenu = null
+                            }
+                        }
+                    }
+                    RecordActionRow("Cancel") { channelMenu = null }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordActionRow(label: String, primary: Boolean = false, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> MaterialTheme.colorScheme.primary
+        primary -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val fg = when {
+        focused -> MaterialTheme.colorScheme.onPrimary
+        primary -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Text(
+        label,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal,
+        color = fg,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    )
 }
 
 @Composable
@@ -392,24 +609,50 @@ private fun ChannelRow(
 
 @Composable
 private fun LoadingState(isSyncing: Boolean) {
+    val s by app.opentv.core.StatusBus.message.collectAsState()
+    val p by app.opentv.core.StatusBus.progress.collectAsState()
+    val status = s
+    val progress = p
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.widthIn(max = 460.dp),
+        ) {
+            if (progress == null) {
+                CircularProgressIndicator()
+            } else {
+                Text(
+                    "${(progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             Spacer(Modifier.height(20.dp))
             Text("Loading your channels", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             Text(
-                if (isSyncing) {
-                    "Fetching the channel list and guide from your provider. A large " +
-                        "provider can take a couple of minutes the first time."
-                } else {
-                    "Nothing came back from your provider last time. Press refresh to " +
-                        "try again."
+                when {
+                    // Actively assembling — this is work in progress, not a failure.
+                    status != null -> status
+                    isSyncing ->
+                        "Fetching the channel list and guide from your provider. A large " +
+                            "provider can take a couple of minutes the first time."
+                    // Channels are already on the device; the guide is being built from them.
+                    // A big provider takes a moment (longer on this debug build) — not a failure.
+                    else ->
+                        "Building your guide from the channels saved on this device. On a big " +
+                            "provider this takes a moment — it'll appear shortly."
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = 460.dp),
             )
+            if (progress != null) {
+                Spacer(Modifier.height(20.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                )
+            }
         }
     }
 }

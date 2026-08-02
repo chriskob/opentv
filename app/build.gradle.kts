@@ -14,8 +14,8 @@ android {
         applicationId = "app.opentv"
         minSdk = 23
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.4.2"
+        versionCode = 5
+        versionName = "0.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -140,6 +140,10 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.coil.compose)
     implementation(libs.zxing.core)
+
+    // SMB/CIFS client for recording to a NAS (Synology etc.) and playing those recordings
+    // back in-app over the network. Pure-Java SMB2/3, no native bits.
+    implementation("com.hierynomus:smbj:0.12.2")
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)
