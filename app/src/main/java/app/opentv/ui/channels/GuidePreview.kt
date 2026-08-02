@@ -38,11 +38,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
+import app.opentv.R
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -145,7 +147,7 @@ fun GuidePreview(
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(4.dp))
-                Text("Watch", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.guide_watch_label), color = Color.White, style = MaterialTheme.typography.labelMedium)
             }
         }
 
@@ -162,23 +164,23 @@ fun GuidePreview(
                         // something (● start → ■ stop) rather than looking inert.
                         Icon(
                             if (isRecording) Icons.Default.Stop else Icons.Default.FiberManualRecord,
-                            contentDescription = if (isRecording) "Stop recording" else "Record what's on now",
+                            contentDescription = if (isRecording) stringResource(R.string.guide_cd_stop_recording) else stringResource(R.string.guide_cd_record_now),
                             tint = Color(0xFFE53935),
                         )
                     }
                 }
                 IconButton(onClick = onRefresh) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.guide_cd_refresh))
                 }
                 IconButton(onClick = onAddSource) {
-                    Icon(Icons.Default.Add, contentDescription = "Add source")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.guide_cd_add_source))
                 }
             }
 
             if (row == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
                     Text(
-                        "Highlight a channel to see what's on",
+                        stringResource(R.string.guide_highlight_hint),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.titleMedium,
                     )
@@ -197,7 +199,7 @@ fun GuidePreview(
                 )
                 if (row.variants.size > 1) {
                     Text(
-                        "${row.variants.size} qualities",
+                        stringResource(R.string.guide_qualities_count, row.variants.size),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -232,7 +234,7 @@ fun GuidePreview(
                 }
             } else {
                 Text(
-                    "No guide information for this channel",
+                    stringResource(R.string.guide_no_info_channel),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -241,7 +243,7 @@ fun GuidePreview(
             row.next?.let { next ->
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "Next  ${formatTime(next.startUtcMillis)}   ${next.title}",
+                    stringResource(R.string.guide_next_prefix, formatTime(next.startUtcMillis), next.title),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     maxLines = 1,

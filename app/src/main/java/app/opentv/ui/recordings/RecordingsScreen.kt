@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
@@ -40,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,10 +50,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.collectAsState
+import app.opentv.R
 import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Recording
 import app.opentv.data.model.RecordingStatus
+import app.opentv.data.model.Reminder
 import app.opentv.recording.RecordingStorage
+import app.opentv.reminders.ReminderScheduler
 import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,12 +70,23 @@ class RecordingsViewModel(app: Application) : AndroidViewModel(app) {
         graph.recordingRepository.observeAll()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val reminders: StateFlow<List<Reminder>> =
+        graph.reminderRepository.observeAll()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
         // A row still marked "recording" on a cold start was killed mid-capture — reconcile it.
         viewModelScope.launch { graph.recordingRepository.failInterrupted() }
     }
 
     fun stop(id: Long) = graph.recordingEngine.stop(id)
+
+    fun cancelReminder(reminder: Reminder) {
+        viewModelScope.launch {
+            ReminderScheduler.cancel(getApplication(), reminder.id)
+            graph.reminderRepository.delete(reminder.id)
+        }
+    }
 
     fun delete(recording: Recording) {
         viewModelScope.launch {
@@ -85,38 +101,113 @@ class RecordingsViewModel(app: Application) : AndroidViewModel(app) {
 fun RecordingsScreen(onPlay: (Recording) -> Unit) {
     val viewModel: RecordingsViewModel = viewModel()
     val recordings by viewModel.recordings.collectAsState()
+    val reminders by viewModel.reminders.collectAsState()
+
+    val now = System.currentTimeMillis()
+    val upcomingReminders = reminders.filter { !it.fired && it.endUtcMillis > now }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp)) {
-        Text("Recordings", style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.rec_screen_title), style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Record live TV to this box or your NAS, and play it back here with full seeking.",
+            stringResource(R.string.rec_screen_desc),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(16.dp))
 
-        if (recordings.isEmpty()) {
+        if (recordings.isEmpty() && upcomingReminders.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "No recordings yet. Press Record in the player, or schedule one from the guide.",
+                    stringResource(R.string.rec_empty_state),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(recordings, key = { it.id }) { rec ->
-                    RecordingRow(
-                        recording = rec,
-                        onPlay = { onPlay(rec) },
-                        onStop = { viewModel.stop(rec.id) },
-                        onDelete = { viewModel.delete(rec) },
-                    )
+                if (upcomingReminders.isNotEmpty()) {
+                    item(key = "reminders-header") { SectionHeader(stringResource(R.string.rec_upcoming_reminders)) }
+                    items(upcomingReminders, key = { "rem-${it.id}" }) { rem ->
+                        ReminderRow(reminder = rem, onCancel = { viewModel.cancelReminder(rem) })
+                    }
+                }
+                if (recordings.isNotEmpty()) {
+                    if (upcomingReminders.isNotEmpty()) {
+                        item(key = "recordings-header") { SectionHeader(stringResource(R.string.nav_recordings)) }
+                    }
+                    items(recordings, key = { it.id }) { rec ->
+                        RecordingRow(
+                            recording = rec,
+                            onPlay = { onPlay(rec) },
+                            onStop = { viewModel.stop(rec.id) },
+                            onDelete = { viewModel.delete(rec) },
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun ReminderRow(reminder: Reminder, onCancel: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.Notifications,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                reminder.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            val prefix = if (reminder.autoTune) stringResource(R.string.rec_reminder_autoswitch)
+            else stringResource(R.string.rec_reminder_plain)
+            Text(
+                "$prefix · ${reminder.channelName} · ${formatWhen(reminder.startUtcMillis)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        ActionButton(Icons.Filled.Delete, stringResource(R.string.rec_cancel_reminder), onCancel)
+    }
+}
+
+private fun formatWhen(utcMillis: Long): String =
+    java.text.SimpleDateFormat("EEE d MMM, HH:mm", java.util.Locale.getDefault())
+        .format(java.util.Date(utcMillis))
 
 @Composable
 private fun RecordingRow(
@@ -159,14 +250,14 @@ private fun RecordingRow(
         }
         Spacer(Modifier.width(10.dp))
         if (playable) {
-            ActionButton(Icons.Filled.PlayArrow, "Play", onPlay)
+            ActionButton(Icons.Filled.PlayArrow, stringResource(R.string.common_play), onPlay)
             Spacer(Modifier.width(8.dp))
         }
         if (recording.status == RecordingStatus.RECORDING) {
-            ActionButton(Icons.Filled.Stop, "Stop", onStop)
+            ActionButton(Icons.Filled.Stop, stringResource(R.string.common_stop), onStop)
             Spacer(Modifier.width(8.dp))
         }
-        ActionButton(Icons.Filled.Delete, "Delete", onDelete)
+        ActionButton(Icons.Filled.Delete, stringResource(R.string.common_delete), onDelete)
     }
 }
 
@@ -187,12 +278,13 @@ private fun ActionButton(icon: ImageVector, label: String, onClick: () -> Unit) 
     }
 }
 
+@Composable
 private fun statusLine(rec: Recording): String = when (rec.status) {
-    RecordingStatus.SCHEDULED -> "Scheduled · ${rec.channelName}"
-    RecordingStatus.RECORDING -> "● Recording · ${rec.channelName} · ${formatSize(rec.sizeBytes)}"
+    RecordingStatus.SCHEDULED -> stringResource(R.string.rec_status_scheduled, rec.channelName)
+    RecordingStatus.RECORDING -> stringResource(R.string.rec_status_recording, rec.channelName, formatSize(rec.sizeBytes))
     RecordingStatus.COMPLETED ->
         "${rec.channelName} · ${formatDuration(rec.durationMillis)} · ${formatSize(rec.sizeBytes)}"
-    RecordingStatus.FAILED -> "Failed · ${rec.error ?: "unknown error"}"
+    RecordingStatus.FAILED -> stringResource(R.string.rec_status_failed, rec.error ?: stringResource(R.string.rec_error_unknown))
 }
 
 @Composable

@@ -41,10 +41,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.R
 import app.opentv.ui.ChannelsViewModel
 import coil.compose.AsyncImage
 
@@ -72,16 +74,16 @@ fun ChannelManagerScreen(
             .padding(horizontal = 28.dp, vertical = 20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Channel manager", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.channels_manager_title), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.width(20.dp))
             Text(
-                query.ifEmpty { "Search to hide or favourite channels" },
+                query.ifEmpty { stringResource(R.string.channels_manager_hint) },
                 style = MaterialTheme.typography.titleLarge,
                 color = if (query.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
                 else MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onBack) { Text("Done") }
+            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
 
         Spacer(Modifier.height(20.dp))
@@ -98,9 +100,9 @@ fun ChannelManagerScreen(
 
             Column(Modifier.weight(1f).fillMaxSize()) {
                 when {
-                    query.isBlank() -> Hint("Search for a channel, then hide it from the guide or star it.")
-                    query.trim().length < 2 -> Hint("Keep typing…")
-                    results.isEmpty() -> Hint("No channels match “$query”.")
+                    query.isBlank() -> Hint(stringResource(R.string.channels_manager_search_hint))
+                    query.trim().length < 2 -> Hint(stringResource(R.string.common_keep_typing))
+                    results.isEmpty() -> Hint(stringResource(R.string.channels_manager_no_match, query))
                     else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(results, key = { it.key }) { row ->
                             val hidden = row.variants.all { it.hidden }
@@ -156,7 +158,7 @@ private fun ManagerRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                if (hidden) "Hidden" else "Showing",
+                if (hidden) stringResource(R.string.channels_hidden) else stringResource(R.string.channels_showing),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (hidden) MaterialTheme.colorScheme.onSurfaceVariant
                 else MaterialTheme.colorScheme.primary,
@@ -166,12 +168,12 @@ private fun ManagerRow(
         IconButton(onClick = onToggleFavourite) {
             Icon(
                 imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                contentDescription = if (row.primary.favourite) "Remove favourite" else "Favourite",
+                contentDescription = if (row.primary.favourite) stringResource(R.string.common_remove_favourite) else stringResource(R.string.common_favourite),
             )
         }
         Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Show", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(stringResource(R.string.channels_show), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             // Checked = visible; off = hidden. Reads the natural way: switch it off to hide.
             Switch(checked = !hidden, onCheckedChange = { onToggleHidden() })
         }

@@ -32,7 +32,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.core.SleepTimer
 
@@ -58,26 +60,26 @@ fun AppSettingsScreen(onBack: () -> Unit) {
             .padding(horizontal = 32.dp, vertical = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Display & playback", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.settings_display_title), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onBack) { Text("Done") }
+            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
 
         Spacer(Modifier.height(20.dp))
 
-        SettingsSection("Appearance") {
-            ThemeOption("Follow system", themeMode == AppSettings.ThemeMode.SYSTEM) {
+        SettingsSection(stringResource(R.string.settings_appearance)) {
+            ThemeOption(stringResource(R.string.settings_theme_system), themeMode == AppSettings.ThemeMode.SYSTEM) {
                 settings.setThemeMode(AppSettings.ThemeMode.SYSTEM)
             }
-            ThemeOption("Dark", themeMode == AppSettings.ThemeMode.DARK) {
+            ThemeOption(stringResource(R.string.settings_theme_dark), themeMode == AppSettings.ThemeMode.DARK) {
                 settings.setThemeMode(AppSettings.ThemeMode.DARK)
             }
-            ThemeOption("Light", themeMode == AppSettings.ThemeMode.LIGHT) {
+            ThemeOption(stringResource(R.string.settings_theme_light), themeMode == AppSettings.ThemeMode.LIGHT) {
                 settings.setThemeMode(AppSettings.ThemeMode.LIGHT)
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                "TV boxes stay dark on \"Follow system\". Pick Dark or Light to force it.",
+                stringResource(R.string.settings_theme_note),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -85,17 +87,16 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
-        SettingsSection("Guide") {
+        SettingsSection(stringResource(R.string.settings_section_guide)) {
             ToggleRow(
-                title = "Live preview in the guide",
-                subtitle = "Play the selected channel in the preview pane. Turn this off " +
-                    "if the guide stutters on an older box.",
+                title = stringResource(R.string.settings_live_preview_title),
+                subtitle = stringResource(R.string.settings_live_preview_subtitle),
                 checked = previewVideo,
                 onToggle = settings::setGuidePreviewVideo,
             )
             ToggleRow(
-                title = "Preview sound",
-                subtitle = "Play the preview channel's audio too, not just the picture.",
+                title = stringResource(R.string.settings_preview_sound_title),
+                subtitle = stringResource(R.string.settings_preview_sound_subtitle),
                 checked = previewSound,
                 onToggle = settings::setGuidePreviewSound,
             )
@@ -103,18 +104,16 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
-        SettingsSection("Playback") {
+        SettingsSection(stringResource(R.string.settings_section_playback)) {
             ToggleRow(
-                title = "Show subtitles when available",
-                subtitle = "The default for new channels. While watching, the Subtitles button " +
-                    "on the player lets you pick a specific track or turn them off.",
+                title = stringResource(R.string.settings_subtitles_title),
+                subtitle = stringResource(R.string.settings_subtitles_subtitle),
                 checked = captions,
                 onToggle = settings::setSubtitlesEnabled,
             )
             ToggleRow(
-                title = "Resume last channel on startup",
-                subtitle = "Open the app straight into the channel you were last watching, " +
-                    "instead of the guide. Press Back to reach the guide.",
+                title = stringResource(R.string.settings_resume_title),
+                subtitle = stringResource(R.string.settings_resume_subtitle),
                 checked = resumeLast,
                 onToggle = settings::setResumeLastChannel,
             )
@@ -135,7 +134,7 @@ private fun SleepTimerSection() {
     }
 
     Text(
-        "Sleep timer",
+        stringResource(R.string.settings_sleep_timer),
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.primary,
     )
@@ -148,15 +147,15 @@ private fun SleepTimerSection() {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                if (remaining == null) "Off — playback keeps going until you stop it."
-                else "On — playback will stop in about $remaining min.",
+                if (remaining == null) stringResource(R.string.settings_sleep_off_desc)
+                else stringResource(R.string.settings_sleep_on_desc, remaining),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
-            SleepOption("Off", selected = remaining == null) { SleepTimer.clear() }
+            SleepOption(stringResource(R.string.settings_sleep_off), selected = remaining == null) { SleepTimer.clear() }
             SleepTimer.presets.forEach { mins ->
-                SleepOption("$mins minutes", selected = false) { SleepTimer.armMinutes(mins) }
+                SleepOption(stringResource(R.string.settings_sleep_minutes, mins), selected = false) { SleepTimer.armMinutes(mins) }
             }
         }
     }

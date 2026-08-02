@@ -31,9 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.R
 import app.opentv.ui.ProfilesViewModel
 import app.opentv.ui.channels.OnScreenKeyboard
 
@@ -55,7 +57,7 @@ fun ProfilesScreen(
     editing?.let { target ->
         NameEntry(
             initial = if (target == NEW) "" else profiles.firstOrNull { it.id == target }?.name.orEmpty(),
-            heading = if (target == NEW) "New profile name" else "Rename profile",
+            heading = if (target == NEW) stringResource(R.string.profiles_new_heading) else stringResource(R.string.profiles_rename_heading),
             onCancel = { editing = null },
             onSave = { name ->
                 if (target == NEW) viewModel.addProfile(name) else viewModel.rename(target, name)
@@ -71,11 +73,11 @@ fun ProfilesScreen(
             .padding(horizontal = 32.dp, vertical = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Who's watching?", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.profiles_title), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.weight(1f))
-            Button(onClick = { editing = NEW }) { Text("Add profile") }
+            Button(onClick = { editing = NEW }) { Text(stringResource(R.string.profiles_add)) }
             Spacer(Modifier.width(12.dp))
-            OutlinedButton(onClick = onBack) { Text("Done") }
+            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
 
         Spacer(Modifier.height(20.dp))
@@ -99,18 +101,18 @@ fun ProfilesScreen(
                             )
                             if (active) {
                                 Text(
-                                    "Active",
+                                    stringResource(R.string.profiles_active),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
                         if (!active) {
-                            TextButton(onClick = { viewModel.select(profile.id) }) { Text("Use") }
+                            TextButton(onClick = { viewModel.select(profile.id) }) { Text(stringResource(R.string.profiles_use)) }
                         }
-                        TextButton(onClick = { editing = profile.id }) { Text("Rename") }
+                        TextButton(onClick = { editing = profile.id }) { Text(stringResource(R.string.profiles_rename)) }
                         if (profile.id != 1L) {
-                            TextButton(onClick = { viewModel.remove(profile.id) }) { Text("Remove") }
+                            TextButton(onClick = { viewModel.remove(profile.id) }) { Text(stringResource(R.string.common_remove)) }
                         }
                     }
                 }
@@ -141,9 +143,9 @@ private fun NameEntry(
                 color = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.weight(1f))
-            Button(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text("Save") }
+            Button(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text(stringResource(R.string.common_save)) }
             Spacer(Modifier.width(12.dp))
-            OutlinedButton(onClick = onCancel) { Text("Cancel") }
+            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
         }
         Spacer(Modifier.height(24.dp))
         OnScreenKeyboard(

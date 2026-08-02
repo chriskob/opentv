@@ -42,10 +42,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.R
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
 import app.opentv.ui.VodViewModel
@@ -73,7 +75,7 @@ fun MoviesScreen(
 
     Row(Modifier.fillMaxSize()) {
         CategoryRail(
-            title = "Movies",
+            title = stringResource(R.string.nav_movies),
             entries = categories.map { it.id to it.name },
             onSelect = { viewModel.selectMovieCategory(it) },
         )
@@ -81,9 +83,9 @@ fun MoviesScreen(
             if (resume.isNotEmpty()) ContinueWatchingRow(resume, onResume)
             if (movies.isEmpty()) {
                 when {
-                    vodLoading || isSyncing -> LoadingVod("Loading movies")
-                    hasSources -> EmptyVod("No movies", "This provider didn't return any movies.")
-                    else -> EmptyVod("No movies", "Add a provider to see its movies here.")
+                    vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_movies))
+                    hasSources -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_provider))
+                    else -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_add))
                 }
             } else {
                 LazyVerticalGrid(
@@ -130,7 +132,7 @@ fun SeriesScreen(
 
     Row(Modifier.fillMaxSize()) {
         CategoryRail(
-            title = "Shows",
+            title = stringResource(R.string.nav_shows),
             entries = categories.map { it.id to it.name },
             onSelect = { viewModel.selectSeriesCategory(it) },
         )
@@ -138,9 +140,9 @@ fun SeriesScreen(
             if (resume.isNotEmpty()) ContinueWatchingRow(resume, onResume)
             if (series.isEmpty()) {
                 when {
-                    vodLoading || isSyncing -> LoadingVod("Loading shows")
-                    hasSources -> EmptyVod("No shows", "This provider didn't return any shows.")
-                    else -> EmptyVod("No shows", "Add a provider to see its shows here.")
+                    vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_shows))
+                    hasSources -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_provider))
+                    else -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_add))
                 }
             } else {
                 LazyVerticalGrid(
@@ -190,7 +192,7 @@ fun SeriesDetailScreen(
         Spacer(Modifier.height(16.dp))
 
         if (episodes.isEmpty()) {
-            Text("Loading episodes…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.vod_loading_episodes), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(episodes, key = { it.id }) { ep ->
@@ -242,7 +244,7 @@ private fun CategoryRail(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             item {
-                RailText("All", true) { onSelect(null) }
+                RailText(stringResource(R.string.vod_all), true) { onSelect(null) }
             }
             items(entries, key = { it.first }) { (id, name) ->
                 RailText(name, false) { onSelect(id) }
@@ -306,7 +308,7 @@ private fun ContinueWatchingRow(
 ) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(
-            "Continue watching",
+            stringResource(R.string.vod_continue_watching),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -375,7 +377,7 @@ private fun LoadingVod(message: String) {
             Text(message, style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             Text(
-                "A large provider can take a couple of minutes the first time.",
+                stringResource(R.string.vod_large_provider_note),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

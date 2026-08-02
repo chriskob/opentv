@@ -391,3 +391,32 @@ data class SeriesRule(
     val createdAtMillis: Long = 0,
     val enabled: Boolean = true,
 )
+
+/**
+ * A one-off reminder for a future programme.
+ *
+ * At the programme's start time an exact alarm fires a notification; tapping it jumps to the
+ * channel. With [autoTune] the fired notification is full-screen so a living-room box switches
+ * over on its own. A reminder is identified for de-dup by (channelId, startUtcMillis) — the same
+ * (channel, slot) can only be reminded once. Everything is snapshotted so the reminder still
+ * reads correctly even if the guide later shifts.
+ */
+@Entity(
+    tableName = "reminders",
+    indices = [Index(value = ["startUtcMillis"]), Index(value = ["channelId"])],
+)
+data class Reminder(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val channelId: Long,
+    val channelName: String,
+    val logoUrl: String? = null,
+    /** The programme title being reminded about. */
+    val title: String,
+    val startUtcMillis: Long,
+    val endUtcMillis: Long,
+    /** Switch to the channel automatically at start (full-screen notification), not just notify. */
+    val autoTune: Boolean = false,
+    val createdAtMillis: Long = 0,
+    /** Set once the alarm has fired, so a boot re-arm skips it and the list can grey it out. */
+    val fired: Boolean = false,
+)

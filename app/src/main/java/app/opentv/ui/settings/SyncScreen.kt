@@ -35,9 +35,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.R
 import app.opentv.sync.SyncServer
 import app.opentv.ui.SyncViewModel
 
@@ -58,14 +60,13 @@ fun SyncScreen(
             .padding(horizontal = 32.dp, vertical = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Sync watch history", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.settings_sync_title), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onBack) { Text("Done") }
+            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Copy your continue-watching between two OpenTV devices over your own wifi — nothing " +
-                "leaves the house, and no account is involved.",
+            stringResource(R.string.sync_desc),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.widthIn(max = 720.dp),
@@ -73,8 +74,8 @@ fun SyncScreen(
 
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ModeChip("Share from here", mode == Mode.SHARE) { mode = Mode.SHARE }
-            ModeChip("Receive", mode == Mode.RECEIVE) { mode = Mode.RECEIVE }
+            ModeChip(stringResource(R.string.sync_share_from_here), mode == Mode.SHARE) { mode = Mode.SHARE }
+            ModeChip(stringResource(R.string.sync_receive), mode == Mode.RECEIVE) { mode = Mode.RECEIVE }
         }
         Spacer(Modifier.height(20.dp))
 
@@ -94,31 +95,31 @@ private fun SharePane(viewModel: SyncViewModel) {
         Column(Modifier.padding(20.dp).widthIn(max = 640.dp)) {
             when (val s = state) {
                 is SyncServer.State.Sharing -> {
-                    Text("Ready to share", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.sync_ready_to_share), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(12.dp))
-                    Text("On the other device: Settings → Sync → Receive, and enter:")
+                    Text(stringResource(R.string.sync_on_other_device))
                     Spacer(Modifier.height(12.dp))
-                    Field("Address", s.session.address)
+                    Field(stringResource(R.string.sync_address), s.session.address)
                     Spacer(Modifier.height(8.dp))
-                    Field("Code", s.session.code)
+                    Field(stringResource(R.string.sync_code), s.session.code)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Or type it in one go:  ${s.session.address}#${s.session.code}",
+                        stringResource(R.string.sync_type_in_one_go, s.session.address, s.session.code),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(16.dp))
-                    OutlinedButton(onClick = { viewModel.stopSharing() }) { Text("Stop sharing") }
+                    OutlinedButton(onClick = { viewModel.stopSharing() }) { Text(stringResource(R.string.sync_stop_sharing)) }
                 }
                 is SyncServer.State.Failed -> {
                     Text(s.reason, color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = { viewModel.startSharing() }) { Text("Try again") }
+                    Button(onClick = { viewModel.startSharing() }) { Text(stringResource(R.string.common_try_again)) }
                 }
                 else -> {
-                    Text("This device will share its watch history for a few minutes, behind a code.")
+                    Text(stringResource(R.string.sync_will_share))
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = { viewModel.startSharing() }) { Text("Start sharing") }
+                    Button(onClick = { viewModel.startSharing() }) { Text(stringResource(R.string.sync_start_sharing)) }
                 }
             }
         }
@@ -133,7 +134,7 @@ private fun ReceivePane(viewModel: SyncViewModel) {
     Row {
         Card {
             Column(Modifier.padding(20.dp).widthIn(max = 520.dp)) {
-                Text("Type what the other device shows", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.sync_type_what_shows), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     entry.ifEmpty { "address:port#code" },
@@ -155,12 +156,12 @@ private fun ReceivePane(viewModel: SyncViewModel) {
                             val code = entry.substringAfter('#')
                             viewModel.receive(address, code)
                         },
-                    ) { Text("Connect") }
+                    ) { Text(stringResource(R.string.sync_connect)) }
 
                     when (val s = state) {
-                        is SyncViewModel.ReceiveState.Connecting -> Text("Connecting…")
+                        is SyncViewModel.ReceiveState.Connecting -> Text(stringResource(R.string.sync_connecting))
                         is SyncViewModel.ReceiveState.Done -> Text(
-                            "Synced ${s.merged} item(s).",
+                            stringResource(R.string.sync_synced_items, s.merged),
                             color = MaterialTheme.colorScheme.primary,
                         )
                         is SyncViewModel.ReceiveState.Failed -> Text(

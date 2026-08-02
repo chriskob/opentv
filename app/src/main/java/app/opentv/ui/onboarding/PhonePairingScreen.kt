@@ -36,9 +36,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.opentv.R
 import app.opentv.data.model.Source
 import app.opentv.pairing.PairingServer
 import app.opentv.pairing.QrCodes
@@ -84,7 +86,7 @@ fun PhonePairingScreen(
             is PairingServer.State.Failed -> Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("Pairing stopped", style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.pairing_stopped), style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(10.dp))
                 Text(
                     current.reason,
@@ -93,8 +95,8 @@ fun PhonePairingScreen(
                 )
                 Spacer(Modifier.height(24.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { server.start() }) { Text("Try again") }
-                    OutlinedButton(onClick = onCancel) { Text("Type it here instead") }
+                    Button(onClick = { server.start() }) { Text(stringResource(R.string.common_try_again)) }
+                    OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.pairing_type_here)) }
                 }
             }
 
@@ -103,7 +105,7 @@ fun PhonePairingScreen(
             ) {
                 CircularProgressIndicator()
                 Spacer(Modifier.height(16.dp))
-                Text("Got it — connecting to your provider…")
+                Text(stringResource(R.string.pairing_got_it))
             }
 
             PairingServer.State.Idle -> CircularProgressIndicator()
@@ -124,7 +126,7 @@ private fun Listening(session: PairingServer.Session, onCancel: () -> Unit) {
         if (qr != null) {
             Image(
                 bitmap = qr.asImageBitmap(),
-                contentDescription = "QR code linking to the setup page on this device",
+                contentDescription = stringResource(R.string.pairing_qr_desc),
                 modifier = Modifier
                     .size(300.dp)
                     .clip(RoundedCornerShape(16.dp))
@@ -134,18 +136,17 @@ private fun Listening(session: PairingServer.Session, onCancel: () -> Unit) {
         }
 
         Column(Modifier.widthIn(max = 520.dp)) {
-            Text("Set up from your phone", style = MaterialTheme.typography.displaySmall)
+            Text(stringResource(R.string.pairing_setup_title), style = MaterialTheme.typography.displaySmall)
             Spacer(Modifier.height(12.dp))
             Text(
-                "Point your phone's camera at the code. It opens a page served by this " +
-                    "television — nothing you type leaves your home network.",
+                stringResource(R.string.pairing_setup_desc),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(Modifier.height(28.dp))
             Text(
-                "Then enter this code on your phone",
+                stringResource(R.string.pairing_enter_code),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -160,7 +161,7 @@ private fun Listening(session: PairingServer.Session, onCancel: () -> Unit) {
 
             Spacer(Modifier.height(24.dp))
             Text(
-                "Camera won't scan it? Open this in any browser on your phone:",
+                stringResource(R.string.pairing_camera_fail),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -168,7 +169,7 @@ private fun Listening(session: PairingServer.Session, onCancel: () -> Unit) {
             Text(session.shortUrl, style = MaterialTheme.typography.titleLarge)
 
             Spacer(Modifier.height(32.dp))
-            OutlinedButton(onClick = onCancel) { Text("Type it on the TV instead") }
+            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.pairing_type_on_tv)) }
         }
     }
 }

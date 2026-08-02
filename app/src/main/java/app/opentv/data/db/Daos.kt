@@ -23,6 +23,7 @@ import app.opentv.data.model.Profile
 import app.opentv.data.model.Programme
 import app.opentv.data.model.Recording
 import app.opentv.data.model.RecordingStatus
+import app.opentv.data.model.Reminder
 import app.opentv.data.model.Series
 import app.opentv.data.model.SeriesRule
 import app.opentv.data.model.Source
@@ -545,4 +546,42 @@ interface SeriesRuleDao {
 
     @Query("DELETE FROM series_rules WHERE id = :id")
     suspend fun delete(id: Long)
+}
+
+@Dao
+interface ReminderDao {
+    /** All reminders, soonest first — the reminders list and boot re-arm both read this. */
+    @Query("SELECT * FROM reminders ORDER BY startUtcMillis")
+    fun observeAll(): Flow<List<Reminder>>
+
+    /** Still-future, not-yet-fired reminders — the set to re-arm after a reboot. */
+    @Query("SELECT * FROM reminders WHERE fired = 0 AND startUtcMillis > :nowMillis ORDER BY startUtcMillis")
+    suspend fun upcoming(nowMillis: Long): List<Reminder>
+
+    @Query("SELECT * FROM reminders WHERE id = :id")
+    suspend fun byId(id: Long): Reminder?
+
+    /** De-dup: is there already a reminder for this (channel, slot)? */
+    @Query("SELECT * FROM reminders WHERE channelId = :channelId AND startUtcMillis = :startMillis LIMIT 1")
+    suspend fun forProgramme(channelId: Long, startMillis: Long): Reminder?
+
+    /** The guide grid asks: which upcoming slots already have a bell? Keyed by start time. */
+    @Query("SELECT startUtcMillis FROM reminders WHERE channelId = :channelId AND fired = 0")
+    fun observeStartsForChannel(channelId: Long): Flow<List<Long>>
+
+    @Insert
+    suspend fun insert(reminder: Reminder): Long
+
+    @Query("UPDATE reminders SET fired = 1 WHERE id = :id")
+    suspend fun markFired(id: Long)
+
+    @Query("DELETE FROM reminders WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM reminders WHERE channelId = :channelId AND startUtcMillis = :startMillis")
+    suspend fun deleteForProgramme(channelId: Long, startMillis: Long)
+
+    /** Housekeeping: drop reminders whose programme has already ended. */
+    @Query("DELETE FROM reminders WHERE endUtcMillis < :beforeMillis")
+    suspend fun deleteEndedBefore(beforeMillis: Long)
 }

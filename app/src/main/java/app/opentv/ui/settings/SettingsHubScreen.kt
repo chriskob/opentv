@@ -45,8 +45,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.opentv.R
 
 /**
  * The one settings entry point. Every other settings surface is reached from here, so there is
@@ -66,14 +68,14 @@ fun SettingsHubScreen(
     onBack: () -> Unit,
 ) {
     val entries = listOf(
-        HubEntry(Icons.Filled.Dns, "Providers", "Add, remove and re-test your IPTV sources", onOpenProviders),
-        HubEntry(Icons.Filled.LiveTv, "TV guide", "Guide sources and free XMLTV feeds", onOpenGuide),
-        HubEntry(Icons.Filled.GridView, "Channels", "Hide or favourite individual channels", onOpenChannels),
-        HubEntry(Icons.Filled.Tune, "Display & playback", "Theme, subtitles, live guide preview", onOpenDisplay),
-        HubEntry(Icons.Filled.Storage, "Recording", "Where recordings are saved — this box or a NAS", onOpenRecordings),
-        HubEntry(Icons.Filled.Lock, "Parental controls", "PIN lock and hide adult categories", onOpenParental),
-        HubEntry(Icons.Filled.Sync, "Sync watch history", "Copy continue-watching to another device over wifi", onOpenSync),
-        HubEntry(Icons.Filled.Info, "About", "Version, updates, licence and links", onOpenAbout),
+        HubEntry(Icons.Filled.Dns, stringResource(R.string.settings_providers_title), stringResource(R.string.settings_providers_subtitle), onOpenProviders),
+        HubEntry(Icons.Filled.LiveTv, stringResource(R.string.settings_guide_title), stringResource(R.string.settings_guide_subtitle), onOpenGuide),
+        HubEntry(Icons.Filled.GridView, stringResource(R.string.common_channels), stringResource(R.string.settings_channels_subtitle), onOpenChannels),
+        HubEntry(Icons.Filled.Tune, stringResource(R.string.settings_display_title), stringResource(R.string.settings_display_subtitle), onOpenDisplay),
+        HubEntry(Icons.Filled.Storage, stringResource(R.string.settings_recording_title), stringResource(R.string.settings_recording_subtitle), onOpenRecordings),
+        HubEntry(Icons.Filled.Lock, stringResource(R.string.settings_parental_title), stringResource(R.string.settings_parental_subtitle), onOpenParental),
+        HubEntry(Icons.Filled.Sync, stringResource(R.string.settings_sync_title), stringResource(R.string.settings_sync_subtitle), onOpenSync),
+        HubEntry(Icons.Filled.Info, stringResource(R.string.settings_about_title), stringResource(R.string.settings_about_subtitle), onOpenAbout),
     )
 
     Column(
@@ -84,9 +86,9 @@ fun SettingsHubScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Tv, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(12.dp))
-            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.nav_settings), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.weight(1f))
-            HubTextButton("Done", onBack)
+            HubTextButton(stringResource(R.string.common_done), onBack)
         }
 
         Spacer(Modifier.height(20.dp))

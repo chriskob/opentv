@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Button
@@ -79,6 +80,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -88,6 +90,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import app.opentv.R
 import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
@@ -158,12 +161,30 @@ fun PlayerScreen(
     // Digits typed on the remote accumulate here, then jump to that channel number after a beat.
     var numberEntry by remember { mutableStateOf("") }
     var paused by remember { mutableStateOf(false) }
-    var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
+    var resizeMode by remember { mutableIntStateOf(settings.playerResizeMode.value) }
 
     var controlsVisible by remember { mutableStateOf(true) }
     var panel by remember { mutableStateOf(Panel.NONE) }
     var channelListVisible by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
+
+    // Picture-in-picture. While the player is on it is "eligible" to shrink to a floating window
+    // (pressing Home does it, handled in MainActivity); [inPip] drives hiding all the chrome.
+    val inPip by app.opentv.core.PipState.inPip.collectAsState()
+    val pipSupported = remember {
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            context.packageManager.hasSystemFeature(
+                android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE,
+            )
+    }
+    DisposableEffect(Unit) {
+        app.opentv.core.PipState.eligible = true
+        onDispose {
+            app.opentv.core.PipState.eligible = false
+            app.opentv.core.PipState.isPlaying = false
+        }
+    }
+    LaunchedEffect(paused) { app.opentv.core.PipState.isPlaying = !paused }
     val barFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
     val rootFocus = remember { FocusRequester() }
@@ -373,7 +394,7 @@ fun PlayerScreen(
         )
 
         // The channel number as you type it, top-right, until it resolves.
-        if (numberEntry.isNotEmpty()) {
+        if (numberEntry.isNotEmpty() && !inPip) {
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
@@ -416,7 +437,7 @@ fun PlayerScreen(
                             textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(24.dp))
-                        Button(onClick = { controller.retry() }) { Text("Try again") }
+                        Button(onClick = { controller.retry() }) { Text(stringResource(R.string.common_try_again)) }
                     }
                 }
             }
@@ -432,7 +453,7 @@ fun PlayerScreen(
         }
 
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !inPip,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -453,7 +474,7 @@ fun PlayerScreen(
                         variants = variants,
                         currentId = currentId,
                         resizeMode = resizeMode,
-                        onResize = { resizeMode = it },
+                        onResize = { resizeMode = it; settings.setPlayerResizeMode(it) },
                         onTune = { tuneTo(it) },
                         firstFocus = panelFocus,
                         onDone = { panel = Panel.NONE; interaction++ },
@@ -474,14 +495,14 @@ fun PlayerScreen(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (controller.isSeekable) {
-                        BarChip(Icons.Filled.FastRewind, "Rewind", false) {
+                        BarChip(Icons.Filled.FastRewind, stringResource(R.string.player_rewind), false) {
                             controller.seekBackward(); interaction++
                         }
                         Spacer(Modifier.width(10.dp))
                     }
                     BarChip(
                         icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        label = if (paused) "Play" else "Pause",
+                        label = if (paused) stringResource(R.string.common_play) else stringResource(R.string.player_pause),
                         selected = false,
                         focusRequester = barFocus,
                     ) {
@@ -491,44 +512,51 @@ fun PlayerScreen(
                     }
                     if (controller.isSeekable) {
                         Spacer(Modifier.width(10.dp))
-                        BarChip(Icons.Filled.FastForward, "Forward", false) {
+                        BarChip(Icons.Filled.FastForward, stringResource(R.string.player_forward), false) {
                             controller.seekForward(); interaction++
                         }
                     }
 
                     Spacer(Modifier.width(20.dp))
-                    BarChip(Icons.Filled.Subtitles, "Subtitles", panel == Panel.SUBTITLES) {
+                    BarChip(Icons.Filled.Subtitles, stringResource(R.string.player_subtitles), panel == Panel.SUBTITLES) {
                         panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES; interaction++
                     }
                     Spacer(Modifier.width(10.dp))
-                    BarChip(Icons.Filled.Audiotrack, "Audio", panel == Panel.AUDIO) {
+                    BarChip(Icons.Filled.Audiotrack, stringResource(R.string.player_audio), panel == Panel.AUDIO) {
                         panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO; interaction++
                     }
                     if (variants.size > 1) {
                         Spacer(Modifier.width(10.dp))
-                        BarChip(Icons.Filled.HighQuality, "Quality", panel == Panel.QUALITY) {
+                        BarChip(Icons.Filled.HighQuality, stringResource(R.string.player_quality), panel == Panel.QUALITY) {
                             panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY; interaction++
                         }
                     }
                     Spacer(Modifier.width(10.dp))
-                    BarChip(Icons.Filled.AspectRatio, "Aspect", panel == Panel.ASPECT) {
+                    BarChip(Icons.Filled.AspectRatio, stringResource(R.string.player_aspect), panel == Panel.ASPECT) {
                         panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT; interaction++
                     }
                     Spacer(Modifier.width(10.dp))
                     val recordingThis = activeRecordings.any { it.channelId == currentId }
                     BarChip(
                         icon = Icons.Filled.FiberManualRecord,
-                        label = if (recordingThis) "Stop" else "Record",
+                        label = if (recordingThis) stringResource(R.string.common_stop) else stringResource(R.string.player_record),
                         selected = recordingThis,
                         iconTint = Color(0xFFE53935),
                     ) { toggleRecord() }
+                    if (pipSupported) {
+                        Spacer(Modifier.width(10.dp))
+                        BarChip(Icons.Filled.PictureInPictureAlt, stringResource(R.string.player_pop_out), false) {
+                            (context.findActivity() as? app.opentv.MainActivity)?.enterPipNow()
+                            interaction++
+                        }
+                    }
                 }
             }
         }
 
         // Left-side transparent channel list — d-pad Left opens it, pick a channel to switch.
         AnimatedVisibility(
-            visible = channelListVisible,
+            visible = channelListVisible && !inPip,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.CenterStart),
@@ -544,7 +572,7 @@ fun PlayerScreen(
                     .padding(vertical = 16.dp),
             ) {
                 Text(
-                    "Channels",
+                    stringResource(R.string.common_channels),
                     style = MaterialTheme.typography.titleMedium,
                     color = Color.White.copy(alpha = 0.7f),
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -557,7 +585,7 @@ fun PlayerScreen(
                         item = lastItem,
                         playing = false,
                         focusRequester = null,
-                        leadingLabel = "Last",
+                        leadingLabel = stringResource(R.string.player_last),
                         onClick = {
                             playChannelId(lastItem.id)
                             channelListVisible = false
@@ -644,20 +672,25 @@ private fun OptionPanel(
     firstFocus: FocusRequester,
     onDone: () -> Unit,
 ) {
+    val offLabel = stringResource(R.string.player_subtitles_off)
+    val standardLabel = stringResource(R.string.player_quality_standard)
+    val fitLabel = stringResource(R.string.player_aspect_fit)
+    val fillLabel = stringResource(R.string.player_aspect_fill)
+    val stretchLabel = stringResource(R.string.player_aspect_stretch)
     val options: List<Option> = when (panel) {
-        Panel.SUBTITLES -> buildSubtitleOptions(controller, settings, tracks, onDone)
+        Panel.SUBTITLES -> buildSubtitleOptions(controller, settings, tracks, offLabel, onDone)
         Panel.AUDIO -> buildAudioOptions(controller, tracks, onDone)
         Panel.QUALITY -> variants.map { v ->
-            Option(v.qualityLabel.ifEmpty { "Standard" }, v.id == currentId) { onTune(v); onDone() }
+            Option(v.qualityLabel.ifEmpty { standardLabel }, v.id == currentId) { onTune(v); onDone() }
         }
         Panel.ASPECT -> listOf(
-            Option("Fit", resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+            Option(fitLabel, resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
                 onResize(AspectRatioFrameLayout.RESIZE_MODE_FIT); onDone()
             },
-            Option("Fill", resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+            Option(fillLabel, resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
                 onResize(AspectRatioFrameLayout.RESIZE_MODE_ZOOM); onDone()
             },
-            Option("Stretch", resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FILL) {
+            Option(stretchLabel, resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FILL) {
                 onResize(AspectRatioFrameLayout.RESIZE_MODE_FILL); onDone()
             },
         )
@@ -665,10 +698,10 @@ private fun OptionPanel(
     }
 
     val title = when (panel) {
-        Panel.SUBTITLES -> "Subtitles"
-        Panel.AUDIO -> "Audio"
-        Panel.QUALITY -> "Quality"
-        Panel.ASPECT -> "Aspect ratio"
+        Panel.SUBTITLES -> stringResource(R.string.player_subtitles)
+        Panel.AUDIO -> stringResource(R.string.player_audio)
+        Panel.QUALITY -> stringResource(R.string.player_quality)
+        Panel.ASPECT -> stringResource(R.string.player_aspect_ratio_title)
         Panel.NONE -> ""
     }
 
@@ -686,7 +719,7 @@ private fun OptionPanel(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (options.isEmpty()) {
-                Text("None available", color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(8.dp))
+                Text(stringResource(R.string.player_none_available), color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(8.dp))
             }
             options.forEachIndexed { index, option ->
                 OptionRow(
@@ -707,12 +740,13 @@ private fun buildSubtitleOptions(
     controller: PlayerController,
     settings: app.opentv.core.AppSettings,
     tracks: Tracks,
+    offLabel: String,
     onDone: () -> Unit,
 ): List<Option> {
     val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
     val anySelected = textGroups.any { g -> (0 until g.length).any { g.isTrackSelected(it) } }
     val list = mutableListOf<Option>()
-    list += Option("Off", !anySelected) {
+    list += Option(offLabel, !anySelected) {
         controller.disableText()
         settings.setSubtitlesEnabled(false)
         onDone()
@@ -783,7 +817,7 @@ private fun OptionRow(
     ) {
         Text(label, style = MaterialTheme.typography.titleMedium, color = fg, modifier = Modifier.weight(1f))
         if (selected) {
-            Icon(Icons.Filled.Check, contentDescription = "Selected", tint = fg)
+            Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_selected), tint = fg)
         }
     }
 }

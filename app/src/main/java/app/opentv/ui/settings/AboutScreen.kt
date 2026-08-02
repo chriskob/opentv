@@ -28,9 +28,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.opentv.BuildConfig
+import app.opentv.R
 import app.opentv.core.ServiceLocator
 import app.opentv.update.UpdateChecker
 import kotlinx.coroutines.launch
@@ -54,14 +56,14 @@ fun AboutScreen(onBack: () -> Unit) {
             .padding(horizontal = 32.dp, vertical = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("About OpenTV", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.about_title), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onBack) { Text("Done") }
+            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
 
         Spacer(Modifier.height(20.dp))
 
-        Section("Version") {
+        Section(stringResource(R.string.about_version)) {
             Text("OpenTV ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -76,14 +78,13 @@ fun AboutScreen(onBack: () -> Unit) {
                                 UpdateChecker(graph.httpClient, BuildConfig.VERSION_NAME).check()
                             }.getOrNull()
                             updateLine = when {
-                                update != null -> "Update available: ${update.versionName}. " +
-                                    "It will offer to install from the home screen."
-                                else -> "You're on the latest version."
+                                update != null -> context.getString(R.string.about_update_available, update.versionName)
+                                else -> context.getString(R.string.about_up_to_date)
                             }
                             checking = false
                         }
                     },
-                ) { Text(if (checking) "Checking…" else "Check for updates") }
+                ) { Text(if (checking) stringResource(R.string.about_checking) else stringResource(R.string.about_check_updates)) }
                 updateLine?.let {
                     Spacer(Modifier.width(16.dp))
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
@@ -93,12 +94,9 @@ fun AboutScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
-        Section("What it is") {
+        Section(stringResource(R.string.about_what_is_title)) {
             Text(
-                "A free, open-source IPTV player for Android TV, Fire TV and phones. It's a " +
-                    "player only — it doesn't supply channels; you connect the service you " +
-                    "already pay for. Nothing you enter leaves your device except to talk to " +
-                    "your own provider.",
+                stringResource(R.string.about_what_is_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -106,12 +104,9 @@ fun AboutScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
-        Section("Built in the open") {
+        Section(stringResource(R.string.about_built_open_title)) {
             Text(
-                "OpenTV is developed openly, with AI doing a large share of the coding under " +
-                    "human direction — that's stated plainly, not hidden. Because it's open " +
-                    "source, no single person going away can take it down: anyone can read " +
-                    "every line, build it, and carry it on.",
+                stringResource(R.string.about_built_open_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -119,26 +114,23 @@ fun AboutScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
-        Section("Support the project") {
+        Section(stringResource(R.string.about_support_title)) {
             Text(
-                "OpenTV is free and always will be — nothing is gated. If it's useful to you " +
-                    "and you'd like to chip in, a coffee helps keep the updates coming: new " +
-                    "features, fixes and support all come out of spare evenings. Entirely " +
-                    "optional, and genuinely appreciated.",
+                stringResource(R.string.about_support_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
-            LinkLine("Buy me a coffee", "buymeacoffee.com/opentvproject")
+            LinkLine(stringResource(R.string.about_buy_coffee), "buymeacoffee.com/opentvproject")
         }
 
         Spacer(Modifier.height(16.dp))
 
-        Section("Licence & links") {
-            LinkLine("Licence", "GNU General Public License v3.0")
-            LinkLine("Source code", "github.com/opentvproject/opentv")
-            LinkLine("Report a bug / request a feature", "github.com/opentvproject/opentv/issues")
-            LinkLine("Install page", "opentvproject.github.io/opentv")
+        Section(stringResource(R.string.about_licence_links_title)) {
+            LinkLine(stringResource(R.string.about_licence_label), "GNU General Public License v3.0")
+            LinkLine(stringResource(R.string.about_source_code), "github.com/opentvproject/opentv")
+            LinkLine(stringResource(R.string.about_report_bug), "github.com/opentvproject/opentv/issues")
+            LinkLine(stringResource(R.string.about_install_page), "opentvproject.github.io/opentv")
         }
     }
 }

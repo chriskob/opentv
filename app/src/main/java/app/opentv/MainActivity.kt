@@ -5,10 +5,15 @@
  */
 package app.opentv
 
+import android.app.PictureInPictureParams
 import android.app.UiModeManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -58,6 +63,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handlePlayIntent(intent)
         val isTelevision = isRunningOnTelevision(this)
 
         setContent {
@@ -78,6 +84,63 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // singleTask: a reminder tapped while the app is already running arrives here, not a fresh
+    // onCreate. Either way the requested channel is handed to the nav graph via [PlayRequests].
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePlayIntent(intent)
+    }
+
+    private fun handlePlayIntent(intent: Intent?) {
+        val id = intent?.getLongExtra(EXTRA_PLAY_CHANNEL, 0L) ?: 0L
+        if (id != 0L) app.opentv.core.PlayRequests.request(id)
+    }
+
+    // ---- Picture-in-picture ------------------------------------------------------------------
+
+    /** Home pressed while a programme is playing → shrink to a floating window instead of stopping. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        maybeEnterPip()
+    }
+
+    private fun supportsPip(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
+    fun maybeEnterPip() {
+        if (!app.opentv.core.PipState.eligible || !app.opentv.core.PipState.isPlaying) return
+        enterPipNow()
+    }
+
+    /** Explicit request from the player's PiP button — no eligibility guard, the user asked. */
+    fun enterPipNow() {
+        if (!supportsPip()) return
+        runCatching {
+            enterPictureInPictureMode(
+                PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .build(),
+            )
+        }
+    }
+
+    fun pipSupported(): Boolean = supportsPip()
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        app.opentv.core.PipState.setInPip(isInPictureInPictureMode)
+    }
+
+    companion object {
+        /** A reminder notification carries the channel to tune to in this extra. */
+        const val EXTRA_PLAY_CHANNEL = "opentv.play_channel"
     }
 }
 
@@ -143,6 +206,17 @@ private fun OpenTvApp(isTelevision: Boolean) {
     LaunchedEffect(start) {
         if (start == Routes.HOME && bootSettings.resumeLastChannel.value && bootSettings.lastChannelId != 0L) {
             navController.navigate(Routes.player(bootSettings.lastChannelId))
+        }
+    }
+
+    // A tapped reminder notification asks for a specific channel. Consume it so it fires once and
+    // never re-triggers on a later launch.
+    val playRequest by app.opentv.core.PlayRequests.channelId.collectAsState()
+    LaunchedEffect(playRequest) {
+        val id = playRequest
+        if (id != null && id != 0L) {
+            app.opentv.core.PlayRequests.consume()
+            navController.navigate(Routes.player(id))
         }
     }
 

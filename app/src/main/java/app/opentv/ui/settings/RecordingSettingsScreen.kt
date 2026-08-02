@@ -40,8 +40,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.core.ServiceLocator
 import app.opentv.recording.RecordingStorage
@@ -82,42 +84,41 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
             .padding(horizontal = 32.dp, vertical = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Recording", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.settings_recording_title), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = { persist(); onBack() }) { Text("Done") }
+            OutlinedButton(onClick = { persist(); onBack() }) { Text(stringResource(R.string.common_done)) }
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Choose where recordings are saved. Internal keeps them on this device; NAS saves them " +
-                "to a shared folder on your network and still plays them back here.",
+            stringResource(R.string.recset_desc),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.widthIn(max = 720.dp),
         )
 
         Spacer(Modifier.height(20.dp))
-        SectionCard("Save recordings to") {
+        SectionCard(stringResource(R.string.recset_save_to)) {
             TargetRow(
-                label = "This device (internal storage)",
+                label = stringResource(R.string.recset_internal_label),
                 subtitle = RecordingStorage.internalDir(context).absolutePath,
                 selected = target == AppSettings.RecordingTarget.INTERNAL,
             ) { target = AppSettings.RecordingTarget.INTERNAL }
             Spacer(Modifier.height(8.dp))
             TargetRow(
-                label = "NAS / network share (SMB)",
-                subtitle = "Synology, a shared Windows folder, or any SMB2/3 server",
+                label = stringResource(R.string.recset_smb_label),
+                subtitle = stringResource(R.string.recset_smb_subtitle),
                 selected = target == AppSettings.RecordingTarget.SMB,
             ) { target = AppSettings.RecordingTarget.SMB }
         }
 
         if (target == AppSettings.RecordingTarget.SMB) {
             Spacer(Modifier.height(16.dp))
-            SectionCard("NAS connection") {
-                Field("Server (IP or hostname)", host, "192.168.1.10") { host = it }
-                Field("Share name", share, "video") { share = it }
-                Field("Folder (within the share)", folder, "OpenTV") { folder = it }
-                Field("Username", user, "") { user = it }
-                Field("Password", password, "") { password = it }
+            SectionCard(stringResource(R.string.recset_nas_connection)) {
+                Field(stringResource(R.string.recset_field_server), host, "192.168.1.10") { host = it }
+                Field(stringResource(R.string.recset_field_share), share, "video") { share = it }
+                Field(stringResource(R.string.recset_field_folder), folder, "OpenTV") { folder = it }
+                Field(stringResource(R.string.recset_field_username), user, "") { user = it }
+                Field(stringResource(R.string.recset_field_password), password, "") { password = it }
 
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -125,7 +126,7 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
                         enabled = !testing && host.isNotBlank() && share.isNotBlank(),
                         onClick = {
                             testing = true
-                            status = "Testing…"
+                            status = context.getString(R.string.recset_status_testing)
                             val cfg = SmbConfig(host.trim(), share.trim(), folder.trim(), user, password)
                             scope.launch {
                                 val result = withContext(Dispatchers.IO) {
@@ -133,12 +134,12 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
                                 }
                                 testing = false
                                 status = result.fold(
-                                    onSuccess = { "Connected — the share is reachable and writable." },
-                                    onFailure = { "Couldn't connect: ${it.message ?: it.javaClass.simpleName}" },
+                                    onSuccess = { context.getString(R.string.recset_status_connected) },
+                                    onFailure = { context.getString(R.string.recset_status_failed, it.message ?: it.javaClass.simpleName) },
                                 )
                             }
                         },
-                    ) { Text(if (testing) "Testing…" else "Test connection") }
+                    ) { Text(if (testing) stringResource(R.string.recset_status_testing) else stringResource(R.string.recset_test_connection)) }
                 }
                 status?.let {
                     Spacer(Modifier.height(10.dp))
@@ -148,7 +149,7 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
         }
 
         Spacer(Modifier.height(20.dp))
-        Button(onClick = { persist(); status = "Saved." }) { Text("Save") }
+        Button(onClick = { persist(); status = context.getString(R.string.recset_status_saved) }) { Text(stringResource(R.string.common_save)) }
     }
 }
 

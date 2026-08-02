@@ -33,8 +33,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.R
 import app.opentv.data.model.EpgFeed
 import app.opentv.ui.EpgViewModel
 
@@ -63,13 +65,13 @@ fun EpgSettingsScreen(
             .padding(horizontal = 32.dp, vertical = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("TV guide", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.settings_guide_title), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.weight(1f))
             OutlinedButton(onClick = { viewModel.refresh() }, enabled = !ui.syncing) {
-                Text(if (ui.syncing) "Updating…" else "Update guide now")
+                Text(if (ui.syncing) stringResource(R.string.epg_updating) else stringResource(R.string.epg_update_now))
             }
             Spacer(Modifier.width(12.dp))
-            OutlinedButton(onClick = onBack) { Text("Done") }
+            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
 
         ui.statusLine?.let { line ->
@@ -83,8 +85,7 @@ fun EpgSettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "Your provider's guide is used automatically. If it's empty — many are — turn " +
-                "on a free guide for your country and channels are matched to it by name.",
+            stringResource(R.string.epg_desc),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.widthIn(max = 720.dp),
@@ -103,14 +104,14 @@ fun EpgSettingsScreen(
             item {
                 Spacer(Modifier.height(8.dp))
                 if (!showAdd) {
-                    OutlinedButton(onClick = { showAdd = true }) { Text("Add your own guide (XMLTV URL)") }
+                    OutlinedButton(onClick = { showAdd = true }) { Text(stringResource(R.string.epg_add_own)) }
                 } else {
                     Card {
                         Column(Modifier.padding(16.dp)) {
                             OutlinedTextField(
                                 value = newName,
                                 onValueChange = { newName = it },
-                                label = { Text("Name (optional)") },
+                                label = { Text(stringResource(R.string.epg_name_optional)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -118,7 +119,7 @@ fun EpgSettingsScreen(
                             OutlinedTextField(
                                 value = newUrl,
                                 onValueChange = { newUrl = it },
-                                label = { Text("XMLTV URL (.xml or .xml.gz)") },
+                                label = { Text(stringResource(R.string.epg_xmltv_url)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -130,8 +131,8 @@ fun EpgSettingsScreen(
                                         newName = ""; newUrl = ""; showAdd = false
                                     },
                                     enabled = newUrl.isNotBlank(),
-                                ) { Text("Add guide") }
-                                TextButton(onClick = { showAdd = false }) { Text("Cancel") }
+                                ) { Text(stringResource(R.string.epg_add_guide)) }
+                                TextButton(onClick = { showAdd = false }) { Text(stringResource(R.string.common_cancel)) }
                             }
                         }
                     }
@@ -169,7 +170,7 @@ private fun FeedRow(
 
             // User-added feeds can be removed; provider and built-in ones only toggled.
             if (!feed.builtIn && feed.providerSourceId == null) {
-                TextButton(onClick = onRemove) { Text("Remove") }
+                TextButton(onClick = onRemove) { Text(stringResource(R.string.common_remove)) }
                 Spacer(Modifier.width(4.dp))
             }
             Switch(checked = feed.enabled, onCheckedChange = onToggle)

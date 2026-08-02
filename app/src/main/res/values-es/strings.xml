@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- app_name is intentionally not translated (brand name). -->
+
+    <!-- ============================ Common / reused ============================ -->
+    <string name="common_done">Listo</string>
+    <string name="common_cancel">Cancelar</string>
+    <string name="common_back">Atrás</string>
+    <string name="common_save">Guardar</string>
+    <string name="common_remove">Quitar</string>
+    <string name="common_play">Reproducir</string>
+    <string name="common_stop">Detener</string>
+    <string name="common_delete">Eliminar</string>
+    <string name="common_selected">Seleccionado</string>
+    <string name="common_favourite">Favorito</string>
+    <string name="common_remove_favourite">Quitar de favoritos</string>
+    <string name="common_keep_typing">Sigue escribiendo…</string>
+    <string name="common_channels">Canales</string>
+    <string name="common_try_again">Reintentar</string>
+
+    <!-- ============================ Navigation rail ============================ -->
+    <string name="nav_live_tv">TV en vivo</string>
+    <string name="nav_movies">Películas</string>
+    <string name="nav_shows">Series</string>
+    <string name="nav_recordings">Grabaciones</string>
+    <string name="nav_search">Buscar</string>
+    <string name="nav_settings">Ajustes</string>
+
+    <!-- ============================ Live TV guide / home ============================ -->
+    <string name="guide_search_channels">🔍  Buscar canales</string>
+    <string name="guide_favourites">★ Favoritos</string>
+    <string name="guide_all_channels">Todos los canales</string>
+    <string name="guide_watch_from_start">▶  Ver desde el inicio (catch-up)</string>
+    <string name="guide_catchup_link_failed">No se pudo crear el enlace de catch-up</string>
+    <string name="guide_cancel_reminder">🔔  Cancelar recordatorio</string>
+    <string name="guide_reminder_removed">Recordatorio eliminado</string>
+    <string name="guide_remind_me">🔔  Recordármelo</string>
+    <string name="guide_reminder_set">🔔 Recordatorio activado: %1$s</string>
+    <string name="guide_auto_switch">📺  Cambiar automáticamente al empezar</string>
+    <string name="guide_will_switch">📺 Se cambiará a %1$s al empezar</string>
+    <string name="guide_watch_channel">Ver canal</string>
+    <string name="guide_now_title">Ahora: %1$s</string>
+    <string name="guide_watch">▶  Ver</string>
+    <string name="guide_open_external">Abrir en reproductor externo</string>
+    <string name="guide_play_channel_with">Reproducir canal con</string>
+    <string name="guide_no_external_player">No hay ningún reproductor externo instalado</string>
+    <string name="guide_record_now_playing">●  Grabar lo que está en emisión</string>
+    <string name="guide_later_header">Más tarde: grabar o recordar</string>
+    <string name="guide_no_info">Sin información de guía</string>
+    <string name="guide_next_prefix">Después  %1$s  %2$s</string>
+    <string name="guide_loading_channels">Cargando tus canales</string>
+    <string name="guide_fetching_desc">Obteniendo la lista de canales y la guía de tu proveedor. Un proveedor grande puede tardar un par de minutos la primera vez.</string>
+    <string name="guide_building_desc">Creando tu guía a partir de los canales guardados en este dispositivo. Con un proveedor grande esto tarda un momento; aparecerá enseguida.</string>
+    <string name="guide_no_favourites_title">Aún no hay favoritos</string>
+    <string name="guide_no_favourites_desc">Pulsa la estrella en cualquier canal y aparecerá aquí.</string>
+    <string name="guide_no_channels_title">Aún no hay canales</string>
+    <string name="guide_add_provider_desc">Añade un proveedor para empezar.</string>
+    <string name="guide_add_provider_button">Añadir un proveedor</string>
+    <string name="guide_watch_label">Ver</string>
+    <string name="guide_cd_stop_recording">Detener grabación</string>
+    <string name="guide_cd_record_now">Grabar lo que está en emisión</string>
+    <string name="guide_cd_refresh">Actualizar</string>
+    <string name="guide_cd_add_source">Añadir fuente</string>
+    <string name="guide_highlight_hint">Resalta un canal para ver qué están dando</string>
+    <string name="guide_qualities_count">%1$d calidades</string>
+    <string name="guide_no_info_channel">Sin información de guía para este canal</string>
+    <string name="guide_pager_earlier">Antes</string>
+    <string name="guide_pager_now">Ahora</string>
+    <string name="guide_pager_later">Después</string>
+
+    <!-- ============================ Recordings & reminders ============================ -->
+    <string name="rec_recording_stopped">Grabación detenida</string>
+    <string name="rec_recording_started_see_tab">● Grabando %1$s: consulta la pestaña Grabaciones</string>
+    <string name="rec_stop_recording">■ Detener grabación</string>
+    <string name="rec_record_now">● Grabar ahora</string>
+    <string name="rec_schedule_recording">● Programar grabación</string>
+    <string name="rec_scheduled_title">Programado: %1$s</string>
+    <string name="rec_recording_channel">● Grabando %1$s</string>
+    <string name="rec_record_series">Grabar toda la serie</string>
+    <string name="rec_record_series_named">Grabar toda la serie: %1$s</string>
+    <string name="rec_series_recording_set">Grabación de serie activada para \"%1$s\"</string>
+    <string name="rec_screen_title">Grabaciones y recordatorios</string>
+    <string name="rec_screen_desc">Graba la TV en vivo en este equipo o en tu NAS, y programa recordatorios para lo que viene.</string>
+    <string name="rec_empty_state">Aquí no hay nada todavía. Pulsa Grabar en el reproductor, o abre un canal en la guía para programar una grabación o crear un recordatorio.</string>
+    <string name="rec_upcoming_reminders">Próximos recordatorios</string>
+    <string name="rec_reminder_autoswitch">Cambio automático</string>
+    <string name="rec_reminder_plain">Recordatorio</string>
+    <string name="rec_cancel_reminder">Cancelar recordatorio</string>
+    <string name="rec_status_scheduled">Programado · %1$s</string>
+    <string name="rec_status_recording">● Grabando · %1$s · %2$s</string>
+    <string name="rec_status_failed">Error · %1$s</string>
+    <string name="rec_error_unknown">error desconocido</string>
+    <string name="rec_notification_one">Grabando 1 programa</string>
+    <string name="rec_notification_many">Grabando %1$d programas</string>
+    <string name="rec_channel_name">Grabación</string>
+    <string name="rec_channel_desc">Se muestra mientras OpenTV está grabando</string>
+    <string name="rec_error_nothing">No se grabó nada</string>
+
+    <!-- ============================ Player controls ============================ -->
+    <string name="player_rewind">Retroceder</string>
+    <string name="player_pause">Pausa</string>
+    <string name="player_forward">Avanzar</string>
+    <string name="player_subtitles">Subtítulos</string>
+    <string name="player_audio">Audio</string>
+    <string name="player_quality">Calidad</string>
+    <string name="player_aspect">Proporción</string>
+    <string name="player_record">Grabar</string>
+    <string name="player_pop_out">Ventana flotante</string>
+    <string name="player_last">Último</string>
+    <string name="player_quality_standard">Estándar</string>
+    <string name="player_aspect_fit">Ajustar</string>
+    <string name="player_aspect_fill">Llenar</string>
+    <string name="player_aspect_stretch">Estirar</string>
+    <string name="player_aspect_ratio_title">Proporción de imagen</string>
+    <string name="player_none_available">Ninguno disponible</string>
+    <string name="player_subtitles_off">Desactivados</string>
+
+    <!-- ============================ Settings hub ============================ -->
+    <string name="settings_providers_title">Proveedores</string>
+    <string name="settings_providers_subtitle">Añade, elimina y vuelve a probar tus fuentes IPTV</string>
+    <string name="settings_guide_title">Guía de TV</string>
+    <string name="settings_guide_subtitle">Fuentes de guía y feeds XMLTV gratuitos</string>
+    <string name="settings_channels_subtitle">Oculta o marca como favoritos canales concretos</string>
+    <string name="settings_display_title">Pantalla y reproducción</string>
+    <string name="settings_display_subtitle">Tema, subtítulos, vista previa de la guía</string>
+    <string name="settings_recording_title">Grabación</string>
+    <string name="settings_recording_subtitle">Dónde se guardan las grabaciones: este equipo o un NAS</string>
+    <string name="settings_parental_title">Control parental</string>
+    <string name="settings_parental_subtitle">Bloqueo con PIN y ocultar categorías para adultos</string>
+    <string name="settings_sync_title">Sincronizar historial</string>
+    <string name="settings_sync_subtitle">Copia lo que estás viendo a otro dispositivo por wifi</string>
+    <string name="settings_about_title">Acerca de</string>
+    <string name="settings_about_subtitle">Versión, actualizaciones, licencia y enlaces</string>
+
+    <!-- ============================ Display & playback settings ============================ -->
+    <string name="settings_appearance">Apariencia</string>
+    <string name="settings_theme_system">Según el sistema</string>
+    <string name="settings_theme_dark">Oscuro</string>
+    <string name="settings_theme_light">Claro</string>
+    <string name="settings_theme_note">Los equipos de TV permanecen en oscuro con \"Según el sistema\". Elige Oscuro o Claro para forzarlo.</string>
+    <string name="settings_section_guide">Guía</string>
+    <string name="settings_live_preview_title">Vista previa en la guía</string>
+    <string name="settings_live_preview_subtitle">Reproduce el canal seleccionado en el panel de vista previa. Desactívalo si la guía se entrecorta en un equipo antiguo.</string>
+    <string name="settings_preview_sound_title">Sonido de la vista previa</string>
+    <string name="settings_preview_sound_subtitle">Reproduce también el audio del canal en vista previa, no solo la imagen.</string>
+    <string name="settings_section_playback">Reproducción</string>
+    <string name="settings_subtitles_title">Mostrar subtítulos cuando estén disponibles</string>
+    <string name="settings_subtitles_subtitle">Es la opción predeterminada para los canales nuevos. Mientras ves un canal, el botón Subtítulos del reproductor te permite elegir una pista concreta o desactivarlos.</string>
+    <string name="settings_resume_title">Reanudar el último canal al iniciar</string>
+    <string name="settings_resume_subtitle">Abre la app directamente en el último canal que estabas viendo, en lugar de la guía. Pulsa Atrás para ir a la guía.</string>
+    <string name="settings_sleep_timer">Temporizador de apagado</string>
+    <string name="settings_sleep_off_desc">Desactivado: la reproducción continúa hasta que la detengas.</string>
+    <string name="settings_sleep_on_desc">Activado: la reproducción se detendrá en unos %1$d min.</string>
+    <string name="settings_sleep_off">Desactivado</string>
+    <string name="settings_sleep_minutes">%1$d minutos</string>
+
+    <!-- ============================ Parental controls ============================ -->
+    <string name="parental_hidden_categories">Categorías ocultas</string>
+    <string name="parental_hidden_desc">Todo lo que actives aquí se quitará de la TV en vivo hasta que actives “Mostrar ocultas ahora” abajo. Con un PIN configurado, esta pantalla permanece bloqueada, así que lo oculto sigue oculto.</string>
+    <string name="parental_show_hidden_title">Mostrar ocultas ahora (esta sesión)</string>
+    <string name="parental_show_hidden_subtitle">Muestra las categorías ocultas hasta que se reinicie la app.</string>
+    <string name="parental_no_categories">Aún no hay categorías: añade primero un proveedor.</string>
+    <string name="parental_pin">PIN</string>
+    <string name="parental_pin_is_set">Hay un PIN configurado.</string>
+    <string name="parental_change_pin">Cambiar PIN</string>
+    <string name="parental_remove_pin">Quitar PIN</string>
+    <string name="parental_pin_enter_new">Introduce un nuevo PIN de 4 dígitos.</string>
+    <string name="parental_pin_set">Configura un PIN de 4 dígitos.</string>
+    <string name="parental_pin_new">Nuevo PIN</string>
+    <string name="parental_pin_confirm">Confirmar</string>
+    <string name="parental_pin_len_error">El PIN debe tener 4 dígitos.</string>
+    <string name="parental_pin_mismatch">Los PIN no coinciden.</string>
+    <string name="parental_save_pin">Guardar PIN</string>
+    <string name="parental_enter_pin">Introduce el PIN</string>
+    <string name="parental_wrong_pin">PIN incorrecto.</string>
+    <string name="parental_unlock">Desbloquear</string>
+
+    <!-- ============================ Profiles ============================ -->
+    <string name="profiles_new_heading">Nombre del nuevo perfil</string>
+    <string name="profiles_rename_heading">Cambiar nombre del perfil</string>
+    <string name="profiles_title">¿Quién está viendo?</string>
+    <string name="profiles_add">Añadir perfil</string>
+    <string name="profiles_active">Activo</string>
+    <string name="profiles_use">Usar</string>
+    <string name="profiles_rename">Cambiar nombre</string>
+
+    <!-- ============================ Providers ============================ -->
+    <string name="providers_add">Añadir proveedor</string>
+    <string name="providers_empty">Aún no hay proveedores. Añade el servicio IPTV que ya pagas para empezar.</string>
+    <string name="providers_remove_confirm">¿Quitar?</string>
+    <string name="providers_yes_remove">Sí, quitar</string>
+
+    <!-- ============================ Recording settings ============================ -->
+    <string name="recset_desc">Elige dónde se guardan las grabaciones. Interno las mantiene en este dispositivo; NAS las guarda en una carpeta compartida de tu red y las reproduce igualmente aquí.</string>
+    <string name="recset_save_to">Guardar grabaciones en</string>
+    <string name="recset_internal_label">Este dispositivo (almacenamiento interno)</string>
+    <string name="recset_smb_label">NAS / recurso compartido de red (SMB)</string>
+    <string name="recset_smb_subtitle">Synology, una carpeta compartida de Windows o cualquier servidor SMB2/3</string>
+    <string name="recset_nas_connection">Conexión al NAS</string>
+    <string name="recset_field_server">Servidor (IP o nombre de host)</string>
+    <string name="recset_field_share">Nombre del recurso compartido</string>
+    <string name="recset_field_folder">Carpeta (dentro del recurso compartido)</string>
+    <string name="recset_field_username">Usuario</string>
+    <string name="recset_field_password">Contraseña</string>
+    <string name="recset_status_testing">Probando…</string>
+    <string name="recset_status_connected">Conectado: el recurso compartido es accesible y permite escritura.</string>
+    <string name="recset_status_failed">No se pudo conectar: %1$s</string>
+    <string name="recset_test_connection">Probar conexión</string>
+    <string name="recset_status_saved">Guardado.</string>
+
+    <!-- ============================ TV guide (EPG) settings ============================ -->
+    <string name="epg_updating">Actualizando…</string>
+    <string name="epg_update_now">Actualizar guía ahora</string>
+    <string name="epg_desc">La guía de tu proveedor se usa automáticamente. Si está vacía (muchas lo están), activa una guía gratuita para tu país y los canales se emparejan con ella por nombre.</string>
+    <string name="epg_add_own">Añade tu propia guía (URL XMLTV)</string>
+    <string name="epg_name_optional">Nombre (opcional)</string>
+    <string name="epg_xmltv_url">URL XMLTV (.xml o .xml.gz)</string>
+    <string name="epg_add_guide">Añadir guía</string>
+
+    <!-- ============================ Sync watch history ============================ -->
+    <string name="sync_desc">Copia lo que estás viendo entre dos dispositivos OpenTV por tu propia wifi: nada sale de casa y no hace falta ninguna cuenta.</string>
+    <string name="sync_share_from_here">Compartir desde aquí</string>
+    <string name="sync_receive">Recibir</string>
+    <string name="sync_ready_to_share">Listo para compartir</string>
+    <string name="sync_on_other_device">En el otro dispositivo: Ajustes → Sincronizar → Recibir, e introduce:</string>
+    <string name="sync_address">Dirección</string>
+    <string name="sync_code">Código</string>
+    <string name="sync_type_in_one_go">O escríbelo de una vez:  %1$s#%2$s</string>
+    <string name="sync_stop_sharing">Dejar de compartir</string>
+    <string name="sync_will_share">Este dispositivo compartirá su historial durante unos minutos, protegido con un código.</string>
+    <string name="sync_start_sharing">Empezar a compartir</string>
+    <string name="sync_type_what_shows">Escribe lo que muestra el otro dispositivo</string>
+    <string name="sync_connect">Conectar</string>
+    <string name="sync_connecting">Conectando…</string>
+    <string name="sync_synced_items">Se sincronizaron %1$d elemento(s).</string>
+
+    <!-- ============================ About ============================ -->
+    <string name="about_title">Acerca de OpenTV</string>
+    <string name="about_version">Versión</string>
+    <string name="about_update_available">Actualización disponible: %1$s. Se ofrecerá instalarla desde la pantalla de inicio.</string>
+    <string name="about_up_to_date">Tienes la última versión.</string>
+    <string name="about_checking">Comprobando…</string>
+    <string name="about_check_updates">Buscar actualizaciones</string>
+    <string name="about_what_is_title">Qué es</string>
+    <string name="about_what_is_body">Un reproductor IPTV gratuito y de código abierto para Android TV, Fire TV y teléfonos. Es solo un reproductor: no proporciona canales; tú conectas el servicio que ya pagas. Nada de lo que introduces sale de tu dispositivo, salvo para comunicarse con tu propio proveedor.</string>
+    <string name="about_built_open_title">Desarrollado de forma abierta</string>
+    <string name="about_built_open_body">OpenTV se desarrolla de forma abierta, con la IA encargándose de buena parte de la programación bajo dirección humana; se dice con claridad, no se oculta. Al ser de código abierto, la marcha de una sola persona no puede acabar con él: cualquiera puede leer cada línea, compilarlo y continuarlo.</string>
+    <string name="about_support_title">Apoya el proyecto</string>
+    <string name="about_support_body">OpenTV es gratis y siempre lo será: nada está restringido. Si te resulta útil y quieres colaborar, un café ayuda a que sigan llegando las novedades: nuevas funciones, correcciones y soporte salen de ratos libres. Totalmente opcional y de verdad se agradece.</string>
+    <string name="about_buy_coffee">Invítame a un café</string>
+    <string name="about_licence_links_title">Licencia y enlaces</string>
+    <string name="about_licence_label">Licencia</string>
+    <string name="about_source_code">Código fuente</string>
+    <string name="about_report_bug">Reportar un error / solicitar una función</string>
+    <string name="about_install_page">Página de instalación</string>
+
+    <!-- ============================ Onboarding / add source ============================ -->
+    <string name="onboarding_default_provider_name">Mi proveedor</string>
+    <string name="onboarding_default_playlist_name">Mi lista</string>
+    <string name="onboarding_add_provider_title">Añade tu proveedor</string>
+    <string name="onboarding_add_provider_desc">OpenTV es un reproductor. No proporciona canales: tú conectas el servicio que ya pagas.</string>
+    <string name="onboarding_xtream_login">Acceso con Xtream Codes</string>
+    <string name="onboarding_m3u_url">URL de lista M3U</string>
+    <string name="onboarding_server_address">Dirección del servidor</string>
+    <string name="onboarding_playlist_url">URL de la lista</string>
+    <string name="onboarding_server_help">Por ejemplo http://example.com:8080; pega la línea completa de tu proveedor si te resulta más fácil, se recortará lo que sobre.</string>
+    <string name="onboarding_playlist_help">El enlace http completo a tu archivo .m3u o .m3u8.</string>
+    <string name="onboarding_hide_advanced">Ocultar avanzado</string>
+    <string name="onboarding_advanced">Avanzado</string>
+    <string name="onboarding_guide_url_optional">URL de la guía (XMLTV): opcional</string>
+    <string name="onboarding_guide_blank_help">Déjalo en blanco para usar la guía de tu proveedor automáticamente.</string>
+    <string name="onboarding_user_agent_help">Algunos proveedores bloquean apps desconocidas con un 403. Si fallan todos los canales, prueba aquí el User-Agent de un reproductor conocido.</string>
+    <string name="onboarding_working">Trabajando…</string>
+    <string name="onboarding_save_load">Guardar y cargar</string>
+    <string name="onboarding_use_phone">Usar mi teléfono en su lugar</string>
+    <string name="onboarding_privacy_note">Los datos de tu proveedor se guardan solo en este dispositivo. OpenTV no tiene sistema de cuentas ni servidor propio: nada de lo que escribas aquí se envía a ningún sitio salvo a tu proveedor.</string>
+
+    <!-- ============================ Phone pairing ============================ -->
+    <string name="pairing_stopped">Emparejamiento detenido</string>
+    <string name="pairing_type_here">Escribirlo aquí en su lugar</string>
+    <string name="pairing_got_it">Listo, conectando con tu proveedor…</string>
+    <string name="pairing_qr_desc">Código QR que enlaza con la página de configuración de este dispositivo</string>
+    <string name="pairing_setup_title">Configúralo desde tu teléfono</string>
+    <string name="pairing_setup_desc">Apunta la cámara de tu teléfono al código. Abre una página servida por este televisor: nada de lo que escribas sale de tu red doméstica.</string>
+    <string name="pairing_enter_code">Luego introduce este código en tu teléfono</string>
+    <string name="pairing_camera_fail">¿La cámara no lo escanea? Abre esto en cualquier navegador de tu teléfono:</string>
+    <string name="pairing_type_on_tv">Escribirlo en la TV en su lugar</string>
+
+    <!-- ============================ Channel manager ============================ -->
+    <string name="channels_manager_title">Administrador de canales</string>
+    <string name="channels_manager_hint">Busca para ocultar o marcar canales como favoritos</string>
+    <string name="channels_manager_search_hint">Busca un canal y luego ocúltalo de la guía o márcalo con una estrella.</string>
+    <string name="channels_manager_no_match">Ningún canal coincide con “%1$s”.</string>
+    <string name="channels_hidden">Oculto</string>
+    <string name="channels_showing">Visible</string>
+    <string name="channels_show">Mostrar</string>
+
+    <!-- ============================ Search ============================ -->
+    <string name="search_type_name">Escribe un nombre</string>
+    <string name="search_start_hint">Empieza a escribir para buscar canales, películas y series.</string>
+    <string name="search_no_results">Sin resultados para “%1$s”.</string>
+
+    <!-- ============================ On-screen keyboard ============================ -->
+    <string name="kbd_space">Espacio</string>
+    <string name="kbd_del">Borrar</string>
+    <string name="kbd_clear">Limpiar</string>
+
+    <!-- ============================ Movies & shows (VOD) ============================ -->
+    <string name="vod_loading_movies">Cargando películas</string>
+    <string name="vod_no_movies">No hay películas</string>
+    <string name="vod_no_movies_provider">Este proveedor no devolvió ninguna película.</string>
+    <string name="vod_no_movies_add">Añade un proveedor para ver sus películas aquí.</string>
+    <string name="vod_loading_shows">Cargando series</string>
+    <string name="vod_no_shows">No hay series</string>
+    <string name="vod_no_shows_provider">Este proveedor no devolvió ninguna serie.</string>
+    <string name="vod_no_shows_add">Añade un proveedor para ver sus series aquí.</string>
+    <string name="vod_loading_episodes">Cargando episodios…</string>
+    <string name="vod_all">Todas</string>
+    <string name="vod_continue_watching">Seguir viendo</string>
+    <string name="vod_large_provider_note">Un proveedor grande puede tardar un par de minutos la primera vez.</string>
+
+    <!-- ============================ Reminder notification ============================ -->
+    <string name="reminder_starting_now">Empieza ahora en %1$s</string>
+    <string name="reminder_watch_now">Ver ahora</string>
+    <string name="reminder_channel_name">Recordatorios de programas</string>
+    <string name="reminder_channel_desc">Te avisa cuando empieza un programa para el que creaste un recordatorio</string>
+</resources>

@@ -26,6 +26,19 @@ class OpenTvApp : Application() {
         // the stored channels and re-run the guide matcher — locally, no re-download. This
         // is why a name-cleanup fix shows up on the next launch rather than the next 6-hour
         // sync, and it costs nothing when the version has not changed.
+        // Re-arm programme reminders on every launch. Alarms are lost on a force-stop or app
+        // update (not just a reboot, which the boot receiver already covers), and re-setting an
+        // exact alarm for the same reminder is idempotent — so this quietly keeps bells alive.
+        appScope.launch {
+            runCatching {
+                val now = System.currentTimeMillis()
+                graph.reminderRepository.deleteEndedBefore(now)
+                graph.reminderRepository.upcoming(now).forEach {
+                    app.opentv.reminders.ReminderScheduler.set(this@OpenTvApp, it.id, it.startUtcMillis)
+                }
+            }
+        }
+
         appScope.launch {
             val prefs = getSharedPreferences("opentv", MODE_PRIVATE)
             val seen = prefs.getInt("normalizer_version", 0)

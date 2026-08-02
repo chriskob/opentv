@@ -24,6 +24,7 @@ import app.opentv.data.model.Profile
 import app.opentv.data.model.Programme
 import app.opentv.data.model.Recording
 import app.opentv.data.model.RecordingStatus
+import app.opentv.data.model.Reminder
 import app.opentv.data.model.Series
 import app.opentv.data.model.SeriesRule
 import app.opentv.data.model.Source
@@ -62,8 +63,9 @@ class Converters {
         Profile::class,
         Recording::class,
         SeriesRule::class,
+        Reminder::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -81,6 +83,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
     abstract fun profiles(): ProfileDao
     abstract fun recordings(): RecordingDao
     abstract fun seriesRules(): SeriesRuleDao
+    abstract fun reminders(): ReminderDao
 
     companion object {
         /**
@@ -170,12 +173,37 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 → v6: programme reminders. Purely additive — one new table (reminders) and its two
+         * indices, matching Room's generated DDL so favourites, recordings and overrides survive
+         * the upgrade rather than falling through to the destructive rebuild.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `reminders` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`channelId` INTEGER NOT NULL, " +
+                        "`channelName` TEXT NOT NULL, " +
+                        "`logoUrl` TEXT, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`startUtcMillis` INTEGER NOT NULL, " +
+                        "`endUtcMillis` INTEGER NOT NULL, " +
+                        "`autoTune` INTEGER NOT NULL, " +
+                        "`createdAtMillis` INTEGER NOT NULL, " +
+                        "`fired` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reminders_startUtcMillis` ON `reminders` (`startUtcMillis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reminders_channelId` ON `reminders` (`channelId`)")
+            }
+        }
+
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
                 // refresh cannot make the UI stutter on a slow TV box.
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 /*
                  * Pre-1.0 policy: schema changes drop and rebuild the database. Everything
                  * in it is re-derivable from the provider (one sync away) except favourites

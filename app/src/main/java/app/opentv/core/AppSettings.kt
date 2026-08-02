@@ -132,6 +132,19 @@ class AppSettings private constructor(context: Context) {
         get() = prefs.getLong(KEY_LAST_CHANNEL, 0L)
         set(value) { prefs.edit().putLong(KEY_LAST_CHANNEL, value).apply() }
 
+    /**
+     * Video scaling in the player, as an [androidx.media3.ui.AspectRatioFrameLayout] RESIZE_MODE_*
+     * constant (0 = Fit). Persisted so the choice survives leaving the player, which testers asked
+     * for — picking Fill every single time you open a channel gets old fast.
+     */
+    private val _playerResizeMode = MutableStateFlow(prefs.getInt(KEY_RESIZE_MODE, 0))
+    val playerResizeMode: StateFlow<Int> = _playerResizeMode.asStateFlow()
+
+    fun setPlayerResizeMode(mode: Int) {
+        prefs.edit().putInt(KEY_RESIZE_MODE, mode).apply()
+        _playerResizeMode.value = mode
+    }
+
     private fun readThemeMode(): ThemeMode =
         runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "") }
             .getOrDefault(ThemeMode.SYSTEM)
@@ -195,6 +208,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_ACTIVE_PROFILE = "active_profile_id"
         private const val KEY_RESUME_LAST = "resume_last_channel"
         private const val KEY_LAST_CHANNEL = "last_channel_id"
+        private const val KEY_RESIZE_MODE = "player_resize_mode"
         private const val KEY_REC_TARGET = "recording_target"
         private const val KEY_SMB_HOST = "smb_host"
         private const val KEY_SMB_SHARE = "smb_share"

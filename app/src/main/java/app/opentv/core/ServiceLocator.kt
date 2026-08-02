@@ -11,6 +11,7 @@ import app.opentv.data.remote.XtreamApi
 import app.opentv.data.repo.CatalogRepository
 import app.opentv.data.repo.EpgRepository
 import app.opentv.data.repo.RecordingRepository
+import app.opentv.data.repo.ReminderRepository
 import app.opentv.data.repo.SourceRepository
 import app.opentv.recording.RecordingEngine
 import java.util.concurrent.TimeUnit
@@ -108,6 +109,10 @@ object ServiceLocator {
 
         val recordingRepository: RecordingRepository by lazy {
             RecordingRepository(database.recordings(), database.seriesRules())
+        }
+
+        val reminderRepository: ReminderRepository by lazy {
+            ReminderRepository(database.reminders())
         }
 
         val recordingEngine: RecordingEngine by lazy {

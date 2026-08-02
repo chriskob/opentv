@@ -20,6 +20,11 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
+    <!-- An "auto-switch" reminder uses a full-screen intent so a TV box changes channel on its own
+         when the programme starts, the same mechanism an alarm clock uses. Degrades to a heads-up
+         notification where the OS declines it. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
     <!--
       Lets the app install the update APK it downloads itself. Sideloaded builds get no
       updates from any store, so self-update is the only route new versions reach users.
@@ -63,6 +68,7 @@
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
             android:screenOrientation="fullUser"
             android:theme="@style/Theme.OpenTV">
 
@@ -97,6 +103,15 @@
         <!-- Starts a booked recording when its alarm fires; re-arms bookings after a reboot. -->
         <receiver
             android:name=".recording.RecordingAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Fires a programme reminder when its alarm goes off; re-arms reminders after a reboot. -->
+        <receiver
+            android:name=".reminders.ReminderAlarmReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

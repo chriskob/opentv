@@ -33,9 +33,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import app.opentv.R
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
 import app.opentv.ui.SourcesViewModel
@@ -70,6 +73,7 @@ fun AddSourceScreen(
     }
 
     val ui by viewModel.ui.collectAsState()
+    val context = LocalContext.current
 
     var kind by remember { mutableStateOf(SourceKind.XTREAM) }
     var name by remember { mutableStateOf("") }
@@ -81,7 +85,10 @@ fun AddSourceScreen(
     var userAgent by remember { mutableStateOf(Source.DEFAULT_USER_AGENT) }
 
     fun draft() = Source(
-        name = name.ifBlank { if (kind == SourceKind.XTREAM) "My provider" else "My playlist" },
+        name = name.ifBlank {
+            if (kind == SourceKind.XTREAM) context.getString(R.string.onboarding_default_provider_name)
+            else context.getString(R.string.onboarding_default_playlist_name)
+        },
         kind = kind,
         url = url,
         username = username.takeIf { it.isNotBlank() },
@@ -101,11 +108,10 @@ fun AddSourceScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(Modifier.widthIn(max = 640.dp)) {
-            Text("Add your provider", style = MaterialTheme.typography.displaySmall)
+            Text(stringResource(R.string.onboarding_add_provider_title), style = MaterialTheme.typography.displaySmall)
             Spacer(Modifier.height(8.dp))
             Text(
-                "OpenTV is a player. It doesn't supply channels — you connect the service " +
-                    "you already pay for.",
+                stringResource(R.string.onboarding_add_provider_desc),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -116,12 +122,12 @@ fun AddSourceScreen(
                 FilterChip(
                     selected = kind == SourceKind.XTREAM,
                     onClick = { kind = SourceKind.XTREAM },
-                    label = { Text("Xtream Codes login") },
+                    label = { Text(stringResource(R.string.onboarding_xtream_login)) },
                 )
                 FilterChip(
                     selected = kind == SourceKind.M3U,
                     onClick = { kind = SourceKind.M3U },
-                    label = { Text("M3U playlist URL") },
+                    label = { Text(stringResource(R.string.onboarding_m3u_url)) },
                 )
             }
 
@@ -130,7 +136,7 @@ fun AddSourceScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Name (optional)") },
+                label = { Text(stringResource(R.string.epg_name_optional)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -140,15 +146,14 @@ fun AddSourceScreen(
                 value = url,
                 onValueChange = { url = it },
                 label = {
-                    Text(if (kind == SourceKind.XTREAM) "Server address" else "Playlist URL")
+                    Text(if (kind == SourceKind.XTREAM) stringResource(R.string.onboarding_server_address) else stringResource(R.string.onboarding_playlist_url))
                 },
                 supportingText = {
                     Text(
                         if (kind == SourceKind.XTREAM) {
-                            "For example http://example.com:8080 — paste the whole line from " +
-                                "your provider if it's easier, extra bits get trimmed."
+                            stringResource(R.string.onboarding_server_help)
                         } else {
-                            "The full http link to your .m3u or .m3u8 file."
+                            stringResource(R.string.onboarding_playlist_help)
                         },
                     )
                 },
@@ -162,7 +167,7 @@ fun AddSourceScreen(
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
-                    label = { Text("Username") },
+                    label = { Text(stringResource(R.string.recset_field_username)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -170,7 +175,7 @@ fun AddSourceScreen(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text(stringResource(R.string.recset_field_password)) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -180,7 +185,7 @@ fun AddSourceScreen(
 
             Spacer(Modifier.height(12.dp))
             OutlinedButton(onClick = { showAdvanced = !showAdvanced }) {
-                Text(if (showAdvanced) "Hide advanced" else "Advanced")
+                Text(if (showAdvanced) stringResource(R.string.onboarding_hide_advanced) else stringResource(R.string.onboarding_advanced))
             }
 
             if (showAdvanced) {
@@ -188,9 +193,9 @@ fun AddSourceScreen(
                 OutlinedTextField(
                     value = epgUrl,
                     onValueChange = { epgUrl = it },
-                    label = { Text("Guide (XMLTV) URL — optional") },
+                    label = { Text(stringResource(R.string.onboarding_guide_url_optional)) },
                     supportingText = {
-                        Text("Leave blank to use your provider's guide automatically.")
+                        Text(stringResource(R.string.onboarding_guide_blank_help))
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -201,10 +206,7 @@ fun AddSourceScreen(
                     onValueChange = { userAgent = it },
                     label = { Text("User-Agent") },
                     supportingText = {
-                        Text(
-                            "Some providers block unfamiliar apps with a 403. If every " +
-                                "channel fails, try a common player's User-Agent here.",
-                        )
+                        Text(stringResource(R.string.onboarding_user_agent_help))
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -243,27 +245,25 @@ fun AddSourceScreen(
                     if (ui.testing) {
                         CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp)
                     } else {
-                        Text("Test connection")
+                        Text(stringResource(R.string.recset_test_connection))
                     }
                 }
                 Button(
                     onClick = { viewModel.saveAndSync(draft()) { ok -> if (ok) onFinished() } },
                     enabled = canSubmit && !ui.testing && !ui.syncing,
                 ) {
-                    Text(if (ui.syncing) "Working…" else "Save and load")
+                    Text(if (ui.syncing) stringResource(R.string.onboarding_working) else stringResource(R.string.onboarding_save_load))
                 }
             }
 
             Spacer(Modifier.height(20.dp))
             OutlinedButton(onClick = { usePhone = true }) {
-                Text("Use my phone instead")
+                Text(stringResource(R.string.onboarding_use_phone))
             }
 
             Spacer(Modifier.height(28.dp))
             Text(
-                "Your provider details are stored on this device only. OpenTV has no account " +
-                    "system and no server of its own — nothing you type here is sent anywhere " +
-                    "except to your provider.",
+                stringResource(R.string.onboarding_privacy_note),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -42,10 +42,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.R
 import app.opentv.data.model.Channel
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
@@ -90,16 +92,16 @@ fun SearchScreen(
             .padding(horizontal = 28.dp, vertical = 20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Search", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.nav_search), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.width(20.dp))
             Text(
-                query.ifEmpty { "Type a name" },
+                query.ifEmpty { stringResource(R.string.search_type_name) },
                 style = MaterialTheme.typography.titleLarge,
                 color = if (query.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
                 else MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onBack) { Text("Done") }
+            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
 
         Spacer(Modifier.height(20.dp))
@@ -116,18 +118,18 @@ fun SearchScreen(
 
             Column(Modifier.weight(1f).fillMaxSize()) {
                 when {
-                    query.isBlank() -> Hint("Start typing to search channels, movies and shows.")
-                    query.trim().length < 2 -> Hint("Keep typing…")
-                    !anyResults -> Hint("No results for “$query”.")
+                    query.isBlank() -> Hint(stringResource(R.string.search_start_hint))
+                    query.trim().length < 2 -> Hint(stringResource(R.string.common_keep_typing))
+                    !anyResults -> Hint(stringResource(R.string.search_no_results, query))
                     else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (channelResults.isNotEmpty()) {
-                            item { SectionHeader("Channels") }
+                            item { SectionHeader(stringResource(R.string.common_channels)) }
                             items(channelResults, key = { "c${it.key}" }) { row ->
                                 SearchResultRow(row = row, onClick = { onPlayChannel(row.primary) })
                             }
                         }
                         if (movieResults.isNotEmpty()) {
-                            item { SectionHeader("Movies") }
+                            item { SectionHeader(stringResource(R.string.nav_movies)) }
                             items(movieResults, key = { "m${it.id}" }) { movie ->
                                 VodResultRow(movie.name, movie.posterUrl, movie.year?.toString()) {
                                     onPlayMovie(movie)
@@ -135,7 +137,7 @@ fun SearchScreen(
                             }
                         }
                         if (seriesResults.isNotEmpty()) {
-                            item { SectionHeader("Shows") }
+                            item { SectionHeader(stringResource(R.string.nav_shows)) }
                             items(seriesResults, key = { "s${it.id}" }) { show ->
                                 VodResultRow(show.name, show.posterUrl, show.year?.toString()) {
                                     onOpenSeries(show)
@@ -229,7 +231,7 @@ private fun SearchResultRow(row: ChannelsViewModel.Row, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                row.now?.let { "${searchTime(it.startUtcMillis)}  ${it.title}" } ?: "No guide information",
+                row.now?.let { "${searchTime(it.startUtcMillis)}  ${it.title}" } ?: stringResource(R.string.guide_no_info),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

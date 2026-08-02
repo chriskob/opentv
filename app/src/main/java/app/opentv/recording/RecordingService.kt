@@ -135,7 +135,7 @@ class RecordingService : Service() {
                     ok = ok,
                     atMillis = System.currentTimeMillis(),
                     bytes = total,
-                    error = if (ok) null else (error ?: "Nothing was recorded"),
+                    error = if (ok) null else (error ?: getString(R.string.rec_error_nothing)),
                 )
             }
             finish(id)
@@ -199,8 +199,8 @@ class RecordingService : Service() {
 
     private fun buildNotification(count: Int): Notification {
         val text = when (count) {
-            0, 1 -> "Recording 1 programme"
-            else -> "Recording $count programmes"
+            0, 1 -> getString(R.string.rec_notification_one)
+            else -> getString(R.string.rec_notification_many, count)
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("OpenTV")
@@ -218,9 +218,9 @@ class RecordingService : Service() {
                 manager.createNotificationChannel(
                     NotificationChannel(
                         CHANNEL_ID,
-                        "Recording",
+                        getString(R.string.rec_channel_name),
                         NotificationManager.IMPORTANCE_LOW,
-                    ).apply { description = "Shown while OpenTV is recording" },
+                    ).apply { description = getString(R.string.rec_channel_desc) },
                 )
             }
         }

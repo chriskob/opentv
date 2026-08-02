@@ -30,9 +30,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.R
 import app.opentv.data.model.Source
 import app.opentv.ui.SourcesViewModel
 
@@ -56,18 +58,18 @@ fun ProvidersScreen(
             .padding(horizontal = 32.dp, vertical = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Providers", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.settings_providers_title), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onAddSource) { Text("Add provider") }
+            OutlinedButton(onClick = onAddSource) { Text(stringResource(R.string.providers_add)) }
             Spacer(Modifier.width(12.dp))
-            OutlinedButton(onClick = onBack) { Text("Done") }
+            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
         }
 
         Spacer(Modifier.height(16.dp))
 
         if (ui.sources.isEmpty()) {
             Text(
-                "No providers yet. Add the IPTV service you already pay for to get started.",
+                stringResource(R.string.providers_empty),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -120,15 +122,15 @@ private fun ProviderRow(
 
             if (confirming) {
                 Text(
-                    "Remove?",
+                    stringResource(R.string.providers_remove_confirm),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
                 Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onConfirmRemove) { Text("Yes, remove") }
-                TextButton(onClick = onCancelRemove) { Text("Cancel") }
+                TextButton(onClick = onConfirmRemove) { Text(stringResource(R.string.providers_yes_remove)) }
+                TextButton(onClick = onCancelRemove) { Text(stringResource(R.string.common_cancel)) }
             } else {
-                TextButton(onClick = onAskRemove) { Text("Remove") }
+                TextButton(onClick = onAskRemove) { Text(stringResource(R.string.common_remove)) }
             }
         }
     }

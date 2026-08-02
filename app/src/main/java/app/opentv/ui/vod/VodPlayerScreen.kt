@@ -72,6 +72,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -79,6 +80,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
+import app.opentv.R
 import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
@@ -295,7 +297,7 @@ fun VodPlayerScreen(
                         Spacer(Modifier.height(12.dp))
                         Text(current.message, color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center)
                         Spacer(Modifier.height(24.dp))
-                        Button(onClick = { controller.retry() }) { Text("Try again") }
+                        Button(onClick = { controller.retry() }) { Text(stringResource(R.string.common_try_again)) }
                     }
                 }
 
@@ -351,11 +353,11 @@ fun VodPlayerScreen(
                 Spacer(Modifier.height(10.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    VodChip(Icons.Filled.FastRewind, "Rewind") { controller.seekBackward(); interaction++ }
+                    VodChip(Icons.Filled.FastRewind, stringResource(R.string.player_rewind)) { controller.seekBackward(); interaction++ }
                     Spacer(Modifier.width(10.dp))
                     VodChip(
                         icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        label = if (paused) "Play" else "Pause",
+                        label = if (paused) stringResource(R.string.common_play) else stringResource(R.string.player_pause),
                         focusRequester = barFocus,
                     ) {
                         paused = !paused
@@ -363,14 +365,14 @@ fun VodPlayerScreen(
                         interaction++
                     }
                     Spacer(Modifier.width(10.dp))
-                    VodChip(Icons.Filled.FastForward, "Forward") { controller.seekForward(); interaction++ }
+                    VodChip(Icons.Filled.FastForward, stringResource(R.string.player_forward)) { controller.seekForward(); interaction++ }
                     Spacer(Modifier.width(20.dp))
-                    VodChip(Icons.Filled.ClosedCaption, "Subtitles") {
+                    VodChip(Icons.Filled.ClosedCaption, stringResource(R.string.player_subtitles)) {
                         vodPanel = if (vodPanel == VodPanel.SUBTITLES) VodPanel.NONE else VodPanel.SUBTITLES
                         interaction++
                     }
                     Spacer(Modifier.width(10.dp))
-                    VodChip(Icons.Filled.Audiotrack, "Audio") {
+                    VodChip(Icons.Filled.Audiotrack, stringResource(R.string.player_audio)) {
                         vodPanel = if (vodPanel == VodPanel.AUDIO) VodPanel.NONE else VodPanel.AUDIO
                         interaction++
                     }
@@ -427,7 +429,7 @@ private fun TrackPanel(
 
     if (panel == VodPanel.SUBTITLES) {
         val anySelected = groups.any { g -> (0 until g.length).any { g.isTrackSelected(it) } }
-        options += Triple("Off", !anySelected) { controller.disableText(); onDone() }
+        options += Triple(stringResource(R.string.player_subtitles_off), !anySelected) { controller.disableText(); onDone() }
     }
     groups.forEach { group ->
         for (i in 0 until group.length) {
@@ -447,14 +449,14 @@ private fun TrackPanel(
             .padding(16.dp),
     ) {
         Text(
-            if (panel == VodPanel.SUBTITLES) "Subtitles" else "Audio",
+            if (panel == VodPanel.SUBTITLES) stringResource(R.string.player_subtitles) else stringResource(R.string.player_audio),
             style = MaterialTheme.typography.titleMedium,
             color = Color.White.copy(alpha = 0.7f),
         )
         Spacer(Modifier.height(8.dp))
         Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
             if (options.isEmpty()) {
-                Text("None available", color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(8.dp))
+                Text(stringResource(R.string.player_none_available), color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(8.dp))
             }
             options.forEachIndexed { index, (label, selected, onClick) ->
                 TrackRow(label, selected, onClick, if (index == 0) firstFocus else null)
@@ -480,7 +482,7 @@ private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit, focu
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = MaterialTheme.typography.titleMedium, color = fg, modifier = Modifier.weight(1f))
-        if (selected) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = fg)
+        if (selected) Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_selected), tint = fg)
     }
 }
 

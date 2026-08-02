@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,8 +70,8 @@ import app.opentv.ui.vod.SeriesScreen
  * menu people asked for, instead of a top bar that ate a row of the guide. It overlays the content
  * rather than pushing it, so expanding the menu never reflows the guide underneath.
  */
-enum class Tab(val label: String) {
-    LIVE("Live TV"), MOVIES("Movies"), SHOWS("Shows"), RECORDINGS("Recordings")
+enum class Tab(val labelRes: Int) {
+    LIVE(R.string.nav_live_tv), MOVIES(R.string.nav_movies), SHOWS(R.string.nav_shows), RECORDINGS(R.string.nav_recordings)
 }
 
 private val RAIL_COLLAPSED = 76.dp
@@ -248,17 +249,17 @@ private fun NavRail(
         }
         Spacer(Modifier.height(8.dp))
 
-        RailItem(Icons.Filled.LiveTv, Tab.LIVE.label, expanded, current == Tab.LIVE) { onSelect(Tab.LIVE) }
-        RailItem(Icons.Filled.Movie, Tab.MOVIES.label, expanded, current == Tab.MOVIES) { onSelect(Tab.MOVIES) }
-        RailItem(Icons.Filled.Tv, Tab.SHOWS.label, expanded, current == Tab.SHOWS) { onSelect(Tab.SHOWS) }
-        RailItem(Icons.Filled.FiberManualRecord, Tab.RECORDINGS.label, expanded, current == Tab.RECORDINGS) { onSelect(Tab.RECORDINGS) }
+        RailItem(Icons.Filled.LiveTv, stringResource(Tab.LIVE.labelRes), expanded, current == Tab.LIVE) { onSelect(Tab.LIVE) }
+        RailItem(Icons.Filled.Movie, stringResource(Tab.MOVIES.labelRes), expanded, current == Tab.MOVIES) { onSelect(Tab.MOVIES) }
+        RailItem(Icons.Filled.Tv, stringResource(Tab.SHOWS.labelRes), expanded, current == Tab.SHOWS) { onSelect(Tab.SHOWS) }
+        RailItem(Icons.Filled.FiberManualRecord, stringResource(Tab.RECORDINGS.labelRes), expanded, current == Tab.RECORDINGS) { onSelect(Tab.RECORDINGS) }
 
         Spacer(Modifier.height(1.dp).fillMaxWidth())
         Spacer(Modifier.weight(1f))
 
-        RailItem(Icons.Filled.Search, "Search", expanded, false, onOpenSearch)
+        RailItem(Icons.Filled.Search, stringResource(R.string.nav_search), expanded, false, onOpenSearch)
         RailItem(Icons.Filled.Person, activeProfileName, expanded, false, onOpenProfiles)
-        RailItem(Icons.Filled.Settings, "Settings", expanded, false, onOpenSettings)
+        RailItem(Icons.Filled.Settings, stringResource(R.string.nav_settings), expanded, false, onOpenSettings)
     }
 }
 

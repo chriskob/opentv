@@ -32,8 +32,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.opentv.R
 
 /**
  * A d-pad-navigable on-screen keyboard, shared by every screen that needs text entry on a TV.
@@ -62,9 +64,9 @@ internal fun OnScreenKeyboard(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            KeyCap(label = "Space", wide = 3, onClick = onSpace)
-            KeyCap(label = "Del", icon = true, wide = 2, onClick = onBackspace)
-            KeyCap(label = "Clear", wide = 2, onClick = onClear)
+            KeyCap(label = stringResource(R.string.kbd_space), wide = 3, onClick = onSpace)
+            KeyCap(label = stringResource(R.string.kbd_del), icon = true, wide = 2, onClick = onBackspace)
+            KeyCap(label = stringResource(R.string.kbd_clear), wide = 2, onClick = onClear)
         }
     }
 

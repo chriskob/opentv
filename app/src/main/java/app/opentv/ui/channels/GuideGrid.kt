@@ -44,10 +44,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import app.opentv.R
 import app.opentv.data.model.Channel
 import app.opentv.data.model.Programme
 import app.opentv.ui.ChannelsViewModel
@@ -97,15 +99,15 @@ fun GuideGrid(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PageButton(icon = Icons.Filled.ChevronLeft, label = "Earlier") {
+            PageButton(icon = Icons.Filled.ChevronLeft, label = stringResource(R.string.guide_pager_earlier)) {
                 coroutineScope.launch {
                     scroll.animateScrollTo((scroll.value - pagePx).coerceAtLeast(0))
                 }
             }
-            PageButton(label = "Now") {
+            PageButton(label = stringResource(R.string.guide_pager_now)) {
                 coroutineScope.launch { scroll.animateScrollTo(0) }
             }
-            PageButton(icon = Icons.Filled.ChevronRight, label = "Later", iconTrailing = true) {
+            PageButton(icon = Icons.Filled.ChevronRight, label = stringResource(R.string.guide_pager_later), iconTrailing = true) {
                 coroutineScope.launch {
                     scroll.animateScrollTo((scroll.value + pagePx).coerceAtMost(scroll.maxValue))
                 }
@@ -265,7 +267,7 @@ private fun GuideRow(
                 )
                 if (row.variants.size > 1) {
                     Text(
-                        "${row.variants.size} qualities",
+                        stringResource(R.string.guide_qualities_count, row.variants.size),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
@@ -292,7 +294,7 @@ private fun GuideRow(
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
-                        "  No guide information",
+                        stringResource(R.string.guide_no_info),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
