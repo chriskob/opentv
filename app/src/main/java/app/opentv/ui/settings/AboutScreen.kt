@@ -121,9 +121,9 @@ fun AboutScreen(onBack: () -> Unit) {
 
         Section("Licence & links") {
             LinkLine("Licence", "GNU General Public License v3.0")
-            LinkLine("Source code", "github.com/legionnaireneyland/opentv")
-            LinkLine("Report a bug / request a feature", "github.com/legionnaireneyland/opentv/issues")
-            LinkLine("Install page", "legionnaireneyland.github.io/opentv")
+            LinkLine("Source code", "github.com/opentvproject/opentv")
+            LinkLine("Report a bug / request a feature", "github.com/opentvproject/opentv/issues")
+            LinkLine("Install page", "opentvproject.github.io/opentv")
         }
     }
 }

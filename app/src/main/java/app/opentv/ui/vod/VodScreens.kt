@@ -66,6 +66,10 @@ fun MoviesScreen(
     val categories by viewModel.movieCategories.collectAsState()
     val movies by viewModel.movies.collectAsState()
     val resume by viewModel.continueWatching.collectAsState()
+    val vodLoading by viewModel.vodLoading.collectAsState()
+
+    // Pull the movie library the first time this tab is opened, not at login.
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (hasSources) viewModel.ensureVodLoaded() }
 
     Row(Modifier.fillMaxSize()) {
         CategoryRail(
@@ -77,7 +81,8 @@ fun MoviesScreen(
             if (resume.isNotEmpty()) ContinueWatchingRow(resume, onResume)
             if (movies.isEmpty()) {
                 when {
-                    isSyncing || hasSources -> LoadingVod("Loading movies")
+                    vodLoading || isSyncing -> LoadingVod("Loading movies")
+                    hasSources -> EmptyVod("No movies", "This provider didn't return any movies.")
                     else -> EmptyVod("No movies", "Add a provider to see its movies here.")
                 }
             } else {
@@ -118,6 +123,10 @@ fun SeriesScreen(
     val categories by viewModel.seriesCategories.collectAsState()
     val series by viewModel.series.collectAsState()
     val resume by viewModel.continueWatching.collectAsState()
+    val vodLoading by viewModel.vodLoading.collectAsState()
+
+    // Pull the series library the first time this tab is opened, not at login.
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (hasSources) viewModel.ensureVodLoaded() }
 
     Row(Modifier.fillMaxSize()) {
         CategoryRail(
@@ -129,7 +138,8 @@ fun SeriesScreen(
             if (resume.isNotEmpty()) ContinueWatchingRow(resume, onResume)
             if (series.isEmpty()) {
                 when {
-                    isSyncing || hasSources -> LoadingVod("Loading shows")
+                    vodLoading || isSyncing -> LoadingVod("Loading shows")
+                    hasSources -> EmptyVod("No shows", "This provider didn't return any shows.")
                     else -> EmptyVod("No shows", "Add a provider to see its shows here.")
                 }
             } else {

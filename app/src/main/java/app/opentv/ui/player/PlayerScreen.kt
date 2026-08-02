@@ -127,7 +127,7 @@ fun PlayerScreen(
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
     val subtitlesDefault by settings.subtitlesEnabled.collectAsState()
     val controller = remember {
-        PlayerController(context, scope, graph.httpClient, subtitlesEnabled = settings.subtitlesEnabled.value)
+        PlayerController(context, scope, graph.streamingHttpClient, subtitlesEnabled = settings.subtitlesEnabled.value)
     }
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
@@ -150,6 +150,8 @@ fun PlayerScreen(
 
     var variants by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var currentId by remember { mutableStateOf<Long?>(null) }
+    // The channel we were on before this one — powers the "Last channel" recall in the list.
+    var previousId by remember { mutableStateOf<Long?>(null) }
     var paused by remember { mutableStateOf(false) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
 
@@ -189,6 +191,9 @@ fun PlayerScreen(
     }
 
     fun playChannelId(id: Long) {
+        // Remember where we came from so "Last channel" can bounce straight back. Quality switches
+        // go through tuneTo directly, so they never count as a channel change here.
+        currentId?.let { if (it != id) previousId = it }
         scope.launch {
             val channel = graph.catalogRepository.channel(id) ?: return@launch
             variants = graph.catalogRepository.variants(channel)
@@ -490,6 +495,21 @@ fun PlayerScreen(
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
                 Spacer(Modifier.height(8.dp))
+                // A quick "jump back to the channel you just left" pin, TiviMate-style.
+                val lastItem = previousId?.let { pid -> queue.firstOrNull { it.id == pid } }
+                if (lastItem != null && lastItem.id != currentId) {
+                    ChannelListRow(
+                        item = lastItem,
+                        playing = false,
+                        focusRequester = null,
+                        leadingLabel = "Last",
+                        onClick = {
+                            playChannelId(lastItem.id)
+                            channelListVisible = false
+                        },
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
                 LazyColumn(state = listState) {
                     itemsIndexed(queue, key = { _, item -> item.id }) { index, item ->
                         ChannelListRow(
@@ -514,6 +534,7 @@ private fun ChannelListRow(
     playing: Boolean,
     focusRequester: FocusRequester?,
     onClick: () -> Unit,
+    leadingLabel: String? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     val bg = when {
@@ -532,6 +553,15 @@ private fun ChannelListRow(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // A "Last" tag, or the channel number if the provider gives one — a fixed-width slot so
+        // the logos and names line up down the list.
+        Text(
+            leadingLabel ?: item.number?.toString().orEmpty(),
+            style = MaterialTheme.typography.labelMedium,
+            color = fg.copy(alpha = 0.7f),
+            maxLines = 1,
+            modifier = Modifier.width(40.dp),
+        )
         AsyncImage(
             model = item.logoUrl,
             contentDescription = null,

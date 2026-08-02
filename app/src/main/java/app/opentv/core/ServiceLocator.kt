@@ -51,6 +51,24 @@ object ServiceLocator {
                 .build()
         }
 
+        /**
+         * A separate client for the player's data source. A live stream is an effectively
+         * infinite HTTP response body, so the catalogue client's five-minute [callTimeout] would
+         * guillotine every live channel at that mark — here there is no overall call timeout, only
+         * a read timeout that catches a genuinely dead connection. Cross-protocol redirects are
+         * followed explicitly because IPTV stream URLs routinely bounce http→https onto a CDN, and
+         * a client that stops at the redirect surfaces as "lost connection to server".
+         */
+        val streamingHttpClient: OkHttpClient by lazy {
+            httpClient.newBuilder()
+                .callTimeout(0, TimeUnit.MILLISECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .retryOnConnectionFailure(true)
+                .build()
+        }
+
         val xtreamApi: XtreamApi by lazy { XtreamApi(httpClient) }
 
         val sourceRepository: SourceRepository by lazy {

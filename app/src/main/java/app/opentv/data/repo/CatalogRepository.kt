@@ -117,6 +117,14 @@ class CatalogRepository(
     suspend fun setMovieFavourite(id: Long, favourite: Boolean) =
         movieDao.setFavourite(id, favourite)
 
+    // --- Sync helpers: read/apply curation by stable stream URL ---
+    suspend fun favouriteChannelUrls(): List<String> = channelDao.favouriteUrls()
+    suspend fun hiddenChannelUrls(): List<String> = channelDao.hiddenUrls()
+    suspend fun markChannelFavouriteByUrl(url: String) = channelDao.markFavouriteByUrl(url)
+    suspend fun markChannelHiddenByUrl(url: String) = channelDao.markHiddenByUrl(url)
+    suspend fun favouriteMovieUrls(): List<String> = movieDao.favouriteUrls()
+    suspend fun markMovieFavouriteByUrl(url: String) = movieDao.markFavouriteByUrl(url)
+
     /** Series episodes are fetched lazily — panels are slow and most series are never opened. */
     suspend fun ensureEpisodes(source: Source, seriesId: String) {
         if (source.kind != SourceKind.XTREAM) return
@@ -125,10 +133,26 @@ class CatalogRepository(
             .onFailure { Log.w(TAG, "Episode fetch failed for series $seriesId", it) }
     }
 
+    /**
+     * Full catalogue: live channels, then movies and series. Used by the periodic worker and by a
+     * manual refresh, where there's no user staring at a spinner. The initial add takes the faster
+     * [syncLive] + background [syncVod] path instead, so the guide appears without waiting for a
+     * 40,000-title VOD list.
+     */
     suspend fun sync(source: Source, nowUtcMillis: Long): SyncResult = withContext(Dispatchers.IO) {
+        val live = syncLive(source, nowUtcMillis)
+        if (live is SyncResult.Success && source.kind == SourceKind.XTREAM) {
+            runCatching { syncXtreamVod(source, nowUtcMillis) }
+                .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
+        }
+        live
+    }
+
+    /** Live channels only — the fast path so the guide can show before VOD and the guide load. */
+    suspend fun syncLive(source: Source, nowUtcMillis: Long): SyncResult = withContext(Dispatchers.IO) {
         try {
             when (source.kind) {
-                SourceKind.XTREAM -> syncXtream(source, nowUtcMillis)
+                SourceKind.XTREAM -> syncXtreamLive(source, nowUtcMillis)
                 SourceKind.M3U -> syncM3u(source, nowUtcMillis)
             }
         } catch (e: CancellationException) {
@@ -139,7 +163,14 @@ class CatalogRepository(
         }
     }
 
-    private suspend fun syncXtream(source: Source, nowUtcMillis: Long): SyncResult {
+    /** Movies + series — best-effort, meant to run in the background so a huge VOD list never
+     * blocks live TV. Silent on failure: an account with no VOD is normal, not an error. */
+    suspend fun syncVod(source: Source, nowUtcMillis: Long) = withContext(Dispatchers.IO) {
+        runCatching { if (source.kind == SourceKind.XTREAM) syncXtreamVod(source, nowUtcMillis) }
+            .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
+    }
+
+    private suspend fun syncXtreamLive(source: Source, nowUtcMillis: Long): SyncResult {
         // Authenticate first so a wrong password produces a clear message rather than
         // four separate confusing failures further down.
         api.authenticate(source)
@@ -153,6 +184,14 @@ class CatalogRepository(
             )
         }
 
+        categoryDao.upsertAll(liveCategories)
+        val categoryNames = liveCategories.associate { it.id to it.name }
+        channelDao.replaceCatalogue(source.id, normalized(channels, categoryNames), nowUtcMillis)
+        sourceDao.markCatalogSynced(source.id, nowUtcMillis)
+        return SyncResult.Success(channels.size, 0, 0)
+    }
+
+    private suspend fun syncXtreamVod(source: Source, nowUtcMillis: Long) {
         // VOD is optional: plenty of accounts have live TV only, and a 404 on get_vod_streams
         // must not cost the user their channel list.
         val movieCategories = runCatching { api.movieCategories(source) }.getOrDefault(emptyList())
@@ -160,14 +199,11 @@ class CatalogRepository(
         val seriesCategories = runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
         val series = runCatching { api.series(source) }.getOrDefault(emptyList())
 
-        categoryDao.upsertAll(liveCategories + movieCategories + seriesCategories)
-        val categoryNames = liveCategories.associate { it.id to it.name }
-        channelDao.replaceCatalogue(source.id, normalized(channels, categoryNames), nowUtcMillis)
+        if (movieCategories.isNotEmpty() || seriesCategories.isNotEmpty()) {
+            categoryDao.upsertAll(movieCategories + seriesCategories)
+        }
         if (movies.isNotEmpty()) movieDao.upsertAll(movies)
         if (series.isNotEmpty()) seriesDao.upsertAll(series)
-
-        sourceDao.markCatalogSynced(source.id, nowUtcMillis)
-        return SyncResult.Success(channels.size, movies.size, series.size)
     }
 
     private suspend fun syncM3u(source: Source, nowUtcMillis: Long): SyncResult {

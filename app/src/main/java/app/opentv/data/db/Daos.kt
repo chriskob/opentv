@@ -128,6 +128,19 @@ interface ChannelDao {
     @Query("UPDATE channels SET hidden = :hidden WHERE id = :id")
     suspend fun setHidden(id: Long, hidden: Boolean)
 
+    // --- Sync: identify favourites/hidden by stream URL (stable across devices) ---
+    @Query("SELECT streamUrl FROM channels WHERE favourite = 1")
+    suspend fun favouriteUrls(): List<String>
+
+    @Query("SELECT streamUrl FROM channels WHERE hidden = 1")
+    suspend fun hiddenUrls(): List<String>
+
+    @Query("UPDATE channels SET favourite = 1 WHERE streamUrl = :url")
+    suspend fun markFavouriteByUrl(url: String)
+
+    @Query("UPDATE channels SET hidden = 1 WHERE streamUrl = :url")
+    suspend fun markHiddenByUrl(url: String)
+
     @Query("UPDATE channels SET matchedEpgId = :epgId WHERE id = :id")
     suspend fun setMatchedEpgId(id: Long, epgId: String?)
 
@@ -346,6 +359,13 @@ interface MovieDao {
 
     @Query("UPDATE movies SET favourite = :favourite WHERE id = :id")
     suspend fun setFavourite(id: Long, favourite: Boolean)
+
+    // --- Sync: favourites by stream URL ---
+    @Query("SELECT streamUrl FROM movies WHERE favourite = 1")
+    suspend fun favouriteUrls(): List<String>
+
+    @Query("UPDATE movies SET favourite = 1 WHERE streamUrl = :url")
+    suspend fun markFavouriteByUrl(url: String)
 
     @Upsert
     suspend fun upsertAll(movies: List<Movie>)

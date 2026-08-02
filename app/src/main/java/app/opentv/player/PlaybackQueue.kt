@@ -14,7 +14,7 @@ package app.opentv.player
  * and it only needs to survive the hop from the guide to the player.
  */
 object PlaybackQueue {
-    data class Item(val id: Long, val name: String, val logoUrl: String?)
+    data class Item(val id: Long, val name: String, val logoUrl: String?, val number: Int? = null)
 
     @Volatile
     var items: List<Item> = emptyList()

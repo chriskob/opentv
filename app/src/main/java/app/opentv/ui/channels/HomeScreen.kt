@@ -253,7 +253,7 @@ fun HomeScreen(
                 // Hand the player the list you're browsing so it can zap channel up/down.
                 fun goFullscreen(channel: Channel) {
                     PlaybackQueue.items = rows.map {
-                        PlaybackQueue.Item(it.primary.id, it.primary.displayName, it.primary.logoUrl)
+                        PlaybackQueue.Item(it.primary.id, it.primary.displayName, it.primary.logoUrl, it.primary.number)
                     }
                     previewController.stop()
                     onPlayChannel(channel)

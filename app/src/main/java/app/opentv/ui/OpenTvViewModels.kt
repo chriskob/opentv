@@ -30,6 +30,7 @@ import app.opentv.sync.SyncServer
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -107,7 +108,10 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
 
             _ui.value = _ui.value.copy(syncMessage = "Loading channels…")
             val now = System.currentTimeMillis()
-            when (val result = graph.catalogRepository.sync(saved, now)) {
+            // Load live channels first and get the user watching straight away. Movies, series and
+            // the guide are what make a big provider take minutes — they load in the background so
+            // "loading channels" is a few seconds, not a twenty-minute blank screen.
+            when (val result = graph.catalogRepository.syncLive(saved, now)) {
                 is CatalogRepository.SyncResult.Failed -> {
                     _ui.value = _ui.value.copy(syncing = false, syncMessage = result.reason)
                     onDone(false)
@@ -115,25 +119,29 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 is CatalogRepository.SyncResult.Success -> {
                     _ui.value = _ui.value.copy(
-                        syncMessage = "Loaded ${result.channelCount} channels. Downloading guide…",
+                        syncing = false,
+                        syncMessage = "Loaded ${result.channelCount} channels. The guide is " +
+                            "loading in the background; Movies and Shows load when you open them.",
                     )
+                    onDone(true)
                 }
             }
 
-            val summary = graph.epgRepository.syncAll(now)
-            _ui.value = _ui.value.copy(
-                syncing = false,
-                syncMessage = when {
-                    summary.channelsMatched > 0 ->
-                        "Ready. Guide matched ${summary.channelsMatched} of " +
-                            "${summary.channelsTotal} channels."
-                    // Channels work without a guide; say what to do rather than failing.
-                    else ->
-                        "Channels are ready. No guide data matched yet — add a free guide " +
-                            "under Guide settings."
-                },
-            )
-            onDone(true)
+            // Background: the guide. Movies/series are pulled on demand from their own tabs, so
+            // nothing the user hasn't asked for ever blocks the channels they can already watch.
+            runCatching {
+                val summary = graph.epgRepository.syncAll(now)
+                _ui.value = _ui.value.copy(
+                    syncMessage = when {
+                        summary.channelsMatched > 0 ->
+                            "Guide ready — matched ${summary.channelsMatched} of " +
+                                "${summary.channelsTotal} channels."
+                        else ->
+                            "Channels ready. No guide data matched yet — add a free guide " +
+                                "under Guide settings."
+                    },
+                )
+            }.onFailure { Log.w("OpenTV", "Background VOD/guide load failed", it) }
         }
     }
 
@@ -533,6 +541,29 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     fun selectMovieCategory(id: String?) { movieCategory.value = id }
 
     fun selectSeriesCategory(id: String?) { seriesCategory.value = id }
+
+    // Movies + series load on demand — the first time the user opens Movies or Shows — rather than
+    // up front at login. A provider's 40,000-title VOD list is exactly what makes a first sync
+    // crawl, and most sessions only ever watch live TV. Loaded once per app run.
+    private val _vodLoading = MutableStateFlow(false)
+    val vodLoading: StateFlow<Boolean> = _vodLoading.asStateFlow()
+
+    @Volatile private var vodRequested = false
+
+    fun ensureVodLoaded() {
+        if (vodRequested) return
+        vodRequested = true
+        viewModelScope.launch {
+            _vodLoading.value = true
+            runCatching {
+                val now = System.currentTimeMillis()
+                for (source in graph.sourceRepository.enabled()) {
+                    graph.catalogRepository.syncVod(source, now)
+                }
+            }
+            _vodLoading.value = false
+        }
+    }
 
     // ---- VOD search (shared by the unified search screen) --------------------------------------
     private val vodSearchInput = MutableStateFlow("")

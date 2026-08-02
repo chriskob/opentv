@@ -113,7 +113,7 @@ fun VodPlayerScreen(
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
-    val controller = remember { PlayerController(context, scope, graph.httpClient, subtitlesEnabled = false) }
+    val controller = remember { PlayerController(context, scope, graph.streamingHttpClient, subtitlesEnabled = false) }
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
 

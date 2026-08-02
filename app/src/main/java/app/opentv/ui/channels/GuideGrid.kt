@@ -236,6 +236,15 @@ private fun GuideRow(
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            row.primary.number?.let { num ->
+                Text(
+                    "$num",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.width(28.dp),
+                )
+            }
             AsyncImage(
                 model = row.primary.logoUrl,
                 contentDescription = null,
