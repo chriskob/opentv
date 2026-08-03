@@ -27,28 +27,31 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import app.opentv.R
 import app.opentv.data.model.Channel
 import app.opentv.data.model.Programme
@@ -80,40 +83,18 @@ fun GuideGrid(
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row) -> Unit,
     onProgramme: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
+    onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
+    // Returns true if it handled the key (rail was hidden, so consume it); false to let normal
+    // left-navigation carry focus into the already-visible rail.
+    onExitLeftFromChannel: () -> Boolean = { false },
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
     val now = System.currentTimeMillis()
-    val coroutineScope = rememberCoroutineScope()
-    val density = LocalDensity.current
-    // Two hours per press: enough to move through an evening quickly, small enough not to skip
-    // past a programme you were aiming for.
-    val pagePx = remember(density) { with(density) { (2 * 60 * MINUTE_DP).dp.toPx() }.toInt() }
 
     Column(modifier.fillMaxSize()) {
-        // The programme strip scrolls horizontally, but a d-pad has nothing focusable out there
-        // to carry it — so these buttons page the whole timeline (header and every row together)
-        // forward and back through the guide.
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PageButton(icon = Icons.Filled.ChevronLeft, label = stringResource(R.string.guide_pager_earlier)) {
-                coroutineScope.launch {
-                    scroll.animateScrollTo((scroll.value - pagePx).coerceAtLeast(0))
-                }
-            }
-            PageButton(label = stringResource(R.string.guide_pager_now)) {
-                coroutineScope.launch { scroll.animateScrollTo(0) }
-            }
-            PageButton(icon = Icons.Filled.ChevronRight, label = stringResource(R.string.guide_pager_later), iconTrailing = true) {
-                coroutineScope.launch {
-                    scroll.animateScrollTo((scroll.value + pagePx).coerceAtMost(scroll.maxValue))
-                }
-            }
-        }
-
+        // No pager buttons: the programme blocks are d-pad focusable, so moving right along a row
+        // scrolls the whole timeline (header and every row in lock-step) on its own.
         TimeHeader(windowStartMillis, scroll)
 
         LazyColumn(
@@ -130,47 +111,10 @@ fun GuideGrid(
                     onSelect = { onSelectRow(row) },
                     onFocus = { onFocusRow(row) },
                     onProgramme = { programme -> onProgramme(row, programme) },
+                    onToggleFavourite = { onToggleFavourite(row) },
+                    onExitLeft = onExitLeftFromChannel,
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun PageButton(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    iconTrailing: Boolean = false,
-    onClick: () -> Unit,
-) {
-    var focused by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (focused) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant,
-            )
-            .then(
-                if (focused) Modifier.border(
-                    2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp),
-                ) else Modifier,
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val tint = if (focused) MaterialTheme.colorScheme.onPrimary
-        else MaterialTheme.colorScheme.onSurface
-        if (icon != null && !iconTrailing) {
-            Icon(icon, contentDescription = null, tint = tint)
-            Spacer(Modifier.width(4.dp))
-        }
-        Text(label, style = MaterialTheme.typography.labelLarge, color = tint)
-        if (icon != null && iconTrailing) {
-            Spacer(Modifier.width(4.dp))
-            Icon(icon, contentDescription = null, tint = tint)
         }
     }
 }
@@ -213,6 +157,8 @@ private fun GuideRow(
     onSelect: () -> Unit,
     onFocus: () -> Unit,
     onProgramme: (Programme) -> Unit,
+    onToggleFavourite: () -> Unit = {},
+    onExitLeft: () -> Boolean = { false },
 ) {
     // Focus (the d-pad border) just moves the highlight. Selection (the filled cell) is the
     // channel the preview is playing — it only changes when you press OK.
@@ -235,6 +181,13 @@ private fun GuideRow(
                         2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp),
                     ) else Modifier,
                 )
+                // LEFT from this leftmost column asks the host to reopen the collapsed category
+                // rail; onExitLeft consumes the key only when it handled it (rail was hidden), so
+                // moving left onto programme blocks and into an already-visible rail still works.
+                .onPreviewKeyEvent { e ->
+                    if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) onExitLeft()
+                    else false
+                }
                 .onFocusChanged {
                     focused = it.isFocused
                     if (it.isFocused) onFocus()
@@ -258,7 +211,7 @@ private fun GuideRow(
                 modifier = Modifier.size(34.dp).clip(RoundedCornerShape(4.dp)),
             )
             Spacer(Modifier.width(8.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(
                     row.primary.displayName,
                     style = MaterialTheme.typography.titleMedium,
@@ -273,6 +226,21 @@ private fun GuideRow(
                         maxLines = 1,
                     )
                 }
+            }
+            // Favourite toggle. Phone/tablet users had no visible way to favourite from the guide
+            // (only the Channel Manager) — this puts a tappable star on every row; it stays d-pad
+            // focusable so it works from a TV remote too.
+            IconButton(
+                onClick = onToggleFavourite,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                    contentDescription = if (row.primary.favourite) stringResource(R.string.common_remove_favourite)
+                    else stringResource(R.string.common_favourite),
+                    tint = if (row.primary.favourite) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 

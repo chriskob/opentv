@@ -39,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,8 +48,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import app.opentv.core.AppSettings
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -70,8 +73,11 @@ import app.opentv.ui.vod.SeriesScreen
  * menu people asked for, instead of a top bar that ate a row of the guide. It overlays the content
  * rather than pushing it, so expanding the menu never reflows the guide underneath.
  */
-enum class Tab(val labelRes: Int) {
-    LIVE(R.string.nav_live_tv), MOVIES(R.string.nav_movies), SHOWS(R.string.nav_shows), RECORDINGS(R.string.nav_recordings)
+enum class Tab(val labelRes: Int, val icon: ImageVector) {
+    LIVE(R.string.nav_live_tv, Icons.Filled.LiveTv),
+    MOVIES(R.string.nav_movies, Icons.Filled.Movie),
+    SHOWS(R.string.nav_shows, Icons.Filled.Tv),
+    RECORDINGS(R.string.nav_recordings, Icons.Filled.FiberManualRecord),
 }
 
 private val RAIL_COLLAPSED = 76.dp
@@ -95,12 +101,38 @@ fun MainScreen(
     onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit,
     activeProfileName: String,
 ) {
-    var tab by remember { mutableStateOf(Tab.LIVE) }
+    // Content-type toggles: a switched-off type has its tab hidden here (and its sync skipped in
+    // CatalogRepository). Recordings is never a content type, so it always stays — which also means
+    // there is always at least one tab and never a blank shell, even with all three types off.
+    val context = LocalContext.current
+    val settings = remember { AppSettings.get(context) }
+    val liveEnabled by settings.liveEnabled.collectAsState()
+    val moviesEnabled by settings.moviesEnabled.collectAsState()
+    val seriesEnabled by settings.seriesEnabled.collectAsState()
+    val visibleTabs = remember(liveEnabled, moviesEnabled, seriesEnabled) {
+        buildList {
+            if (liveEnabled) add(Tab.LIVE)
+            if (moviesEnabled) add(Tab.MOVIES)
+            if (seriesEnabled) add(Tab.SHOWS)
+            add(Tab.RECORDINGS)
+        }
+    }
+    // The default/home tab is the first visible one — Live TV normally, otherwise the first type
+    // still switched on (or Recordings if none are).
+    val homeTab = visibleTabs.first()
 
-    // Back from Movies / Shows / Recordings returns to Live TV rather than dropping out of the app.
-    // Only from Live TV itself does Back fall through to the system (leave / go to the launcher),
-    // so you're never one stray press away from closing the app while browsing recordings.
-    BackHandler(enabled = tab != Tab.LIVE) { tab = Tab.LIVE }
+    var tab by remember { mutableStateOf(homeTab) }
+
+    // If the selected tab gets hidden (its type toggled off while it's open), drop back to the
+    // home tab so the content area never tries to show a tab that's no longer there.
+    LaunchedEffect(visibleTabs) {
+        if (tab !in visibleTabs) tab = homeTab
+    }
+
+    // Back from a non-home tab returns to the home tab rather than dropping out of the app.
+    // Only from the home tab itself does Back fall through to the system (leave / go to the
+    // launcher), so you're never one stray press away from closing the app while browsing.
+    BackHandler(enabled = tab != homeTab) { tab = homeTab }
 
     // The rail sits beside the content and pushes it, rather than floating over it. The Live TV
     // screen has its own category rail down its left edge, and an overlaying menu would land on top
@@ -108,6 +140,7 @@ fun MainScreen(
     Column(Modifier.fillMaxSize()) {
       Row(Modifier.weight(1f).fillMaxWidth()) {
         NavRail(
+            tabs = visibleTabs,
             current = tab,
             onSelect = { tab = it },
             onOpenSearch = onOpenSearch,
@@ -125,18 +158,19 @@ fun MainScreen(
                     onPlayChannel = onPlayChannel,
                     onAddSource = onAddSource,
                     onRefresh = onRefresh,
-                    onOpenSearch = onOpenSearch,
                     onPlayCatchup = onPlayCatchup,
                 )
                 Tab.MOVIES -> MoviesScreen(
                     onPlayMovie = onPlayMovie,
                     onResume = onResume,
+                    onOpenSearch = onOpenSearch,
                     hasSources = hasSources,
                     isSyncing = isSyncing,
                 )
                 Tab.SHOWS -> SeriesScreen(
                     onOpenSeries = onOpenSeries,
                     onResume = onResume,
+                    onOpenSearch = onOpenSearch,
                     hasSources = hasSources,
                     isSyncing = isSyncing,
                 )
@@ -199,6 +233,7 @@ private fun StatusBar() {
 
 @Composable
 private fun NavRail(
+    tabs: List<Tab>,
     current: Tab,
     onSelect: (Tab) -> Unit,
     onOpenSearch: () -> Unit,
@@ -249,10 +284,9 @@ private fun NavRail(
         }
         Spacer(Modifier.height(8.dp))
 
-        RailItem(Icons.Filled.LiveTv, stringResource(Tab.LIVE.labelRes), expanded, current == Tab.LIVE) { onSelect(Tab.LIVE) }
-        RailItem(Icons.Filled.Movie, stringResource(Tab.MOVIES.labelRes), expanded, current == Tab.MOVIES) { onSelect(Tab.MOVIES) }
-        RailItem(Icons.Filled.Tv, stringResource(Tab.SHOWS.labelRes), expanded, current == Tab.SHOWS) { onSelect(Tab.SHOWS) }
-        RailItem(Icons.Filled.FiberManualRecord, stringResource(Tab.RECORDINGS.labelRes), expanded, current == Tab.RECORDINGS) { onSelect(Tab.RECORDINGS) }
+        tabs.forEach { t ->
+            RailItem(t.icon, stringResource(t.labelRes), expanded, current == t) { onSelect(t) }
+        }
 
         Spacer(Modifier.height(1.dp).fillMaxWidth())
         Spacer(Modifier.weight(1f))

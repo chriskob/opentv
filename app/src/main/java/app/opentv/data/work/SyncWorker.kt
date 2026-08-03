@@ -10,7 +10,9 @@ import android.util.Log
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -70,6 +72,28 @@ class SyncWorker(
     companion object {
         private const val TAG = "SyncWorker"
         private const val WORK_NAME = "opentv-periodic-sync"
+        private const val ONE_SHOT_WORK_NAME = "opentv-manual-sync"
+
+        /**
+         * Kick a single catalogue + guide refresh now, off the UI. Runs the same [doWork] as the
+         * periodic job — so it honours the content-type toggles — but as one-time work, which means
+         * it survives the user navigating away from the screen that triggered it (unlike a refresh
+         * tied to a screen's ViewModel scope). REPLACE so repeated taps coalesce into one run.
+         */
+        fun refreshNow(context: Context) {
+            val request = OneTimeWorkRequestBuilder<SyncWorker>()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build(),
+                )
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                ONE_SHOT_WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
+                request,
+            )
+        }
 
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<SyncWorker>(6, TimeUnit.HOURS)

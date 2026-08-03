@@ -24,6 +24,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -76,17 +77,19 @@ fun SyncScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ModeChip(stringResource(R.string.sync_share_from_here), mode == Mode.SHARE) { mode = Mode.SHARE }
             ModeChip(stringResource(R.string.sync_receive), mode == Mode.RECEIVE) { mode = Mode.RECEIVE }
+            ModeChip(stringResource(R.string.sync_nas), mode == Mode.NAS) { mode = Mode.NAS }
         }
         Spacer(Modifier.height(20.dp))
 
         when (mode) {
             Mode.SHARE -> SharePane(viewModel)
             Mode.RECEIVE -> ReceivePane(viewModel)
+            Mode.NAS -> NasPane(viewModel)
         }
     }
 }
 
-private enum class Mode { SHARE, RECEIVE }
+private enum class Mode { SHARE, RECEIVE, NAS }
 
 @Composable
 private fun SharePane(viewModel: SyncViewModel) {
@@ -171,6 +174,69 @@ private fun ReceivePane(viewModel: SyncViewModel) {
                         else -> Unit
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Free, server-less "cloud" sync through the user's own NAS: every device drops a small JSON file
+ * into a shared folder on the SMB share and reads the others'. No server, no account. Requires the
+ * NAS to be set up under Recording settings first.
+ */
+@Composable
+private fun NasPane(viewModel: SyncViewModel) {
+    val nasState by viewModel.nasState.collectAsState()
+    val autoSync by viewModel.nasAutoSync.collectAsState()
+    val smbHost by viewModel.smbHost.collectAsState()
+    val configured = smbHost.isNotBlank()
+
+    Card {
+        Column(Modifier.padding(20.dp).widthIn(max = 640.dp)) {
+            Text(stringResource(R.string.sync_nas_title), style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.sync_nas_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            if (!configured) {
+                Text(
+                    stringResource(R.string.sync_nas_needs_setup),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Button(
+                        enabled = nasState !is SyncViewModel.NasState.Syncing,
+                        onClick = { viewModel.syncNas() },
+                    ) { Text(stringResource(R.string.sync_nas_sync_now)) }
+
+                    when (val s = nasState) {
+                        is SyncViewModel.NasState.Syncing ->
+                            Text(stringResource(R.string.sync_nas_syncing))
+                        is SyncViewModel.NasState.Done ->
+                            Text(s.message, color = MaterialTheme.colorScheme.primary)
+                        is SyncViewModel.NasState.Failed ->
+                            Text(s.message, color = MaterialTheme.colorScheme.error)
+                        else -> Unit
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.sync_nas_auto),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(checked = autoSync, onCheckedChange = { viewModel.setNasAutoSync(it) })
             }
         }
     }

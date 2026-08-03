@@ -5,6 +5,7 @@
  */
 package app.opentv.ui.channels
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +49,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -105,7 +109,6 @@ fun HomeScreen(
     onPlayChannel: (Channel) -> Unit,
     onAddSource: () -> Unit,
     onRefresh: () -> Unit,
-    onOpenSearch: () -> Unit,
     onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit = { _, _, _, _ -> },
     viewModel: ChannelsViewModel = viewModel(),
 ) {
@@ -136,6 +139,29 @@ fun HomeScreen(
     var recordTarget by remember { mutableStateOf<Pair<ChannelsViewModel.Row, Programme>?>(null) }
     // The channel whose OK menu (Watch / Record / Schedule) is open.
     var channelMenu by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+
+    // ---- Category rail collapse (Change 2) ---------------------------------------------------
+    // The rail is full-width while focus is on it, then slides shut once focus moves into the
+    // guide (onFocusRow) so the grid gets the whole width. Pressing d-pad LEFT from the guide's
+    // leftmost (channel) column slides it back and drops focus on the selected category.
+    var railExpanded by remember { mutableStateOf(true) }
+    val railWidth by animateDpAsState(
+        targetValue = if (railExpanded) 240.dp else 0.dp,
+        label = "railWidth",
+    )
+    val railFocusRequester = remember { FocusRequester() }
+    // Set when LEFT reopens the rail; the effect waits for the rail to be laid out again before
+    // moving focus onto it — a just-revealed node isn't focusable on the very same frame.
+    var pendingRailFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(pendingRailFocus) {
+        if (pendingRailFocus) {
+            delay(50)
+            // runCatching: if the selected category is scrolled out of the rail's list it may not
+            // be composed; a second LEFT press then still reaches the rail by ordinary navigation.
+            runCatching { railFocusRequester.requestFocus() }
+            pendingRailFocus = false
+        }
+    }
 
     // Re-evaluate "now" once a minute so progress bars advance without leaving the screen.
     LaunchedEffect(Unit) {
@@ -227,11 +253,14 @@ fun HomeScreen(
     Row(Modifier.fillMaxSize()) {
 
         // ---- Category rail -----------------------------------------------------------------
+        // Width animates to 0 while focus is in the guide (see onFocusRow) so the grid gets the
+        // whole screen; d-pad LEFT from the guide's channel column slides it back (onExitLeft…).
         Column(
             Modifier
-                .width(240.dp)
+                .width(railWidth)
                 .fillMaxHeight()
                 .background(MaterialTheme.colorScheme.surface)
+                .clipToBounds()
                 .padding(vertical = 16.dp),
         ) {
             Text(
@@ -240,37 +269,38 @@ fun HomeScreen(
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
             Spacer(Modifier.height(12.dp))
-
-            RailEntry(
-                label = stringResource(R.string.guide_search_channels),
-                selected = false,
-                onClick = onOpenSearch,
-            )
-            Spacer(Modifier.height(10.dp))
+            // The top "Search channels" bar was removed — Search now lives in the global nav rail.
 
             LazyColumn(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
+                // The currently-selected entry carries the rail's FocusRequester, so reopening the
+                // rail (d-pad LEFT in the guide) lands focus straight back on the current category.
                 item {
                     RailEntry(
                         label = stringResource(R.string.guide_favourites),
                         selected = favouritesOnly,
                         onClick = viewModel::selectFavourites,
+                        modifier = if (favouritesOnly) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
                 item {
+                    val allSelected = !favouritesOnly && selectedCategory == null
                     RailEntry(
                         label = stringResource(R.string.guide_all_channels),
-                        selected = !favouritesOnly && selectedCategory == null,
+                        selected = allSelected,
                         onClick = { viewModel.selectCategory(null) },
+                        modifier = if (allSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
                 items(categories, key = { it.key }) { group ->
+                    val groupSelected = !favouritesOnly && selectedCategory == group.key
                     RailEntry(
                         label = group.label,
-                        selected = !favouritesOnly && selectedCategory == group.key,
+                        selected = groupSelected,
                         onClick = { viewModel.selectCategory(group.key) },
+                        modifier = if (groupSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
             }
@@ -330,8 +360,26 @@ fun HomeScreen(
                     // OK on a channel opens its menu: Watch, Record now, Schedule a later show,
                     // Record series. The preview already follows the highlight as you browse.
                     onSelectRow = { row -> channelMenu = row },
-                    onFocusRow = { highlightedRow = it },
+                    onFocusRow = {
+                        highlightedRow = it
+                        // Focus is now in the guide's channel column — collapse the rail so the
+                        // grid gets full width. onExitLeftFromChannel brings it back on LEFT.
+                        railExpanded = false
+                    },
                     onProgramme = { row, programme -> recordTarget = row to programme },
+                    onToggleFavourite = { viewModel.toggleFavourite(it) },
+                    onExitLeftFromChannel = {
+                        // Fires only from the leftmost (channel) column. Rail hidden: reveal it,
+                        // move focus onto the selected category, and consume the key. Rail already
+                        // shown: return false so normal left-navigation walks focus into the rail.
+                        if (!railExpanded) {
+                            railExpanded = true
+                            pendingRailFocus = true
+                            true
+                        } else {
+                            false
+                        }
+                    },
                     modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
                 )
             }
@@ -623,7 +671,7 @@ private fun RecordActionRow(label: String, primary: Boolean = false, onClick: ()
 }
 
 @Composable
-private fun RailEntry(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun RailEntry(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Text(
         text = label,
         style = MaterialTheme.typography.titleMedium,
@@ -632,7 +680,7 @@ private fun RailEntry(label: String, selected: Boolean, onClick: () -> Unit) {
         else MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(

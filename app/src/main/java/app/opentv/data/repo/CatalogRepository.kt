@@ -6,6 +6,7 @@
 package app.opentv.data.repo
 
 import android.util.Log
+import app.opentv.core.AppSettings
 import app.opentv.data.db.CategoryDao
 import app.opentv.data.db.ChannelDao
 import app.opentv.data.db.EpisodeDao
@@ -59,6 +60,7 @@ class CatalogRepository(
     private val episodeDao: EpisodeDao,
     private val api: XtreamApi,
     private val http: OkHttpClient,
+    private val settings: AppSettings,
 ) {
 
     sealed interface SyncResult {
@@ -124,6 +126,9 @@ class CatalogRepository(
     suspend fun markChannelHiddenByUrl(url: String) = channelDao.markHiddenByUrl(url)
     suspend fun favouriteMovieUrls(): List<String> = movieDao.favouriteUrls()
     suspend fun markMovieFavouriteByUrl(url: String) = movieDao.markFavouriteByUrl(url)
+    suspend fun favouriteSeriesIds(): List<String> = seriesDao.favouriteSeriesIds()
+    suspend fun markSeriesFavouriteBySeriesId(seriesId: String) =
+        seriesDao.markFavouriteBySeriesId(seriesId)
 
     /** Series episodes are fetched lazily — panels are slow and most series are never opened. */
     suspend fun ensureEpisodes(source: Source, seriesId: String) {
@@ -140,7 +145,12 @@ class CatalogRepository(
      * 40,000-title VOD list.
      */
     suspend fun sync(source: Source, nowUtcMillis: Long): SyncResult = withContext(Dispatchers.IO) {
-        val live = syncLive(source, nowUtcMillis)
+        // Skip fetching a content type the user has switched off — that's the whole speed-up.
+        // Live is gated here (not in syncLive) so onboarding's direct syncLive still loads channels.
+        // Already-synced rows are left untouched: turning a type back on and refreshing restores it.
+        val live =
+            if (settings.liveEnabled.value) syncLive(source, nowUtcMillis)
+            else SyncResult.Success(0, 0, 0)
         if (live is SyncResult.Success && source.kind == SourceKind.XTREAM) {
             runCatching { syncXtreamVod(source, nowUtcMillis) }
                 .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
@@ -193,11 +203,24 @@ class CatalogRepository(
 
     private suspend fun syncXtreamVod(source: Source, nowUtcMillis: Long) {
         // VOD is optional: plenty of accounts have live TV only, and a 404 on get_vod_streams
-        // must not cost the user their channel list.
-        val movieCategories = runCatching { api.movieCategories(source) }.getOrDefault(emptyList())
-        val movies = runCatching { api.movies(source) }.getOrDefault(emptyList())
-        val seriesCategories = runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
-        val series = runCatching { api.series(source) }.getOrDefault(emptyList())
+        // must not cost the user their channel list. Movies and series are gated independently so
+        // a user who only turned off, say, Series still gets their movie library refreshed.
+        val moviesOn = settings.moviesEnabled.value
+        val seriesOn = settings.seriesEnabled.value
+        if (!moviesOn && !seriesOn) return
+
+        val movieCategories =
+            if (moviesOn) runCatching { api.movieCategories(source) }.getOrDefault(emptyList())
+            else emptyList()
+        val movies =
+            if (moviesOn) runCatching { api.movies(source) }.getOrDefault(emptyList())
+            else emptyList()
+        val seriesCategories =
+            if (seriesOn) runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
+            else emptyList()
+        val series =
+            if (seriesOn) runCatching { api.series(source) }.getOrDefault(emptyList())
+            else emptyList()
 
         if (movieCategories.isNotEmpty() || seriesCategories.isNotEmpty()) {
             categoryDao.upsertAll(movieCategories + seriesCategories)

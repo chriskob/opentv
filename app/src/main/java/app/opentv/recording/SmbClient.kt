@@ -190,6 +190,56 @@ object SmbClient {
         }
     }
 
+    /**
+     * File names directly inside [folder] within the share (backslash- or slash-separated path,
+     * relative to the share root). Empty when the folder does not exist yet. Used by NAS sync to
+     * find every device's bundle file. Directory entries (including `.`/`..`) are left in — callers
+     * filter by the extension they expect.
+     */
+    fun list(config: SmbConfig, folder: String): List<String> {
+        val q = connect(config)
+        try {
+            val rel = folder.split('/', '\\').filter { it.isNotBlank() }.joinToString("\\")
+            if (rel.isNotEmpty() && !q.share.folderExists(rel)) return emptyList()
+            return q.share.list(rel).map { it.fileName }
+        } finally {
+            runCatching { q.share.close() }
+            runCatching { q.session.close() }
+            runCatching { q.connection.close() }
+            runCatching { q.client.close() }
+        }
+    }
+
+    /** Overwrite the file at [locator] with [text] (UTF-8). Creates the parent folder if missing. */
+    fun writeText(config: SmbConfig, locator: String, text: String) {
+        val handle = openForWrite(config, locator)
+        try {
+            handle.output.write(text.toByteArray(Charsets.UTF_8))
+            handle.output.flush()
+        } finally {
+            handle.close()
+        }
+    }
+
+    /** Read the whole file at [locator] as a UTF-8 string. */
+    fun readText(config: SmbConfig, locator: String): String {
+        val handle = openForRead(config, locator)
+        try {
+            val size = handle.length.toInt()
+            if (size <= 0) return ""
+            val buffer = ByteArray(size)
+            var offset = 0
+            while (offset < size) {
+                val read = handle.readAt(buffer, offset.toLong(), offset, size - offset)
+                if (read <= 0) break
+                offset += read
+            }
+            return String(buffer, 0, offset, Charsets.UTF_8)
+        } finally {
+            handle.close()
+        }
+    }
+
     /** Prove the settings work: connect, authenticate, open the share. Throws on failure. */
     fun test(config: SmbConfig) {
         val q = connect(config)

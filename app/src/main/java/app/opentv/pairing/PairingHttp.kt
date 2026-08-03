@@ -106,6 +106,9 @@ object PairingHttp {
             numbers[0] == 192 && numbers[1] == 168 -> true
             numbers[0] == 172 && numbers[1] in 16..31 -> true
             numbers[0] == 169 && numbers[1] == 254 -> true
+            // 100.64.0.0/10 — CGNAT range, which is what Tailscale hands out. Treat it as private
+            // so device sync works over a tailnet (advertised as an address and accepted as a peer).
+            numbers[0] == 100 && numbers[1] in 64..127 -> true
             else -> false
         }
     }

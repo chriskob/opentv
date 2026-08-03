@@ -19,7 +19,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -34,9 +38,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import android.content.Context
+import android.widget.Toast
 import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.core.SleepTimer
+import app.opentv.core.findActivity
+import app.opentv.data.work.SyncWorker
 
 /**
  * Display & playback preferences: the app-behaviour settings, kept apart from the guide/data
@@ -52,6 +60,19 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val previewSound by settings.guidePreviewSound.collectAsState()
     val captions by settings.subtitlesEnabled.collectAsState()
     val resumeLast by settings.resumeLastChannel.collectAsState()
+    val language by settings.languageTag.collectAsState()
+    val liveEnabled by settings.liveEnabled.collectAsState()
+    val moviesEnabled by settings.moviesEnabled.collectAsState()
+    val seriesEnabled by settings.seriesEnabled.collectAsState()
+
+    // A refresh next to each content toggle kicks a full catalogue re-sync (which now honours the
+    // toggles, so a type just switched on is fetched). Runs as background work so it isn't cut short
+    // if you leave this screen; a quick Toast confirms it started.
+    val refreshingMessage = stringResource(R.string.settings_content_refreshing)
+    val onRefreshContent: () -> Unit = {
+        SyncWorker.refreshNow(context)
+        Toast.makeText(context, refreshingMessage, Toast.LENGTH_SHORT).show()
+    }
 
     Column(
         Modifier
@@ -80,6 +101,58 @@ fun AppSettingsScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text(
                 stringResource(R.string.settings_theme_note),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        SettingsSection(stringResource(R.string.settings_section_content)) {
+            Text(
+                stringResource(R.string.settings_content_note),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            ContentToggleRow(
+                title = stringResource(R.string.nav_live_tv),
+                subtitle = stringResource(R.string.settings_content_live_subtitle),
+                checked = liveEnabled,
+                onToggle = settings::setLiveEnabled,
+                onRefresh = onRefreshContent,
+            )
+            ContentToggleRow(
+                title = stringResource(R.string.nav_movies),
+                subtitle = stringResource(R.string.settings_content_movies_subtitle),
+                checked = moviesEnabled,
+                onToggle = settings::setMoviesEnabled,
+                onRefresh = onRefreshContent,
+            )
+            ContentToggleRow(
+                title = stringResource(R.string.nav_shows),
+                subtitle = stringResource(R.string.settings_content_series_subtitle),
+                checked = seriesEnabled,
+                onToggle = settings::setSeriesEnabled,
+                onRefresh = onRefreshContent,
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        SettingsSection(stringResource(R.string.settings_section_language)) {
+            ThemeOption(stringResource(R.string.settings_language_system), language.isBlank()) {
+                changeLanguage(context, settings, "")
+            }
+            ThemeOption(stringResource(R.string.settings_language_english), language == "en") {
+                changeLanguage(context, settings, "en")
+            }
+            ThemeOption(stringResource(R.string.settings_language_spanish), language == "es") {
+                changeLanguage(context, settings, "es")
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.settings_language_note),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -123,6 +196,13 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         SleepTimerSection()
     }
+}
+
+/** Persist the chosen language and recreate the activity so the whole UI reloads translated. */
+private fun changeLanguage(context: Context, settings: AppSettings, tag: String) {
+    if (settings.languageTag.value == tag) return
+    settings.setLanguageTag(tag)
+    context.findActivity()?.recreate()
 }
 
 @Composable
@@ -231,6 +311,48 @@ private fun ToggleRow(
             )
         }
         Spacer(Modifier.width(16.dp))
+        Switch(checked = checked, onCheckedChange = onToggle)
+    }
+}
+
+/**
+ * A [ToggleRow] with a refresh button in front of the switch: toggle the content type on/off, or
+ * tap refresh to re-sync it now. Only the label column toggles on tap, so the refresh button and
+ * switch stay independently focusable for d-pad users.
+ */
+@Composable
+private fun ContentToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            Modifier
+                .weight(1f)
+                .widthIn(max = 640.dp)
+                .clickable { onToggle(!checked) },
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        IconButton(onClick = onRefresh) {
+            Icon(
+                Icons.Filled.Refresh,
+                contentDescription = stringResource(R.string.settings_content_refresh),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
         Switch(checked = checked, onCheckedChange = onToggle)
     }
 }

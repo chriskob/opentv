@@ -88,6 +88,7 @@ object ServiceLocator {
                 episodeDao = database.episodes(),
                 api = xtreamApi,
                 http = httpClient,
+                settings = settings,
             )
         }
 

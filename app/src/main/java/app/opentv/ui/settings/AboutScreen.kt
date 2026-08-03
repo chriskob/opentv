@@ -5,6 +5,12 @@
  */
 package app.opentv.ui.settings
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,10 +18,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.asImageBitmap
+import app.opentv.pairing.QrCodes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -81,6 +93,12 @@ fun AboutScreen(onBack: () -> Unit) {
                                 update != null -> context.getString(R.string.about_update_available, update.versionName)
                                 else -> context.getString(R.string.about_up_to_date)
                             }
+                            // Raise the shared update prompt right here — UpdateGate overlays every
+                            // screen, so the install dialog appears over About immediately.
+                            if (update != null) {
+                                app.opentv.update.UpdateHub.state.value =
+                                    app.opentv.update.UpdateUiState.Available(update)
+                            }
                             checking = false
                         }
                     },
@@ -122,12 +140,31 @@ fun AboutScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
             LinkLine(stringResource(R.string.about_buy_coffee), "buymeacoffee.com/opentvproject")
+            Spacer(Modifier.height(12.dp))
+            val donateQr = remember { QrCodes.render("https://buymeacoffee.com/opentvproject", 400) }
+            donateQr?.let { bmp ->
+                Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = stringResource(R.string.about_scan_to_donate),
+                    modifier = Modifier.size(180.dp).clip(RoundedCornerShape(8.dp)),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    stringResource(R.string.about_scan_to_donate),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         Spacer(Modifier.height(16.dp))
 
         Section(stringResource(R.string.about_licence_links_title)) {
-            LinkLine(stringResource(R.string.about_licence_label), "GNU General Public License v3.0")
+            LinkLine(
+                stringResource(R.string.about_licence_label),
+                "GNU General Public License v3.0",
+                url = "https://www.gnu.org/licenses/gpl-3.0.html",
+            )
             LinkLine(stringResource(R.string.about_source_code), "github.com/opentvproject/opentv")
             LinkLine(stringResource(R.string.about_report_bug), "github.com/opentvproject/opentv/issues")
             LinkLine(stringResource(R.string.about_install_page), "opentvproject.github.io/opentv")
@@ -142,14 +179,37 @@ private fun Section(title: String, content: @Composable () -> Unit) {
     Column(Modifier.widthIn(max = 760.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
 }
 
+/**
+ * A tappable link row. Focusable on purpose: on a TV this is what lets the d-pad travel down the
+ * About screen (and so scroll it) — a screen of plain Text has nothing to carry the scroll. Clicking
+ * opens the URL in a browser, or shows it as a toast where there is no browser (some TV boxes).
+ */
 @Composable
-private fun LinkLine(label: String, value: String) {
-    Row {
+private fun LinkLine(label: String, value: String, url: String = "https://$value") {
+    val context = LocalContext.current
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .then(
+                if (focused) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                else Modifier,
+            )
+            .clickable {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }.onFailure { Toast.makeText(context, url, Toast.LENGTH_LONG).show() }
+            }
+            .padding(vertical = 6.dp, horizontal = 6.dp),
+    ) {
         Text(
             "$label:  ",
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
     }
 }

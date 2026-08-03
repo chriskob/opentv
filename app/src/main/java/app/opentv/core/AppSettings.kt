@@ -127,6 +127,50 @@ class AppSettings private constructor(context: Context) {
         _resumeLastChannel.value = enabled
     }
 
+    // ---- Content types -----------------------------------------------------------------------
+
+    /**
+     * Which content types the user wants synced and shown. Turning one off skips fetching that
+     * type's catalogue on the next sync (the speed-up) and hides its tab; already-synced rows are
+     * left in place, so turning it back on and refreshing brings everything straight back.
+     */
+    private val _liveEnabled = MutableStateFlow(prefs.getBoolean(KEY_CONTENT_LIVE, true))
+    val liveEnabled: StateFlow<Boolean> = _liveEnabled.asStateFlow()
+
+    private val _moviesEnabled = MutableStateFlow(prefs.getBoolean(KEY_CONTENT_MOVIES, true))
+    val moviesEnabled: StateFlow<Boolean> = _moviesEnabled.asStateFlow()
+
+    private val _seriesEnabled = MutableStateFlow(prefs.getBoolean(KEY_CONTENT_SERIES, true))
+    val seriesEnabled: StateFlow<Boolean> = _seriesEnabled.asStateFlow()
+
+    fun setLiveEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CONTENT_LIVE, enabled).apply()
+        _liveEnabled.value = enabled
+    }
+
+    fun setMoviesEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CONTENT_MOVIES, enabled).apply()
+        _moviesEnabled.value = enabled
+    }
+
+    fun setSeriesEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CONTENT_SERIES, enabled).apply()
+        _seriesEnabled.value = enabled
+    }
+
+    /**
+     * UI language override. Blank = follow the device; otherwise a BCP-47 tag ("en", "es").
+     * Applied at [android.content.ContextWrapper.attachBaseContext] time so the whole app —
+     * including notifications built off the app context — picks it up.
+     */
+    private val _languageTag = MutableStateFlow(prefs.getString(KEY_LANGUAGE, "").orEmpty())
+    val languageTag: StateFlow<String> = _languageTag.asStateFlow()
+
+    fun setLanguageTag(tag: String) {
+        prefs.edit().putString(KEY_LANGUAGE, tag).apply()
+        _languageTag.value = tag
+    }
+
     /** The last channel played, for boot-to-last-channel. Not a flow — only read once at launch. */
     var lastChannelId: Long
         get() = prefs.getLong(KEY_LAST_CHANNEL, 0L)
@@ -198,6 +242,26 @@ class AppSettings private constructor(context: Context) {
         runCatching { RecordingTarget.valueOf(prefs.getString(KEY_REC_TARGET, null) ?: "") }
             .getOrDefault(RecordingTarget.INTERNAL)
 
+    // ---- NAS ("cloud") sync ------------------------------------------------------------------
+
+    /**
+     * A stable, random id for this install. It names this device's bundle file in the NAS sync
+     * folder, so every device writes its own file and reads the others'. Generated once, on first
+     * read, then persisted — distinct per device without needing any hardware identifier.
+     */
+    val syncDeviceId: String
+        get() = prefs.getString(KEY_SYNC_DEVICE_ID, null) ?: java.util.UUID.randomUUID().toString()
+            .also { prefs.edit().putString(KEY_SYNC_DEVICE_ID, it).apply() }
+
+    /** Whether to run a NAS sync automatically each time the app is opened. Off by default. */
+    private val _nasAutoSync = MutableStateFlow(prefs.getBoolean(KEY_NAS_AUTO_SYNC, false))
+    val nasAutoSync: StateFlow<Boolean> = _nasAutoSync.asStateFlow()
+
+    fun setNasAutoSync(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NAS_AUTO_SYNC, enabled).apply()
+        _nasAutoSync.value = enabled
+    }
+
     companion object {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_SUBTITLES = "subtitles_enabled"
@@ -207,14 +271,28 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_HIDDEN_CATS = "hidden_categories"
         private const val KEY_ACTIVE_PROFILE = "active_profile_id"
         private const val KEY_RESUME_LAST = "resume_last_channel"
+        private const val KEY_CONTENT_LIVE = "content_live"
+        private const val KEY_CONTENT_MOVIES = "content_movies"
+        private const val KEY_CONTENT_SERIES = "content_series"
         private const val KEY_LAST_CHANNEL = "last_channel_id"
         private const val KEY_RESIZE_MODE = "player_resize_mode"
+        private const val KEY_LANGUAGE = "language_tag"
+
+        /**
+         * Reads the saved language tag straight from prefs, for use in attachBaseContext before
+         * the settings singleton (or anything else) is initialised. Blank = follow the device.
+         */
+        fun savedLanguageTag(context: Context): String =
+            context.getSharedPreferences("opentv_settings", Context.MODE_PRIVATE)
+                .getString(KEY_LANGUAGE, "").orEmpty()
         private const val KEY_REC_TARGET = "recording_target"
         private const val KEY_SMB_HOST = "smb_host"
         private const val KEY_SMB_SHARE = "smb_share"
         private const val KEY_SMB_FOLDER = "smb_folder"
         private const val KEY_SMB_USER = "smb_user"
         private const val KEY_SMB_PASS = "smb_password"
+        private const val KEY_SYNC_DEVICE_ID = "sync_device_id"
+        private const val KEY_NAS_AUTO_SYNC = "nas_auto_sync"
 
         @Volatile private var instance: AppSettings? = null
 

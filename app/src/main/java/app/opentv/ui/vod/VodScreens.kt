@@ -28,7 +28,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -61,6 +64,7 @@ import coil.compose.AsyncImage
 fun MoviesScreen(
     onPlayMovie: (Movie) -> Unit,
     onResume: (mediaKey: String, url: String, title: String) -> Unit,
+    onOpenSearch: () -> Unit,
     hasSources: Boolean,
     isSyncing: Boolean,
     viewModel: VodViewModel = viewModel(),
@@ -80,6 +84,7 @@ fun MoviesScreen(
             onSelect = { viewModel.selectMovieCategory(it) },
         )
         Column(Modifier.weight(1f).fillMaxSize()) {
+            SearchAffordance(onOpenSearch)
             if (resume.isNotEmpty()) ContinueWatchingRow(resume, onResume)
             if (movies.isEmpty()) {
                 when {
@@ -118,6 +123,7 @@ fun MoviesScreen(
 fun SeriesScreen(
     onOpenSeries: (Series) -> Unit,
     onResume: (mediaKey: String, url: String, title: String) -> Unit,
+    onOpenSearch: () -> Unit,
     hasSources: Boolean,
     isSyncing: Boolean,
     viewModel: VodViewModel = viewModel(),
@@ -137,6 +143,7 @@ fun SeriesScreen(
             onSelect = { viewModel.selectSeriesCategory(it) },
         )
         Column(Modifier.weight(1f).fillMaxSize()) {
+            SearchAffordance(onOpenSearch)
             if (resume.isNotEmpty()) ContinueWatchingRow(resume, onResume)
             if (series.isEmpty()) {
                 when {
@@ -222,6 +229,39 @@ fun SeriesDetailScreen(
 }
 
 // ---- Shared bits -------------------------------------------------------------------------
+
+/**
+ * The search entry at the top of the Movies and Shows grids. The rail's global search already
+ * covers movies and series; this makes it reachable without leaving the tab. Focusable for d-pad
+ * on TV and tappable on touch, it just opens the existing search screen.
+ */
+@Composable
+private fun SearchAffordance(onOpenSearch: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (focused) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onOpenSearch)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val tint = if (focused) MaterialTheme.colorScheme.onPrimary
+        else MaterialTheme.colorScheme.onSurfaceVariant
+        Icon(Icons.Filled.Search, contentDescription = null, tint = tint)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            stringResource(R.string.vod_search_hint),
+            style = MaterialTheme.typography.titleMedium,
+            color = tint,
+        )
+    }
+}
 
 @Composable
 private fun CategoryRail(

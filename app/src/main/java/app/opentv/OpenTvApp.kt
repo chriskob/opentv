@@ -6,6 +6,8 @@
 package app.opentv
 
 import android.app.Application
+import android.content.Context
+import app.opentv.core.LocaleUtils
 import app.opentv.core.ServiceLocator
 import app.opentv.data.repo.CatalogRepository
 import app.opentv.data.work.SyncWorker
@@ -17,6 +19,11 @@ import kotlinx.coroutines.launch
 class OpenTvApp : Application() {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    // So notifications and any app-context resources use the chosen language too, not just the UI.
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(LocaleUtils.wrap(base))
+    }
+
     override fun onCreate() {
         super.onCreate()
         val graph = ServiceLocator.get(this)
@@ -26,6 +33,11 @@ class OpenTvApp : Application() {
         // the stored channels and re-run the guide matcher — locally, no re-download. This
         // is why a name-cleanup fix shows up on the next launch rather than the next 6-hour
         // sync, and it costs nothing when the version has not changed.
+        // Cold-start reconciliation: a recording still marked "in progress" at process start is an
+        // orphan from a killed capture. Done here, once per process — NOT when the Recordings screen
+        // opens — so checking on a recording you just started never marks it interrupted.
+        appScope.launch { runCatching { graph.recordingRepository.failInterrupted() } }
+
         // Re-arm programme reminders on every launch. Alarms are lost on a force-stop or app
         // update (not just a reboot, which the boot receiver already covers), and re-setting an
         // exact alarm for the same reminder is idempotent — so this quietly keeps bells alive.
@@ -37,6 +49,14 @@ class OpenTvApp : Application() {
                     app.opentv.reminders.ReminderScheduler.set(this@OpenTvApp, it.id, it.startUtcMillis)
                 }
             }
+        }
+
+        // Free, server-less "cloud" sync through the user's own NAS, if they've opted in. Writes
+        // this device's bundle to the shared folder and merges in every other device's — favourites,
+        // watch history and NAS recordings. Fire-and-forget and fully guarded: a blank or unreachable
+        // NAS returns a result rather than throwing, so a bad launch never costs the user anything.
+        if (graph.settings.nasAutoSync.value) {
+            appScope.launch { runCatching { app.opentv.sync.NasSync(graph).sync() } }
         }
 
         appScope.launch {

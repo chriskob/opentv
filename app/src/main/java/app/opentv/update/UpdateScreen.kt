@@ -99,12 +99,23 @@ sealed interface UpdateUiState {
     data class Failed(val update: UpdateChecker.Update) : UpdateUiState
 }
 
+/**
+ * One shared update state so the manual "check for updates" (About) and the automatic gate speak
+ * with one voice. A manual check that finds a build flips this, and [UpdateGate] — mounted over the
+ * whole app — shows the dialog wherever the user is standing. Previously the two had separate state
+ * (and the gate was throttled to a 6-hour check), so a manual find never actually prompted.
+ */
+object UpdateHub {
+    val state = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
+}
+
 class UpdateViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = ServiceLocator.get(app)
     private val checker = UpdateChecker(graph.httpClient, BuildConfig.VERSION_NAME)
     private val installer = ApkInstaller(graph.httpClient)
 
-    private val _state = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
+    // Backed by the shared hub so a manual check from About lights up this same gate.
+    private val _state = UpdateHub.state
     val state = _state.asStateFlow()
 
     init { checkThrottled() }

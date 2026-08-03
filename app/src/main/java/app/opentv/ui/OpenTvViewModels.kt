@@ -23,6 +23,8 @@ import app.opentv.data.model.StreamKind
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.repo.CatalogRepository
 import app.opentv.data.repo.distinctByQuality
+import app.opentv.R
+import app.opentv.sync.NasSync
 import app.opentv.sync.SyncBundle
 import app.opentv.sync.SyncClient
 import app.opentv.sync.SyncPosition
@@ -773,6 +775,43 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _receiveState = MutableStateFlow<ReceiveState>(ReceiveState.Idle)
     val receiveState: StateFlow<ReceiveState> = _receiveState.asStateFlow()
+
+    // ---- NAS ("cloud") sync ------------------------------------------------------------------
+
+    private val nas = NasSync(graph)
+
+    /** Whether an SMB/NAS is set up at all — the NAS pane needs one before it can do anything. */
+    val smbHost: StateFlow<String> = graph.settings.smbHost
+    val nasAutoSync: StateFlow<Boolean> = graph.settings.nasAutoSync
+
+    sealed interface NasState {
+        data object Idle : NasState
+        data object Syncing : NasState
+        data class Done(val message: String) : NasState
+        data class Failed(val message: String) : NasState
+    }
+
+    private val _nasState = MutableStateFlow<NasState>(NasState.Idle)
+    val nasState: StateFlow<NasState> = _nasState.asStateFlow()
+
+    fun setNasAutoSync(enabled: Boolean) = graph.settings.setNasAutoSync(enabled)
+
+    fun syncNas() {
+        if (_nasState.value is NasState.Syncing) return
+        viewModelScope.launch {
+            _nasState.value = NasState.Syncing
+            val ctx = getApplication<Application>()
+            _nasState.value = when (val result = nas.sync()) {
+                is NasSync.Result.Success ->
+                    if (result.peers == 0) NasState.Done(ctx.getString(R.string.sync_nas_uploaded))
+                    else NasState.Done(ctx.getString(R.string.sync_nas_done, result.merged, result.peers))
+                is NasSync.Result.NotConfigured ->
+                    NasState.Failed(ctx.getString(R.string.sync_nas_needs_setup))
+                is NasSync.Result.Failed ->
+                    NasState.Failed(ctx.getString(R.string.sync_nas_failed))
+            }
+        }
+    }
 
     fun startSharing() {
         viewModelScope.launch { server.start(buildBundleJson()) }

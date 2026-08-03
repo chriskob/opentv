@@ -138,6 +138,18 @@
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_note">TV boxes stay dark on \"Follow system\". Pick Dark or Light to force it.</string>
+    <string name="settings_section_content">Content</string>
+    <string name="settings_content_note">Turn off what you don\'t use to sync faster. Turn back on anytime.</string>
+    <string name="settings_content_live_subtitle">Channels and the TV guide.</string>
+    <string name="settings_content_movies_subtitle">The movie library.</string>
+    <string name="settings_content_series_subtitle">The series library.</string>
+    <string name="settings_content_refresh">Refresh</string>
+    <string name="settings_content_refreshing">Refreshing…</string>
+    <string name="settings_section_language">Language</string>
+    <string name="settings_language_system">System default</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_spanish">Español</string>
+    <string name="settings_language_note">Sets the app\'s language. The screen reloads when you change it.</string>
     <string name="settings_section_guide">Guide</string>
     <string name="settings_live_preview_title">Live preview in the guide</string>
     <string name="settings_live_preview_subtitle">Play the selected channel in the preview pane. Turn this off if the guide stutters on an older box.</string>
@@ -233,11 +245,21 @@
     <string name="sync_connect">Connect</string>
     <string name="sync_connecting">Connecting…</string>
     <string name="sync_synced_items">Synced %1$d item(s).</string>
+    <string name="sync_nas">NAS (cloud)</string>
+    <string name="sync_nas_title">Sync through your NAS</string>
+    <string name="sync_nas_desc">Sync favourites, watch history and NAS recordings between all your devices through your own NAS. No server, no account.</string>
+    <string name="sync_nas_needs_setup">Set up your NAS under Settings → Recording first, then come back here.</string>
+    <string name="sync_nas_sync_now">Sync now</string>
+    <string name="sync_nas_syncing">Syncing…</string>
+    <string name="sync_nas_done">Synced %1$d item(s) from %2$d device(s).</string>
+    <string name="sync_nas_uploaded">Saved this device to the NAS. No other devices have synced here yet.</string>
+    <string name="sync_nas_failed">Couldn\'t reach your NAS. Check it\'s on and the details in Recording settings are right.</string>
+    <string name="sync_nas_auto">Auto-sync when the app opens</string>
 
     <!-- ============================ About ============================ -->
     <string name="about_title">About OpenTV</string>
     <string name="about_version">Version</string>
-    <string name="about_update_available">Update available: %1$s. It will offer to install from the home screen.</string>
+    <string name="about_update_available">Update available: %1$s — see the prompt to install.</string>
     <string name="about_up_to_date">You\'re on the latest version.</string>
     <string name="about_checking">Checking…</string>
     <string name="about_check_updates">Check for updates</string>
@@ -248,6 +270,7 @@
     <string name="about_support_title">Support the project</string>
     <string name="about_support_body">OpenTV is free and always will be — nothing is gated. If it\'s useful to you and you\'d like to chip in, a coffee helps keep the updates coming: new features, fixes and support all come out of spare evenings. Entirely optional, and genuinely appreciated.</string>
     <string name="about_buy_coffee">Buy me a coffee</string>
+    <string name="about_scan_to_donate">Scan to donate</string>
     <string name="about_licence_links_title">Licence &amp; links</string>
     <string name="about_licence_label">Licence</string>
     <string name="about_source_code">Source code</string>
@@ -316,6 +339,7 @@
     <string name="vod_no_shows_add">Add a provider to see its shows here.</string>
     <string name="vod_loading_episodes">Loading episodes…</string>
     <string name="vod_all">All</string>
+    <string name="vod_search_hint">Search movies &amp; shows</string>
     <string name="vod_continue_watching">Continue watching</string>
     <string name="vod_large_provider_note">A large provider can take a couple of minutes the first time.</string>
 

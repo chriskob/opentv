@@ -74,10 +74,8 @@ class RecordingsViewModel(app: Application) : AndroidViewModel(app) {
         graph.reminderRepository.observeAll()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    init {
-        // A row still marked "recording" on a cold start was killed mid-capture — reconcile it.
-        viewModelScope.launch { graph.recordingRepository.failInterrupted() }
-    }
+    // NB: cold-start reconciliation of orphaned "recording" rows happens once in OpenTvApp, NOT
+    // here — opening this screen must never mark an actively-capturing recording as interrupted.
 
     fun stop(id: Long) = graph.recordingEngine.stop(id)
 

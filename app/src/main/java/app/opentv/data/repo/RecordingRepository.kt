@@ -22,6 +22,8 @@ class RecordingRepository(
     fun observeRules(): Flow<List<SeriesRule>> = ruleDao.observeAll()
 
     suspend fun byId(id: Long): Recording? = dao.byId(id)
+    suspend fun all(): List<Recording> = dao.all()
+    suspend fun byFilePath(filePath: String): Recording? = dao.byFilePath(filePath)
     suspend fun active(): List<Recording> = dao.active()
     suspend fun scheduled(): List<Recording> = dao.scheduled()
 

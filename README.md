@@ -4,10 +4,15 @@
 
 No account. No subscription. No server of ours between you and your provider.
 
-[![Build](https://github.com/legionnaireneyland/opentv/actions/workflows/build.yml/badge.svg)](https://github.com/legionnaireneyland/opentv/actions/workflows/build.yml)
+[![Build](https://github.com/opentvproject/opentv/actions/workflows/build.yml/badge.svg)](https://github.com/opentvproject/opentv/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-ffdd00.svg)](https://buymeacoffee.com/opentvproject)
 
 ---
+
+> **Support OpenTV** — it's free and always will be. If it saved you from a dead "lifetime"
+> app, you can chip in at **[buymeacoffee.com/opentvproject](https://buymeacoffee.com/opentvproject)**.
+> Entirely optional; the app is never paywalled.
 
 ## Why this exists
 
@@ -30,33 +35,60 @@ keep it alive. That is the entire point.
 - **Live TV** from Xtream Codes logins and plain M3U/M3U8 playlists
 - **A guide that stays put** — XMLTV EPG that survives restarts, refreshes incrementally, and
   never wipes itself
-- **Movies and series** with resume
-- **Favourites, categories, search**
+- **Recording (DVR)** — record to the box, a USB drive or your NAS (SMB); schedule from the
+  guide; series-link a whole show; play back in-app with full seeking
+- **Catch-up / archive** where your provider offers it, plus **programme reminders**
+- **Movies and series** with resume and per-profile watch history
+- **Favourites, categories, hide channels, search**, picture-in-picture, aspect control, and
+  hand-off to an external player
+- **Free sync between your own devices** — favourites, watch history and NAS recordings, over
+  your wifi or Tailscale, with no server of ours
+- **Multiple languages** (fully translated to Spanish), a parental PIN, profiles, and self-updates
 - **D-pad first** — designed for a remote, works with a touchscreen
 - **One APK** for Android TV, Fire TV, phones and tablets
 
+## Screenshots
+
+The live TV guide — programme grid, favourites, and a live preview:
+
+![OpenTV live TV guide](docs/screenshots/01-guide.png)
+
+| Recordings &amp; reminders | Free cloud sync — your own NAS, no server |
+| :---: | :---: |
+| ![Recordings and reminders](docs/screenshots/02-recordings.png) | ![NAS cloud sync](docs/screenshots/03-cloud-sync.png) |
+| Movies &amp; series | Settings |
+| ![Movies](docs/screenshots/04-movies.png) | ![Settings](docs/screenshots/05-settings.png) |
+
+Open-source through and through — the About screen carries the licence, the links, and a donation QR:
+
+![About](docs/screenshots/06-about.png)
+
 ## What it deliberately does not do
 
-- **No cloud sync, no web dashboard, no account.** Your provider credentials never leave your
-  device. This is a feature, not a gap — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for
-  the reasoning, and note that "sync your channel list to our servers" is precisely the
-  feature whose hosting bill makes a one-off payment unsustainable.
+- **No servers of ours, no web dashboard, no account.** Your provider credentials never leave
+  your device, and syncing happens directly between your devices — or through your own NAS —
+  never through a machine we run. This is a feature, not a gap — see
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning, and note that "sync your
+  channel list to *our* servers" is precisely the feature whose hosting bill makes a one-off
+  payment unsustainable.
 - **No content.** OpenTV is a player. You bring a service you already pay for. The project has
   no affiliation with any provider and does not help you find one.
 
 ## Install
 
-**→ [Install page](https://legionnaireneyland.github.io/opentv/)** — step-by-step for Chromecast with
+**→ [Install page](https://opentvproject.github.io/opentv/)** — step-by-step for Chromecast with
 Google TV, Android TV boxes, Fire TV Sticks, and phones.
 
-On a TV, the quickest route is the **Downloader** app pointed at:
+On a TV, the quickest route is the **[Downloader app](https://www.aftvnews.com/downloader/)** —
+enter the code:
 
 ```
-legionnaireneyland.github.io/opentv/apk
+6398449
 ```
 
-That address always redirects to the newest APK, so it never goes stale. Or grab it straight
-from [Releases](../../releases).
+That code (or `aftv.news/6398449` in a browser) always points at the newest APK, so it never
+goes stale. On a phone, the [install page](https://opentvproject.github.io/opentv/) is a
+one-tap download. Or grab the APK straight from [Releases](../../releases).
 
 Every release is built by GitHub Actions from a tagged commit, and the workflow that built it
 is public — you can check the APK against the source, or rebuild it yourself, rather than
@@ -68,7 +100,7 @@ first build running.
 ## Build it yourself
 
 ```bash
-git clone https://github.com/legionnaireneyland/opentv.git
+git clone https://github.com/opentvproject/opentv.git
 cd opentv
 ./gradlew assembleDebug
 ```
@@ -81,6 +113,19 @@ Run the tests:
 ```bash
 ./gradlew test
 ```
+
+## How it was built
+
+OpenTV was written with **Claude**, Anthropic's AI assistant, working from a human's
+direction — the design decisions, the priorities, the "no server, ever" rule, and every
+review of what shipped were the maintainer's; Claude did the bulk of the drafting, wiring and
+debugging against that direction.
+
+That is relevant here for one specific reason: **it kept the project genuinely clean-room.**
+Nothing was decompiled or copied from any existing IPTV app. The code was written from public
+specifications (the Xtream Codes request format, the XMLTV and M3U formats, the Kodi catch-up
+tags) and from describing how other apps *behave* as a user — never from their source. That is
+the legal footing that lets anyone fork this and keep it alive, which is the whole point.
 
 ## Contributing
 

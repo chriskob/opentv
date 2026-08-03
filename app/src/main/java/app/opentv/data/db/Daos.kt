@@ -398,6 +398,13 @@ interface SeriesDao {
     @Query("UPDATE series SET favourite = :favourite WHERE id = :id")
     suspend fun setFavourite(id: Long, favourite: Boolean)
 
+    // --- Sync: favourites by provider series id (series carry no stream URL) ---
+    @Query("SELECT seriesId FROM series WHERE favourite = 1")
+    suspend fun favouriteSeriesIds(): List<String>
+
+    @Query("UPDATE series SET favourite = 1 WHERE seriesId = :seriesId")
+    suspend fun markFavouriteBySeriesId(seriesId: String)
+
     @Upsert
     suspend fun upsertAll(items: List<Series>)
 
@@ -487,6 +494,14 @@ interface RecordingDao {
 
     @Query("SELECT * FROM recordings WHERE id = :id")
     suspend fun byId(id: Long): Recording?
+
+    /** Snapshot of every recording — the NAS sync reads this to gather the smb:// ones to share. */
+    @Query("SELECT * FROM recordings")
+    suspend fun all(): List<Recording>
+
+    /** De-dup for NAS sync: a recording's smb:// locator is its stable cross-device identity. */
+    @Query("SELECT * FROM recordings WHERE filePath = :filePath LIMIT 1")
+    suspend fun byFilePath(filePath: String): Recording?
 
     /** For series-link de-dup: has this rule already booked this programme window on this channel? */
     @Query(

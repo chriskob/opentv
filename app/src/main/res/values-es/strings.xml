@@ -138,6 +138,18 @@
     <string name="settings_theme_dark">Oscuro</string>
     <string name="settings_theme_light">Claro</string>
     <string name="settings_theme_note">Los equipos de TV permanecen en oscuro con \"Según el sistema\". Elige Oscuro o Claro para forzarlo.</string>
+    <string name="settings_section_content">Contenido</string>
+    <string name="settings_content_note">Desactiva lo que no uses para sincronizar más rápido. Vuelve a activarlo cuando quieras.</string>
+    <string name="settings_content_live_subtitle">Los canales y la guía de TV.</string>
+    <string name="settings_content_movies_subtitle">La biblioteca de películas.</string>
+    <string name="settings_content_series_subtitle">La biblioteca de series.</string>
+    <string name="settings_content_refresh">Actualizar</string>
+    <string name="settings_content_refreshing">Actualizando…</string>
+    <string name="settings_section_language">Idioma</string>
+    <string name="settings_language_system">Predeterminado del sistema</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_spanish">Español</string>
+    <string name="settings_language_note">Define el idioma de la aplicación. La pantalla se recarga al cambiarlo.</string>
     <string name="settings_section_guide">Guía</string>
     <string name="settings_live_preview_title">Vista previa en la guía</string>
     <string name="settings_live_preview_subtitle">Reproduce el canal seleccionado en el panel de vista previa. Desactívalo si la guía se entrecorta en un equipo antiguo.</string>
@@ -233,11 +245,21 @@
     <string name="sync_connect">Conectar</string>
     <string name="sync_connecting">Conectando…</string>
     <string name="sync_synced_items">Se sincronizaron %1$d elemento(s).</string>
+    <string name="sync_nas">NAS (nube)</string>
+    <string name="sync_nas_title">Sincronizar a través de tu NAS</string>
+    <string name="sync_nas_desc">Sincroniza favoritos, historial y grabaciones del NAS entre todos tus dispositivos a través de tu propio NAS. Sin servidor y sin cuenta.</string>
+    <string name="sync_nas_needs_setup">Configura primero tu NAS en Ajustes → Grabación y luego vuelve aquí.</string>
+    <string name="sync_nas_sync_now">Sincronizar ahora</string>
+    <string name="sync_nas_syncing">Sincronizando…</string>
+    <string name="sync_nas_done">Se sincronizaron %1$d elemento(s) de %2$d dispositivo(s).</string>
+    <string name="sync_nas_uploaded">Se guardó este dispositivo en el NAS. Todavía no se ha sincronizado ningún otro dispositivo aquí.</string>
+    <string name="sync_nas_failed">No se pudo conectar con tu NAS. Comprueba que está encendido y que los datos en los ajustes de Grabación son correctos.</string>
+    <string name="sync_nas_auto">Sincronizar automáticamente al abrir la app</string>
 
     <!-- ============================ About ============================ -->
     <string name="about_title">Acerca de OpenTV</string>
     <string name="about_version">Versión</string>
-    <string name="about_update_available">Actualización disponible: %1$s. Se ofrecerá instalarla desde la pantalla de inicio.</string>
+    <string name="about_update_available">Actualización disponible: %1$s: mira el aviso para instalarla.</string>
     <string name="about_up_to_date">Tienes la última versión.</string>
     <string name="about_checking">Comprobando…</string>
     <string name="about_check_updates">Buscar actualizaciones</string>
@@ -248,6 +270,7 @@
     <string name="about_support_title">Apoya el proyecto</string>
     <string name="about_support_body">OpenTV es gratis y siempre lo será: nada está restringido. Si te resulta útil y quieres colaborar, un café ayuda a que sigan llegando las novedades: nuevas funciones, correcciones y soporte salen de ratos libres. Totalmente opcional y de verdad se agradece.</string>
     <string name="about_buy_coffee">Invítame a un café</string>
+    <string name="about_scan_to_donate">Escanea para donar</string>
     <string name="about_licence_links_title">Licencia y enlaces</string>
     <string name="about_licence_label">Licencia</string>
     <string name="about_source_code">Código fuente</string>
@@ -316,6 +339,7 @@
     <string name="vod_no_shows_add">Añade un proveedor para ver sus series aquí.</string>
     <string name="vod_loading_episodes">Cargando episodios…</string>
     <string name="vod_all">Todas</string>
+    <string name="vod_search_hint">Buscar películas y series</string>
     <string name="vod_continue_watching">Seguir viendo</string>
     <string name="vod_large_provider_note">Un proveedor grande puede tardar un par de minutos la primera vez.</string>
 
