@@ -16,9 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -77,6 +77,7 @@ fun ParentalControlsScreen(
     Column(
         Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 32.dp, vertical = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -127,11 +128,15 @@ fun ParentalControlsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            LazyColumn(
+            // A plain Column (not LazyColumn) because the whole screen is now inside a
+            // verticalScroll — nesting a second scroll container here is what left the lower
+            // categories unreachable on the remote. Provider categories number in the dozens,
+            // so rendering them all is fine.
+            Column(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.widthIn(max = 720.dp),
+                modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp),
             ) {
-                items(categories, key = { it.key }) { group ->
+                categories.forEach { group ->
                     Card {
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -149,6 +154,7 @@ fun ParentalControlsScreen(
                     }
                 }
             }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

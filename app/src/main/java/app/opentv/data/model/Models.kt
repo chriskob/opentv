@@ -28,6 +28,15 @@ enum class SourceKind {
     M3U,
 }
 
+/** Live-stream container the panel is asked for. Xtream panels serve one or both. */
+enum class LiveStreamFormat(val extension: String) {
+    /** HLS — `.../<id>.m3u8`. ExoPlayer's HLS path. The historical default. */
+    HLS("m3u8"),
+
+    /** Raw MPEG-TS — `.../<id>.ts`. Some panels only serve this; more universally compatible. */
+    MPEG_TS("ts"),
+}
+
 /**
  * A configured provider. Everything lives on-device; there is no OpenTV account
  * and no OpenTV server. See docs/ARCHITECTURE.md for why.
@@ -48,6 +57,12 @@ data class Source(
      * usual cause of a blanket 403 on every stream. Overridable per source.
      */
     val userAgent: String = DEFAULT_USER_AGENT,
+    /**
+     * Live-stream container to request from an Xtream panel. Defaults to HLS, which is what the
+     * app has always used; a panel that only serves raw MPEG-TS needs this set to [LiveStreamFormat.MPEG_TS].
+     * Ignored for M3U sources, whose channel URLs come straight from the playlist.
+     */
+    val liveFormat: LiveStreamFormat = LiveStreamFormat.HLS,
     val enabled: Boolean = true,
     val lastCatalogSyncMillis: Long = 0,
 ) {

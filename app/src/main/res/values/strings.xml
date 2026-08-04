@@ -56,6 +56,9 @@
     <string name="guide_no_channels_title">No channels yet</string>
     <string name="guide_add_provider_desc">Add a provider to get started.</string>
     <string name="guide_add_provider_button">Add a provider</string>
+    <string name="guide_load_failed_title">Couldn\'t load your channels</string>
+    <string name="guide_load_failed_desc">Check your provider details and your connection, then try again.</string>
+    <string name="guide_edit_provider">Provider setup</string>
     <string name="guide_watch_label">Watch</string>
     <string name="guide_cd_stop_recording">Stop recording</string>
     <string name="guide_cd_record_now">Record what\'s on now</string>
@@ -201,6 +204,10 @@
     <string name="providers_empty">No providers yet. Add the IPTV service you already pay for to get started.</string>
     <string name="providers_remove_confirm">Remove?</string>
     <string name="providers_yes_remove">Yes, remove</string>
+    <string name="provider_stream_format">Stream format</string>
+    <string name="provider_stream_format_hls">HLS (.m3u8)</string>
+    <string name="provider_stream_format_ts">MPEG-TS (.ts)</string>
+    <string name="provider_stream_format_hint">HLS is the default. If channels won\'t play, try MPEG-TS — some providers only offer .ts.</string>
 
     <!-- ============================ Recording settings ============================ -->
     <string name="recset_desc">Choose where recordings are saved. Internal keeps them on this device; NAS saves them to a shared folder on your network and still plays them back here.</string>
@@ -314,6 +321,12 @@
     <string name="channels_manager_hint">Search to hide or favourite channels</string>
     <string name="channels_manager_search_hint">Search for a channel, then hide it from the guide or star it.</string>
     <string name="channels_manager_no_match">No channels match “%1$s”.</string>
+    <string name="channels_manager_all_sources">All sources</string>
+    <string name="channels_manager_source_header">Source</string>
+    <string name="channels_manager_categories_header">Categories</string>
+    <string name="channels_manager_pick_category">Pick a category on the left to see its channels.</string>
+    <string name="channels_manager_empty_category">No channels in this category.</string>
+    <string name="channels_manager_no_channels">No channels yet. Add a provider first.</string>
     <string name="channels_hidden">Hidden</string>
     <string name="channels_showing">Showing</string>
     <string name="channels_show">Show</string>
@@ -327,6 +340,8 @@
     <string name="kbd_space">Space</string>
     <string name="kbd_del">Del</string>
     <string name="kbd_clear">Clear</string>
+    <string name="kbd_paste">Paste</string>
+    <string name="kbd_clipboard_empty">Nothing to paste</string>
 
     <!-- ============================ Movies & shows (VOD) ============================ -->
     <string name="vod_loading_movies">Loading movies</string>

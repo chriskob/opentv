@@ -5,6 +5,7 @@
  */
 package app.opentv.ui.onboarding
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,10 +18,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -41,7 +46,9 @@ import androidx.compose.ui.unit.dp
 import app.opentv.R
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
+import app.opentv.isRunningOnTelevision
 import app.opentv.ui.SourcesViewModel
+import app.opentv.ui.channels.readClipboardText
 
 /**
  * First-run setup.
@@ -59,21 +66,27 @@ fun AddSourceScreen(
     viewModel: SourcesViewModel,
     onFinished: () -> Unit,
 ) {
-    // Offered first, because typing a server address and password with a d-pad is the worst
-    // moment in every app of this kind. Typing on the TV is still there for anyone who
-    // prefers it, or who has no phone to hand.
-    var usePhone by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    // The QR "set it up from your phone" flow only makes sense on a TV — it serves a setup page
+    // FROM this device for a phone to fill in. On a phone that same screen shows a QR meant to be
+    // scanned BY a phone, which is nonsensical and traps the user — so a non-TV device defaults
+    // straight to the direct entry form. On a TV the QR is still offered first, because typing a
+    // server address and password with a d-pad is the worst moment in every app of this kind.
+    val isTelevision = remember(context) { isRunningOnTelevision(context) }
+    var usePhone by remember { mutableStateOf(isTelevision) }
 
     if (usePhone) {
         PhonePairingScreen(
-            onReceived = { draft -> viewModel.saveAndSync(draft) { ok -> if (ok) onFinished() } },
+            // Even on a failed sync, leave the pairing screen: the source is already saved, so the
+            // home screen shows either the guide (success) or a recoverable error (failure) rather
+            // than stranding the user on an endless "Got it — connecting…" spinner.
+            onReceived = { draft -> viewModel.saveAndSync(draft) { onFinished() } },
             onCancel = { usePhone = false },
         )
         return
     }
 
     val ui by viewModel.ui.collectAsState()
-    val context = LocalContext.current
 
     var kind by remember { mutableStateOf(SourceKind.XTREAM) }
     var name by remember { mutableStateOf("") }
@@ -157,6 +170,7 @@ fun AddSourceScreen(
                         },
                     )
                 },
+                trailingIcon = { PasteButton { url += it } },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 modifier = Modifier.fillMaxWidth(),
@@ -168,6 +182,7 @@ fun AddSourceScreen(
                     value = username,
                     onValueChange = { username = it },
                     label = { Text(stringResource(R.string.recset_field_username)) },
+                    trailingIcon = { PasteButton { username += it } },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -176,6 +191,7 @@ fun AddSourceScreen(
                     value = password,
                     onValueChange = { password = it },
                     label = { Text(stringResource(R.string.recset_field_password)) },
+                    trailingIcon = { PasteButton { password += it } },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -256,9 +272,13 @@ fun AddSourceScreen(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-            OutlinedButton(onClick = { usePhone = true }) {
-                Text(stringResource(R.string.onboarding_use_phone))
+            // "Set up from your phone" (the QR pairing flow) is offered only on a TV — see the
+            // isTelevision note above. On a phone it would just show a QR to nowhere.
+            if (isTelevision) {
+                Spacer(Modifier.height(20.dp))
+                OutlinedButton(onClick = { usePhone = true }) {
+                    Text(stringResource(R.string.onboarding_use_phone))
+                }
             }
 
             Spacer(Modifier.height(28.dp))
@@ -268,5 +288,25 @@ fun AddSourceScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * A trailing "paste" affordance for a provider field: reads the system clipboard and appends it
+ * via [onPaste]. A long Xtream URL or username is miserable to type on a d-pad, so this is exactly
+ * what the reporter asked for. Reads the same clipboard as the on-screen keyboard's Paste key; an
+ * empty clipboard just shows a brief message rather than doing nothing silently.
+ */
+@Composable
+private fun PasteButton(onPaste: (String) -> Unit) {
+    val context = LocalContext.current
+    IconButton(
+        onClick = {
+            val pasted = readClipboardText(context)
+            if (pasted != null) onPaste(pasted)
+            else Toast.makeText(context, context.getString(R.string.kbd_clipboard_empty), Toast.LENGTH_SHORT).show()
+        },
+    ) {
+        Icon(Icons.Filled.ContentPaste, contentDescription = stringResource(R.string.kbd_paste))
     }
 }

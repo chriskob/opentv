@@ -16,6 +16,7 @@ import app.opentv.data.db.SourceDao
 import app.opentv.data.model.Category
 import app.opentv.data.model.Channel
 import app.opentv.data.model.Episode
+import app.opentv.data.model.LiveStreamFormat
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
 import app.opentv.data.model.Source
@@ -79,7 +80,19 @@ class CatalogRepository(
     fun observeChannelsIn(categoryIds: List<String>): Flow<List<Channel>> =
         channelDao.observeInCategories(categoryIds)
 
+    /**
+     * Channels in a set of categories INCLUDING hidden ones, optionally scoped to one source — the
+     * channel manager's browse feed. Separate from [observeChannelsIn] (which drops `hidden` rows
+     * for the guide) because the manager must show hidden channels so they can be un-hidden.
+     */
+    fun observeChannelsInIncludingHidden(sourceId: Long?, categoryIds: List<String>): Flow<List<Channel>> =
+        channelDao.observeInCategoriesIncludingHidden(sourceId, categoryIds)
+
     fun observeFavouriteChannels(): Flow<List<Channel>> = channelDao.observeFavourites()
+
+    /** Reactive number of visible channels on disk — the UI uses this to tell "guide still
+     * building" (channels exist) apart from "nothing loaded" (a failed or empty sync). */
+    fun observeChannelCount(): Flow<Int> = channelDao.observeVisibleCount()
 
     fun observeCategories(kind: StreamKind): Flow<List<Category>> = categoryDao.observe(kind)
 
@@ -382,6 +395,26 @@ class CatalogRepository(
         if (channel.groupKey.isEmpty()) return listOf(channel)
         val all = channelDao.variantsInGroup(channel.groupKey)
         return distinctByQuality(all).ifEmpty { listOf(channel) }
+    }
+
+    /**
+     * Switches an Xtream source's live-stream container (HLS ↔ MPEG-TS) and rewrites its live
+     * channels' playback URLs in place, so the change takes effect immediately without a re-sync.
+     *
+     * Xtream only: an M3U source's channel URLs come straight from its playlist and must not be
+     * rebuilt from credentials. The `channels` table is live-only (movies and series have their own
+     * tables), so every row here is a live channel whose URL derives from [XtreamApi.liveStreamUrl].
+     */
+    suspend fun setLiveFormat(sourceId: Long, format: LiveStreamFormat) = withContext(Dispatchers.IO) {
+        val source = sourceDao.byId(sourceId) ?: return@withContext
+        if (source.kind != SourceKind.XTREAM || source.liveFormat == format) return@withContext
+        val updated = source.copy(liveFormat = format)
+        sourceDao.update(updated)
+        // Rebuild each live channel's URL for the new container.
+        channelDao.forSource(sourceId).forEach { channel ->
+            val newUrl = api.liveStreamUrl(updated, channel.streamId)
+            if (newUrl != channel.streamUrl) channelDao.updateStreamUrl(channel.id, newUrl)
+        }
     }
 
     suspend fun deleteSource(sourceId: Long) = withContext(Dispatchers.IO) {

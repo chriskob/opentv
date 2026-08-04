@@ -56,6 +56,9 @@
     <string name="guide_no_channels_title">Aún no hay canales</string>
     <string name="guide_add_provider_desc">Añade un proveedor para empezar.</string>
     <string name="guide_add_provider_button">Añadir un proveedor</string>
+    <string name="guide_load_failed_title">No se pudieron cargar tus canales</string>
+    <string name="guide_load_failed_desc">Comprueba los datos de tu proveedor y tu conexión, y vuelve a intentarlo.</string>
+    <string name="guide_edit_provider">Configurar proveedor</string>
     <string name="guide_watch_label">Ver</string>
     <string name="guide_cd_stop_recording">Detener grabación</string>
     <string name="guide_cd_record_now">Grabar lo que está en emisión</string>
@@ -201,6 +204,10 @@
     <string name="providers_empty">Aún no hay proveedores. Añade el servicio IPTV que ya pagas para empezar.</string>
     <string name="providers_remove_confirm">¿Quitar?</string>
     <string name="providers_yes_remove">Sí, quitar</string>
+    <string name="provider_stream_format">Formato de emisión</string>
+    <string name="provider_stream_format_hls">HLS (.m3u8)</string>
+    <string name="provider_stream_format_ts">MPEG-TS (.ts)</string>
+    <string name="provider_stream_format_hint">HLS es el predeterminado. Si los canales no se reproducen, prueba MPEG-TS: algunos proveedores solo ofrecen .ts.</string>
 
     <!-- ============================ Recording settings ============================ -->
     <string name="recset_desc">Elige dónde se guardan las grabaciones. Interno las mantiene en este dispositivo; NAS las guarda en una carpeta compartida de tu red y las reproduce igualmente aquí.</string>
@@ -314,6 +321,12 @@
     <string name="channels_manager_hint">Busca para ocultar o marcar canales como favoritos</string>
     <string name="channels_manager_search_hint">Busca un canal y luego ocúltalo de la guía o márcalo con una estrella.</string>
     <string name="channels_manager_no_match">Ningún canal coincide con “%1$s”.</string>
+    <string name="channels_manager_all_sources">Todas las fuentes</string>
+    <string name="channels_manager_source_header">Fuente</string>
+    <string name="channels_manager_categories_header">Categorías</string>
+    <string name="channels_manager_pick_category">Elige una categoría a la izquierda para ver sus canales.</string>
+    <string name="channels_manager_empty_category">No hay canales en esta categoría.</string>
+    <string name="channels_manager_no_channels">Aún no hay canales. Añade un proveedor primero.</string>
     <string name="channels_hidden">Oculto</string>
     <string name="channels_showing">Visible</string>
     <string name="channels_show">Mostrar</string>
@@ -327,6 +340,8 @@
     <string name="kbd_space">Espacio</string>
     <string name="kbd_del">Borrar</string>
     <string name="kbd_clear">Limpiar</string>
+    <string name="kbd_paste">Pegar</string>
+    <string name="kbd_clipboard_empty">No hay nada que pegar</string>
 
     <!-- ============================ Movies & shows (VOD) ============================ -->
     <string name="vod_loading_movies">Cargando películas</string>

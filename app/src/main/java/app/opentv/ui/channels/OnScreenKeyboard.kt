@@ -5,6 +5,9 @@
  */
 package app.opentv.ui.channels
 
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,6 +54,7 @@ internal fun OnScreenKeyboard(
 ) {
     val keyRows = listOf("1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM")
     val firstKey = remember { FocusRequester() }
+    val context = LocalContext.current
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         keyRows.forEachIndexed { rowIndex, line ->
@@ -65,6 +70,17 @@ internal fun OnScreenKeyboard(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KeyCap(label = stringResource(R.string.kbd_space), wide = 3, onClick = onSpace)
+            // Paste the clipboard through the same onKey callback the letter keys use, so it lands
+            // in whatever field this keyboard is driving. Empty clipboard just says so, no crash.
+            KeyCap(
+                label = stringResource(R.string.kbd_paste),
+                wide = 2,
+                onClick = {
+                    val pasted = readClipboardText(context)
+                    if (pasted != null) onKey(pasted)
+                    else Toast.makeText(context, context.getString(R.string.kbd_clipboard_empty), Toast.LENGTH_SHORT).show()
+                },
+            )
             KeyCap(label = stringResource(R.string.kbd_del), icon = true, wide = 2, onClick = onBackspace)
             KeyCap(label = stringResource(R.string.kbd_clear), wide = 2, onClick = onClear)
         }
@@ -105,4 +121,17 @@ private fun KeyCap(
             Text(label, style = MaterialTheme.typography.titleMedium, color = fg, fontWeight = FontWeight.SemiBold)
         }
     }
+}
+
+/**
+ * Plain text currently on the system clipboard, trimmed — or null when there's nothing to paste.
+ * Shared by this keyboard's Paste key and the provider form's paste buttons so both read the
+ * clipboard the same way.
+ */
+internal fun readClipboardText(context: Context): String? {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+    val clip = clipboard.primaryClip ?: return null
+    if (clip.itemCount == 0) return null
+    val text = clip.getItemAt(0)?.coerceToText(context)?.toString()
+    return text?.trim()?.takeIf { it.isNotEmpty() }
 }

@@ -12,6 +12,7 @@ import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Category
 import app.opentv.data.model.Channel
 import app.opentv.data.model.EpgFeed
+import app.opentv.data.model.LiveStreamFormat
 import app.opentv.data.model.Movie
 import app.opentv.data.model.PlaybackPosition
 import app.opentv.data.model.Profile
@@ -159,6 +160,16 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { graph.catalogRepository.deleteSource(source.id) }
     }
 
+    /**
+     * Change an Xtream source's live-stream container. The repository rewrites the source's live
+     * channel URLs in place, so the switch takes effect without a re-sync; the observed source list
+     * then re-emits with the new [Source.liveFormat]. A no-op for M3U sources and unchanged values.
+     */
+    fun setLiveFormat(source: Source, format: LiveStreamFormat) {
+        if (source.kind != SourceKind.XTREAM || source.liveFormat == format) return
+        viewModelScope.launch { graph.catalogRepository.setLiveFormat(source.id, format) }
+    }
+
     fun refreshAll() {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(syncing = true, syncMessage = "Refreshing…")
@@ -211,17 +222,25 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
     val categoryGroups: StateFlow<List<CategoryGroup>> =
         graph.catalogRepository.observeCategories(StreamKind.LIVE)
-            .map { raw ->
-                val groups = LinkedHashMap<String, Pair<String, MutableList<String>>>()
-                for (category in raw) {
-                    val n = ChannelNameNormalizer.normalize(category.name)
-                    val key = n.groupKey.ifEmpty { category.id }
-                    val entry = groups.getOrPut(key) { n.baseName to mutableListOf() }
-                    entry.second += category.id
-                }
-                groups.map { (key, value) -> CategoryGroup(key, value.first, value.second) }
-            }
+            .map { foldCategories(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Folds codec-split provider categories into one logical [CategoryGroup] each — 'UK| GENERAL
+     * HD/RAW' and 'UK| GENERAL hevc' become a single "General" entry that filters across every
+     * underlying id at once. Shared by the guide's [categoryGroups] and the manager's
+     * [managerCategoryGroups] so both group the rail identically.
+     */
+    private fun foldCategories(raw: List<Category>): List<CategoryGroup> {
+        val groups = LinkedHashMap<String, Pair<String, MutableList<String>>>()
+        for (category in raw) {
+            val n = ChannelNameNormalizer.normalize(category.name)
+            val key = n.groupKey.ifEmpty { category.id }
+            val entry = groups.getOrPut(key) { n.baseName to mutableListOf() }
+            entry.second += category.id
+        }
+        return groups.map { (key, value) -> CategoryGroup(key, value.first, value.second) }
+    }
 
     /**
      * The category ids to hide from the guide *right now*: the ids behind every group the user
@@ -413,6 +432,19 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         graph.catalogRepository.observeFavouriteChannels()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * Whether the catalogue has any channels yet, as a tri-state that stops the home screen
+     * spinning forever when a provider fails to load:
+     *  - null  → the count query hasn't returned; still checking, keep showing the loader.
+     *  - true  → channels are on disk, so an empty [rows] just means the guide is still building.
+     *  - false → confirmed empty; if a provider is configured the last sync failed or returned
+     *            nothing, so the screen shows a recoverable error instead of an endless spinner.
+     */
+    val channelsPresent: StateFlow<Boolean?> =
+        graph.catalogRepository.observeChannelCount()
+            .map { it > 0 }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     fun selectCategory(id: String?) {
         favouritesOnly.value = false
         selectedCategory.value = id
@@ -467,6 +499,66 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                     .map { channels -> buildRows(channels, emptyMap(), System.currentTimeMillis()) }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ---- Channel manager: browse by category ---------------------------------------------------
+    // Deliberately independent of the guide's `selectedCategory`/`rows`: browsing here never moves
+    // what Live TV is showing. Two differences from the guide feed — it can be scoped to a single
+    // provider (cardiodoc's "keep sources separate"), and it includes HIDDEN channels so they can
+    // be brought back. Always scoped to one category, never the whole catalogue, so the right pane
+    // stays a size a remote can scroll (no flat 20k-row list).
+
+    /** Provider filter for the manager. null = every source ("All sources"). */
+    val managerSelectedSource = MutableStateFlow<Long?>(null)
+
+    /** The [CategoryGroup.key] whose channels fill the manager's right pane; null = none picked. */
+    val managerSelectedCategory = MutableStateFlow<String?>(null)
+
+    /** Providers, so the manager can offer a source filter (shown only when there's more than one). */
+    val sources: StateFlow<List<Source>> =
+        graph.sourceRepository.observeAll()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The manager's category rail: like [categoryGroups] but scoped to [managerSelectedSource], and
+     * NOT filtered by the adult/hidden-category setting — the manager shows every category so a
+     * hidden one's channels can still be reached and un-hidden.
+     */
+    val managerCategoryGroups: StateFlow<List<CategoryGroup>> =
+        combine(
+            graph.catalogRepository.observeCategories(StreamKind.LIVE),
+            managerSelectedSource,
+        ) { raw, sourceId ->
+            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
+            foldCategories(scoped)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Channels in the selected manager category (and source), grouped into [Row]s exactly like the
+     * guide — but including hidden channels. Empty until a category is picked. Reuses [buildRows]
+     * with no EPG window (the manager needs logo/name/state, not now/next).
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val managerRows: StateFlow<List<Row>> =
+        combine(managerSelectedSource, managerSelectedCategory, managerCategoryGroups) { source, key, groups ->
+            val ids = key?.let { k -> groups.firstOrNull { it.key == k }?.ids }
+            source to ids
+        }
+            .distinctUntilChanged()
+            .flatMapLatest { (source, ids) ->
+                if (ids.isNullOrEmpty()) flowOf(emptyList())
+                else graph.catalogRepository.observeChannelsInIncludingHidden(source, ids)
+                    .map { channels -> buildRows(channels, emptyMap(), System.currentTimeMillis()) }
+            }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Switch the manager's provider filter; the category resets since categories differ per source. */
+    fun selectManagerSource(sourceId: Long?) {
+        managerSelectedSource.value = sourceId
+        managerSelectedCategory.value = null
+    }
+
+    fun selectManagerCategory(key: String?) { managerSelectedCategory.value = key }
 
     /** Hide or show a whole logical channel — every quality variant follows. */
     fun setRowHidden(row: Row, hidden: Boolean) {

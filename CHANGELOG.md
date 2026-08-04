@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.0
+
+- **No more endless "Loading channels".** If a provider fails to load or comes back empty (a wrong
+  login, a dead server), the guide now shows a clear error with **Retry** and **Provider setup**
+  buttons instead of spinning forever.
+- **Set up on a phone without the QR dance.** Installing on a phone now shows the login form
+  directly so you can type your details in; the QR code is only offered on a TV, where typing is the
+  painful part.
+- **Paste into the setup fields.** The URL, username and password fields — and the on-screen
+  keyboard — now have a **Paste** button, so a copied Xtream line drops straight in.
+- **MPEG-TS or HLS, your choice.** Each Xtream provider now has a **Stream format** toggle. If your
+  panel only serves `.ts` and channels wouldn't play, switch to MPEG-TS and they will. Defaults to
+  HLS, so nothing changes unless you need it.
+- **Parental controls scrolls.** The hidden-categories list is reachable to the bottom now, however
+  many categories your provider has.
+- **A real Channel Manager.** Settings → Channels is now a browsable, two-pane manager: pick a
+  category on the left, see its channels on the right, hide or favourite each one — including
+  hidden channels so you can bring them back. With more than one provider, a **source filter** keeps
+  them separate instead of merged into one list.
+
 ## 0.3.0
 
 - **Profiles.** Add local profiles (just a name — no accounts) from the person icon in the top

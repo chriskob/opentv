@@ -224,7 +224,7 @@ class XtreamApi(
     // ---- URL construction ----------------------------------------------------------------
 
     fun liveStreamUrl(source: Source, streamId: String): String =
-        "${source.url}/live/${source.username}/${source.password}/$streamId.m3u8"
+        "${source.url}/live/${source.username}/${source.password}/$streamId.${source.liveFormat.extension}"
 
     fun vodStreamUrl(source: Source, streamId: String, extension: String?): String =
         "${source.url}/movie/${source.username}/${source.password}/$streamId.${extension ?: "mp4"}"

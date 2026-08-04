@@ -18,6 +18,7 @@ import app.opentv.data.model.Channel
 import app.opentv.data.model.EpgChannelAlias
 import app.opentv.data.model.EpgFeed
 import app.opentv.data.model.Episode
+import app.opentv.data.model.LiveStreamFormat
 import app.opentv.data.model.Movie
 import app.opentv.data.model.PlaybackPosition
 import app.opentv.data.model.Profile
@@ -36,6 +37,11 @@ class Converters {
 
     @TypeConverter fun stringToSourceKind(value: String): SourceKind =
         runCatching { SourceKind.valueOf(value) }.getOrDefault(SourceKind.M3U)
+
+    @TypeConverter fun liveStreamFormatToString(value: LiveStreamFormat): String = value.name
+
+    @TypeConverter fun stringToLiveStreamFormat(value: String): LiveStreamFormat =
+        runCatching { LiveStreamFormat.valueOf(value) }.getOrDefault(LiveStreamFormat.HLS)
 
     @TypeConverter fun streamKindToString(value: StreamKind): String = value.name
 
@@ -65,7 +71,7 @@ class Converters {
         SeriesRule::class,
         Reminder::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -198,12 +204,25 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 → v7: per-source live-stream format. Adds the `liveFormat` column to sources. Additive;
+         * the DEFAULT 'HLS' back-fills existing rows to the historical behaviour so nobody's channels
+         * change container until they opt in. The entity carries no @ColumnInfo(defaultValue) — like
+         * the other enum-as-String columns (`kind`) — so the DB-only default is not part of the
+         * schema-identity check and the upgrade preserves favourites and overrides.
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `sources` ADD COLUMN `liveFormat` TEXT NOT NULL DEFAULT 'HLS'")
+            }
+        }
+
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
                 // refresh cannot make the UI stutter on a slow TV box.
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 /*
                  * Pre-1.0 policy: schema changes drop and rebuild the database. Everything
                  * in it is re-derivable from the provider (one sync away) except favourites

@@ -88,6 +88,24 @@ interface ChannelDao {
     )
     fun observeInCategories(categoryIds: List<String>): Flow<List<Channel>>
 
+    /**
+     * Channels across a set of categories INCLUDING hidden ones, optionally scoped to one source
+     * — the channel manager's browse query.
+     *
+     * The guide's [observe]/[observeInCategories] filter `hidden = 0`; the manager can't, because
+     * its whole job is finding a hidden channel and switching it back on. Still scoped to a
+     * category set (never the whole table) so the list stays a size a remote can actually scroll.
+     */
+    @Query(
+        """
+        SELECT * FROM channels
+        WHERE (:sourceId IS NULL OR sourceId = :sourceId)
+          AND categoryId IN (:categoryIds)
+        ORDER BY sortIndex, displayName
+        """
+    )
+    fun observeInCategoriesIncludingHidden(sourceId: Long?, categoryIds: List<String>): Flow<List<Channel>>
+
     @Query(
         """
         SELECT * FROM channels
@@ -126,11 +144,27 @@ interface ChannelDao {
     @Query("SELECT COUNT(*) FROM channels WHERE sourceId = :sourceId")
     suspend fun countForSource(sourceId: Long): Int
 
+    /**
+     * Reactive count of channels the guide can actually show (hidden rows excluded). Lets the home
+     * screen tell "the guide is still building from channels on disk" apart from "nothing loaded",
+     * so a failed or empty sync surfaces an error instead of spinning forever.
+     */
+    @Query("SELECT COUNT(*) FROM channels WHERE hidden = 0")
+    fun observeVisibleCount(): Flow<Int>
+
     @Query("UPDATE channels SET favourite = :favourite WHERE id = :id")
     suspend fun setFavourite(id: Long, favourite: Boolean)
 
     @Query("UPDATE channels SET hidden = :hidden WHERE id = :id")
     suspend fun setHidden(id: Long, hidden: Boolean)
+
+    /** Every channel for a source. The channels table is live-only, so these are its live channels. */
+    @Query("SELECT * FROM channels WHERE sourceId = :sourceId")
+    suspend fun forSource(sourceId: Long): List<Channel>
+
+    /** Rewrites one channel's resolved playback URL — used when a source's live stream format changes. */
+    @Query("UPDATE channels SET streamUrl = :url WHERE id = :id")
+    suspend fun updateStreamUrl(id: Long, url: String)
 
     // --- Sync: identify favourites/hidden by stream URL (stable across devices) ---
     @Query("SELECT streamUrl FROM channels WHERE favourite = 1")

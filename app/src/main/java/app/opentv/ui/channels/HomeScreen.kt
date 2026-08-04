@@ -122,6 +122,9 @@ fun HomeScreen(
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
     val windowStart by viewModel.windowStartMillis.collectAsState()
+    // Tri-state: null = still checking the catalogue, true = channels on disk, false = confirmed
+    // empty. Drives the choice between the loading spinner and a recoverable error below.
+    val channelsPresent by viewModel.channelsPresent.collectAsState()
 
     // Two separate ideas, on purpose:
     //  - highlightedRow: where the d-pad is in the grid. Moves freely with up/down.
@@ -311,10 +314,16 @@ fun HomeScreen(
             if (rows.isEmpty()) {
                 when {
                     favouritesOnly -> NoFavouritesState()
-                    // A large provider takes a while to sync, and showing "No channels"
-                    // during it reads as failure — which is how someone concludes an app
-                    // is broken thirty seconds after installing it.
-                    isSyncing || hasSources -> LoadingState(isSyncing)
+                    // Work genuinely in progress: a sync is running, the catalogue check hasn't
+                    // returned yet, or channels ARE on disk and the guide is still building. A
+                    // large provider takes a while, and showing "No channels" during it reads as
+                    // failure — which is how someone concludes an app is broken thirty seconds
+                    // after installing it.
+                    isSyncing || channelsPresent == null || channelsPresent == true -> LoadingState(isSyncing)
+                    // Nothing is syncing and the catalogue is confirmed empty. With a provider
+                    // configured, the last load failed or returned nothing — surface a clear error
+                    // with Retry and a way back to setup instead of spinning forever.
+                    hasSources -> ChannelsErrorState(onRetry = onRefresh, onEditProvider = onAddSource)
                     else -> EmptyState(onAddSource)
                 }
             } else {
@@ -829,6 +838,42 @@ private fun NoFavouritesState() {
                 stringResource(R.string.guide_no_favourites_desc),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * Shown when a provider is configured but there are no channels to display and nothing is
+ * syncing — i.e. the last catalogue load failed or came back empty. Replaces the endless
+ * "Loading your channels" spinner with something the user can act on.
+ */
+@Composable
+private fun ChannelsErrorState(onRetry: () -> Unit, onEditProvider: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.widthIn(max = 460.dp),
+        ) {
+            Text(
+                stringResource(R.string.guide_load_failed_title),
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.guide_load_failed_desc),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                androidx.compose.material3.Button(onClick = onRetry) {
+                    Text(stringResource(R.string.common_try_again))
+                }
+                androidx.compose.material3.OutlinedButton(onClick = onEditProvider) {
+                    Text(stringResource(R.string.guide_edit_provider))
+                }
+            }
         }
     }
 }
