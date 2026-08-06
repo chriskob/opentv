@@ -141,6 +141,18 @@
     letter-spacing: .04em; margin-left: 6px; vertical-align: 1px;
   }
 
+  /* --- Screenshots --- */
+  .hero-shot {
+    width: 100%; border-radius: 14px; border: 1px solid var(--line);
+    display: block; margin: 0 0 8px;
+  }
+  .shot-caption { color: var(--muted); font-size: .86rem; text-align: center; margin: 0; }
+  .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
+  @media (max-width: 620px) { .gallery { grid-template-columns: 1fr; } }
+  .gallery figure { margin: 0; }
+  .gallery img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; }
+  .gallery figcaption { color: var(--muted); font-size: .84rem; margin-top: 7px; text-align: center; }
+
   footer {
     margin-top: 56px; padding-top: 26px; border-top: 1px solid var(--line);
     color: var(--muted); font-size: .89rem; text-align: center;
@@ -169,6 +181,9 @@
       <span class="pill">GPL-3.0</span>
     </div>
   </header>
+
+  <img class="hero-shot" src="screenshots/01-guide.png" alt="OpenTV live TV guide with the current channel playing in the preview pane" loading="lazy">
+  <p class="shot-caption">The guide — the channel you're on keeps playing while you browse.</p>
 
   <div class="card" id="release-box">
     <p class="status-line" id="status">Checking for the latest build…</p>
@@ -249,6 +264,15 @@
     <strong>Free, forever.</strong> No account, no subscription, no servers of ours — happy with a
     coffee, but nothing is ever paywalled. It's open-source (GPL-3.0), self-updating, translated
     into Spanish, and runs on Android TV, Fire TV, Google TV, phones and tablets.
+  </div>
+
+  <h2>Screenshots</h2>
+  <div class="gallery">
+    <figure><img src="screenshots/02-recordings.png" alt="Recordings and reminders" loading="lazy"><figcaption>Recordings &amp; reminders</figcaption></figure>
+    <figure><img src="screenshots/04-movies.png" alt="Movies with Continue Watching" loading="lazy"><figcaption>Movies &amp; series, with resume</figcaption></figure>
+    <figure><img src="screenshots/03-cloud-sync.png" alt="Sync between your own devices" loading="lazy"><figcaption>Free sync between your devices</figcaption></figure>
+    <figure><img src="screenshots/05-settings.png" alt="OpenTV settings" loading="lazy"><figcaption>Settings</figcaption></figure>
+    <figure><img src="screenshots/06-about.png" alt="About OpenTV" loading="lazy"><figcaption>About</figcaption></figure>
   </div>
 
   <h2>How to install</h2>
