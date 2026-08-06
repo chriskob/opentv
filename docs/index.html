@@ -125,6 +125,22 @@
   }
   .note strong { color: var(--text); }
 
+  /* --- Feature grid --- */
+  .section-lead { color: var(--muted); margin: 6px 0 2px; }
+  .features { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0; }
+  @media (max-width: 620px) { .features { grid-template-columns: 1fr; } }
+  .feature {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px 20px;
+  }
+  .feature h3 { margin: 0 0 8px; font-size: 1rem; color: var(--accent); }
+  .feature ul { margin: 0; padding-left: 18px; }
+  .feature li { margin: 6px 0; font-size: .93rem; }
+  .feature .new {
+    color: var(--ok); font-size: .74rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; margin-left: 6px; vertical-align: 1px;
+  }
+
   footer {
     margin-top: 56px; padding-top: 26px; border-top: 1px solid var(--line);
     color: var(--muted); font-size: .89rem; text-align: center;
@@ -167,6 +183,72 @@
       <button class="copy" id="copy-btn" type="button">Copy</button>
     </div>
     <p class="meta">It redirects straight to the newest APK, so it never goes out of date.</p>
+  </div>
+
+  <h2>What you get</h2>
+  <p class="section-lead small">A full IPTV player — you bring the playlist, it does the rest. Everything below is in the app today.</p>
+
+  <div class="features">
+    <div class="feature">
+      <h3>Live TV &amp; guide</h3>
+      <ul>
+        <li>Full EPG guide (XMLTV) that scrolls, survives restarts and refreshes in the background</li>
+        <li>Live preview — the highlighted channel plays, muted, in the guide</li>
+        <li>Catch-up / archive on providers that offer it</li>
+        <li>Programme reminders</li>
+        <li>Channel numbers, direct number entry and a last-channel button</li>
+      </ul>
+    </div>
+    <div class="feature">
+      <h3>Recording (DVR)</h3>
+      <ul>
+        <li>Record to the box, or straight to a NAS over SMB</li>
+        <li>Schedule from the guide, or series-link a whole show</li>
+        <li>Keeps recording when you leave the app or the TV sleeps<span class="new">new</span></li>
+        <li>Play recordings back in-app — even from your other devices</li>
+      </ul>
+    </div>
+    <div class="feature">
+      <h3>Movies &amp; series</h3>
+      <ul>
+        <li>Video-on-demand with resume and Continue Watching</li>
+        <li>Per-profile watch history</li>
+        <li>One search across channels, movies and shows</li>
+      </ul>
+    </div>
+    <div class="feature">
+      <h3>Channel management</h3>
+      <ul>
+        <li>Channel Manager: browse by category, hide or favourite</li>
+        <li>Manage from a phone or laptop — rename, reorder, hide, favourite<span class="new">new</span></li>
+        <li>Keep multiple providers separate instead of merged</li>
+        <li>Parental PIN and hidden categories</li>
+      </ul>
+    </div>
+    <div class="feature">
+      <h3>Player</h3>
+      <ul>
+        <li>Subtitle, audio-track, quality and aspect-ratio pickers</li>
+        <li>Picture-in-picture</li>
+        <li>HLS and MPEG-TS streams</li>
+        <li>Hand off to VLC or MX Player; sleep timer</li>
+      </ul>
+    </div>
+    <div class="feature">
+      <h3>Setup &amp; sync</h3>
+      <ul>
+        <li>Xtream login, or an M3U playlist with XMLTV guide</li>
+        <li>Set up from your phone by scanning a code, or on the TV</li>
+        <li>Free sync between your own devices — favourites, history, even recordings — over your wifi or Tailscale, with no server</li>
+        <li>Multiple profiles</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Free, forever.</strong> No account, no subscription, no servers of ours — happy with a
+    coffee, but nothing is ever paywalled. It's open-source (GPL-3.0), self-updating, translated
+    into Spanish, and runs on Android TV, Fire TV, Google TV, phones and tablets.
   </div>
 
   <h2>How to install</h2>
