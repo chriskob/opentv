@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import app.opentv.R
+import app.opentv.data.model.shownName
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -190,7 +191,7 @@ fun GuidePreview(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    row.primary.displayName,
+                    row.primary.shownName,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,

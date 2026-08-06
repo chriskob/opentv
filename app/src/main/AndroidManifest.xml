@@ -20,6 +20,12 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
+    <!-- Lets OpenTV ask the user to be exempted from battery optimisation ("Doze"). Without the
+         exemption Android TV / Fire TV freeze the app during standby and kill an in-progress or
+         scheduled recording — this is what lets a capture keep running with the box asleep, the
+         same as a set-top box. The user still grants it through the system dialog. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- An "auto-switch" reminder uses a full-screen intent so a TV box changes channel on its own
          when the programme starts, the same mechanism an alarm clock uses. Degrades to a heads-up
          notification where the OS declines it. -->

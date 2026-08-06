@@ -51,6 +51,7 @@ import app.opentv.R
 import app.opentv.data.model.Channel
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
+import app.opentv.data.model.shownName
 import app.opentv.ui.ChannelsViewModel
 import app.opentv.ui.VodViewModel
 import coil.compose.AsyncImage
@@ -225,7 +226,7 @@ private fun SearchResultRow(row: ChannelsViewModel.Row, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                row.primary.displayName,
+                row.primary.shownName,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

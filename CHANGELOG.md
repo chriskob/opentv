@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.0
+
+- **Manage your channels from a phone or laptop.** A new "Manage on phone or laptop" screen in
+  Settings shows a QR code and a link — open it on any device on your wifi and you get a proper web
+  page to browse, **rename**, hide, favourite and **reorder** channels with a real keyboard and
+  mouse. Changes apply to the TV instantly. Local-only: the TV is the server, nothing touches a
+  cloud.
+- **Recording keeps going when you leave the app or the box sleeps.** OpenTV can now ask Android to
+  exempt it from battery optimisation (Settings → Recording → "Recording in the background"), which
+  is what keeps recordings running in standby and when you switch away — swiping OpenTV out of
+  recents no longer stops a recording either.
+- **Rename channels.** Give a channel your own name; it sticks and survives a guide refresh (from
+  the web manager for now).
+- **Tidier update notes.** The "update available" prompt shows a clean summary of what's new instead
+  of build metadata.
+
 ## 0.8.0
 
 - **No more endless "Loading channels".** If a provider fails to load or comes back empty (a wrong

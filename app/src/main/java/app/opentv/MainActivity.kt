@@ -53,6 +53,7 @@ import app.opentv.ui.settings.ProvidersScreen
 import app.opentv.ui.settings.RecordingSettingsScreen
 import app.opentv.ui.settings.SyncScreen
 import app.opentv.ui.settings.SettingsHubScreen
+import app.opentv.ui.settings.WebManagerScreen
 import app.opentv.ui.theme.OpenTvTheme
 import app.opentv.ui.vod.SeriesDetailScreen
 import app.opentv.ui.vod.VodPlayerScreen
@@ -160,6 +161,7 @@ object Routes {
     const val SETTINGS_HUB = "settings"
     const val PROVIDERS = "providers"
     const val CHANNELS = "channels"
+    const val WEB_MANAGER = "web-manager"
     const val PROFILES = "profiles"
     const val PARENTAL = "parental"
     const val SYNC = "sync"
@@ -321,6 +323,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onOpenProviders = { navController.navigate(Routes.PROVIDERS) },
                     onOpenGuide = { navController.navigate(Routes.EPG_SETTINGS) },
                     onOpenChannels = { navController.navigate(Routes.CHANNELS) },
+                    onOpenWebManager = { navController.navigate(Routes.WEB_MANAGER) },
                     onOpenDisplay = { navController.navigate(Routes.APP_SETTINGS) },
                     onOpenParental = { navController.navigate(Routes.PARENTAL) },
                     onOpenSync = { navController.navigate(Routes.SYNC) },
@@ -340,6 +343,10 @@ private fun OpenTvApp(isTelevision: Boolean) {
 
             composable(Routes.CHANNELS) {
                 ChannelManagerScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable(Routes.WEB_MANAGER) {
+                WebManagerScreen(onBack = { navController.popBackStack() })
             }
 
             composable(Routes.PARENTAL) {

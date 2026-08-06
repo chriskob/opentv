@@ -94,9 +94,13 @@ import app.opentv.R
 import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
+import app.opentv.core.requestIgnoreBatteryOptimizations
 import app.opentv.data.model.Channel
+import app.opentv.data.model.shownName
 import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
+import app.opentv.ui.RecordingBackgroundDialog
+import app.opentv.ui.RecordingBackgroundPrompt
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -167,6 +171,9 @@ fun PlayerScreen(
     var panel by remember { mutableStateOf(Panel.NONE) }
     var channelListVisible by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
+    // Offered once per session the first time the user records here while OpenTV isn't exempt from
+    // battery optimisation, so the capture survives the screen sleeping. Never blocks recording.
+    var showBackgroundPrompt by remember { mutableStateOf(false) }
 
     // Picture-in-picture. While the player is on it is "eligible" to shrink to a floating window
     // (pressing Home does it, handled in MainActivity); [inPip] drives hiding all the chrome.
@@ -208,7 +215,7 @@ fun PlayerScreen(
             controller.play(
                 PlayerController.Request(
                     url = channel.streamUrl,
-                    title = channel.displayName,
+                    title = channel.shownName,
                     userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
                     isLive = true,
                 ),
@@ -242,6 +249,10 @@ fun PlayerScreen(
         } else {
             val channel = variants.firstOrNull { it.id == currentId } ?: return
             scope.launch { graph.recordingEngine.startChannel(channel) }
+            if (RecordingBackgroundPrompt.shouldShow(context)) {
+                RecordingBackgroundPrompt.markShown()
+                showBackgroundPrompt = true
+            }
         }
         interaction++
     }
@@ -608,6 +619,16 @@ fun PlayerScreen(
                 }
             }
         }
+    }
+
+    if (showBackgroundPrompt) {
+        RecordingBackgroundDialog(
+            onAllow = {
+                showBackgroundPrompt = false
+                context.requestIgnoreBatteryOptimizations()
+            },
+            onDismiss = { showBackgroundPrompt = false },
+        )
     }
 }
 

@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import app.opentv.R
 import app.opentv.data.model.Channel
 import app.opentv.data.model.Programme
+import app.opentv.data.model.shownName
 import app.opentv.ui.ChannelsViewModel
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
@@ -213,7 +214,7 @@ private fun GuideRow(
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    row.primary.displayName,
+                    row.primary.shownName,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

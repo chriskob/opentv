@@ -129,6 +129,31 @@ class CatalogRepository(
 
     suspend fun setChannelHidden(id: Long, hidden: Boolean) = channelDao.setHidden(id, hidden)
 
+    /** Sets (or clears, on blank) a channel's manual rename. Trimmed; a blank name clears it. */
+    suspend fun setChannelCustomName(id: Long, name: String?) =
+        channelDao.setCustomName(id, name?.trim()?.takeIf { it.isNotBlank() })
+
+    suspend fun setChannelSortIndex(id: Long, sortIndex: Int) = channelDao.setSortIndex(id, sortIndex)
+
+    // --- Web channel manager: one-shot reads for the socket-thread server ------------------------
+    // The manager server handles one HTTP request at a time off the UI thread and wants plain
+    // lists, not Flows. These are read-only pass-throughs; every mutation still goes through the
+    // suspend setters above (setChannelHidden/Favourite/CustomName/SortIndex).
+
+    /** Enabled providers, for the manager's source selector. */
+    suspend fun enabledSources(): List<Source> = sourceDao.enabled()
+
+    /** Every live category (raw, un-folded), for the manager's category list. */
+    suspend fun liveCategories(): List<Category> = categoryDao.allByKind(StreamKind.LIVE)
+
+    /** Channel counts per (source, category) — the number shown next to each category. */
+    suspend fun categoryChannelCounts(): List<app.opentv.data.db.CategoryChannelCount> =
+        channelDao.channelCountsByCategory()
+
+    /** One category's channels, hidden included, optionally scoped to a single source. */
+    suspend fun channelsInCategoryForManager(sourceId: Long?, categoryId: String): List<Channel> =
+        channelDao.channelsInCategoryIncludingHidden(sourceId, categoryId)
+
     suspend fun setMovieFavourite(id: Long, favourite: Boolean) =
         movieDao.setFavourite(id, favourite)
 

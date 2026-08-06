@@ -98,6 +98,10 @@
     <string name="rec_channel_name">Grabación</string>
     <string name="rec_channel_desc">Se muestra mientras OpenTV está grabando</string>
     <string name="rec_error_nothing">No se grabó nada</string>
+    <string name="rec_background_prompt_title">¿Seguir grabando al salir?</string>
+    <string name="rec_background_prompt_body">Android puede detener esta grabación cuando la pantalla se suspende o sales de OpenTV. Permite que OpenTV ignore la optimización de batería para que las grabaciones sigan en marcha, incluso en modo de espera, como un decodificador.</string>
+    <string name="rec_background_prompt_allow">Permitir</string>
+    <string name="rec_background_prompt_not_now">Ahora no</string>
 
     <!-- ============================ Player controls ============================ -->
     <string name="player_rewind">Retroceder</string>
@@ -124,6 +128,8 @@
     <string name="settings_guide_title">Guía de TV</string>
     <string name="settings_guide_subtitle">Fuentes de guía y feeds XMLTV gratuitos</string>
     <string name="settings_channels_subtitle">Oculta o marca como favoritos canales concretos</string>
+    <string name="settings_webmanager_title">Gestiona desde el móvil o el portátil</string>
+    <string name="settings_webmanager_subtitle">Organiza los canales en un navegador, con teclado y ratón</string>
     <string name="settings_display_title">Pantalla y reproducción</string>
     <string name="settings_display_subtitle">Tema, subtítulos, vista previa de la guía</string>
     <string name="settings_recording_title">Grabación</string>
@@ -226,6 +232,14 @@
     <string name="recset_status_failed">No se pudo conectar: %1$s</string>
     <string name="recset_test_connection">Probar conexión</string>
     <string name="recset_status_saved">Guardado.</string>
+    <string name="recset_background_title">Grabar en segundo plano</string>
+    <string name="recset_background_allowed">Permitido</string>
+    <string name="recset_background_not_allowed">No permitido</string>
+    <string name="recset_background_fix">Corregir</string>
+    <string name="recset_background_desc">Android puede detener las grabaciones cuando el dispositivo se suspende o sales de OpenTV, a menos que permitas que OpenTV ignore la optimización de batería. Permitirlo mantiene las grabaciones en marcha incluso en modo de espera, como un decodificador.</string>
+    <string name="recset_background_on_title">La grabación en segundo plano está activada</string>
+    <string name="recset_background_on_desc">Las grabaciones seguirán en marcha cuando salgas de OpenTV o el televisor se suspenda.</string>
+    <string name="recset_background_toast">Grabación en segundo plano activada: las grabaciones continuarán en segundo plano.</string>
 
     <!-- ============================ TV guide (EPG) settings ============================ -->
     <string name="epg_updating">Actualizando…</string>
@@ -315,6 +329,14 @@
     <string name="pairing_enter_code">Luego introduce este código en tu teléfono</string>
     <string name="pairing_camera_fail">¿La cámara no lo escanea? Abre esto en cualquier navegador de tu teléfono:</string>
     <string name="pairing_type_on_tv">Escribirlo en la TV en su lugar</string>
+
+    <!-- ============================ Manage on phone / laptop (web) ============================ -->
+    <string name="webmanager_title">Gestiona desde tu móvil o portátil</string>
+    <string name="webmanager_desc">Ábrelo en un móvil o portátil conectado a la misma wifi para explorar, ocultar, marcar como favoritos, renombrar y reordenar tus canales, con teclado y ratón de verdad. Los cambios se aplican a esta TV al instante.</string>
+    <string name="webmanager_qr_desc">Código QR que enlaza con el administrador de canales de este dispositivo</string>
+    <string name="webmanager_open_browser">¿La cámara no lo escanea? Abre esto en cualquier navegador de la misma wifi:</string>
+    <string name="webmanager_local_only">Esta página la sirve este televisor, por tu propia red: nunca sale de tu casa.</string>
+    <string name="webmanager_stopped">Administrador cerrado</string>
 
     <!-- ============================ Channel manager ============================ -->
     <string name="channels_manager_title">Administrador de canales</string>

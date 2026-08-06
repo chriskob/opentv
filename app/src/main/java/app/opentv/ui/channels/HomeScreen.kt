@@ -72,13 +72,17 @@ import androidx.compose.ui.window.Dialog
 import app.opentv.R
 import app.opentv.core.ServiceLocator
 import app.opentv.core.findActivity
+import app.opentv.core.requestIgnoreBatteryOptimizations
 import app.opentv.data.model.Channel
 import app.opentv.data.model.Programme
 import app.opentv.data.model.Reminder
+import app.opentv.data.model.shownName
 import app.opentv.reminders.ReminderScheduler
 import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
 import app.opentv.ui.ChannelsViewModel
+import app.opentv.ui.RecordingBackgroundDialog
+import app.opentv.ui.RecordingBackgroundPrompt
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -142,6 +146,16 @@ fun HomeScreen(
     var recordTarget by remember { mutableStateOf<Pair<ChannelsViewModel.Row, Programme>?>(null) }
     // The channel whose OK menu (Watch / Record / Schedule) is open.
     var channelMenu by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+
+    // First time the user records or schedules while OpenTV isn't exempt from battery optimisation,
+    // offer the exemption so the capture survives standby. Once per session; never blocks recording.
+    var showBackgroundPrompt by remember { mutableStateOf(false) }
+    fun promptBackgroundIfNeeded() {
+        if (RecordingBackgroundPrompt.shouldShow(context)) {
+            RecordingBackgroundPrompt.markShown()
+            showBackgroundPrompt = true
+        }
+    }
 
     // ---- Category rail collapse (Change 2) ---------------------------------------------------
     // The rail is full-width while focus is on it, then slides shut once focus moves into the
@@ -245,7 +259,7 @@ fun HomeScreen(
         previewController.play(
             PlayerController.Request(
                 url = channel.streamUrl,
-                title = channel.displayName,
+                title = channel.shownName,
                 userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
                 isLive = true,
             ),
@@ -330,7 +344,7 @@ fun HomeScreen(
                 // Hand the player the list you're browsing so it can zap channel up/down.
                 fun goFullscreen(channel: Channel) {
                     PlaybackQueue.items = rows.map {
-                        PlaybackQueue.Item(it.primary.id, it.primary.displayName, it.primary.logoUrl, it.primary.number)
+                        PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
                     }
                     previewController.stop()
                     onPlayChannel(channel)
@@ -346,7 +360,8 @@ fun HomeScreen(
                         Toast.makeText(context, context.getString(R.string.rec_recording_stopped), Toast.LENGTH_SHORT).show()
                     } else {
                         recordScope.launch { graph.recordingEngine.startChannel(row.primary, row.now) }
-                        Toast.makeText(context, context.getString(R.string.rec_recording_started_see_tab, row.primary.displayName), Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, context.getString(R.string.rec_recording_started_see_tab, row.primary.shownName), Toast.LENGTH_LONG).show()
+                        promptBackgroundIfNeeded()
                     }
                 }
 
@@ -417,7 +432,7 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "${formatTime(programme.startUtcMillis)}–${formatTime(programme.endUtcMillis)}   ${channel.displayName}",
+                    "${formatTime(programme.startUtcMillis)}–${formatTime(programme.endUtcMillis)}   ${channel.shownName}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -432,7 +447,8 @@ fun HomeScreen(
                     }
                     liveNow -> RecordActionRow(stringResource(R.string.rec_record_now), primary = true) {
                         recordScope.launch { graph.recordingEngine.startChannel(channel, programme) }
-                        Toast.makeText(context, context.getString(R.string.rec_recording_channel, channel.displayName), Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, context.getString(R.string.rec_recording_channel, channel.shownName), Toast.LENGTH_LONG).show()
+                        promptBackgroundIfNeeded()
                         recordTarget = null
                     }
                     // A finished programme on a catch-up channel plays back from the archive.
@@ -447,7 +463,7 @@ fun HomeScreen(
                                 onPlayCatchup(
                                     "catchup:${channel.id}:${programme.startUtcMillis}",
                                     url,
-                                    "${channel.displayName} — ${programme.title}",
+                                    "${channel.shownName} — ${programme.title}",
                                     source.userAgent,
                                 )
                             }
@@ -457,6 +473,7 @@ fun HomeScreen(
                     !isPast -> RecordActionRow(stringResource(R.string.rec_schedule_recording), primary = true) {
                         recordScope.launch { graph.recordingEngine.scheduleProgramme(channel, programme) }
                         Toast.makeText(context, context.getString(R.string.rec_scheduled_title, programme.title), Toast.LENGTH_LONG).show()
+                        promptBackgroundIfNeeded()
                         recordTarget = null
                     }
                 }
@@ -489,7 +506,7 @@ fun HomeScreen(
                         }
                         RecordActionRow(stringResource(R.string.guide_auto_switch)) {
                             recordScope.launch { setReminder(graph, context, channel, programme, autoTune = true) }
-                            Toast.makeText(context, context.getString(R.string.guide_will_switch, channel.displayName), Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, context.getString(R.string.guide_will_switch, channel.shownName), Toast.LENGTH_LONG).show()
                             recordTarget = null
                         }
                     }
@@ -498,12 +515,13 @@ fun HomeScreen(
                     recordScope.launch {
                         graph.recordingEngine.recordSeries(channel, programme, targetRow.programmes)
                     }
+                    promptBackgroundIfNeeded()
                     recordTarget = null
                 }
                 RecordActionRow(stringResource(R.string.guide_watch_channel)) {
                     recordTarget = null
                     PlaybackQueue.items = rows.map {
-                        PlaybackQueue.Item(it.primary.id, it.primary.displayName, it.primary.logoUrl, it.primary.number)
+                        PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
                     }
                     previewController.stop()
                     onPlayChannel(channel)
@@ -530,7 +548,7 @@ fun HomeScreen(
                     .padding(20.dp),
             ) {
                 Text(
-                    channel.displayName,
+                    channel.shownName,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -554,7 +572,7 @@ fun HomeScreen(
                     RecordActionRow(stringResource(R.string.guide_watch)) {
                         channelMenu = null
                         PlaybackQueue.items = rows.map {
-                            PlaybackQueue.Item(it.primary.id, it.primary.displayName, it.primary.logoUrl, it.primary.number)
+                            PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
                         }
                         previewController.stop()
                         onPlayChannel(channel)
@@ -565,7 +583,7 @@ fun HomeScreen(
                             val ua = graph.sourceRepository.byId(channel.sourceId)?.userAgent ?: "OpenTV/0.1 (Android)"
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 setDataAndType(android.net.Uri.parse(channel.streamUrl), "video/*")
-                                putExtra("title", channel.displayName)
+                                putExtra("title", channel.shownName)
                                 // MX Player / VLC read the User-Agent from this header extra.
                                 putExtra("headers", arrayOf("User-Agent", ua))
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -589,7 +607,8 @@ fun HomeScreen(
                     } else {
                         RecordActionRow(stringResource(R.string.guide_record_now_playing), primary = true) {
                             recordScope.launch { graph.recordingEngine.startChannel(channel, nowProg) }
-                            Toast.makeText(context, context.getString(R.string.rec_recording_started_see_tab, channel.displayName), Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, context.getString(R.string.rec_recording_started_see_tab, channel.shownName), Toast.LENGTH_LONG).show()
+                            promptBackgroundIfNeeded()
                             channelMenu = null
                         }
                     }
@@ -599,6 +618,7 @@ fun HomeScreen(
                                 graph.recordingEngine.recordSeries(channel, nowProg, menuRow.programmes)
                             }
                             Toast.makeText(context, context.getString(R.string.rec_series_recording_set, nowProg.title), Toast.LENGTH_LONG).show()
+                            promptBackgroundIfNeeded()
                             channelMenu = null
                         }
                     }
@@ -623,6 +643,16 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    if (showBackgroundPrompt) {
+        RecordingBackgroundDialog(
+            onAllow = {
+                showBackgroundPrompt = false
+                context.requestIgnoreBatteryOptimizations()
+            },
+            onDismiss = { showBackgroundPrompt = false },
+        )
     }
 }
 
@@ -735,7 +765,7 @@ private fun ChannelRow(
             // Logo, name, guide — and nothing else. Quality is a playback decision;
             // its switch lives in the player, not as clutter on every row.
             Text(
-                row.primary.displayName,
+                row.primary.shownName,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

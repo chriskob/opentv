@@ -69,7 +69,7 @@ class UpdateChecker(
                 Update(
                     versionName = release.tagName.trimStart('v', 'V'),
                     title = release.name.ifBlank { release.tagName },
-                    notes = release.body.trim(),
+                    notes = cleanNotes(release.body),
                     apkUrl = asset.browserDownloadUrl,
                     apkSizeBytes = asset.size,
                     releaseUrl = release.htmlUrl,
@@ -81,6 +81,39 @@ class UpdateChecker(
     companion object {
         /** The single place the project's GitHub location is written down. */
         const val REPO_SLUG = "opentvproject/opentv"
+
+        /**
+         * The GitHub release body is written for developers and has GitHub's auto-generated
+         * commit list appended. Turn it into a few clean "what's new" lines for the update
+         * dialog: drop the build/verify/signing boilerplate and the auto-changelog, and flatten
+         * the Markdown that a plain dialog would otherwise show as literal `**`, `[x](y)`, `#`.
+         * If nothing user-facing is left, returns empty and the dialog simply omits the notes.
+         */
+        fun cleanNotes(raw: String): String {
+            var text = raw
+            // Everything from the first boilerplate / auto-generated marker onward is noise.
+            val cutFrom = listOf(
+                "Built by GitHub Actions",
+                "**Full Changelog**",
+                "## What's Changed",
+                "<!--",
+            )
+            for (marker in cutFrom) {
+                val i = text.indexOf(marker, ignoreCase = true)
+                if (i >= 0) text = text.substring(0, i)
+            }
+            text = text
+                .replace(Regex("""\[([^\]]+)\]\([^)]*\)"""), "$1") // [label](url) -> label
+                .replace(Regex("""[*_]{1,3}([^*_\n]+)[*_]{1,3}"""), "$1") // **bold**/_em_ -> plain
+                .replace("`", "")                                   // inline-code ticks
+                .replace(Regex("""(?m)^\s{0,3}#{1,6}\s*"""), "")    // ## headers -> text
+                .replace(Regex("""(?m)^\s*[-*]\s+"""), "• ")        // "- item" -> "• item"
+                .replace(Regex("""(?m)^\s*-{3,}\s*$"""), "")        // --- horizontal rules
+            return text.lines().joinToString("\n") { it.trimEnd() }
+                .replace(Regex("\n{3,}"), "\n\n")
+                .trim()
+                .take(1200)
+        }
 
         /**
          * True when [tag] names a strictly higher version than [current].

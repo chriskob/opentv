@@ -168,6 +168,23 @@ class RecordingService : Service() {
         stopSelf()
     }
 
+    /**
+     * The user swiped OpenTV out of recents. That must NOT kill an in-progress recording — the
+     * whole point of a foreground capture is that it keeps going when you leave the app. So while
+     * any capture is still running we deliberately do not [stopSelf]; we re-assert foreground so
+     * the OS keeps the process (and its wake lock) alive, and let each capture retire the service
+     * itself when it finishes. Only when nothing is recording do we tidy up and stop.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (captures.isEmpty()) {
+            stopSelfSafely()
+            return
+        }
+        Log.i(TAG, "Task removed with ${captures.size} active recording(s) — keeping capture alive")
+        runCatching { startForeground(NOTIFICATION_ID, buildNotification(captures.size)) }
+    }
+
     override fun onDestroy() {
         scope.coroutineContext[Job]?.cancel()
         releaseWakeLock()

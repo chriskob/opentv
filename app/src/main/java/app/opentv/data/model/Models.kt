@@ -131,6 +131,11 @@ data class Channel(
     val hidden: Boolean = false,
     val sortIndex: Int = 0,
     /**
+     * The user's manual rename, `null` until they set one. Beats [displayName] in the UI (see
+     * [shownName]) and is carried across catalogue re-syncs, so a rename is not lost on refresh.
+     */
+    val customName: String? = null,
+    /**
      * Stamp of the last catalogue sync that saw this channel.
      *
      * Used to prune channels the provider has dropped. The obvious alternative —
@@ -148,6 +153,9 @@ data class Channel(
     val epgCandidates: List<String>
         get() = listOfNotNull(epgOverrideId, epgChannelId, matchedEpgId)
 }
+
+/** What the UI should show for a channel: the user's rename if set, else the cleaned display name. */
+val Channel.shownName: String get() = customName?.takeIf { it.isNotBlank() } ?: displayName
 
 /**
  * One guide feed: where XMLTV comes from.

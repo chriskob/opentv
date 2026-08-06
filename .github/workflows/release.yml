@@ -64,18 +64,20 @@ jobs:
           echo "path=dist/opentv-${TAG}.apk" >> "$GITHUB_OUTPUT"
           echo "signed=$([ -n "$KEYSTORE_PATH" ] && echo yes || echo debug-key)" >> "$GITHUB_OUTPUT"
 
+      - name: Release notes from CHANGELOG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v v="$VERSION" '$0 ~ ("^## " v "([^0-9]|$)"){f=1;next} /^## /{f=0} f{print}' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then echo "See the changelog for what is new in this release." > release-notes.md; fi
+          {
+            echo ""
+            echo "---"
+            echo "Built by GitHub Actions from the tagged commit — the workflow is public, so anyone can verify this APK against the source."
+          } >> release-notes.md
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.apk
-          generate_release_notes: true
-          body: |
-            Built by GitHub Actions from the tagged commit. The workflow that produced this
-            APK is public, so you can verify it against the source rather than taking anyone's
-            word for it.
-
-            **Install:** see the [install page](../../) or sideload the APK directly.
-
-            Signing: `${{ steps.artifact.outputs.signed }}`. A build signed with the debug key
-            is installable and safe to test, but cannot be upgraded in place once the project
-            moves to a real keystore — see `docs/RELEASING.md`.
+          generate_release_notes: false
+          body_path: release-notes.md

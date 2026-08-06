@@ -98,6 +98,10 @@
     <string name="rec_channel_name">Recording</string>
     <string name="rec_channel_desc">Shown while OpenTV is recording</string>
     <string name="rec_error_nothing">Nothing was recorded</string>
+    <string name="rec_background_prompt_title">Keep recording when you leave?</string>
+    <string name="rec_background_prompt_body">Android may stop this recording when the screen sleeps or you leave OpenTV. Allow OpenTV to ignore battery optimisation so recordings keep running, even in standby — the way a set-top box does.</string>
+    <string name="rec_background_prompt_allow">Allow</string>
+    <string name="rec_background_prompt_not_now">Not now</string>
 
     <!-- ============================ Player controls ============================ -->
     <string name="player_rewind">Rewind</string>
@@ -124,6 +128,8 @@
     <string name="settings_guide_title">TV guide</string>
     <string name="settings_guide_subtitle">Guide sources and free XMLTV feeds</string>
     <string name="settings_channels_subtitle">Hide or favourite individual channels</string>
+    <string name="settings_webmanager_title">Manage on phone or laptop</string>
+    <string name="settings_webmanager_subtitle">Organise channels in a browser, with a keyboard and mouse</string>
     <string name="settings_display_title">Display &amp; playback</string>
     <string name="settings_display_subtitle">Theme, subtitles, live guide preview</string>
     <string name="settings_recording_title">Recording</string>
@@ -226,6 +232,14 @@
     <string name="recset_status_failed">Couldn\'t connect: %1$s</string>
     <string name="recset_test_connection">Test connection</string>
     <string name="recset_status_saved">Saved.</string>
+    <string name="recset_background_title">Recording in the background</string>
+    <string name="recset_background_allowed">Allowed</string>
+    <string name="recset_background_not_allowed">Not allowed</string>
+    <string name="recset_background_fix">Fix</string>
+    <string name="recset_background_desc">Android may stop recordings when the device sleeps or you leave OpenTV, unless OpenTV is allowed to ignore battery optimisation. Allowing it keeps recordings running even in standby, like a set-top box.</string>
+    <string name="recset_background_on_title">Background recording is on</string>
+    <string name="recset_background_on_desc">Recordings will keep running when you leave OpenTV or the TV goes to sleep.</string>
+    <string name="recset_background_toast">Background recording enabled — recordings will keep going in the background.</string>
 
     <!-- ============================ TV guide (EPG) settings ============================ -->
     <string name="epg_updating">Updating…</string>
@@ -315,6 +329,14 @@
     <string name="pairing_enter_code">Then enter this code on your phone</string>
     <string name="pairing_camera_fail">Camera won\'t scan it? Open this in any browser on your phone:</string>
     <string name="pairing_type_on_tv">Type it on the TV instead</string>
+
+    <!-- ============================ Manage on phone / laptop (web) ============================ -->
+    <string name="webmanager_title">Manage on your phone or laptop</string>
+    <string name="webmanager_desc">Open this on a phone or laptop on the same wifi to browse, hide, favourite, rename and reorder your channels — with a real keyboard and mouse. Changes apply to this TV straight away.</string>
+    <string name="webmanager_qr_desc">QR code linking to the channel manager on this device</string>
+    <string name="webmanager_open_browser">Camera won\'t scan it? Open this in any browser on the same wifi:</string>
+    <string name="webmanager_local_only">This page is served by this television, over your own network — it never leaves your home.</string>
+    <string name="webmanager_stopped">Manager closed</string>
 
     <!-- ============================ Channel manager ============================ -->
     <string name="channels_manager_title">Channel manager</string>

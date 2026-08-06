@@ -106,6 +106,37 @@ interface ChannelDao {
     )
     fun observeInCategoriesIncludingHidden(sourceId: Long?, categoryIds: List<String>): Flow<List<Channel>>
 
+    /**
+     * One-shot (non-Flow) read of ONE category's channels INCLUDING hidden, optionally scoped to a
+     * single source — the web channel manager's per-category fetch. That server handles one HTTP
+     * request at a time on a socket thread and wants a plain list, not a subscription, so this is
+     * the suspend `List` sibling of [observeInCategoriesIncludingHidden], narrowed to one category.
+     */
+    @Query(
+        """
+        SELECT * FROM channels
+        WHERE (:sourceId IS NULL OR sourceId = :sourceId)
+          AND categoryId = :categoryId
+        ORDER BY sortIndex, displayName
+        """
+    )
+    suspend fun channelsInCategoryIncludingHidden(sourceId: Long?, categoryId: String): List<Channel>
+
+    /**
+     * Channel count per (source, category), hidden rows included — the web manager's category list
+     * shows how many channels each holds. Grouped by (sourceId, categoryId) because a category id
+     * is only unique within a source.
+     */
+    @Query(
+        """
+        SELECT sourceId, categoryId, COUNT(*) AS count
+        FROM channels
+        WHERE categoryId IS NOT NULL
+        GROUP BY sourceId, categoryId
+        """
+    )
+    suspend fun channelCountsByCategory(): List<CategoryChannelCount>
+
     @Query(
         """
         SELECT * FROM channels
@@ -157,6 +188,12 @@ interface ChannelDao {
 
     @Query("UPDATE channels SET hidden = :hidden WHERE id = :id")
     suspend fun setHidden(id: Long, hidden: Boolean)
+
+    @Query("UPDATE channels SET customName = :name WHERE id = :id")
+    suspend fun setCustomName(id: Long, name: String?)
+
+    @Query("UPDATE channels SET sortIndex = :sortIndex WHERE id = :id")
+    suspend fun setSortIndex(id: Long, sortIndex: Int)
 
     /** Every channel for a source. The channels table is live-only, so these are its live channels. */
     @Query("SELECT * FROM channels WHERE sourceId = :sourceId")
@@ -211,7 +248,7 @@ interface ChannelDao {
     suspend fun deleteForSource(sourceId: Long)
 
     /**
-     * Preserves user state (favourites, hidden, manual order, EPG overrides) across a
+     * Preserves user state (favourites, hidden, manual order, custom names, EPG overrides) across a
      * catalogue refresh. Upsert would otherwise overwrite them with the defaults from the
      * freshly parsed rows.
      */
@@ -233,6 +270,8 @@ interface ChannelDao {
                     // predate the rule. User hides are preserved the same way.
                     hidden = previous.hidden || channel.hidden,
                     sortIndex = previous.sortIndex,
+                    // A user's rename must outlive the provider's fresh name on every refresh.
+                    customName = previous.customName,
                     epgOverrideId = previous.epgOverrideId,
                     matchedEpgId = previous.matchedEpgId,
                     lastSeenMillis = syncStamp,
@@ -253,6 +292,11 @@ interface CategoryDao {
     @Query("SELECT * FROM categories WHERE kind = :kind ORDER BY sortIndex, name")
     fun observe(kind: StreamKind): Flow<List<Category>>
 
+    /** One-shot list of every category of a kind, ordered like [observe] — the web manager reads
+     * the live categories once per request rather than subscribing to a Flow. */
+    @Query("SELECT * FROM categories WHERE kind = :kind ORDER BY sortIndex, name")
+    suspend fun allByKind(kind: StreamKind): List<Category>
+
     /** Minimal id+name rows for the re-normalise pass. */
     @Query("SELECT id, name FROM categories WHERE id IN (:ids)")
     suspend fun namesFor(ids: Set<String>): List<CategoryName>
@@ -266,6 +310,9 @@ interface CategoryDao {
 
 /** Projection for [CategoryDao.namesFor]. */
 data class CategoryName(val id: String, val name: String)
+
+/** Projection for [ChannelDao.channelCountsByCategory]. */
+data class CategoryChannelCount(val sourceId: Long, val categoryId: String, val count: Int)
 
 @Dao
 interface EpgFeedDao {
