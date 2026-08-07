@@ -54,11 +54,21 @@ class PlayerController(
     httpClient: OkHttpClient,
     subtitlesEnabled: Boolean = true,
     /**
+     * Tunes the player for the guide's muted preview pane: a shallow start buffer so a highlighted
+     * channel shows a frame quickly, and a longer switch debounce so scrolling the channel list
+     * does not tune to every channel passed over. The full-screen players leave this false and keep
+     * the deep buffer that rides out a twitchy IPTV source.
+     */
+    private val preview: Boolean = false,
+    /**
      * When set, `smb://` media (a recording on a NAS) is read through this source so it plays and
      * seeks in-app. Null for the live/VOD players, which never see an smb URI.
      */
     smbDataSourceFactory: androidx.media3.datasource.DataSource.Factory? = null,
 ) {
+
+    /** Channel-surf debounce for this controller - longer for the preview so browsing is calm. */
+    private val switchDebounceMillis = if (preview) PREVIEW_SWITCH_DEBOUNCE_MILLIS else SWITCH_DEBOUNCE_MILLIS
 
     sealed interface State {
         data object Idle : State
@@ -158,10 +168,10 @@ class PlayerController(
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                    MIN_BUFFER_MILLIS,
-                    MAX_BUFFER_MILLIS,
-                    BUFFER_FOR_PLAYBACK_MILLIS,
-                    BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS,
+                    if (preview) PREVIEW_MIN_BUFFER_MILLIS else MIN_BUFFER_MILLIS,
+                    if (preview) PREVIEW_MAX_BUFFER_MILLIS else MAX_BUFFER_MILLIS,
+                    if (preview) PREVIEW_BUFFER_FOR_PLAYBACK_MILLIS else BUFFER_FOR_PLAYBACK_MILLIS,
+                    if (preview) PREVIEW_BUFFER_AFTER_REBUFFER_MILLIS else BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS,
                 )
                 .build(),
         )
@@ -219,7 +229,7 @@ class PlayerController(
         current = request
 
         switchJob = scope.launch {
-            if (debounce) delay(SWITCH_DEBOUNCE_MILLIS)
+            if (debounce) delay(switchDebounceMillis)
 
             consecutiveFailures = 0
             httpFactory.setDefaultRequestProperties(mapOf("User-Agent" to request.userAgent))
@@ -347,6 +357,16 @@ class PlayerController(
         const val MAX_BUFFER_MILLIS = 60_000
         const val BUFFER_FOR_PLAYBACK_MILLIS = 2_500
         const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 5_000
+
+        // Guide-preview tuning: start fast and don't hoard buffer (the preview is muted and
+        // low-stakes), and debounce channel-surfing harder so scrolling the list doesn't tune to
+        // every channel in passing. Kept within DefaultLoadControl constraints: min >= both
+        // playback thresholds, max >= min.
+        const val PREVIEW_MIN_BUFFER_MILLIS = 5_000
+        const val PREVIEW_MAX_BUFFER_MILLIS = 15_000
+        const val PREVIEW_BUFFER_FOR_PLAYBACK_MILLIS = 1_000
+        const val PREVIEW_BUFFER_AFTER_REBUFFER_MILLIS = 1_500
+        const val PREVIEW_SWITCH_DEBOUNCE_MILLIS = 700L
 
         const val LIVE_TARGET_OFFSET_MILLIS = 10_000L
     }

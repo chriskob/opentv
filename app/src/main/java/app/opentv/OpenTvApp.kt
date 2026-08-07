@@ -38,6 +38,11 @@ class OpenTvApp : Application() {
         // opens — so checking on a recording you just started never marks it interrupted.
         appScope.launch { runCatching { graph.recordingRepository.failInterrupted() } }
 
+        // Re-arm scheduled recordings on every launch, for the same reason as the reminders below:
+        // a force-stop or app update drops their exact alarms and only a reboot is covered by the
+        // boot receiver. Re-setting the same alarm is idempotent, so this quietly keeps bookings alive.
+        appScope.launch { runCatching { graph.recordingEngine.rearmScheduled() } }
+
         // Re-arm programme reminders on every launch. Alarms are lost on a force-stop or app
         // update (not just a reboot, which the boot receiver already covers), and re-setting an
         // exact alarm for the same reminder is idempotent — so this quietly keeps bells alive.

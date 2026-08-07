@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.collectAsState
 import app.opentv.R
 import app.opentv.core.ServiceLocator
+import app.opentv.data.model.Profile
 import app.opentv.data.model.Recording
 import app.opentv.data.model.RecordingStatus
 import app.opentv.data.model.Reminder
@@ -74,10 +76,19 @@ class RecordingsViewModel(app: Application) : AndroidViewModel(app) {
         graph.reminderRepository.observeAll()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val profiles: StateFlow<List<Profile>> =
+        graph.profiles.observeAll()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     // NB: cold-start reconciliation of orphaned "recording" rows happens once in OpenTvApp, NOT
     // here — opening this screen must never mark an actively-capturing recording as interrupted.
 
     fun stop(id: Long) = graph.recordingEngine.stop(id)
+
+    /** Re-attempt a failed/interrupted recording (re-arms a future booking or restarts a live one). */
+    fun retry(recording: Recording) {
+        viewModelScope.launch { graph.recordingEngine.retry(recording) }
+    }
 
     fun cancelReminder(reminder: Reminder) {
         viewModelScope.launch {
@@ -89,7 +100,7 @@ class RecordingsViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(recording: Recording) {
         viewModelScope.launch {
             if (recording.status == RecordingStatus.RECORDING) graph.recordingEngine.stop(recording.id)
-            RecordingStorage.delete(graph.settings, recording.filePath)
+            RecordingStorage.delete(getApplication(), graph.settings, recording.filePath)
             graph.recordingRepository.delete(recording.id)
         }
     }
@@ -100,9 +111,16 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
     val viewModel: RecordingsViewModel = viewModel()
     val recordings by viewModel.recordings.collectAsState()
     val reminders by viewModel.reminders.collectAsState()
+    val profiles by viewModel.profiles.collectAsState()
 
     val now = System.currentTimeMillis()
     val upcomingReminders = reminders.filter { !it.fired && it.endUtcMillis > now }
+    // Split bookings from the library so "what's coming up" reads separately from "what I have".
+    val scheduled = recordings.filter { it.status == RecordingStatus.SCHEDULED }
+        .sortedBy { it.scheduledStartMillis }
+    val recorded = recordings.filter { it.status != RecordingStatus.SCHEDULED }
+    val profileNames = profiles.associate { it.id to it.name }
+    val showProfiles = profiles.size > 1
 
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp)) {
         Text(stringResource(R.string.rec_screen_title), style = MaterialTheme.typography.headlineMedium)
@@ -129,15 +147,30 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
                         ReminderRow(reminder = rem, onCancel = { viewModel.cancelReminder(rem) })
                     }
                 }
-                if (recordings.isNotEmpty()) {
-                    if (upcomingReminders.isNotEmpty()) {
-                        item(key = "recordings-header") { SectionHeader(stringResource(R.string.nav_recordings)) }
-                    }
-                    items(recordings, key = { it.id }) { rec ->
+                if (scheduled.isNotEmpty()) {
+                    item(key = "scheduled-header") { SectionHeader(stringResource(R.string.rec_section_scheduled)) }
+                    items(scheduled, key = { "sch-${it.id}" }) { rec ->
                         RecordingRow(
                             recording = rec,
+                            profileNames = profileNames,
+                            showProfiles = showProfiles,
                             onPlay = { onPlay(rec) },
                             onStop = { viewModel.stop(rec.id) },
+                            onRetry = { viewModel.retry(rec) },
+                            onDelete = { viewModel.delete(rec) },
+                        )
+                    }
+                }
+                if (recorded.isNotEmpty()) {
+                    item(key = "recorded-header") { SectionHeader(stringResource(R.string.rec_section_recorded)) }
+                    items(recorded, key = { it.id }) { rec ->
+                        RecordingRow(
+                            recording = rec,
+                            profileNames = profileNames,
+                            showProfiles = showProfiles,
+                            onPlay = { onPlay(rec) },
+                            onStop = { viewModel.stop(rec.id) },
+                            onRetry = { viewModel.retry(rec) },
                             onDelete = { viewModel.delete(rec) },
                         )
                     }
@@ -210,11 +243,16 @@ private fun formatWhen(utcMillis: Long): String =
 @Composable
 private fun RecordingRow(
     recording: Recording,
+    profileNames: Map<Long, String>,
+    showProfiles: Boolean,
     onPlay: () -> Unit,
     onStop: () -> Unit,
+    onRetry: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val playable = recording.status == RecordingStatus.COMPLETED
+    val retryable = recording.status == RecordingStatus.FAILED
+    val profileName = recording.profileId?.takeIf { it != 0L }?.let { profileNames[it] }
     Row(
         Modifier
             .fillMaxWidth()
@@ -242,9 +280,19 @@ private fun RecordingRow(
                 statusLine(recording),
                 style = MaterialTheme.typography.bodySmall,
                 color = statusColor(recording.status),
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (showProfiles && profileName != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    stringResource(R.string.rec_for_profile, profileName),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Spacer(Modifier.width(10.dp))
         if (playable) {
@@ -253,6 +301,10 @@ private fun RecordingRow(
         }
         if (recording.status == RecordingStatus.RECORDING) {
             ActionButton(Icons.Filled.Stop, stringResource(R.string.common_stop), onStop)
+            Spacer(Modifier.width(8.dp))
+        }
+        if (retryable) {
+            ActionButton(Icons.Filled.Refresh, stringResource(R.string.rec_retry), onRetry)
             Spacer(Modifier.width(8.dp))
         }
         ActionButton(Icons.Filled.Delete, stringResource(R.string.common_delete), onDelete)
@@ -277,12 +329,22 @@ private fun ActionButton(icon: ImageVector, label: String, onClick: () -> Unit) 
 }
 
 @Composable
-private fun statusLine(rec: Recording): String = when (rec.status) {
-    RecordingStatus.SCHEDULED -> stringResource(R.string.rec_status_scheduled, rec.channelName)
-    RecordingStatus.RECORDING -> stringResource(R.string.rec_status_recording, rec.channelName, formatSize(rec.sizeBytes))
-    RecordingStatus.COMPLETED ->
-        "${rec.channelName} · ${formatDuration(rec.durationMillis)} · ${formatSize(rec.sizeBytes)}"
-    RecordingStatus.FAILED -> stringResource(R.string.rec_status_failed, rec.error ?: stringResource(R.string.rec_error_unknown))
+private fun statusLine(rec: Recording): String {
+    // The time it was meant to record (scheduled window), falling back to when it actually began —
+    // so a failed booking still shows "when", which is exactly what was missing before.
+    val whenMillis = if (rec.scheduledStartMillis > 0) rec.scheduledStartMillis else rec.startedAtMillis
+    val whenStr = if (whenMillis > 0) formatWhen(whenMillis) else ""
+    return when (rec.status) {
+        RecordingStatus.SCHEDULED ->
+            stringResource(R.string.rec_status_scheduled_at, whenStr, rec.channelName)
+        RecordingStatus.RECORDING ->
+            stringResource(R.string.rec_status_recording, rec.channelName, formatSize(rec.sizeBytes))
+        RecordingStatus.COMPLETED ->
+            listOf(whenStr, rec.channelName, formatDuration(rec.durationMillis), formatSize(rec.sizeBytes))
+                .filter { it.isNotBlank() }.joinToString(" · ")
+        RecordingStatus.FAILED ->
+            stringResource(R.string.rec_status_failed_at, whenStr, rec.error ?: stringResource(R.string.rec_error_unknown))
+    }
 }
 
 @Composable

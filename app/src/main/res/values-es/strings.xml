@@ -98,6 +98,8 @@
     <string name="rec_channel_name">Grabación</string>
     <string name="rec_channel_desc">Se muestra mientras OpenTV está grabando</string>
     <string name="rec_error_nothing">No se grabó nada</string>
+    <string name="rec_error_usb_no_folder">No se ha elegido ninguna carpeta USB. Abre los ajustes de Grabación y elige una carpeta en tu unidad.</string>
+    <string name="rec_error_usb_unavailable">Unidad USB no disponible. Vuelve a conectar la unidad y elige de nuevo la carpeta en los ajustes de Grabación.</string>
     <string name="rec_background_prompt_title">¿Seguir grabando al salir?</string>
     <string name="rec_background_prompt_body">Android puede detener esta grabación cuando la pantalla se suspende o sales de OpenTV. Permite que OpenTV ignore la optimización de batería para que las grabaciones sigan en marcha, incluso en modo de espera, como un decodificador.</string>
     <string name="rec_background_prompt_allow">Permitir</string>
@@ -216,11 +218,21 @@
     <string name="provider_stream_format_hint">HLS es el predeterminado. Si los canales no se reproducen, prueba MPEG-TS: algunos proveedores solo ofrecen .ts.</string>
 
     <!-- ============================ Recording settings ============================ -->
-    <string name="recset_desc">Elige dónde se guardan las grabaciones. Interno las mantiene en este dispositivo; NAS las guarda en una carpeta compartida de tu red y las reproduce igualmente aquí.</string>
+    <string name="recset_desc">Elige dónde se guardan las grabaciones. Interno las mantiene en este dispositivo; una unidad USB las guarda en almacenamiento extraíble; NAS las guarda en una carpeta compartida de tu red. Todas se reproducen igualmente aquí.</string>
     <string name="recset_save_to">Guardar grabaciones en</string>
     <string name="recset_internal_label">Este dispositivo (almacenamiento interno)</string>
     <string name="recset_smb_label">NAS / recurso compartido de red (SMB)</string>
     <string name="recset_smb_subtitle">Synology, una carpeta compartida de Windows o cualquier servidor SMB2/3</string>
+    <string name="recset_usb_label">USB / unidad externa</string>
+    <string name="recset_usb_subtitle">Una unidad conectada a este dispositivo (formateada en exFAT o FAT32)</string>
+    <string name="recset_usb_section">Carpeta USB</string>
+    <string name="recset_usb_choose">Elegir carpeta</string>
+    <string name="recset_usb_change">Cambiar carpeta</string>
+    <string name="recset_usb_saving_to">Guardando en: %1$s</string>
+    <string name="recset_usb_none">Aún no se ha elegido ninguna carpeta</string>
+    <string name="recset_usb_hint">Conecta una unidad USB o almacenamiento externo formateado en exFAT o FAT32 y elige una carpeta en ella. Las grabaciones se escriben directamente en esa carpeta y se reproducen y eliminan igualmente dentro de OpenTV.</string>
+    <string name="recset_usb_need_folder">Elige una carpeta antes de guardar en USB.</string>
+    <string name="recset_usb_no_picker">No hay ningún selector de carpetas disponible en este dispositivo.</string>
     <string name="recset_nas_connection">Conexión al NAS</string>
     <string name="recset_field_server">Servidor (IP o nombre de host)</string>
     <string name="recset_field_share">Nombre del recurso compartido</string>
@@ -379,10 +391,38 @@
     <string name="vod_search_hint">Buscar películas y series</string>
     <string name="vod_continue_watching">Seguir viendo</string>
     <string name="vod_large_provider_note">Un proveedor grande puede tardar un par de minutos la primera vez.</string>
+    <string name="vod_recommended">Recomendado para ti</string>
+    <string name="vod_recently_added">Añadido recientemente</string>
+    <string name="vod_categories">Categorías</string>
+    <string name="vod_watch_now">Ver ahora</string>
+    <string name="vod_resume">Reanudar</string>
+    <string name="vod_more_like_this">Más como esto</string>
+    <string name="vod_synopsis">Sinopsis</string>
+    <string name="vod_cast">Reparto</string>
+    <string name="vod_director">Director</string>
+    <string name="vod_season">Temporada %1$d</string>
+    <string name="vod_detail_loading">Cargando…</string>
+    <string name="vod_person_title">Con %1$s</string>
+    <string name="vod_person_empty">No hay nada más con %1$s en tu biblioteca.</string>
 
     <!-- ============================ Reminder notification ============================ -->
     <string name="reminder_starting_now">Empieza ahora en %1$s</string>
     <string name="reminder_watch_now">Ver ahora</string>
     <string name="reminder_channel_name">Recordatorios de programas</string>
     <string name="reminder_channel_desc">Te avisa cuando empieza un programa para el que creaste un recordatorio</string>
+    <!-- Recordings: sections, scheduling detail, retry, profile -->
+    <string name="rec_section_scheduled">Programadas</string>
+    <string name="rec_section_recorded">Grabadas</string>
+    <string name="rec_status_scheduled_at">Se graba %1$s · %2$s</string>
+    <string name="rec_status_failed_at">Error · %1$s · %2$s</string>
+    <string name="rec_for_profile">Para %1$s</string>
+    <string name="rec_retry">Reintentar</string>
+
+    <!-- Metadata / TMDB back-fill -->
+    <string name="settings_section_metadata">Metadatos</string>
+    <string name="settings_tmdb_note">Pega tu propia clave de API de TMDB (gratuita) para completar carátulas, fondos, reparto y sinopsis que falten en Películas y Series. Se queda en este dispositivo.</string>
+    <string name="settings_tmdb_key_label">Clave de API de TMDB</string>
+    <string name="settings_tmdb_save">Guardar clave</string>
+    <string name="settings_tmdb_saved">Clave de TMDB guardada</string>
+    <string name="settings_tmdb_active">Activa</string>
 </resources>

@@ -36,6 +36,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import app.opentv.core.AppSettings
 import app.opentv.core.ServiceLocator
+import app.opentv.data.parser.displayTitle
 import app.opentv.ui.MainScreen
 import app.opentv.ui.ProfilesViewModel
 import app.opentv.ui.SourcesViewModel
@@ -55,6 +56,8 @@ import app.opentv.ui.settings.SyncScreen
 import app.opentv.ui.settings.SettingsHubScreen
 import app.opentv.ui.settings.WebManagerScreen
 import app.opentv.ui.theme.OpenTvTheme
+import app.opentv.ui.vod.MovieDetailScreen
+import app.opentv.ui.vod.PersonScreen
 import app.opentv.ui.vod.SeriesDetailScreen
 import app.opentv.ui.vod.VodPlayerScreen
 import app.opentv.update.UpdateGate
@@ -168,6 +171,11 @@ object Routes {
     const val REC_SETTINGS = "recording-settings"
     const val ABOUT = "about"
     const val SERIES_DETAIL = "series/{seriesId}"
+    const val MOVIE_DETAIL = "movie/{movieId}"
+
+    // A person's name goes in a query arg, URL-encoded, so spaces and punctuation survive the round
+    // trip — the same inline-encode/decode approach as the VOD player below.
+    const val PERSON = "person?name={name}"
 
     // VOD plays carry the stream inline; a movie/episode is a one-off URL, not a stored id
     // the player can look up the way a channel is.
@@ -175,6 +183,8 @@ object Routes {
 
     fun player(channelId: Long) = "player/$channelId"
     fun seriesDetail(seriesId: Long) = "series/$seriesId"
+    fun movieDetail(movieId: Long) = "movie/$movieId"
+    fun person(name: String) = "person?name=${java.net.URLEncoder.encode(name, "UTF-8")}"
     fun vodPlayer(key: String, url: String, title: String, ua: String): String {
         fun e(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
         return "vod?key=${e(key)}&url=${e(url)}&title=${e(title)}&ua=${e(ua)}"
@@ -247,15 +257,8 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     hasSources = sourcesUi.sources.isNotEmpty(),
                     isSyncing = sourcesUi.syncing,
                     onPlayChannel = { channel -> navController.navigate(Routes.player(channel.id)) },
-                    onPlayMovie = { movie ->
-                        navController.navigate(
-                            Routes.vodPlayer(
-                                key = "movie:${movie.id}",
-                                url = movie.streamUrl,
-                                title = movie.name,
-                                ua = "OpenTV/0.1 (Android)",
-                            ),
-                        )
+                    onOpenMovie = { movie ->
+                        navController.navigate(Routes.movieDetail(movie.id))
                     },
                     onOpenSeries = { series ->
                         navController.navigate(Routes.seriesDetail(series.id))
@@ -271,11 +274,14 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
                     onOpenProfiles = { navController.navigate(Routes.PROFILES) },
                     onPlayRecording = { rec ->
-                        // A NAS recording plays straight off its smb:// locator; an internal one
-                        // through a file:// uri. Both go through the VOD player, which seeks.
-                        val url =
-                            if (app.opentv.recording.SmbClient.isSmb(rec.filePath)) rec.filePath
-                            else android.net.Uri.fromFile(java.io.File(rec.filePath)).toString()
+                        // A NAS recording plays straight off its smb:// locator and a USB one off
+                        // its content:// document URI (Media3 reads both); an internal one through
+                        // a file:// uri. All go through the VOD player, which seeks.
+                        val url = when {
+                            app.opentv.recording.SmbClient.isSmb(rec.filePath) -> rec.filePath
+                            app.opentv.recording.RecordingStorage.isContent(rec.filePath) -> rec.filePath
+                            else -> android.net.Uri.fromFile(java.io.File(rec.filePath)).toString()
+                        }
                         navController.navigate(
                             Routes.vodPlayer(
                                 key = "rec:${rec.id}",
@@ -308,7 +314,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                             Routes.vodPlayer(
                                 key = "movie:${movie.id}",
                                 url = movie.streamUrl,
-                                title = movie.name,
+                                title = movie.displayTitle,
                                 ua = "OpenTV/0.1 (Android)",
                             ),
                         )
@@ -391,6 +397,40 @@ private fun OpenTvApp(isTelevision: Boolean) {
                             Routes.vodPlayer(key, url, title, "OpenTV/0.1 (Android)"),
                         )
                     },
+                    onOpenSeries = { series -> navController.navigate(Routes.seriesDetail(series.id)) },
+                    onOpenPerson = { name -> navController.navigate(Routes.person(name)) },
+                )
+            }
+
+            composable(Routes.MOVIE_DETAIL) { entry ->
+                val movieId = entry.arguments?.getString("movieId")?.toLongOrNull() ?: return@composable
+                MovieDetailScreen(
+                    movieId = movieId,
+                    viewModel = vodViewModel,
+                    onPlay = { movie ->
+                        navController.navigate(
+                            Routes.vodPlayer(
+                                key = "movie:${movie.id}",
+                                url = movie.streamUrl,
+                                title = movie.displayTitle,
+                                ua = "OpenTV/0.1 (Android)",
+                            ),
+                        )
+                    },
+                    onOpenMovie = { movie -> navController.navigate(Routes.movieDetail(movie.id)) },
+                    onOpenPerson = { name -> navController.navigate(Routes.person(name)) },
+                )
+            }
+
+            composable(Routes.PERSON) { entry ->
+                val name = entry.arguments?.getString("name")
+                    ?.let { java.net.URLDecoder.decode(it, "UTF-8") }.orEmpty()
+                PersonScreen(
+                    name = name,
+                    viewModel = vodViewModel,
+                    onOpenMovie = { movie -> navController.navigate(Routes.movieDetail(movie.id)) },
+                    onOpenSeries = { series -> navController.navigate(Routes.seriesDetail(series.id)) },
+                    onBack = { navController.popBackStack() },
                 )
             }
 

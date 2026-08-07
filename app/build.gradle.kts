@@ -14,8 +14,8 @@ android {
         applicationId = "app.opentv"
         minSdk = 23
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.9.0"
+        versionCode = 11
+        versionName = "0.10.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -138,6 +138,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.datastore.preferences)
+    // Storage Access Framework helpers - write recordings to a plugged-in USB / external
+    // drive via a user-granted tree URI, with no storage permission.
+    implementation(libs.androidx.documentfile)
     implementation(libs.coil.compose)
     implementation(libs.zxing.core)
 

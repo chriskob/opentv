@@ -149,12 +149,20 @@ class AppSettings private constructor(context: Context) {
     }
 
     fun setMoviesEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_CONTENT_MOVIES, enabled).apply()
+        // Also reset the VOD freshness stamp so the next Movies/Shows open re-syncs immediately
+        // rather than waiting out the cache TTL — turning a content type on should show it now.
+        prefs.edit()
+            .putBoolean(KEY_CONTENT_MOVIES, enabled)
+            .putLong(KEY_VOD_SYNCED_AT, 0L)
+            .apply()
         _moviesEnabled.value = enabled
     }
 
     fun setSeriesEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_CONTENT_SERIES, enabled).apply()
+        prefs.edit()
+            .putBoolean(KEY_CONTENT_SERIES, enabled)
+            .putLong(KEY_VOD_SYNCED_AT, 0L)
+            .apply()
         _seriesEnabled.value = enabled
     }
 
@@ -195,11 +203,37 @@ class AppSettings private constructor(context: Context) {
 
     // ---- Recording ---------------------------------------------------------------------------
 
-    /** Where recordings are written. USB (SAF) is added in a later build. */
-    enum class RecordingTarget { INTERNAL, SMB }
+    /**
+     * Where recordings are written: this box's internal storage, a NAS over SMB, or a plugged-in
+     * USB / external drive addressed through the Storage Access Framework (a granted tree URI —
+     * the only way to write removable storage on modern Android without a raw filesystem path).
+     */
+    enum class RecordingTarget { INTERNAL, SMB, USB }
 
     private val _recordingTarget = MutableStateFlow(readRecordingTarget())
     val recordingTarget: StateFlow<RecordingTarget> = _recordingTarget.asStateFlow()
+
+    /**
+     * The SAF tree URI the user granted for USB recordings (a `content://` document-tree URI), or
+     * null if none has been picked. Persisted as a string; a matching persistable permission is
+     * taken when it is chosen, so the grant survives restarts.
+     */
+    private val _usbTreeUri = MutableStateFlow(prefs.getString(KEY_USB_TREE, null))
+    val usbTreeUri: StateFlow<String?> = _usbTreeUri.asStateFlow()
+
+    /** A friendly name for the chosen USB folder (e.g. the DocumentFile's name), for display. */
+    private val _usbFolderLabel = MutableStateFlow(prefs.getString(KEY_USB_LABEL, null))
+    val usbFolderLabel: StateFlow<String?> = _usbFolderLabel.asStateFlow()
+
+    /** Save (or clear, with null) the granted USB tree URI and its display label together. */
+    fun setUsbTree(treeUri: String?, label: String?) {
+        prefs.edit()
+            .putString(KEY_USB_TREE, treeUri)
+            .putString(KEY_USB_LABEL, label)
+            .apply()
+        _usbTreeUri.value = treeUri
+        _usbFolderLabel.value = label
+    }
 
     /** SMB / NAS connection. Stored on-device only, exactly like provider credentials. */
     private val _smbHost = MutableStateFlow(prefs.getString(KEY_SMB_HOST, "").orEmpty())
@@ -262,6 +296,33 @@ class AppSettings private constructor(context: Context) {
         _nasAutoSync.value = enabled
     }
 
+    // ---- Catalogue freshness & TMDB ----------------------------------------------------------
+
+    /**
+     * When the VOD (movies + series) catalogue was last fetched from the provider, in epoch
+     * millis; 0 = never. A provider's 40k-title VOD list is expensive to re-download and
+     * re-write, so [app.opentv.ui.VodViewModel.ensureVodLoaded] uses this to skip the sync on a
+     * warm launch and show the already-stored rows instantly — the fetch only runs on first load
+     * or once this goes stale. Not a flow: it is read once when Movies/Shows is first opened.
+     */
+    var vodSyncedAtMillis: Long
+        get() = prefs.getLong(KEY_VOD_SYNCED_AT, 0L)
+        set(value) { prefs.edit().putLong(KEY_VOD_SYNCED_AT, value).apply() }
+
+    /**
+     * The user's own TMDB API key (v3 auth), stored on-device only exactly like provider
+     * credentials, used to fill in artwork/metadata a provider left blank. Blank = the TMDB
+     * fallback is off. Each user brings their own key, so no single key carries everyone's traffic.
+     */
+    private val _tmdbApiKey = MutableStateFlow(prefs.getString(KEY_TMDB_KEY, "").orEmpty())
+    val tmdbApiKey: StateFlow<String> = _tmdbApiKey.asStateFlow()
+
+    fun setTmdbApiKey(key: String) {
+        val trimmed = key.trim()
+        prefs.edit().putString(KEY_TMDB_KEY, trimmed).apply()
+        _tmdbApiKey.value = trimmed
+    }
+
     companion object {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_SUBTITLES = "subtitles_enabled"
@@ -291,8 +352,12 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_SMB_FOLDER = "smb_folder"
         private const val KEY_SMB_USER = "smb_user"
         private const val KEY_SMB_PASS = "smb_password"
+        private const val KEY_USB_TREE = "usb_tree_uri"
+        private const val KEY_USB_LABEL = "usb_folder_label"
         private const val KEY_SYNC_DEVICE_ID = "sync_device_id"
         private const val KEY_NAS_AUTO_SYNC = "nas_auto_sync"
+        private const val KEY_VOD_SYNCED_AT = "vod_synced_at"
+        private const val KEY_TMDB_KEY = "tmdb_api_key"
 
         @Volatile private var instance: AppSettings? = null
 

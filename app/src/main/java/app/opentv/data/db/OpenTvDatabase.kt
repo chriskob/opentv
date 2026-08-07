@@ -71,7 +71,7 @@ class Converters {
         SeriesRule::class,
         Reminder::class,
     ],
-    version = 8,
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -229,12 +229,45 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 → v9: richer VOD metadata for the Netflix-style Movies/Series redesign. Adds the
+         * enrichment columns (backdrop, cast, genre, tmdbId, and — movies only — director) pulled
+         * from the provider's own Xtream `get_vod_info`/`get_series_info`. Every column is nullable
+         * TEXT with no default, matching the nullable Kotlin `String?` fields, so the schema-identity
+         * check passes and favourites/overrides survive the upgrade rather than falling through to
+         * the destructive rebuild.
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `movies` ADD COLUMN `backdropUrl` TEXT")
+                db.execSQL("ALTER TABLE `movies` ADD COLUMN `cast` TEXT")
+                db.execSQL("ALTER TABLE `movies` ADD COLUMN `genre` TEXT")
+                db.execSQL("ALTER TABLE `movies` ADD COLUMN `tmdbId` TEXT")
+                db.execSQL("ALTER TABLE `movies` ADD COLUMN `director` TEXT")
+                db.execSQL("ALTER TABLE `series` ADD COLUMN `backdropUrl` TEXT")
+                db.execSQL("ALTER TABLE `series` ADD COLUMN `cast` TEXT")
+                db.execSQL("ALTER TABLE `series` ADD COLUMN `genre` TEXT")
+                db.execSQL("ALTER TABLE `series` ADD COLUMN `tmdbId` TEXT")
+            }
+        }
+
+        /** Recordings gain a profile owner so a booking can be tagged to whoever set it. Nullable
+         *  (no default) to match Room's generated DDL for a `Long?` field — the project's pattern. */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `recordings` ADD COLUMN `profileId` INTEGER")
+            }
+        }
+
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
                 // refresh cannot make the UI stutter on a slow TV box.
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(
+                    MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
+                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
+                )
                 /*
                  * Pre-1.0 policy: schema changes drop and rebuild the database. Everything
                  * in it is re-derivable from the provider (one sync away) except favourites

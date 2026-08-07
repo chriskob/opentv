@@ -140,6 +140,14 @@ class XtreamApi(
                 containerExtension = extension,
                 streamUrl = vodStreamUrl(source, streamId, extension),
                 addedMillis = obj["added"].asLongOrNull?.times(1000) ?: 0L,
+                // Rich metadata is best-effort here: the streams list carries it on some panels
+                // and not others. Whatever is missing is back-filled from get_vod_info on the
+                // first detail open. See asBackdropUrl for the array-or-string handling.
+                backdropUrl = obj.asBackdropUrl("movie_image", "cover_big"),
+                cast = obj["cast"].asStringOrNull ?: obj["actors"].asStringOrNull,
+                director = obj["director"].asStringOrNull,
+                genre = obj["genre"].asStringOrNull,
+                tmdbId = obj["tmdb_id"].asStringOrNull ?: obj["tmdb"].asStringOrNull,
             )
         }
     }
@@ -159,6 +167,12 @@ class XtreamApi(
                 year = obj["year"].asIntOrNull ?: obj["releaseDate"].asStringOrNull?.take(4)?.toIntOrNull(),
                 plot = obj["plot"].asStringOrNull,
                 addedMillis = obj["last_modified"].asLongOrNull?.times(1000) ?: 0L,
+                // get_series carries most of this inline on the majority of panels; anything
+                // missing is back-filled from get_series_info on the first detail open.
+                backdropUrl = obj.asBackdropUrl("cover_big", "cover"),
+                cast = obj["cast"].asStringOrNull ?: obj["actors"].asStringOrNull,
+                genre = obj["genre"].asStringOrNull,
+                tmdbId = obj["tmdb_id"].asStringOrNull ?: obj["tmdb"].asStringOrNull,
             )
         }
     }
@@ -208,6 +222,54 @@ class XtreamApi(
                 }
             }
         }
+
+    /**
+     * Rich metadata for a single movie, from `get_vod_info`'s `info` object.
+     *
+     * The streams list ([movies]) is deliberately lightweight; the heavy fields (backdrop art,
+     * cast, director, genre) live behind this per-title call, which the detail screen makes lazily
+     * on open. Every field is best-effort — a panel that omits `info` entirely yields null, not an
+     * error, so the caller can fall back to whatever the list already had.
+     */
+    suspend fun movieInfo(source: Source, streamId: String): VodInfo? = withContext(Dispatchers.IO) {
+        val body = runCatching {
+            getJson(source, "get_vod_info") { it.addQueryParameter("vod_id", streamId) }
+        }.getOrNull() ?: return@withContext null
+        val info = body.jsonObjectOrNull?.get("info").jsonObjectOrNull ?: return@withContext null
+        VodInfo(
+            backdropUrl = info.asBackdropUrl("movie_image", "cover_big"),
+            cast = info["cast"].asStringOrNull ?: info["actors"].asStringOrNull,
+            director = info["director"].asStringOrNull,
+            genre = info["genre"].asStringOrNull,
+            tmdbId = info["tmdb_id"].asStringOrNull ?: info["tmdb"].asStringOrNull,
+            plot = info["plot"].asStringOrNull ?: info["description"].asStringOrNull,
+            rating = info["rating"].asDoubleOrNull,
+            year = info["year"].asIntOrNull ?: info["releasedate"].asStringOrNull?.take(4)?.toIntOrNull(),
+            durationSeconds = info["duration_secs"].asIntOrNull,
+        )
+    }
+
+    /**
+     * Rich metadata for a single series, from `get_series_info`'s `info` object. Same contract as
+     * [movieInfo]; series carry no director. This shares the `get_series_info` endpoint with
+     * [episodes] but is a separate call — the detail screen fetches episodes and info independently,
+     * and most series are never opened, so paying for both only when needed is the point.
+     */
+    suspend fun seriesInfo(source: Source, seriesId: String): SeriesInfo? = withContext(Dispatchers.IO) {
+        val body = runCatching {
+            getJson(source, "get_series_info") { it.addQueryParameter("series_id", seriesId) }
+        }.getOrNull() ?: return@withContext null
+        val info = body.jsonObjectOrNull?.get("info").jsonObjectOrNull ?: return@withContext null
+        SeriesInfo(
+            backdropUrl = info.asBackdropUrl("cover_big", "cover"),
+            cast = info["cast"].asStringOrNull ?: info["actors"].asStringOrNull,
+            genre = info["genre"].asStringOrNull,
+            tmdbId = info["tmdb_id"].asStringOrNull ?: info["tmdb"].asStringOrNull,
+            plot = info["plot"].asStringOrNull ?: info["description"].asStringOrNull,
+            rating = info["rating"].asDoubleOrNull,
+            year = info["year"].asIntOrNull ?: info["releaseDate"].asStringOrNull?.take(4)?.toIntOrNull(),
+        )
+    }
 
     /** Opens the XMLTV guide as a stream. The caller must close it. */
     suspend fun openEpgStream(source: Source): InputStream = withContext(Dispatchers.IO) {
@@ -315,6 +377,35 @@ class XtreamApi(
         val activeConnections: Int?,
         val timezone: String?,
     )
+
+    /**
+     * Rich per-movie metadata from `get_vod_info`. Every field is nullable — the caller merges it
+     * over the (possibly sparse) row it already has, only filling blanks. `plot`/`rating`/`year`/
+     * `durationSeconds` are included because `get_vod_info` often carries a fuller version than the
+     * streams list did.
+     */
+    data class VodInfo(
+        val backdropUrl: String?,
+        val cast: String?,
+        val director: String?,
+        val genre: String?,
+        val tmdbId: String?,
+        val plot: String?,
+        val rating: Double?,
+        val year: Int?,
+        val durationSeconds: Int?,
+    )
+
+    /** Rich per-series metadata from `get_series_info`. Series have no director. See [VodInfo]. */
+    data class SeriesInfo(
+        val backdropUrl: String?,
+        val cast: String?,
+        val genre: String?,
+        val tmdbId: String?,
+        val plot: String?,
+        val rating: Double?,
+        val year: Int?,
+    )
 }
 
 // ---- Defensive JSON accessors ------------------------------------------------------------
@@ -331,6 +422,29 @@ private val JsonElement?.asPrimitiveOrNull: JsonPrimitive?
 
 private val JsonElement?.asStringOrNull: String?
     get() = asPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotEmpty() && it != "null" }
+
+/**
+ * A field that is a plain URL string on some panels and a JSON array of URLs on others — which is
+ * exactly how Xtream ships `backdrop_path`. Returns the first non-blank element of an array, or the
+ * string itself otherwise. `asStringOrNull` already drops empties and literal "null".
+ */
+private val JsonElement?.firstStringOrNull: String?
+    get() = when (this) {
+        is JsonArray -> firstNotNullOfOrNull { it.asStringOrNull }
+        else -> asStringOrNull
+    }
+
+/**
+ * The best backdrop URL from an `info`/stream object: `backdrop_path` (array-aware) first, then the
+ * given fallback keys (e.g. `movie_image`, `cover_big`) as plain strings. Keeps the array handling
+ * in one place so [movies], [series], [movieInfo] and [seriesInfo] stay consistent.
+ */
+private fun JsonObject.asBackdropUrl(vararg fallbackKeys: String): String? {
+    this["backdrop_path"].firstStringOrNull?.let { return it }
+    this["backdrop"].firstStringOrNull?.let { return it }
+    for (key in fallbackKeys) this[key].asStringOrNull?.takeIf { it.isNotBlank() }?.let { return it }
+    return null
+}
 
 private val JsonElement?.asIntOrNull: Int?
     get() = asStringOrNull?.substringBefore('.')?.toIntOrNull()

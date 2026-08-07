@@ -48,7 +48,12 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import app.opentv.R
@@ -64,8 +69,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Where recordings are written: this box's internal storage, or a NAS over SMB (Synology and the
- * like). The NAS credentials live only on this device, exactly like a provider's login.
+ * Where recordings are written: this box's internal storage, a NAS over SMB (Synology and the
+ * like), or a plugged-in USB / external drive. The NAS credentials live only on this device,
+ * exactly like a provider's login; the USB drive is addressed through a folder the user grants
+ * with the system picker (Storage Access Framework), which needs no storage permission.
  */
 @Composable
 fun RecordingSettingsScreen(onBack: () -> Unit) {
@@ -79,12 +86,37 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
     var folder by remember { mutableStateOf(settings.smbFolder.value) }
     var user by remember { mutableStateOf(settings.smbUser.value) }
     var password by remember { mutableStateOf(settings.smbPassword.value) }
+    var usbTree by remember { mutableStateOf(settings.usbTreeUri.value) }
+    var usbLabel by remember { mutableStateOf(settings.usbFolderLabel.value) }
     var status by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
 
+    // The SAF folder picker. On a granted tree we take a persistable read/write permission so the
+    // grant (and thus playback of what we record there) survives restarts, then remember the folder.
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) }
+            val label = DocumentFile.fromTreeUri(context, uri)?.name
+                ?: uri.lastPathSegment ?: context.getString(R.string.recset_usb_label)
+            settings.setUsbTree(uri.toString(), label)
+            usbTree = uri.toString()
+            usbLabel = label
+            target = AppSettings.RecordingTarget.USB
+            status = context.getString(R.string.recset_usb_saving_to, label)
+        }
+    }
+
     fun persist() {
         settings.setSmbConfig(host, share, folder, user, password)
-        settings.setRecordingTarget(target)
+        // Don't commit USB as the destination unless a folder has actually been granted, so
+        // leaving the screen without picking one can never strand recordings with nowhere to go.
+        val safeTarget =
+            if (target == AppSettings.RecordingTarget.USB && usbTree == null) settings.recordingTarget.value
+            else target
+        settings.setRecordingTarget(safeTarget)
     }
 
     Column(
@@ -124,6 +156,12 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
                 subtitle = stringResource(R.string.recset_smb_subtitle),
                 selected = target == AppSettings.RecordingTarget.SMB,
             ) { target = AppSettings.RecordingTarget.SMB }
+            Spacer(Modifier.height(8.dp))
+            TargetRow(
+                label = stringResource(R.string.recset_usb_label),
+                subtitle = stringResource(R.string.recset_usb_subtitle),
+                selected = target == AppSettings.RecordingTarget.USB,
+            ) { target = AppSettings.RecordingTarget.USB }
         }
 
         if (target == AppSettings.RecordingTarget.SMB) {
@@ -163,8 +201,60 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
             }
         }
 
+        if (target == AppSettings.RecordingTarget.USB) {
+            Spacer(Modifier.height(16.dp))
+            SectionCard(stringResource(R.string.recset_usb_section)) {
+                val label = usbLabel
+                if (usbTree != null && label != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            stringResource(R.string.recset_usb_saving_to, label),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                } else {
+                    Text(
+                        stringResource(R.string.recset_usb_none),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = {
+                    runCatching { folderPicker.launch(null) }
+                        .onFailure { status = context.getString(R.string.recset_usb_no_picker) }
+                }) {
+                    Text(
+                        if (usbTree != null) stringResource(R.string.recset_usb_change)
+                        else stringResource(R.string.recset_usb_choose),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    stringResource(R.string.recset_usb_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (target == AppSettings.RecordingTarget.USB && usbTree == null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.recset_usb_need_folder),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(20.dp))
-        Button(onClick = { persist(); status = context.getString(R.string.recset_status_saved) }) { Text(stringResource(R.string.common_save)) }
+        Button(
+            enabled = target != AppSettings.RecordingTarget.USB || usbTree != null,
+            onClick = { persist(); status = context.getString(R.string.recset_status_saved) },
+        ) { Text(stringResource(R.string.common_save)) }
     }
 }
 

@@ -35,6 +35,9 @@ class RecordingRepository(
 
     suspend fun setSize(id: Long, bytes: Long) = dao.setSize(id, bytes)
 
+    /** Repoint a recording at its real locator (a USB capture's content:// URI, once created). */
+    suspend fun setFilePath(id: Long, filePath: String) = dao.setFilePath(id, filePath)
+
     suspend fun markFinished(id: Long, ok: Boolean, atMillis: Long, bytes: Long, error: String?) =
         dao.markFinished(
             id = id,

@@ -5,6 +5,7 @@
  */
 package app.opentv.ui.vod
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,7 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,15 +36,18 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,16 +56,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
+import app.opentv.data.parser.displayTitle
 import app.opentv.ui.VodViewModel
 import coil.compose.AsyncImage
 
 /**
- * Movies: a category rail on the left, a poster grid on the right. Click a poster to play,
- * resuming where you left off. The rail mirrors Live TV's so the app feels of a piece.
+ * Movies: a modern, row-based home — Continue Watching, Recommended, Recently added and a row per
+ * genre, each a horizontally-scrolling shelf of poster cards. A category chip strip along the top
+ * keeps whole-category browsing one press away without a permanent rail eating the width. Clicking
+ * a film opens its detail page rather than playing straight away, the streaming-app convention.
  */
 @Composable
 fun MoviesScreen(
-    onPlayMovie: (Movie) -> Unit,
+    onOpenMovie: (Movie) -> Unit,
     onResume: (mediaKey: String, url: String, title: String) -> Unit,
     onOpenSearch: () -> Unit,
     hasSources: Boolean,
@@ -70,43 +76,58 @@ fun MoviesScreen(
     viewModel: VodViewModel = viewModel(),
 ) {
     val categories by viewModel.movieCategories.collectAsState()
-    val movies by viewModel.movies.collectAsState()
     val resume by viewModel.continueWatching.collectAsState()
+    val recommended by viewModel.recommendedMovies.collectAsState()
+    val recentlyAdded by viewModel.recentlyAddedMovies.collectAsState()
+    val genreRows by viewModel.movieGenreRows.collectAsState()
+    val categoryMovies by viewModel.movies.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
 
-    // Pull the movie library the first time this tab is opened, not at login.
-    androidx.compose.runtime.LaunchedEffect(Unit) { if (hasSources) viewModel.ensureVodLoaded() }
+    // Pull the movie library the first time this tab is opened, not at login; refresh the computed
+    // home rows (recommended, by-genre) on open too — cheap, and covers a library already on disk.
+    LaunchedEffect(Unit) {
+        if (hasSources) viewModel.ensureVodLoaded()
+        viewModel.loadHomeFeeds()
+    }
 
-    Row(Modifier.fillMaxSize()) {
-        CategoryRail(
-            title = stringResource(R.string.nav_movies),
+    // null = the curated home rows; a category id = that category's full grid.
+    var browseCategory by remember { mutableStateOf<String?>(null) }
+
+    val hasContent = resume.isNotEmpty() || recommended.isNotEmpty() ||
+        recentlyAdded.isNotEmpty() || genreRows.isNotEmpty()
+
+    Column(Modifier.fillMaxSize()) {
+        SearchAffordance(onOpenSearch)
+        CategoryChips(
             entries = categories.map { it.id to it.name },
-            onSelect = { viewModel.selectMovieCategory(it) },
+            selected = browseCategory,
+            onSelectHome = { browseCategory = null },
+            onSelectCategory = { id -> browseCategory = id; viewModel.selectMovieCategory(id) },
         )
-        Column(Modifier.weight(1f).fillMaxSize()) {
-            SearchAffordance(onOpenSearch)
-            if (resume.isNotEmpty()) ContinueWatchingRow(resume, onResume)
-            if (movies.isEmpty()) {
-                when {
+        // Weighted so the shelves fill the space under the fixed search + chips header, exactly and
+        // unambiguously — the same reason Live TV weights its guide grid.
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            when {
+                browseCategory != null -> MovieCategoryGrid(categoryMovies, viewModel, onOpenMovie)
+                !hasContent -> when {
                     vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_movies))
                     hasSources -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_provider))
                     else -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_add))
                 }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 150.dp),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                else -> LazyColumn(
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(movies, key = { it.id }) { movie ->
-                        Poster(
-                            title = movie.name,
-                            posterUrl = movie.posterUrl,
-                            subtitle = movie.year?.toString(),
-                            onClick = { onPlayMovie(movie) },
-                        )
+                    if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
+                    if (recommended.isNotEmpty()) item(key = "rec") {
+                        MoviePosterRow(stringResource(R.string.vod_recommended), recommended, onOpenMovie)
+                    }
+                    if (recentlyAdded.isNotEmpty()) item(key = "recent") {
+                        MoviePosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenMovie)
+                    }
+                    items(genreRows, key = { "g:${it.genre}" }) { group ->
+                        MoviePosterRow(group.genre, group.items, onOpenMovie)
                     }
                 }
             }
@@ -115,9 +136,10 @@ fun MoviesScreen(
 }
 
 /**
- * Shows: poster grid → a series' episode list → play. Episodes are fetched on demand the
- * first time a series is opened, because pulling every episode of every series up front is
- * what makes a first sync take forever.
+ * Shows: the same row-based home as Movies (Continue Watching, Recently added, genre rows) with the
+ * category chip strip for whole-category browsing. A show opens its detail page — where episodes are
+ * fetched on demand, since pulling every episode of every series up front is what makes a first sync
+ * take forever.
  */
 @Composable
 fun SeriesScreen(
@@ -129,43 +151,48 @@ fun SeriesScreen(
     viewModel: VodViewModel = viewModel(),
 ) {
     val categories by viewModel.seriesCategories.collectAsState()
-    val series by viewModel.series.collectAsState()
     val resume by viewModel.continueWatching.collectAsState()
+    val recentlyAdded by viewModel.recentlyAddedSeries.collectAsState()
+    val genreRows by viewModel.seriesGenreRows.collectAsState()
+    val categorySeries by viewModel.series.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
 
-    // Pull the series library the first time this tab is opened, not at login.
-    androidx.compose.runtime.LaunchedEffect(Unit) { if (hasSources) viewModel.ensureVodLoaded() }
+    LaunchedEffect(Unit) {
+        if (hasSources) viewModel.ensureVodLoaded()
+        viewModel.loadHomeFeeds()
+    }
 
-    Row(Modifier.fillMaxSize()) {
-        CategoryRail(
-            title = stringResource(R.string.nav_shows),
+    var browseCategory by remember { mutableStateOf<String?>(null) }
+
+    val hasContent = resume.isNotEmpty() || recentlyAdded.isNotEmpty() || genreRows.isNotEmpty()
+
+    Column(Modifier.fillMaxSize()) {
+        SearchAffordance(onOpenSearch)
+        CategoryChips(
             entries = categories.map { it.id to it.name },
-            onSelect = { viewModel.selectSeriesCategory(it) },
+            selected = browseCategory,
+            onSelectHome = { browseCategory = null },
+            onSelectCategory = { id -> browseCategory = id; viewModel.selectSeriesCategory(id) },
         )
-        Column(Modifier.weight(1f).fillMaxSize()) {
-            SearchAffordance(onOpenSearch)
-            if (resume.isNotEmpty()) ContinueWatchingRow(resume, onResume)
-            if (series.isEmpty()) {
-                when {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            when {
+                browseCategory != null -> SeriesCategoryGrid(categorySeries, onOpenSeries)
+                !hasContent -> when {
                     vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_shows))
                     hasSources -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_provider))
                     else -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_add))
                 }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 150.dp),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                else -> LazyColumn(
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(series, key = { it.id }) { item ->
-                        Poster(
-                            title = item.name,
-                            posterUrl = item.posterUrl,
-                            subtitle = item.year?.toString(),
-                            onClick = { onOpenSeries(item) },
-                        )
+                    if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
+                    if (recentlyAdded.isNotEmpty()) item(key = "recent") {
+                        SeriesPosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenSeries)
+                    }
+                    items(genreRows, key = { "g:${it.genre}" }) { group ->
+                        SeriesPosterRow(group.genre, group.items, onOpenSeries)
                     }
                 }
             }
@@ -173,67 +200,359 @@ fun SeriesScreen(
     }
 }
 
-/** A series' episodes, grouped by season, each a row that plays on click. */
+// ---- Whole-category browse grids ---------------------------------------------------------------
+
+/** One category's films as a poster grid. Quality variants collapse to one card, badged. */
 @Composable
-fun SeriesDetailScreen(
-    seriesId: Long,
-    onPlayEpisode: (mediaKey: String, url: String, title: String) -> Unit,
-    viewModel: VodViewModel = viewModel(),
-) {
-    val series by viewModel.seriesById(seriesId).collectAsState(initial = null)
-    val episodes by (series?.let { viewModel.episodes(it) } ?: viewModel.noEpisodes)
-        .collectAsState(initial = emptyList())
-
-    androidx.compose.runtime.LaunchedEffect(series) {
-        series?.let { viewModel.loadEpisodes(it) }
-    }
-
-    Column(Modifier.fillMaxSize().padding(24.dp)) {
-        Text(series?.name ?: "…", style = MaterialTheme.typography.headlineMedium)
-        series?.plot?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3,
-                overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.height(16.dp))
-
-        if (episodes.isEmpty()) {
-            Text(stringResource(R.string.vod_loading_episodes), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(episodes, key = { it.id }) { ep ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .clickable {
-                                onPlayEpisode("ep:${ep.id}", ep.streamUrl,
-                                    "S${ep.season}E${ep.episodeNumber} · ${ep.title}")
-                            }
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("S${ep.season}E${ep.episodeNumber}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.width(72.dp))
-                        Text(ep.title, style = MaterialTheme.typography.bodyLarge,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+private fun MovieCategoryGrid(movies: List<Movie>, viewModel: VodViewModel, onOpenMovie: (Movie) -> Unit) {
+    if (movies.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_movies)); return }
+    val groups = remember(movies) { viewModel.collapseVariants(movies) }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 140.dp),
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        gridItems(groups, key = { it.primary.id }) { group ->
+            val quality = group.variants.firstOrNull()?.qualityLabel?.takeIf { it.isNotBlank() }
+            val badge = quality
+                ?: if (group.hasMultipleQualities) {
+                    stringResource(R.string.guide_qualities_count, group.variants.size)
+                } else {
+                    null
                 }
+            PosterCard(
+                title = group.primary.displayTitle,
+                posterUrl = group.primary.posterUrl,
+                subtitle = group.primary.year?.toString(),
+                rating = group.primary.rating,
+                qualityBadge = badge,
+                onClick = { onOpenMovie(group.primary) },
+            )
+        }
+    }
+}
+
+/** One category's shows as a poster grid. */
+@Composable
+private fun SeriesCategoryGrid(series: List<Series>, onOpenSeries: (Series) -> Unit) {
+    if (series.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_shows)); return }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 140.dp),
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        gridItems(series, key = { it.id }) { item ->
+            PosterCard(
+                title = item.displayTitle,
+                posterUrl = item.posterUrl,
+                subtitle = item.year?.toString(),
+                rating = item.rating,
+                onClick = { onOpenSeries(item) },
+            )
+        }
+    }
+}
+
+// ---- Shared shelves ----------------------------------------------------------------------------
+
+/** A titled horizontal shelf of movie poster cards. Shared by the home and the detail's "more like this". */
+@Composable
+internal fun MoviePosterRow(title: String, movies: List<Movie>, onOpenMovie: (Movie) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        SectionHeader(title)
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(movies, key = { it.id }) { movie ->
+                PosterCard(
+                    title = movie.displayTitle,
+                    posterUrl = movie.posterUrl,
+                    subtitle = movie.year?.toString(),
+                    rating = movie.rating,
+                    onClick = { onOpenMovie(movie) },
+                )
             }
         }
     }
 }
 
-// ---- Shared bits -------------------------------------------------------------------------
+/** A titled horizontal shelf of series poster cards. */
+@Composable
+internal fun SeriesPosterRow(title: String, series: List<Series>, onOpenSeries: (Series) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        SectionHeader(title)
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(series, key = { it.id }) { item ->
+                PosterCard(
+                    title = item.displayTitle,
+                    posterUrl = item.posterUrl,
+                    subtitle = item.year?.toString(),
+                    rating = item.rating,
+                    onClick = { onOpenSeries(item) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SectionHeader(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+    )
+}
 
 /**
- * The search entry at the top of the Movies and Shows grids. The rail's global search already
- * covers movies and series; this makes it reachable without leaving the tab. Focusable for d-pad
- * on TV and tappable on touch, it just opens the existing search screen.
+ * The reusable poster card: art, title and an optional year, with a rating chip, a quality badge and
+ * a resume progress bar drawn over the art where the data is there. The focused card scales up and
+ * gains a primary border — the app's established focus cue — and, being focusable, the lazy row
+ * brings it into view on its own.
+ */
+@Composable
+internal fun PosterCard(
+    title: String,
+    posterUrl: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    rating: Double? = null,
+    qualityBadge: String? = null,
+    progress: Float? = null,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "posterScale")
+    Column(
+        modifier
+            .width(POSTER_WIDTH)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(2f / 3f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .then(
+                    if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                    else Modifier,
+                ),
+        ) {
+            AsyncImage(
+                model = posterUrl,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            rating?.takeIf { it > 0.0 }?.let {
+                Badge(
+                    text = "★ ${formatRating(it)}",
+                    modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
+                )
+            }
+            qualityBadge?.let {
+                Badge(
+                    text = it,
+                    highlight = true,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                )
+            }
+            progress?.let {
+                LinearProgressIndicator(
+                    progress = { it },
+                    modifier = Modifier.fillMaxWidth().height(4.dp).align(Alignment.BottomCenter),
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        subtitle?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** A small rounded chip drawn over poster art — a rating or a quality label. */
+@Composable
+private fun Badge(text: String, modifier: Modifier = Modifier, highlight: Boolean = false) {
+    val bg = if (highlight) MaterialTheme.colorScheme.primary
+    else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.66f)
+    val fg = if (highlight) MaterialTheme.colorScheme.onPrimary else androidx.compose.ui.graphics.Color.White
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = fg,
+        maxLines = 1,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+// ---- Continue watching -------------------------------------------------------------------------
+
+@Composable
+internal fun ContinueWatchingRow(
+    items: List<VodViewModel.ResumeItem>,
+    onResume: (mediaKey: String, url: String, title: String) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        SectionHeader(stringResource(R.string.vod_continue_watching))
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(items, key = { it.mediaKey }) { item ->
+                ResumeCard(item) { onResume(item.mediaKey, item.streamUrl, item.title) }
+            }
+        }
+    }
+}
+
+/** A landscape resume thumbnail with a progress fill — a movie or an episode part-way through. */
+@Composable
+private fun ResumeCard(item: VodViewModel.ResumeItem, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "resumeScale")
+    Column(
+        Modifier
+            .width(190.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(107.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .then(
+                    if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                    else Modifier,
+                ),
+        ) {
+            AsyncImage(
+                model = item.posterUrl,
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            LinearProgressIndicator(
+                progress = { item.progress },
+                modifier = Modifier.fillMaxWidth().height(4.dp).align(Alignment.BottomStart),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            item.title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+// ---- Category chips ----------------------------------------------------------------------------
+
+/**
+ * A horizontal chip strip along the top of the home: an "All" chip returns to the curated rows, and
+ * each following chip opens that category's full grid. Keeps whole-category browsing reachable on a
+ * d-pad without a permanent side rail taking the width.
+ */
+@Composable
+private fun CategoryChips(
+    entries: List<Pair<String, String>>,
+    selected: String?,
+    onSelectHome: () -> Unit,
+    onSelectCategory: (String) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        item(key = "label") {
+            Text(
+                stringResource(R.string.vod_categories),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 4.dp),
+            )
+        }
+        item(key = "all") { Chip(stringResource(R.string.vod_all), selected == null, onSelectHome) }
+        items(entries, key = { it.first }) { (id, name) ->
+            Chip(name, selected == id) { onSelectCategory(id) }
+        }
+    }
+}
+
+@Composable
+private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> MaterialTheme.colorScheme.primary
+        selected -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val fg = when {
+        focused -> MaterialTheme.colorScheme.onPrimary
+        selected -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        label,
+        style = MaterialTheme.typography.labelLarge,
+        color = fg,
+        maxLines = 1,
+        modifier = Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(20.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+}
+
+// ---- Search / loading / empty ------------------------------------------------------------------
+
+/**
+ * The search entry at the top of the Movies and Shows home. The rail's global search already covers
+ * movies and series; this makes it reachable without leaving the tab. Focusable for d-pad on TV and
+ * tappable on touch, it just opens the existing search screen.
  */
 @Composable
 private fun SearchAffordance(onOpenSearch: () -> Unit) {
@@ -264,140 +583,6 @@ private fun SearchAffordance(onOpenSearch: () -> Unit) {
 }
 
 @Composable
-private fun CategoryRail(
-    title: String,
-    entries: List<Pair<String, String>>,
-    onSelect: (String?) -> Unit,
-) {
-    Column(
-        Modifier
-            .width(230.dp)
-            .fillMaxHeight()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(vertical = 16.dp),
-    ) {
-        Text(title, style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(horizontal = 20.dp))
-        Spacer(Modifier.height(12.dp))
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            item {
-                RailText(stringResource(R.string.vod_all), true) { onSelect(null) }
-            }
-            items(entries, key = { it.first }) { (id, name) ->
-                RailText(name, false) { onSelect(id) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RailText(label: String, bold: Boolean, onClick: () -> Unit) {
-    Text(
-        label,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    )
-}
-
-@Composable
-private fun Poster(title: String, posterUrl: String?, subtitle: String?, onClick: () -> Unit) {
-    Column(
-        Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(4.dp),
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        ) {
-            AsyncImage(
-                model = posterUrl,
-                contentDescription = title,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
-            overflow = TextOverflow.Ellipsis)
-        subtitle?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun ContinueWatchingRow(
-    items: List<VodViewModel.ResumeItem>,
-    onResume: (mediaKey: String, url: String, title: String) -> Unit,
-) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(
-            stringResource(R.string.vod_continue_watching),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.height(8.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(items, key = { it.mediaKey }) { item ->
-                ResumeCard(item) { onResume(item.mediaKey, item.streamUrl, item.title) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ResumeCard(item: VodViewModel.ResumeItem, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    Column(
-        Modifier
-            .width(150.dp)
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(8.dp))
-            .then(
-                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                else Modifier,
-            )
-            .clickable(onClick = onClick)
-            .padding(6.dp),
-    ) {
-        Box(Modifier.fillMaxWidth().height(84.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
-            AsyncImage(
-                model = item.posterUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxWidth().height(84.dp),
-            )
-            LinearProgressIndicator(
-                progress = { item.progress },
-                modifier = Modifier.fillMaxWidth().height(4.dp).align(Alignment.BottomStart),
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            item.title,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
 private fun EmptyVod(title: String, body: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -423,3 +608,9 @@ private fun LoadingVod(message: String) {
         }
     }
 }
+
+/** Poster shelf card width; the grid uses an adaptive min size close to this. */
+private val POSTER_WIDTH = 140.dp
+
+/** Rating to one decimal place, locale-independent (the "★" is drawn beside it). */
+internal fun formatRating(rating: Double): String = String.format(java.util.Locale.US, "%.1f", rating)

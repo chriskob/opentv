@@ -105,15 +105,33 @@ object ChannelNameNormalizer {
 
     private val MULTI_SPACE = Regex("""\s+""")
 
-    fun normalize(raw: String): Normalized {
-        var working = raw.trim()
-
-        // Fold superscript decorations (ᴴᴰ → HD) so the token pass can see them.
-        if (working.any { it in SUPERSCRIPT_MAP }) {
-            working = buildString(working.length) {
-                for (c in working) append(SUPERSCRIPT_MAP[c] ?: c)
-            }
+    /**
+     * Folds unicode superscript/modifier decorations to ASCII (`ᴴᴰ` → `HD`, `ᴿᴬᵂ` → `RAW`).
+     *
+     * Exposed so other cleaners — notably [app.opentv.data.parser.VodTitleCleaner] for VOD titles —
+     * reuse the exact same decoration table instead of maintaining a second, drifting copy. Returns
+     * the input untouched (and without allocating) when it carries no such characters.
+     */
+    fun foldSuperscripts(raw: String): String {
+        if (raw.none { it in SUPERSCRIPT_MAP }) return raw
+        return buildString(raw.length) {
+            for (c in raw) append(SUPERSCRIPT_MAP[c] ?: c)
         }
+    }
+
+    /**
+     * The quality rank of a single token if it is a known resolution/quality tag (`4K`, `FHD`, `HD`,
+     * `SD`, `UHD`…), matched whole-word and case-insensitively, else null. Exposed so the VOD title
+     * cleaner strips exactly the tags this normaliser recognises rather than reinventing the list.
+     */
+    fun qualityRankOfToken(token: String): Int? = QUALITY_RANKS[token.uppercase()]
+
+    /** Whether a single token is a non-resolution stream marker (`RAW`, `HEVC`, `60FPS`, `HDR`…). */
+    fun isStreamMarker(token: String): Boolean = token.uppercase() in EXTRA_TOKENS
+
+    fun normalize(raw: String): Normalized {
+        // Fold superscript decorations (ᴴᴰ → HD) so the token pass can see them.
+        var working = foldSuperscripts(raw.trim())
 
         // Country prefix BEFORE decoration stripping: the brackets in `[UK]` are the
         // delimiter, and the decoration pass would eat them and lose the tag.

@@ -21,8 +21,12 @@ import app.opentv.data.model.Series
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
 import app.opentv.data.model.StreamKind
+import app.opentv.data.parser.displayTitle
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.repo.CatalogRepository
+import app.opentv.data.repo.GenreGroup
+import app.opentv.data.repo.MovieVariantGroup
+import app.opentv.data.repo.PersonTitle
 import app.opentv.data.repo.distinctByQuality
 import app.opentv.R
 import app.opentv.pairing.ManagerServer
@@ -52,6 +56,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * View models for the whole app.
@@ -672,7 +678,7 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
             if (pos.durationMillis > 0) (pos.positionMillis.toFloat() / pos.durationMillis).coerceIn(0f, 1f) else 0f
         return when (parts[0]) {
             "movie" -> graph.catalogRepository.movie(id)?.let {
-                ResumeItem(pos.mediaKey, it.name, it.posterUrl, it.streamUrl, progress)
+                ResumeItem(pos.mediaKey, it.displayTitle, it.posterUrl, it.streamUrl, progress)
             }
             "ep" -> graph.catalogRepository.episode(id)?.let {
                 ResumeItem(
@@ -712,6 +718,97 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectSeriesCategory(id: String?) { seriesCategory.value = id }
 
+    // ---- Netflix-style home rows ----------------------------------------------------------------
+    // "Recently added" is reactive: it fills in live as a VOD sync lands. The computed feeds
+    // (recommended, by-genre) are held in the StateFlows below and (re)built by [loadHomeFeeds] from
+    // one shared scan of the library — guarded so opening the tab twice, or recomposing, does not
+    // re-scan a 20k-title catalogue; it recomputes only on a profile change or catalogue growth.
+
+    val recentlyAddedMovies: StateFlow<List<Movie>> =
+        graph.catalogRepository.recentlyAddedMovies()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val recentlyAddedSeries: StateFlow<List<Series>> =
+        graph.catalogRepository.recentlyAddedSeries()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _recommendedMovies = MutableStateFlow<List<Movie>>(emptyList())
+    val recommendedMovies: StateFlow<List<Movie>> = _recommendedMovies.asStateFlow()
+
+    private val _movieGenreRows = MutableStateFlow<List<GenreGroup<Movie>>>(emptyList())
+    val movieGenreRows: StateFlow<List<GenreGroup<Movie>>> = _movieGenreRows.asStateFlow()
+
+    private val _seriesGenreRows = MutableStateFlow<List<GenreGroup<Series>>>(emptyList())
+    val seriesGenreRows: StateFlow<List<GenreGroup<Series>>> = _seriesGenreRows.asStateFlow()
+
+    /** The (profile, catalogue) the computed rows were last built for — the redundant-reload guard. */
+    private data class HomeFeedsKey(val profileId: Long, val movieCount: Int, val seriesCount: Int)
+
+    @Volatile private var loadedHomeFeeds: HomeFeedsKey? = null
+
+    /** Serialises [loadHomeFeeds] so two near-simultaneous calls (screen open + the profile emit in
+     *  `init`) can't both start the heavy scan — the second waits, sees the guard satisfied, returns.
+     *  MUST be declared before the `init` block below: `activeProfileId` is a StateFlow, so its
+     *  `collect` fires synchronously during construction, and Kotlin initialises properties top to
+     *  bottom — declared after `init`, this mutex would still be null when the first collect runs. */
+    private val homeFeedsMutex = Mutex()
+
+    init {
+        // The home feeds are per profile (Recommended) and per catalogue (the genre rows). Rebuild
+        // them when the active profile changes — and once at start. Routed through the guarded
+        // [loadHomeFeeds] so a profile switch triggers exactly one library scan, and re-opening the
+        // tab with the same profile and an unchanged catalogue triggers none. Reads an empty result
+        // until a VOD sync has populated the catalogue; [ensureVodLoaded] re-runs it once one has.
+        viewModelScope.launch {
+            settings.activeProfileId.collect { loadHomeFeeds() }
+        }
+    }
+
+    /**
+     * Recomputes the computed home rows (Recommended + by-genre) from a SINGLE scan of the library.
+     *
+     * The reactive rows (recently-added, continue-watching) keep themselves current, so this only
+     * covers the computed feeds. On a 20k-title library the old version was the lag: it read the
+     * whole movie table three times over (recommended + movie genres, plus a profile-change reload)
+     * and again on every tab re-open. Now [allMovies]/[allSeries] are read once and reused for the
+     * recommended row and every genre row, off the main thread, and a `(profile, movieCount,
+     * seriesCount)` guard skips the work entirely unless the profile changed or the catalogue grew —
+     * so re-opening Movies/Shows is free and a post-sync refresh still fills the rows in.
+     */
+    fun loadHomeFeeds() {
+        viewModelScope.launch {
+            homeFeedsMutex.withLock {
+                val profileId = settings.activeProfileId.value
+                val movieCount = runCatching { graph.catalogRepository.movieCount() }.getOrDefault(0)
+                val seriesCount = runCatching { graph.catalogRepository.seriesCount() }.getOrDefault(0)
+
+                // Already built for this profile and this exact catalogue? Then a tab re-open or a
+                // recomposition must not trigger another full-library scan. Only a profile change or
+                // a catalogue whose size moved gets past here.
+                val prev = loadedHomeFeeds
+                if (prev != null && prev.profileId == profileId &&
+                    prev.movieCount == movieCount && prev.seriesCount == seriesCount
+                ) return@withLock
+
+                // One scan of each library (repo switches to IO), reused across every computed row.
+                val allMovies = runCatching { graph.catalogRepository.allMovies() }.getOrDefault(emptyList())
+                val allSeries = runCatching { graph.catalogRepository.allSeries() }.getOrDefault(emptyList())
+
+                _recommendedMovies.value = runCatching {
+                    graph.catalogRepository.recommendedMoviesFrom(allMovies, profileId)
+                }.getOrDefault(emptyList())
+                _movieGenreRows.value = runCatching {
+                    graph.catalogRepository.moviesByGenreFrom(allMovies)
+                }.getOrDefault(emptyList())
+                _seriesGenreRows.value = runCatching {
+                    graph.catalogRepository.seriesByGenreFrom(allSeries)
+                }.getOrDefault(emptyList())
+
+                loadedHomeFeeds = HomeFeedsKey(profileId, movieCount, seriesCount)
+            }
+        }
+    }
+
     // Movies + series load on demand — the first time the user opens Movies or Shows — rather than
     // up front at login. A provider's 40,000-title VOD list is exactly what makes a first sync
     // crawl, and most sessions only ever watch live TV. Loaded once per app run.
@@ -720,21 +817,59 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
 
     @Volatile private var vodRequested = false
 
+    /** How long a fetched VOD catalogue is trusted before a warm launch re-syncs it. */
+    private val VOD_TTL_MILLIS = 12L * 60 * 60 * 1000  // 12 hours
+
     fun ensureVodLoaded() {
         if (vodRequested) return
         vodRequested = true
-        viewModelScope.launch {
-            _vodLoading.value = true
-            StatusBus.during("Loading movies & shows…") {
-                runCatching {
-                    val now = System.currentTimeMillis()
-                    for (source in graph.sourceRepository.enabled()) {
-                        graph.catalogRepository.syncVod(source, now)
-                    }
-                }
+        viewModelScope.launch { syncVodIfStale(force = false) }
+    }
+
+    /**
+     * Force a fresh download of the movies/series catalogue, ignoring the freshness cache. Wired
+     * to the pull-to-refresh / refresh action so the user always has a way to pull new titles in
+     * before the TTL lapses.
+     */
+    fun refreshVod() {
+        vodRequested = true
+        viewModelScope.launch { syncVodIfStale(force = true) }
+    }
+
+    private suspend fun syncVodIfStale(force: Boolean) {
+        val now = System.currentTimeMillis()
+
+        // Warm-launch fast path. The catalogue is persisted in Room, so once fetched there is no
+        // reason to re-download and re-upsert a 40k-title list on every launch - that was both the
+        // multi-minute loading banner and the bandwidth hog that starved the live preview into
+        // buffering. When we synced recently and already have rows, skip the network entirely and
+        // just (re)build the home shelves off what is stored.
+        if (!force) {
+            val haveCatalogue = runCatching {
+                graph.catalogRepository.movieCount() + graph.catalogRepository.seriesCount()
+            }.getOrDefault(0) > 0
+            val last = settings.vodSyncedAtMillis
+            val fresh = last > 0 && now - last < VOD_TTL_MILLIS
+            if (haveCatalogue && fresh) {
+                loadHomeFeeds()
+                return
             }
-            _vodLoading.value = false
         }
+
+        _vodLoading.value = true
+        val synced = StatusBus.during("Loading movies & shows…") {
+            runCatching {
+                for (source in graph.sourceRepository.enabled()) {
+                    graph.catalogRepository.syncVod(source, now)
+                }
+            }.isSuccess
+        }
+        _vodLoading.value = false
+        // Stamp the cache only when the fetch actually succeeded, so a failed sync retries on the
+        // next open instead of being remembered as fresh and leaving the user with no catalogue.
+        if (synced) settings.vodSyncedAtMillis = now
+        // The catalogue may have grown - recompute the computed home rows off the fresh data.
+        loadHomeFeeds()
     }
 
     // ---- VOD search (shared by the unified search screen) --------------------------------------
@@ -789,6 +924,43 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         kotlinx.coroutines.flow.flowOf(emptyList())
 
     suspend fun movieById(id: Long): Movie? = graph.catalogRepository.movie(id)
+
+    // ---- Detail screens -------------------------------------------------------------------------
+    // Thin wrappers over the repository's detail feeds. The screens drive them from `produceState`
+    // keyed on the id, so each detail instance owns its own state and a "More like this" hop to
+    // another title loads cleanly without two screens fighting over one shared StateFlow.
+
+    /** Loads a movie, lazily enriching backdrop/cast/genre on first open. See CatalogRepository.movieDetail. */
+    suspend fun movieDetail(id: Long): Movie? = graph.catalogRepository.movieDetail(id)
+
+    /** Loads a series, lazily enriching backdrop/cast/genre on first open. See CatalogRepository.seriesDetail. */
+    suspend fun seriesDetail(id: Long): Series? = graph.catalogRepository.seriesDetail(id)
+
+    /** "More like this" for the movie detail screen. */
+    suspend fun moreLikeThis(movie: Movie): List<Movie> = graph.catalogRepository.moreLikeThis(movie)
+
+    /** "More like this" for the series detail screen. */
+    suspend fun moreLikeThisSeries(series: Series): List<Series> =
+        graph.catalogRepository.moreLikeThisSeries(series)
+
+    /** Every library title (movies + series) featuring a person — the Person screen's grid. */
+    suspend fun titlesWithPerson(name: String): List<PersonTitle> =
+        graph.catalogRepository.titlesWithPerson(name)
+
+    /** The active profile's saved resume position for a movie/episode, or null — drives Resume vs Watch now. */
+    suspend fun resumePosition(mediaKey: String): PlaybackPosition? =
+        graph.playbackPositions.get(settings.activeProfileId.value, mediaKey)
+
+    /** Collapses quality variants of a movie list for a browse grid. See CatalogRepository.collapseVariants. */
+    fun collapseVariants(movies: List<Movie>): List<MovieVariantGroup> =
+        graph.catalogRepository.collapseVariants(movies)
+
+    /** Star / un-star a whole series. Wraps the series DAO through the shared database — no data-layer change. */
+    fun toggleSeriesFavourite(series: Series) {
+        viewModelScope.launch {
+            graph.database.series().setFavourite(series.id, !series.favourite)
+        }
+    }
 
     /** The user-agent to play a movie/episode with (per source). */
     suspend fun userAgentForSource(sourceId: Long): String =

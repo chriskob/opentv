@@ -33,7 +33,12 @@ class RecordingEngine(
 ) {
 
     /** Start recording [channel] now. [programme], when given, names and time-bounds the capture. */
-    suspend fun startChannel(channel: Channel, programme: Programme? = null, ruleId: Long? = null): Long {
+    suspend fun startChannel(
+        channel: Channel,
+        programme: Programme? = null,
+        ruleId: Long? = null,
+        profileId: Long = settings.activeProfileId.value,
+    ): Long {
         val source = sources.byId(channel.sourceId)
         val ua = source?.userAgent ?: Source.DEFAULT_USER_AGENT
         val now = System.currentTimeMillis()
@@ -56,6 +61,7 @@ class RecordingEngine(
             startedAtMillis = now,
             status = RecordingStatus.RECORDING,
             seriesRuleId = ruleId,
+            profileId = profileId,
         )
         val id = repo.insert(recording)
         RecordingService.start(appContext, id)
@@ -69,17 +75,27 @@ class RecordingEngine(
      * Record a specific programme: if it's already on, start capturing now (bounded to its end);
      * if it's in the future, book an exact alarm to start it at broadcast time.
      */
-    suspend fun recordProgramme(channel: Channel, programme: Programme, ruleId: Long? = null): Long {
+    suspend fun recordProgramme(
+        channel: Channel,
+        programme: Programme,
+        ruleId: Long? = null,
+        profileId: Long = settings.activeProfileId.value,
+    ): Long {
         val now = System.currentTimeMillis()
         return if (programme.startUtcMillis > now + LEAD_MILLIS) {
-            scheduleProgramme(channel, programme, ruleId)
+            scheduleProgramme(channel, programme, ruleId, profileId)
         } else {
-            startChannel(channel, programme, ruleId)
+            startChannel(channel, programme, ruleId, profileId)
         }
     }
 
     /** Book a future programme. Creates a SCHEDULED row and arms the alarm. */
-    suspend fun scheduleProgramme(channel: Channel, programme: Programme, ruleId: Long? = null): Long {
+    suspend fun scheduleProgramme(
+        channel: Channel,
+        programme: Programme,
+        ruleId: Long? = null,
+        profileId: Long = settings.activeProfileId.value,
+    ): Long {
         // De-dup: a series rule that re-scans mustn't book the same airing twice.
         if (ruleId != null && repo.alreadyBooked(ruleId, channel.id, programme.startUtcMillis)) return -1L
 
@@ -102,10 +118,50 @@ class RecordingEngine(
             scheduledEndMillis = programme.endUtcMillis,
             status = RecordingStatus.SCHEDULED,
             seriesRuleId = ruleId,
+            profileId = profileId,
         )
         val id = repo.insert(recording)
         RecordingScheduler.set(appContext, id, programme.startUtcMillis)
         return id
+    }
+
+    /**
+     * Re-attempt a recording the user tapped Retry on. A booking still in the future is simply
+     * re-armed; one whose window is on now (or unbounded) starts capturing immediately for what is
+     * left; one whose window is entirely in the past cannot be recovered — the broadcast is gone —
+     * and stays failed. Returns true when a retry was actually kicked off.
+     */
+    suspend fun retry(recording: Recording): Boolean {
+        val now = System.currentTimeMillis()
+        val start = recording.scheduledStartMillis
+        val end = recording.scheduledEndMillis
+        return when {
+            start > now + LEAD_MILLIS -> {
+                repo.setStatus(recording.id, RecordingStatus.SCHEDULED, null)
+                RecordingScheduler.set(appContext, recording.id, start)
+                true
+            }
+            end == 0L || end > now -> {
+                repo.setStatus(recording.id, RecordingStatus.SCHEDULED, null)
+                RecordingService.start(appContext, recording.id)
+                true
+            }
+            else -> false
+        }
+    }
+
+    /**
+     * Re-arm the exact alarm for every scheduled recording. Alarms are dropped on a force-stop or
+     * app update — which the boot receiver does not see — so [app.opentv.OpenTvApp] calls this on
+     * each launch. A booking whose start slipped past while the app was dead fires almost at once;
+     * re-setting an existing alarm is idempotent, so this is safe to run every time.
+     */
+    suspend fun rearmScheduled() {
+        val now = System.currentTimeMillis()
+        for (rec in repo.scheduled()) {
+            val at = if (rec.scheduledStartMillis <= now) now + 1_000L else rec.scheduledStartMillis
+            RecordingScheduler.set(appContext, rec.id, at)
+        }
     }
 
     /** Cancel a scheduled recording: disarm the alarm and drop the row. */

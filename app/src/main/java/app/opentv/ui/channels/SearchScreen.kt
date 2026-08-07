@@ -52,6 +52,7 @@ import app.opentv.data.model.Channel
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
 import app.opentv.data.model.shownName
+import app.opentv.data.parser.displayTitle
 import app.opentv.ui.ChannelsViewModel
 import app.opentv.ui.VodViewModel
 import coil.compose.AsyncImage
@@ -132,7 +133,7 @@ fun SearchScreen(
                         if (movieResults.isNotEmpty()) {
                             item { SectionHeader(stringResource(R.string.nav_movies)) }
                             items(movieResults, key = { "m${it.id}" }) { movie ->
-                                VodResultRow(movie.name, movie.posterUrl, movie.year?.toString()) {
+                                VodResultRow(movie.displayTitle, movie.posterUrl, movie.year?.toString()) {
                                     onPlayMovie(movie)
                                 }
                             }
@@ -140,7 +141,7 @@ fun SearchScreen(
                         if (seriesResults.isNotEmpty()) {
                             item { SectionHeader(stringResource(R.string.nav_shows)) }
                             items(seriesResults, key = { "s${it.id}" }) { show ->
-                                VodResultRow(show.name, show.posterUrl, show.year?.toString()) {
+                                VodResultRow(show.displayTitle, show.posterUrl, show.year?.toString()) {
                                     onOpenSeries(show)
                                 }
                             }

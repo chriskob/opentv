@@ -260,6 +260,21 @@ data class Movie(
     val streamUrl: String,
     val favourite: Boolean = false,
     val addedMillis: Long = 0,
+    /**
+     * Richer metadata for the Netflix-style detail/home surfaces, pulled from the provider's own
+     * Xtream `get_vod_info`. All nullable and best-effort: a panel that omits them just yields a
+     * plainer card. Populated opportunistically at sync time and back-filled on first detail open.
+     */
+    /** Wide 16:9 art for hero/detail headers (Xtream `backdrop_path`, first URL of the array). */
+    val backdropUrl: String? = null,
+    /** Billed cast, provider-formatted (usually comma-separated). */
+    val cast: String? = null,
+    /** Genre(s) as the provider labels them; often comma- or pipe-separated (see repo grouping). */
+    val genre: String? = null,
+    /** TMDB id, stored only — resolved/used by a later agent. Coerced to String (panels vary). */
+    val tmdbId: String? = null,
+    /** Director(s), provider-formatted. Movies only. */
+    val director: String? = null,
 )
 
 @Entity(
@@ -281,6 +296,19 @@ data class Series(
     val plot: String?,
     val favourite: Boolean = false,
     val addedMillis: Long = 0,
+    /**
+     * Richer metadata for the Netflix-style detail/home surfaces, from the provider's own Xtream
+     * `get_series_info`. Nullable and best-effort. Series carry no `director` (episodes vary), so
+     * that field is on [Movie] only. Populated at sync time and back-filled on first detail open.
+     */
+    /** Wide 16:9 art for hero/detail headers (Xtream `backdrop_path`, first URL of the array). */
+    val backdropUrl: String? = null,
+    /** Billed cast, provider-formatted (usually comma-separated). */
+    val cast: String? = null,
+    /** Genre(s) as the provider labels them; often comma- or pipe-separated (see repo grouping). */
+    val genre: String? = null,
+    /** TMDB id, stored only — resolved/used by a later agent. Coerced to String (panels vary). */
+    val tmdbId: String? = null,
 )
 
 @Entity(
@@ -369,7 +397,10 @@ data class Recording(
     /** Programme title when tied to a guide entry; otherwise the channel name. */
     val title: String,
     val description: String? = null,
-    /** Absolute path of the captured `.ts` file on this device. */
+    /**
+     * Where the captured `.ts` lives: an absolute filesystem path (internal), an `smb://` locator
+     * (NAS), or a `content://` document URI (USB via SAF). [RecordingStorage] reads it back.
+     */
     val filePath: String,
     /** The stream URL being captured. */
     val streamUrl: String,
@@ -384,6 +415,8 @@ data class Recording(
     val sizeBytes: Long = 0,
     /** Set when this recording was booked by a series-link rule (for de-dup). */
     val seriesRuleId: Long? = null,
+    /** The viewing profile this recording is for (null = unassigned / everyone). */
+    val profileId: Long? = null,
     /** Human-readable reason when [status] is FAILED. */
     val error: String? = null,
 ) {

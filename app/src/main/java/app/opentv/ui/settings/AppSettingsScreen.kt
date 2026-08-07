@@ -26,13 +26,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -194,7 +197,55 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
+        TmdbKeySection(settings)
+
+        Spacer(Modifier.height(16.dp))
+
         SleepTimerSection()
+    }
+}
+
+/**
+ * Optional TMDB back-fill. The user pastes their own free key; it is stored on-device in
+ * [AppSettings] and used to fill posters/backdrops/synopsis/cast a provider left blank. Empty by
+ * default, so the feature is off until opted into.
+ */
+@Composable
+private fun TmdbKeySection(settings: AppSettings) {
+    val context = LocalContext.current
+    val savedKey by settings.tmdbApiKey.collectAsState()
+    var field by remember(savedKey) { mutableStateOf(savedKey) }
+    val savedMessage = stringResource(R.string.settings_tmdb_saved)
+
+    SettingsSection(stringResource(R.string.settings_section_metadata)) {
+        Text(
+            stringResource(R.string.settings_tmdb_note),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = field,
+            onValueChange = { field = it.trim() },
+            singleLine = true,
+            label = { Text(stringResource(R.string.settings_tmdb_key_label)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = {
+                settings.setTmdbApiKey(field)
+                Toast.makeText(context, savedMessage, Toast.LENGTH_SHORT).show()
+            }) { Text(stringResource(R.string.settings_tmdb_save)) }
+            if (savedKey.isNotBlank()) {
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    stringResource(R.string.settings_tmdb_active),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
     }
 }
 

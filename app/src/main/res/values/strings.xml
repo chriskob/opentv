@@ -98,6 +98,8 @@
     <string name="rec_channel_name">Recording</string>
     <string name="rec_channel_desc">Shown while OpenTV is recording</string>
     <string name="rec_error_nothing">Nothing was recorded</string>
+    <string name="rec_error_usb_no_folder">No USB folder chosen. Open Recording settings and pick a folder on your drive.</string>
+    <string name="rec_error_usb_unavailable">USB drive not available. Re-plug the drive and choose the folder again in Recording settings.</string>
     <string name="rec_background_prompt_title">Keep recording when you leave?</string>
     <string name="rec_background_prompt_body">Android may stop this recording when the screen sleeps or you leave OpenTV. Allow OpenTV to ignore battery optimisation so recordings keep running, even in standby — the way a set-top box does.</string>
     <string name="rec_background_prompt_allow">Allow</string>
@@ -216,11 +218,21 @@
     <string name="provider_stream_format_hint">HLS is the default. If channels won\'t play, try MPEG-TS — some providers only offer .ts.</string>
 
     <!-- ============================ Recording settings ============================ -->
-    <string name="recset_desc">Choose where recordings are saved. Internal keeps them on this device; NAS saves them to a shared folder on your network and still plays them back here.</string>
+    <string name="recset_desc">Choose where recordings are saved. Internal keeps them on this device; a USB drive stores them on removable storage; NAS saves them to a shared folder on your network. All still play back here.</string>
     <string name="recset_save_to">Save recordings to</string>
     <string name="recset_internal_label">This device (internal storage)</string>
     <string name="recset_smb_label">NAS / network share (SMB)</string>
     <string name="recset_smb_subtitle">Synology, a shared Windows folder, or any SMB2/3 server</string>
+    <string name="recset_usb_label">USB / external drive</string>
+    <string name="recset_usb_subtitle">A drive plugged into this device (formatted exFAT or FAT32)</string>
+    <string name="recset_usb_section">USB folder</string>
+    <string name="recset_usb_choose">Choose folder</string>
+    <string name="recset_usb_change">Change folder</string>
+    <string name="recset_usb_saving_to">Saving to: %1$s</string>
+    <string name="recset_usb_none">No folder chosen yet</string>
+    <string name="recset_usb_hint">Plug in a USB drive or external storage formatted exFAT or FAT32, then choose a folder on it. Recordings are written straight to that folder and still play back and delete inside OpenTV.</string>
+    <string name="recset_usb_need_folder">Choose a folder before saving to USB.</string>
+    <string name="recset_usb_no_picker">No folder picker is available on this device.</string>
     <string name="recset_nas_connection">NAS connection</string>
     <string name="recset_field_server">Server (IP or hostname)</string>
     <string name="recset_field_share">Share name</string>
@@ -379,10 +391,38 @@
     <string name="vod_search_hint">Search movies &amp; shows</string>
     <string name="vod_continue_watching">Continue watching</string>
     <string name="vod_large_provider_note">A large provider can take a couple of minutes the first time.</string>
+    <string name="vod_recommended">Recommended for you</string>
+    <string name="vod_recently_added">Recently added</string>
+    <string name="vod_categories">Categories</string>
+    <string name="vod_watch_now">Watch now</string>
+    <string name="vod_resume">Resume</string>
+    <string name="vod_more_like_this">More like this</string>
+    <string name="vod_synopsis">Synopsis</string>
+    <string name="vod_cast">Cast</string>
+    <string name="vod_director">Director</string>
+    <string name="vod_season">Season %1$d</string>
+    <string name="vod_detail_loading">Loading…</string>
+    <string name="vod_person_title">With %1$s</string>
+    <string name="vod_person_empty">Nothing else with %1$s in your library.</string>
 
     <!-- ============================ Reminder notification ============================ -->
     <string name="reminder_starting_now">Starting now on %1$s</string>
     <string name="reminder_watch_now">Watch now</string>
     <string name="reminder_channel_name">Programme reminders</string>
     <string name="reminder_channel_desc">Alerts you when a programme you set a reminder for begins</string>
+    <!-- Recordings: sections, scheduling detail, retry, profile -->
+    <string name="rec_section_scheduled">Scheduled</string>
+    <string name="rec_section_recorded">Recorded</string>
+    <string name="rec_status_scheduled_at">Records %1$s · %2$s</string>
+    <string name="rec_status_failed_at">Failed · %1$s · %2$s</string>
+    <string name="rec_for_profile">For %1$s</string>
+    <string name="rec_retry">Retry</string>
+
+    <!-- Metadata / TMDB back-fill -->
+    <string name="settings_section_metadata">Metadata</string>
+    <string name="settings_tmdb_note">Paste your own free TMDB API key to fill in missing posters, backdrops, cast and synopses on Movies &amp; Shows. It stays on this device.</string>
+    <string name="settings_tmdb_key_label">TMDB API key</string>
+    <string name="settings_tmdb_save">Save key</string>
+    <string name="settings_tmdb_saved">TMDB key saved</string>
+    <string name="settings_tmdb_active">Active</string>
 </resources>

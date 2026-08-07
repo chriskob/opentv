@@ -89,7 +89,7 @@ fun MainScreen(
     hasSources: Boolean,
     isSyncing: Boolean,
     onPlayChannel: (Channel) -> Unit,
-    onPlayMovie: (Movie) -> Unit,
+    onOpenMovie: (Movie) -> Unit,
     onOpenSeries: (Series) -> Unit,
     onResume: (mediaKey: String, url: String, title: String) -> Unit,
     onAddSource: () -> Unit,
@@ -161,7 +161,7 @@ fun MainScreen(
                     onPlayCatchup = onPlayCatchup,
                 )
                 Tab.MOVIES -> MoviesScreen(
-                    onPlayMovie = onPlayMovie,
+                    onOpenMovie = onOpenMovie,
                     onResume = onResume,
                     onOpenSearch = onOpenSearch,
                     hasSources = hasSources,

@@ -86,6 +86,7 @@ object ServiceLocator {
                 movieDao = database.movies(),
                 seriesDao = database.series(),
                 episodeDao = database.episodes(),
+                positionDao = database.positions(),
                 api = xtreamApi,
                 http = httpClient,
                 settings = settings,

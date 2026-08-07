@@ -435,6 +435,65 @@ interface MovieDao {
     @Query("SELECT * FROM movies WHERE name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
     fun search(query: String, limit: Int = 200): Flow<List<Movie>>
 
+    /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
+    @Query("SELECT * FROM movies ORDER BY addedMillis DESC LIMIT :limit")
+    fun observeRecentlyAdded(limit: Int): Flow<List<Movie>>
+
+    /**
+     * Every movie, newest first — the working set for the Kotlin-side feeds (by-genre grouping,
+     * genre-affinity recommendations, more-like-this). One pass over a few thousand rows is cheap;
+     * per-genre `LIKE` queries would multiply round-trips and risk substring false positives.
+     */
+    @Query("SELECT * FROM movies ORDER BY addedMillis DESC")
+    suspend fun all(): List<Movie>
+
+    /** How many movies are on disk. A cheap COUNT the home feeds use to tell "the library grew"
+     *  from "same as last time" without loading every row (see VodViewModel.loadHomeFeeds). */
+    @Query("SELECT COUNT(*) FROM movies")
+    suspend fun count(): Int
+
+    /**
+     * Fallback for More-Like-This when a movie has no genre to match on: other titles from the same
+     * source (and category, when it has one), best-rated first. Never returns the movie itself.
+     */
+    @Query(
+        """
+        SELECT * FROM movies
+        WHERE sourceId = :sourceId AND id != :excludeId
+          AND (:categoryId IS NULL OR categoryId = :categoryId)
+        ORDER BY rating DESC, addedMillis DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun similarByCategory(sourceId: Long, categoryId: String?, excludeId: Long, limit: Int): List<Movie>
+
+    /**
+     * Movies a person is billed in — the Plex-style "click an actor, see everything with them".
+     * A substring `LIKE` over the comma-separated `cast` string: cheap and correct enough for a few
+     * thousand VOD rows, where a full credits table would be over-engineering. Blank/absent cast is
+     * excluded so an empty name never matches every row. Best-rated, then newest, first.
+     */
+    @Query(
+        """
+        SELECT * FROM movies
+        WHERE `cast` IS NOT NULL AND `cast` != '' AND `cast` LIKE '%' || :name || '%'
+        ORDER BY rating DESC, addedMillis DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun moviesWithActor(name: String, limit: Int): List<Movie>
+
+    /** Movies a person directed. See [moviesWithActor]; same shape over the `director` field. */
+    @Query(
+        """
+        SELECT * FROM movies
+        WHERE director IS NOT NULL AND director != '' AND director LIKE '%' || :name || '%'
+        ORDER BY rating DESC, addedMillis DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun moviesByDirector(name: String, limit: Int): List<Movie>
+
     @Query("SELECT * FROM movies WHERE id = :id")
     suspend fun byId(id: Long): Movie?
 
@@ -472,6 +531,42 @@ interface SeriesDao {
 
     @Query("SELECT * FROM series WHERE name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
     fun search(query: String, limit: Int = 200): Flow<List<Series>>
+
+    /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
+    @Query("SELECT * FROM series ORDER BY addedMillis DESC LIMIT :limit")
+    fun observeRecentlyAdded(limit: Int): Flow<List<Series>>
+
+    /** Every series, newest first — working set for the Kotlin-side by-genre / more-like-this feeds. */
+    @Query("SELECT * FROM series ORDER BY addedMillis DESC")
+    suspend fun all(): List<Series>
+
+    /** How many series are on disk — the cheap "did the library grow" check for the home feeds. */
+    @Query("SELECT COUNT(*) FROM series")
+    suspend fun count(): Int
+
+    /** Fallback for More-Like-This when a series has no genre: same source/category, best-rated first. */
+    @Query(
+        """
+        SELECT * FROM series
+        WHERE sourceId = :sourceId AND id != :excludeId
+          AND (:categoryId IS NULL OR categoryId = :categoryId)
+        ORDER BY rating DESC, addedMillis DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun similarByCategory(sourceId: Long, categoryId: String?, excludeId: Long, limit: Int): List<Series>
+
+    /** Series a person is billed in — the show half of "click an actor, see everything". See
+     *  [MovieDao.moviesWithActor]. */
+    @Query(
+        """
+        SELECT * FROM series
+        WHERE `cast` IS NOT NULL AND `cast` != '' AND `cast` LIKE '%' || :name || '%'
+        ORDER BY rating DESC, addedMillis DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun seriesWithActor(name: String, limit: Int): List<Series>
 
     @Query("SELECT * FROM series WHERE id = :id")
     suspend fun byId(id: Long): Series?
@@ -524,6 +619,10 @@ interface PlaybackPositionDao {
 
     @Query("SELECT * FROM playback_positions")
     suspend fun all(): List<PlaybackPosition>
+
+    /** One profile's whole watch history — the input to genre-affinity recommendations. */
+    @Query("SELECT * FROM playback_positions WHERE profileId = :profileId")
+    suspend fun forProfile(profileId: Long): List<PlaybackPosition>
 
     @Upsert
     suspend fun upsert(position: PlaybackPosition)
@@ -604,6 +703,10 @@ interface RecordingDao {
 
     @Query("UPDATE recordings SET sizeBytes = :bytes WHERE id = :id")
     suspend fun setSize(id: Long, bytes: Long)
+
+    /** Repoint a row at its real locator — used when a USB (SAF) capture learns its content:// URI. */
+    @Query("UPDATE recordings SET filePath = :filePath WHERE id = :id")
+    suspend fun setFilePath(id: Long, filePath: String)
 
     @Query(
         "UPDATE recordings SET status = :status, startedAtMillis = :startedAt WHERE id = :id"

@@ -11,6 +11,7 @@ import app.opentv.data.db.CategoryDao
 import app.opentv.data.db.ChannelDao
 import app.opentv.data.db.EpisodeDao
 import app.opentv.data.db.MovieDao
+import app.opentv.data.db.PlaybackPositionDao
 import app.opentv.data.db.SeriesDao
 import app.opentv.data.db.SourceDao
 import app.opentv.data.model.Category
@@ -24,6 +25,8 @@ import app.opentv.data.model.SourceKind
 import app.opentv.data.model.StreamKind
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.parser.M3uParser
+import app.opentv.data.parser.VodTitleCleaner
+import app.opentv.data.remote.TmdbClient
 import app.opentv.data.remote.XtreamApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +48,65 @@ internal fun distinctByQuality(channels: List<app.opentv.data.model.Channel>): L
     return channels.filter { seen.add("${it.qualityRank}|${it.qualityLabel.lowercase()}") }
 }
 
+/** A home/detail row: a genre label and the titles under it. Generic so movies and series share it. */
+data class GenreGroup<T>(val genre: String, val items: List<T>)
+
+/**
+ * One library entry a person is credited in — a movie or a series — for the Person screen's mixed
+ * poster grid. A thin wrapper so the screen can render one grid yet still route a click to the right
+ * detail page (movie vs series) without a second lookup.
+ */
+sealed interface PersonTitle {
+    data class MovieItem(val movie: Movie) : PersonTitle
+    data class SeriesItem(val series: Series) : PersonTitle
+}
+
+/** One quality variant of a film, with the quality parsed from its name by [ChannelNameNormalizer]. */
+data class MovieVariant(val movie: Movie, val qualityLabel: String, val qualityRank: Int)
+
+/** One logical film with its switchable quality tiers, best first — the VOD analogue of a channel group. */
+data class MovieVariantGroup(
+    /** Best-quality variant: what a row shows and plays by default. */
+    val primary: Movie,
+    /** Every variant (including [primary]), best quality first. */
+    val variants: List<MovieVariant>,
+) {
+    val hasMultipleQualities: Boolean get() = variants.size > 1
+}
+
+/** A standalone 4-digit release year (19xx/20xx) as it appears inside a VOD title. */
+private val VOD_YEAR = Regex("""\b(19|20)\d{2}\b""")
+
+/**
+ * Collapses obvious quality variants of the same film — "The Godfather 1972 HD" and
+ * "The Godfather 4K" — into one entry with switchable tiers, the VOD analogue of a channel's
+ * quality group. Pure and in-memory: movies carry no stored groupKey, so the key is computed here
+ * from the normalised, year-stripped name plus the year (the field, else the one embedded in the
+ * name). Group order follows first appearance; variants within a group are best-quality first.
+ *
+ * It folds only genuine quality variants: edition tokens [ChannelNameNormalizer] does not know
+ * (IMAX, EXTENDED, 3D) stay in the name and keep those cuts separate — intended. Two same-named
+ * films that both lack any year will merge, an accepted edge for a best-effort collapse.
+ */
+internal fun collapseMovieVariants(movies: List<Movie>): List<MovieVariantGroup> {
+    val groups = LinkedHashMap<String, MutableList<MovieVariant>>()
+    for (movie in movies) {
+        val embeddedYear = VOD_YEAR.find(movie.name)?.value?.toIntOrNull()
+        val bareName = VOD_YEAR.replace(movie.name, " ")
+        val normalized = ChannelNameNormalizer.normalize(bareName)
+        val year = movie.year ?: embeddedYear
+        val key = normalized.groupKey + "|" + (year?.toString() ?: "")
+        groups.getOrPut(key) { mutableListOf() }
+            .add(MovieVariant(movie, normalized.qualityLabel, normalized.qualityRank))
+    }
+    return groups.values.map { variants ->
+        val ordered = variants.sortedWith(
+            compareByDescending<MovieVariant> { it.qualityRank }.thenBy { it.movie.name },
+        )
+        MovieVariantGroup(primary = ordered.first().movie, variants = ordered)
+    }
+}
+
 /**
  * Channels, movies and series.
  *
@@ -59,10 +121,14 @@ class CatalogRepository(
     private val movieDao: MovieDao,
     private val seriesDao: SeriesDao,
     private val episodeDao: EpisodeDao,
+    private val positionDao: PlaybackPositionDao,
     private val api: XtreamApi,
     private val http: OkHttpClient,
     private val settings: AppSettings,
 ) {
+
+    /** TMDB back-fill for VOD detail pages, gated on a user-supplied key. See [TmdbClient]. */
+    private val tmdb = TmdbClient(http, settings)
 
     sealed interface SyncResult {
         data class Success(
@@ -123,6 +189,358 @@ class CatalogRepository(
     suspend fun episodeByStreamUrl(url: String): Episode? = episodeDao.byStreamUrl(url)
 
     suspend fun series(id: Long): app.opentv.data.model.Series? = seriesDao.byId(id)
+
+    // ---- Netflix-style home feeds ---------------------------------------------------------------
+    // All local: derived from the catalogue already on disk plus the active profile's watch history.
+    // The plain catalogue rows (recently added) are Flows so they fill in live as a VOD sync lands;
+    // the computed rows (recommended, by-genre, more-like-this) are one-shot suspend reads, cheap
+    // enough to recompute on screen open over a few thousand titles (one in-memory pass each — a
+    // per-genre LIKE query would multiply round-trips and match substrings). A later UI agent wraps
+    // these into home rows and detail screens.
+
+    /** "Recently Added" movies, newest first. Reactive. */
+    fun recentlyAddedMovies(limit: Int = 30): Flow<List<Movie>> = movieDao.observeRecentlyAdded(limit)
+
+    /** "Recently Added" series, newest first. Reactive. */
+    fun recentlyAddedSeries(limit: Int = 30): Flow<List<Series>> = seriesDao.observeRecentlyAdded(limit)
+
+    /** Every movie, newest first — for a caller that wants to build its own groupings. */
+    suspend fun allMovies(): List<Movie> = withContext(Dispatchers.IO) { movieDao.all() }
+
+    /** Every series, newest first. */
+    suspend fun allSeries(): List<Series> = withContext(Dispatchers.IO) { seriesDao.all() }
+
+    /** How many movies / series are on disk — a cheap COUNT the home screen uses to tell "the
+     *  library grew" from "unchanged since last open" without loading every row. */
+    suspend fun movieCount(): Int = withContext(Dispatchers.IO) { movieDao.count() }
+    suspend fun seriesCount(): Int = withContext(Dispatchers.IO) { seriesDao.count() }
+
+    /**
+     * Movies grouped by genre for the by-genre home rows: the [maxGenres] biggest genres, each with
+     * up to [perGenre] titles (newest first). A movie appears under every genre it lists — provider
+     * genre strings are frequently multi-valued ("Action, Thriller" / "Action|Thriller"), so they
+     * are split on comma and pipe (see [splitGenres]).
+     */
+    suspend fun moviesByGenre(maxGenres: Int = 12, perGenre: Int = 30): List<GenreGroup<Movie>> =
+        withContext(Dispatchers.IO) { groupByGenre(movieDao.all(), Movie::genre, maxGenres, perGenre) }
+
+    /** Series grouped by genre for the by-genre home rows. See [moviesByGenre]. */
+    suspend fun seriesByGenre(maxGenres: Int = 12, perGenre: Int = 30): List<GenreGroup<Series>> =
+        withContext(Dispatchers.IO) { groupByGenre(seriesDao.all(), Series::genre, maxGenres, perGenre) }
+
+    /**
+     * Movies grouped by genre from an ALREADY-LOADED list — the single-scan path the home screen
+     * uses. [VodViewModel.loadHomeFeeds] reads [allMovies] once and hands that one list to this, to
+     * [recommendedMoviesFrom], etc., so opening Movies scans the (20k-title) table once instead of
+     * once per row. Pure grouping, off the main thread. See [moviesByGenre] for the scanning variant.
+     */
+    suspend fun moviesByGenreFrom(all: List<Movie>, maxGenres: Int = 12, perGenre: Int = 30): List<GenreGroup<Movie>> =
+        withContext(Dispatchers.Default) { groupByGenre(all, Movie::genre, maxGenres, perGenre) }
+
+    /** Series grouped by genre from an already-loaded list — the single-scan path. See [moviesByGenreFrom]. */
+    suspend fun seriesByGenreFrom(all: List<Series>, maxGenres: Int = 12, perGenre: Int = 30): List<GenreGroup<Series>> =
+        withContext(Dispatchers.Default) { groupByGenre(all, Series::genre, maxGenres, perGenre) }
+
+    /**
+     * "Recommended for you" — a simple, explainable genre-affinity heuristic, no ML.
+     *
+     * Tallies the genres of the movies this profile has watched or resumed, then returns the
+     * highest-scoring UNWATCHED movies, where a movie's score is how many of its genres the profile
+     * favours (ties broken by rating, then recency). With no usable history — a fresh profile, or
+     * only watched movies that carry no genre — it falls back to top-rated, then recently-added.
+     */
+    suspend fun recommendedMovies(profileId: Long, limit: Int = 30): List<Movie> =
+        withContext(Dispatchers.IO) { recommendFrom(movieDao.all(), watchedMovieIds(profileId), limit) }
+
+    /**
+     * "Recommended for you" from an ALREADY-LOADED movie list — the single-scan path (see
+     * [recommendedMovies]). Only the profile's watch history is read from disk here; the movie
+     * library is the caller's [allMovies] list, shared with the genre rows so the home screen scans
+     * the (20k-title) table once for the whole home feed rather than once per row.
+     */
+    suspend fun recommendedMoviesFrom(all: List<Movie>, profileId: Long, limit: Int = 30): List<Movie> =
+        withContext(Dispatchers.IO) { recommendFrom(all, watchedMovieIds(profileId), limit) }
+
+    /** The movie ids this profile has watched or resumed — the input to the affinity heuristic. */
+    private suspend fun watchedMovieIds(profileId: Long): Set<Long> =
+        positionDao.forProfile(profileId).mapNotNull { movieIdFromMediaKey(it.mediaKey) }.toSet()
+
+    /** The pure genre-affinity ranking pass shared by [recommendedMovies] and [recommendedMoviesFrom]. */
+    private fun recommendFrom(all: List<Movie>, watchedMovieIds: Set<Long>, limit: Int): List<Movie> {
+        val byId = all.associateBy { it.id }
+
+        val affinity = HashMap<String, Int>()
+        for (id in watchedMovieIds) {
+            val watched = byId[id] ?: continue
+            for (genre in splitGenres(watched.genre)) affinity[genre] = (affinity[genre] ?: 0) + 1
+        }
+
+        val unwatched = all.filter { it.id !in watchedMovieIds }
+
+        fun topRatedFallback(): List<Movie> = unwatched
+            .sortedWith(compareByDescending<Movie> { it.rating ?: -1.0 }.thenByDescending { it.addedMillis })
+            .take(limit)
+
+        if (affinity.isEmpty()) return topRatedFallback()
+
+        val ranked = unwatched
+            .map { it to genreScore(it.genre, affinity) }
+            .filter { it.second > 0 }
+            .sortedWith(
+                compareByDescending<Pair<Movie, Int>> { it.second }
+                    .thenByDescending { it.first.rating ?: -1.0 }
+                    .thenByDescending { it.first.addedMillis },
+            )
+            .map { it.first }
+            .take(limit)
+
+        return ranked.ifEmpty { topRatedFallback() }
+    }
+
+    /**
+     * "More Like This" for a movie: other titles sharing a genre, most genres in common first,
+     * same-source titles preferred, the film itself excluded. Falls back to other titles in the
+     * same source/category when the movie has no genre metadata to match on.
+     */
+    suspend fun moreLikeThis(movie: Movie, limit: Int = 20): List<Movie> = withContext(Dispatchers.IO) {
+        val genres = splitGenres(movie.genre).toSet()
+        if (genres.isEmpty()) {
+            return@withContext movieDao.similarByCategory(movie.sourceId, movie.categoryId, movie.id, limit)
+        }
+        movieDao.all().asSequence()
+            .filter { it.id != movie.id }
+            .map { it to sharedGenreCount(it.genre, genres) }
+            .filter { it.second > 0 }
+            .sortedWith(
+                compareByDescending<Pair<Movie, Int>> { it.second }
+                    .thenByDescending { it.first.sourceId == movie.sourceId }
+                    .thenByDescending { it.first.rating ?: -1.0 },
+            )
+            .map { it.first }
+            .take(limit)
+            .toList()
+    }
+
+    // ---- Related by person (Plex-style "click an actor / director") ----------------------------
+
+    /** Movies a person is billed in, best-rated first. Blank query yields nothing. */
+    suspend fun moviesWithActor(name: String, limit: Int = 40): List<Movie> = withContext(Dispatchers.IO) {
+        name.trim().takeIf { it.isNotEmpty() }?.let { movieDao.moviesWithActor(it, limit) }.orEmpty()
+    }
+
+    /** Movies a person directed, best-rated first. */
+    suspend fun moviesByDirector(name: String, limit: Int = 40): List<Movie> = withContext(Dispatchers.IO) {
+        name.trim().takeIf { it.isNotEmpty() }?.let { movieDao.moviesByDirector(it, limit) }.orEmpty()
+    }
+
+    /** Series a person is billed in, best-rated first. */
+    suspend fun seriesWithActor(name: String, limit: Int = 40): List<Series> = withContext(Dispatchers.IO) {
+        name.trim().takeIf { it.isNotEmpty() }?.let { seriesDao.seriesWithActor(it, limit) }.orEmpty()
+    }
+
+    /**
+     * Everything in the library featuring a person — the data behind the Person screen. Merges movies
+     * they act in, movies they directed and series they act in, de-duplicating movies that credit the
+     * same person as both actor and director. Movies (best-rated first) lead, then series.
+     */
+    suspend fun titlesWithPerson(name: String, perKind: Int = 40): List<PersonTitle> =
+        withContext(Dispatchers.IO) {
+            val query = name.trim()
+            if (query.isEmpty()) return@withContext emptyList()
+
+            val movies = LinkedHashMap<Long, Movie>()
+            for (m in movieDao.moviesWithActor(query, perKind)) movies[m.id] = m
+            for (m in movieDao.moviesByDirector(query, perKind)) movies.putIfAbsent(m.id, m)
+
+            val orderedMovies = movies.values.sortedWith(
+                compareByDescending<Movie> { it.rating ?: -1.0 }.thenByDescending { it.addedMillis },
+            )
+            val series = seriesDao.seriesWithActor(query, perKind)
+
+            buildList(orderedMovies.size + series.size) {
+                orderedMovies.forEach { add(PersonTitle.MovieItem(it)) }
+                series.forEach { add(PersonTitle.SeriesItem(it)) }
+            }
+        }
+
+    /** "More Like This" for a series. See [moreLikeThis]. */
+    suspend fun moreLikeThisSeries(series: Series, limit: Int = 20): List<Series> = withContext(Dispatchers.IO) {
+        val genres = splitGenres(series.genre).toSet()
+        if (genres.isEmpty()) {
+            return@withContext seriesDao.similarByCategory(series.sourceId, series.categoryId, series.id, limit)
+        }
+        seriesDao.all().asSequence()
+            .filter { it.id != series.id }
+            .map { it to sharedGenreCount(it.genre, genres) }
+            .filter { it.second > 0 }
+            .sortedWith(
+                compareByDescending<Pair<Series, Int>> { it.second }
+                    .thenByDescending { it.first.sourceId == series.sourceId }
+                    .thenByDescending { it.first.rating ?: -1.0 },
+            )
+            .map { it.first }
+            .take(limit)
+            .toList()
+    }
+
+    /**
+     * Loads a movie and, if its detail fields are still bare, back-fills them from the provider's
+     * `get_vod_info` and persists the merged row before returning it. Safe to call whenever a detail
+     * screen opens: it runs off the main thread, only touches the network when something is missing,
+     * tolerates any failure (returning the row unchanged), and — because it copies the stored row —
+     * preserves the favourite flag. Non-Xtream sources are returned as-is.
+     */
+    suspend fun movieDetail(id: Long): Movie? = withContext(Dispatchers.IO) {
+        val movie = movieDao.byId(id) ?: return@withContext null
+        var result = movie
+        val source = sourceDao.byId(movie.sourceId)
+
+        // 1) Provider back-fill from get_vod_info, for a still-bare row on an Xtream source.
+        if (!result.isEnriched && source?.kind == SourceKind.XTREAM) {
+            val info = runCatching { api.movieInfo(source, result.streamId) }.getOrNull()
+            if (info != null) {
+                result = result.copy(
+                    backdropUrl = result.backdropUrl ?: info.backdropUrl,
+                    cast = result.cast ?: info.cast,
+                    director = result.director ?: info.director,
+                    genre = result.genre ?: info.genre,
+                    tmdbId = result.tmdbId ?: info.tmdbId,
+                    plot = result.plot ?: info.plot,
+                    rating = result.rating ?: info.rating,
+                    year = result.year ?: info.year,
+                    durationSeconds = result.durationSeconds ?: info.durationSeconds,
+                )
+            }
+        }
+
+        // 2) TMDB fallback for whatever the provider still left blank — only when the user set a
+        //    key, and only while a headline visual field is missing (so it stops re-fetching once
+        //    filled). This is the "match Plex" back-fill for posters, backdrops, synopsis and cast.
+        if (tmdb.isConfigured() && (result.backdropUrl == null || result.plot == null || result.cast == null)) {
+            val meta = runCatching {
+                tmdb.movieMeta(VodTitleCleaner.clean(result.name), result.year, result.tmdbId)
+            }.getOrNull()
+            if (meta != null) {
+                result = result.copy(
+                    posterUrl = result.posterUrl ?: meta.posterUrl,
+                    backdropUrl = result.backdropUrl ?: meta.backdropUrl,
+                    plot = result.plot ?: meta.overview,
+                    cast = result.cast ?: meta.cast,
+                    director = result.director ?: meta.director,
+                    genre = result.genre ?: meta.genre,
+                    tmdbId = result.tmdbId ?: meta.tmdbId,
+                    rating = result.rating ?: meta.rating,
+                    year = result.year ?: meta.year,
+                )
+            }
+        }
+
+        if (result != movie) movieDao.upsertAll(listOf(result))
+        result
+    }
+
+    /** Loads a series and lazily back-fills its detail fields from `get_series_info`. See [movieDetail]. */
+    suspend fun seriesDetail(id: Long): Series? = withContext(Dispatchers.IO) {
+        val series = seriesDao.byId(id) ?: return@withContext null
+        var result = series
+        val source = sourceDao.byId(series.sourceId)
+
+        // 1) Provider back-fill from get_series_info, for a still-bare row on an Xtream source.
+        if (!result.isEnriched && source?.kind == SourceKind.XTREAM) {
+            val info = runCatching { api.seriesInfo(source, result.seriesId) }.getOrNull()
+            if (info != null) {
+                result = result.copy(
+                    backdropUrl = result.backdropUrl ?: info.backdropUrl,
+                    cast = result.cast ?: info.cast,
+                    genre = result.genre ?: info.genre,
+                    tmdbId = result.tmdbId ?: info.tmdbId,
+                    plot = result.plot ?: info.plot,
+                    rating = result.rating ?: info.rating,
+                    year = result.year ?: info.year,
+                )
+            }
+        }
+
+        // 2) TMDB fallback for anything still missing (see [movieDetail]); TMDB has no director for TV.
+        if (tmdb.isConfigured() && (result.backdropUrl == null || result.plot == null || result.cast == null)) {
+            val meta = runCatching {
+                tmdb.seriesMeta(VodTitleCleaner.clean(result.name), result.year, result.tmdbId)
+            }.getOrNull()
+            if (meta != null) {
+                result = result.copy(
+                    posterUrl = result.posterUrl ?: meta.posterUrl,
+                    backdropUrl = result.backdropUrl ?: meta.backdropUrl,
+                    plot = result.plot ?: meta.overview,
+                    cast = result.cast ?: meta.cast,
+                    genre = result.genre ?: meta.genre,
+                    tmdbId = result.tmdbId ?: meta.tmdbId,
+                    rating = result.rating ?: meta.rating,
+                    year = result.year ?: meta.year,
+                )
+            }
+        }
+
+        if (result != series) seriesDao.upsertAll(listOf(result))
+        result
+    }
+
+    /**
+     * Collapses a list of movies (e.g. one category's titles) into logical films with switchable
+     * quality tiers — see [collapseMovieVariants]. Pure; hand it whatever list the UI is about to
+     * show. Kept here as the discoverable entry point for the VOD UI.
+     */
+    fun collapseVariants(movies: List<Movie>): List<MovieVariantGroup> = collapseMovieVariants(movies)
+
+    // -- feed helpers --
+
+    /** A movie counts as "already enriched" once any headline detail field is set, so [movieDetail]
+     *  re-fetches only truly-bare rows. A movie the provider has no metadata for re-fetches each open;
+     *  acceptable, and it self-limits the moment anything comes back. */
+    private val Movie.isEnriched: Boolean
+        get() = backdropUrl != null || cast != null || genre != null || director != null
+
+    private val Series.isEnriched: Boolean
+        get() = backdropUrl != null || cast != null || genre != null
+
+    /** Splits a provider genre string ("Action, Thriller" / "Action|Thriller") into clean genres. */
+    private fun splitGenres(raw: String?): List<String> =
+        raw?.split(',', '|')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.distinct()
+            .orEmpty()
+
+    private fun <T> groupByGenre(
+        items: List<T>,
+        genreOf: (T) -> String?,
+        maxGenres: Int,
+        perGenre: Int,
+    ): List<GenreGroup<T>> {
+        val buckets = LinkedHashMap<String, MutableList<T>>()
+        for (item in items) {
+            for (genre in splitGenres(genreOf(item))) {
+                buckets.getOrPut(genre) { mutableListOf() }.add(item)
+            }
+        }
+        return buckets.entries
+            .sortedByDescending { it.value.size }
+            .take(maxGenres)
+            .map { GenreGroup(it.key, it.value.take(perGenre)) }
+    }
+
+    /** How strongly a title matches a profile's genre affinity: sum of its genres' tallies. */
+    private fun genreScore(genre: String?, affinity: Map<String, Int>): Int =
+        splitGenres(genre).sumOf { affinity[it] ?: 0 }
+
+    /** How many of a title's genres are in the wanted set — the More-Like-This overlap. */
+    private fun sharedGenreCount(genre: String?, wanted: Set<String>): Int =
+        splitGenres(genre).count { it in wanted }
+
+    /** Extracts a movie's local id from a playback-position mediaKey ("movie:42" → 42). */
+    private fun movieIdFromMediaKey(mediaKey: String): Long? {
+        val parts = mediaKey.split(":", limit = 2)
+        return if (parts.size == 2 && parts[0] == "movie") parts[1].toLongOrNull() else null
+    }
 
     suspend fun setChannelFavourite(id: Long, favourite: Boolean) =
         channelDao.setFavourite(id, favourite)

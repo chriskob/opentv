@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.0
+
+- **Movies & Shows, redesigned.** A Plex-style layout with big artwork, cast & director, "more with
+  this cast" rows, and cleaned-up titles (no more "NF -" / "(KR)" junk). Optional: add your own free
+  TMDB key in Settings → Metadata and OpenTV fills in any posters, backdrops, cast or synopses your
+  provider left blank — the key stays on your device.
+- **No more stuck "Loading movies & shows".** The movies/series catalogue is cached, so it loads
+  instantly on later launches instead of re-downloading every time — and the live preview no longer
+  stutters while it loads.
+- **Record to a USB / external drive.** Settings → Recordings → USB, pick a folder on a plugged-in
+  drive, and recordings write straight there (no storage permission needed) and play back in-app.
+- **Recordings screen overhaul.** Scheduled recordings show *when* they'll record and sit in their
+  own "Scheduled" section; failed ones have a **Retry**; each is tagged to a profile; and bookings
+  re-arm on every launch so a force-stop or app update can't quietly drop them.
+
 ## 0.9.0
 
 - **Manage your channels from a phone or laptop.** A new "Manage on phone or laptop" screen in
