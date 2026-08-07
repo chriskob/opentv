@@ -38,7 +38,7 @@ keep it alive. That is the entire point.
 - **Recording (DVR)** — record to the box, a USB drive or your NAS (SMB); schedule from the
   guide; series-link a whole show; play back in-app with full seeking
 - **Catch-up / archive** where your provider offers it, plus **programme reminders**
-- **Movies and series** with resume and per-profile watch history
+- **Movies and series** - a cinematic layout with artwork, cast and director, "more with this cast" rows, and optional TMDB back-fill (bring your own free key, kept on-device); resume and per-profile watch history
 - **Favourites, categories, hide channels, search**, picture-in-picture, aspect control, and
   hand-off to an external player
 - **Free sync between your own devices** — favourites, watch history and NAS recordings, over
