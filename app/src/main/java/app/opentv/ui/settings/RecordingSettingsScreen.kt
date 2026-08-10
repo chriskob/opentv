@@ -7,7 +7,9 @@ package app.opentv.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,19 +24,27 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,6 +57,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import android.content.Intent
 import android.net.Uri
@@ -90,6 +102,13 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
     var usbLabel by remember { mutableStateOf(settings.usbFolderLabel.value) }
     var status by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
+
+    // Recording behaviour. These apply the moment they're changed so they hold whether the user
+    // leaves via Done or Save.
+    var padStart by remember { mutableStateOf(settings.recordPadStartMinutes.value) }
+    var padEnd by remember { mutableStateOf(settings.recordPadEndMinutes.value) }
+    var autoSwitch by remember { mutableStateOf(settings.recordAutoSwitch.value) }
+    var livePause by remember { mutableStateOf(settings.livePauseEnabled.value) }
 
     // The SAF folder picker. On a granted tree we take a persistable read/write permission so the
     // grant (and thus playback of what we record there) survives restarts, then remember the folder.
@@ -144,6 +163,34 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
         }
 
         Spacer(Modifier.height(20.dp))
+        SectionCard(stringResource(R.string.recset_behaviour_title)) {
+            StepperRow(
+                label = stringResource(R.string.recset_pad_start),
+                subtitle = stringResource(R.string.recset_pad_start_desc),
+                value = padStart,
+                unit = stringResource(R.string.recset_minutes_short),
+                min = 0, max = 30,
+            ) { padStart = it; settings.setRecordPadding(padStart, padEnd) }
+            StepperRow(
+                label = stringResource(R.string.recset_pad_end),
+                subtitle = stringResource(R.string.recset_pad_end_desc),
+                value = padEnd,
+                unit = stringResource(R.string.recset_minutes_short),
+                min = 0, max = 60,
+            ) { padEnd = it; settings.setRecordPadding(padStart, padEnd) }
+            ToggleRow(
+                label = stringResource(R.string.recset_autoswitch),
+                subtitle = stringResource(R.string.recset_autoswitch_desc),
+                checked = autoSwitch,
+            ) { autoSwitch = it; settings.setRecordAutoSwitch(it) }
+            ToggleRow(
+                label = stringResource(R.string.recset_livepause),
+                subtitle = stringResource(R.string.recset_livepause_desc),
+                checked = livePause,
+            ) { livePause = it; settings.setLivePauseEnabled(it) }
+        }
+
+        Spacer(Modifier.height(20.dp))
         SectionCard(stringResource(R.string.recset_save_to)) {
             TargetRow(
                 label = stringResource(R.string.recset_internal_label),
@@ -171,7 +218,7 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
                 Field(stringResource(R.string.recset_field_share), share, "video") { share = it }
                 Field(stringResource(R.string.recset_field_folder), folder, "OpenTV") { folder = it }
                 Field(stringResource(R.string.recset_field_username), user, "") { user = it }
-                Field(stringResource(R.string.recset_field_password), password, "") { password = it }
+                Field(stringResource(R.string.recset_field_password), password, "", isPassword = true) { password = it }
 
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -250,11 +297,127 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
             }
         }
 
+        if (target == AppSettings.RecordingTarget.INTERNAL) {
+            Spacer(Modifier.height(20.dp))
+            SectionCard(stringResource(R.string.recset_storage_title)) {
+                StorageInfo()
+            }
+        }
+
         Spacer(Modifier.height(20.dp))
         Button(
             enabled = target != AppSettings.RecordingTarget.USB || usbTree != null,
             onClick = { persist(); status = context.getString(R.string.recset_status_saved) },
         ) { Text(stringResource(R.string.common_save)) }
+    }
+}
+
+/** Used-by-recordings and free-space readout for the box's internal storage. */
+@Composable
+private fun StorageInfo() {
+    val context = LocalContext.current
+    var used by remember { mutableLongStateOf(-1L) }
+    var free by remember { mutableLongStateOf(-1L) }
+    var count by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        val (u, c, f) = withContext(Dispatchers.IO) {
+            val dir = RecordingStorage.internalDir(context)
+            val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
+            Triple(files.sumOf { it.length() }, files.size, dir.usableSpace)
+        }
+        used = u; count = c; free = f
+    }
+
+    if (used < 0) {
+        Text(stringResource(R.string.recset_storage_reading), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } else {
+        Text(
+            stringResource(R.string.recset_storage_used, formatBytes(used), count),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            stringResource(R.string.recset_storage_free, formatBytes(free)),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 MB"
+    val mb = bytes / (1024.0 * 1024.0)
+    return if (mb >= 1024) String.format("%.1f GB", mb / 1024.0) else String.format("%.0f MB", mb)
+}
+
+/** A label + subtitle with a Material switch on the right. */
+@Composable
+private fun ToggleRow(label: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/** A label + subtitle with a –/value/+ stepper on the right, clamped to [min]..[max]. */
+@Composable
+private fun StepperRow(
+    label: String,
+    subtitle: String,
+    value: Int,
+    unit: String,
+    min: Int,
+    max: Int,
+    onChange: (Int) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(12.dp))
+        StepButton(Icons.Filled.Remove, enabled = value > min) { onChange((value - 1).coerceAtLeast(min)) }
+        Text(
+            "$value $unit",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.widthIn(min = 64.dp).padding(horizontal = 8.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        StepButton(Icons.Filled.Add, enabled = value < max) { onChange((value + 1).coerceAtMost(max)) }
+    }
+}
+
+@Composable
+private fun StepButton(icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> MaterialTheme.colorScheme.primary
+        enabled -> MaterialTheme.colorScheme.surface
+        else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)
+    }
+    val fg = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .focusable()
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = if (enabled) fg else fg.copy(alpha = 0.4f))
     }
 }
 
@@ -387,13 +550,35 @@ private fun TargetRow(label: String, subtitle: String, selected: Boolean, onClic
 }
 
 @Composable
-private fun Field(label: String, value: String, placeholder: String, onChange: (String) -> Unit) {
+private fun Field(
+    label: String,
+    value: String,
+    placeholder: String,
+    isPassword: Boolean = false,
+    onChange: (String) -> Unit,
+) {
+    var revealed by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
         placeholder = { if (placeholder.isNotEmpty()) Text(placeholder) },
         singleLine = true,
+        // A recording password is a real credential (a NAS login) — don't paint it on a living-room
+        // screen. Masked by default, with an eye to reveal it if you need to check what you typed.
+        visualTransformation = if (isPassword && !revealed) PasswordVisualTransformation() else VisualTransformation.None,
+        trailingIcon = if (!isPassword) null else {
+            {
+                IconButton(onClick = { revealed = !revealed }) {
+                    Icon(
+                        if (revealed) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = stringResource(
+                            if (revealed) R.string.recset_pw_hide else R.string.recset_pw_show,
+                        ),
+                    )
+                }
+            }
+        },
         modifier = Modifier.fillMaxWidth(),
     )
 }

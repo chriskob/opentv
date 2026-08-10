@@ -88,10 +88,14 @@ fun GuideGrid(
     // Returns true if it handled the key (rail was hidden, so consume it); false to let normal
     // left-navigation carry focus into the already-visible rail.
     onExitLeftFromChannel: () -> Boolean = { false },
+    dayOffset: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
     val now = System.currentTimeMillis()
+    // Jumping to another day resets the horizontal scroll to that day's start; a within-day time
+    // drift (dayOffset unchanged) leaves the user's scroll position untouched.
+    androidx.compose.runtime.LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
 
     Column(modifier.fillMaxSize()) {
         // No pager buttons: the programme blocks are d-pad focusable, so moving right along a row
@@ -116,6 +120,162 @@ fun GuideGrid(
                     onExitLeft = onExitLeftFromChannel,
                 )
             }
+        }
+    }
+}
+
+/**
+ * The live channels as a plain vertical list instead of the time-grid — one channel per row with
+ * its logo, name, and now/next line. This is the "list mode instead of tiles" some users prefer on
+ * a busy line-up. It keeps the exact same focus/key contract as [GuideGrid] so [HomeScreen] can
+ * swap between the two with nothing else changing: focus follows the d-pad (updating the preview),
+ * OK opens the channel menu, and LEFT from a row asks the host to reopen the category rail.
+ */
+@Composable
+fun ChannelList(
+    rows: List<ChannelsViewModel.Row>,
+    selectedKey: Any?,
+    onSelectRow: (ChannelsViewModel.Row) -> Unit,
+    onFocusRow: (ChannelsViewModel.Row) -> Unit,
+    onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
+    onExitLeftFromChannel: () -> Boolean = { false },
+    modifier: Modifier = Modifier,
+) {
+    val now = System.currentTimeMillis()
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        items(rows, key = { it.key }) { row ->
+            ChannelListRow(
+                row = row,
+                nowMillis = now,
+                isSelected = row.key == selectedKey,
+                onSelect = { onSelectRow(row) },
+                onFocus = { onFocusRow(row) },
+                onToggleFavourite = { onToggleFavourite(row) },
+                onExitLeft = onExitLeftFromChannel,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChannelListRow(
+    row: ChannelsViewModel.Row,
+    nowMillis: Long,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onFocus: () -> Unit,
+    onToggleFavourite: () -> Unit,
+    onExitLeft: () -> Boolean,
+) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surface,
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                else Modifier,
+            )
+            // LEFT from a row reopens the collapsed rail, exactly like the grid's channel column.
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) onExitLeft() else false
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocus()
+            }
+            .clickable(onClick = onSelect)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        row.primary.number?.let { num ->
+            Text(
+                "$num",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.width(30.dp),
+            )
+        }
+        AsyncImage(
+            model = row.primary.logoUrl,
+            contentDescription = null,
+            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    row.primary.shownName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (row.variants.size > 1) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.guide_qualities_count, row.variants.size),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                    )
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            val nowProg = row.now
+            Text(
+                text = nowProg?.let { "${clockFormat.format(Date(it.startUtcMillis))}  ${it.title}" }
+                    ?: stringResource(R.string.guide_no_info),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (nowProg != null) {
+                Spacer(Modifier.height(6.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(nowProg.progressAt(nowMillis).coerceIn(0f, 1f))
+                            .height(3.dp)
+                            .background(MaterialTheme.colorScheme.primary),
+                    )
+                }
+            }
+            row.next?.let { next ->
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    stringResource(R.string.guide_next_prefix, clockFormat.format(Date(next.startUtcMillis)), next.title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        IconButton(onClick = onToggleFavourite, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                contentDescription = if (row.primary.favourite) stringResource(R.string.common_remove_favourite)
+                else stringResource(R.string.common_favourite),
+                tint = if (row.primary.favourite) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -366,7 +526,7 @@ private fun widthFor(fromMillis: Long, toMillis: Long): Dp {
 
 // A weak TV box will happily scroll this; the whole strip is ~12h * 60 * 4dp = ~2880dp wide.
 private const val MINUTE_DP = 4f
-private const val HOURS_IN_WINDOW = 12
+private const val HOURS_IN_WINDOW = 24
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
 private val CHANNEL_COLUMN = 220.dp
 private val ROW_HEIGHT = 64.dp

@@ -56,6 +56,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
+import app.opentv.data.model.Source
 import app.opentv.data.parser.displayTitle
 import app.opentv.ui.VodViewModel
 import coil.compose.AsyncImage
@@ -82,6 +83,8 @@ fun MoviesScreen(
     val genreRows by viewModel.movieGenreRows.collectAsState()
     val categoryMovies by viewModel.movies.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
+    val sources by viewModel.sources.collectAsState()
+    val selectedSource by viewModel.selectedVodSource.collectAsState()
 
     // Pull the movie library the first time this tab is opened, not at login; refresh the computed
     // home rows (recommended, by-genre) on open too — cheap, and covers a library already on disk.
@@ -98,6 +101,14 @@ fun MoviesScreen(
 
     Column(Modifier.fillMaxSize()) {
         SearchAffordance(onOpenSearch)
+        if (sources.size > 1) {
+            ProviderChips(
+                sources = sources,
+                selected = selectedSource,
+                onSelectAll = { browseCategory = null; viewModel.selectVodSource(null) },
+                onSelectSource = { id -> browseCategory = null; viewModel.selectVodSource(id) },
+            )
+        }
         CategoryChips(
             entries = categories.map { it.id to it.name },
             selected = browseCategory,
@@ -156,6 +167,8 @@ fun SeriesScreen(
     val genreRows by viewModel.seriesGenreRows.collectAsState()
     val categorySeries by viewModel.series.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
+    val sources by viewModel.sources.collectAsState()
+    val selectedSource by viewModel.selectedVodSource.collectAsState()
 
     LaunchedEffect(Unit) {
         if (hasSources) viewModel.ensureVodLoaded()
@@ -168,6 +181,14 @@ fun SeriesScreen(
 
     Column(Modifier.fillMaxSize()) {
         SearchAffordance(onOpenSearch)
+        if (sources.size > 1) {
+            ProviderChips(
+                sources = sources,
+                selected = selectedSource,
+                onSelectAll = { browseCategory = null; viewModel.selectVodSource(null) },
+                onSelectSource = { id -> browseCategory = null; viewModel.selectVodSource(id) },
+            )
+        }
         CategoryChips(
             entries = categories.map { it.id to it.name },
             selected = browseCategory,
@@ -516,6 +537,39 @@ private fun CategoryChips(
         item(key = "all") { Chip(stringResource(R.string.vod_all), selected == null, onSelectHome) }
         items(entries, key = { it.first }) { (id, name) ->
             Chip(name, selected == id) { onSelectCategory(id) }
+        }
+    }
+}
+
+/**
+ * A provider filter above the category chips, shown only when more than one source is configured —
+ * pick a provider to browse just its Movies/Shows categories, or "All sources" to fold them.
+ */
+@Composable
+private fun ProviderChips(
+    sources: List<Source>,
+    selected: Long?,
+    onSelectAll: () -> Unit,
+    onSelectSource: (Long) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        item(key = "plabel") {
+            Text(
+                stringResource(R.string.channels_manager_source_header),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 4.dp),
+            )
+        }
+        item(key = "pall") {
+            Chip(stringResource(R.string.channels_manager_all_sources), selected == null, onSelectAll)
+        }
+        items(sources, key = { it.id }) { source ->
+            Chip(source.name, selected == source.id) { onSelectSource(source.id) }
         }
     }
 }

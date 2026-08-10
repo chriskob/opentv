@@ -6,9 +6,12 @@
 package app.opentv.pairing
 
 import android.util.Log
+import app.opentv.core.AppSettings
 import app.opentv.data.model.Channel
 import app.opentv.data.model.shownName
 import app.opentv.data.repo.CatalogRepository
+import app.opentv.recording.SmbClient
+import app.opentv.recording.SmbConfig
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStream
@@ -56,6 +59,7 @@ import kotlinx.serialization.json.Json
 class ManagerServer(
     private val scope: CoroutineScope,
     private val catalog: CatalogRepository,
+    private val settings: AppSettings,
 ) {
 
     data class Session(
@@ -210,6 +214,13 @@ class ManagerServer(
 
             method == "POST" && path == "/reorder" -> handleReorder(output, body)
 
+            method == "GET" && path == "/recording" ->
+                output.write(PairingHttp.httpResponse("200 OK", "application/json", recordingJson()))
+
+            method == "POST" && path == "/recording" -> handleRecording(output, body)
+
+            method == "POST" && path == "/recording/test" -> handleRecordingTest(output, body)
+
             else -> output.write(PairingHttp.httpResponse("404 Not Found", "text/plain", "Not found."))
         }
     }
@@ -291,6 +302,59 @@ class ManagerServer(
         output.write(
             PairingHttp.httpResponse("200 OK", "application/json", json.encodeToString(OkDto.serializer(), OkDto())),
         )
+    }
+
+    /** `GET /recording` → the current recording target and NAS settings. The password is never sent
+     *  back to the browser — only whether one is set. */
+    private fun recordingJson(): String = json.encodeToString(
+        RecordingDto.serializer(),
+        RecordingDto(
+            target = settings.recordingTarget.value.name,
+            host = settings.smbHost.value,
+            share = settings.smbShare.value,
+            folder = settings.smbFolder.value,
+            user = settings.smbUser.value,
+            hasPassword = settings.smbPassword.value.isNotEmpty(),
+        ),
+    )
+
+    /** `POST /recording {host,share,folder,user,password?}` → save the NAS details and switch
+     *  recordings to it. A blank/absent password keeps the one already stored, so the fields can be
+     *  filled without re-typing an existing password. */
+    private fun handleRecording(output: OutputStream, body: String) {
+        val req = runCatching { json.decodeFromString(RecordingReq.serializer(), body) }.getOrNull()
+        if (req == null) {
+            output.write(PairingHttp.httpResponse("400 Bad Request", "text/plain", "Bad request."))
+            return
+        }
+        val password = req.password?.takeIf { it.isNotEmpty() } ?: settings.smbPassword.value
+        settings.setSmbConfig(req.host.trim(), req.share.trim(), req.folder.trim(), req.user.trim(), password)
+        settings.setRecordingTarget(AppSettings.RecordingTarget.SMB)
+        writeOk(output)
+    }
+
+    /** `POST /recording/test {host,share,folder,user,password?}` → actually open the SMB share and
+     *  report whether it worked. Blank fields fall back to what's stored, so the browser can test
+     *  the saved settings without re-sending the password. Runs on this handler thread (already off
+     *  the main thread), which is where a blocking network probe belongs. */
+    private fun handleRecordingTest(output: OutputStream, body: String) {
+        val req = runCatching { json.decodeFromString(RecordingReq.serializer(), body) }.getOrNull()
+            ?: RecordingReq()
+        val cfg = SmbConfig(
+            host = req.host.trim().ifBlank { settings.smbHost.value },
+            share = req.share.trim().ifBlank { settings.smbShare.value },
+            folder = req.folder.trim().ifBlank { settings.smbFolder.value },
+            username = req.user.trim().ifBlank { settings.smbUser.value },
+            password = req.password?.takeIf { it.isNotEmpty() } ?: settings.smbPassword.value,
+        )
+        val result = runCatching { SmbClient.test(cfg) }
+        val dto = if (result.isSuccess) {
+            TestDto(ok = true, error = null)
+        } else {
+            val e = result.exceptionOrNull()
+            TestDto(ok = false, error = e?.message ?: e?.javaClass?.simpleName ?: "Connection failed")
+        }
+        output.write(PairingHttp.httpResponse("200 OK", "application/json", json.encodeToString(TestDto.serializer(), dto)))
     }
 
     private fun Channel.toDto() = ChannelDto(
@@ -377,3 +441,22 @@ class ManagerServer(
 )
 
 @Serializable private data class ReorderReq(val ids: List<Long>)
+
+@Serializable private data class RecordingDto(
+    val target: String,
+    val host: String,
+    val share: String,
+    val folder: String,
+    val user: String,
+    val hasPassword: Boolean,
+)
+
+@Serializable private data class RecordingReq(
+    val host: String = "",
+    val share: String = "",
+    val folder: String = "",
+    val user: String = "",
+    val password: String? = null,
+)
+
+@Serializable private data class TestDto(val ok: Boolean, val error: String?)

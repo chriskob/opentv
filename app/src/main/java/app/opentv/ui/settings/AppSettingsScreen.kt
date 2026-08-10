@@ -59,6 +59,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { AppSettings.get(context) }
     val themeMode by settings.themeMode.collectAsState()
+    val channelLayout by settings.channelLayout.collectAsState()
     val previewVideo by settings.guidePreviewVideo.collectAsState()
     val previewSound by settings.guidePreviewSound.collectAsState()
     val captions by settings.subtitlesEnabled.collectAsState()
@@ -147,11 +148,9 @@ fun AppSettingsScreen(onBack: () -> Unit) {
             ThemeOption(stringResource(R.string.settings_language_system), language.isBlank()) {
                 changeLanguage(context, settings, "")
             }
-            ThemeOption(stringResource(R.string.settings_language_english), language == "en") {
-                changeLanguage(context, settings, "en")
-            }
-            ThemeOption(stringResource(R.string.settings_language_spanish), language == "es") {
-                changeLanguage(context, settings, "es")
+            // Each language is listed in its own name (endonym), the convention users expect.
+            OpenTvLanguages.forEach { (tag, name) ->
+                ThemeOption(name, language == tag) { changeLanguage(context, settings, tag) }
             }
             Spacer(Modifier.height(4.dp))
             Text(
@@ -164,6 +163,19 @@ fun AppSettingsScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(16.dp))
 
         SettingsSection(stringResource(R.string.settings_section_guide)) {
+            Text(
+                stringResource(R.string.settings_channel_layout_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            ThemeOption(
+                stringResource(R.string.settings_channel_layout_grid),
+                channelLayout == AppSettings.ChannelLayout.GRID,
+            ) { settings.setChannelLayout(AppSettings.ChannelLayout.GRID) }
+            ThemeOption(
+                stringResource(R.string.settings_channel_layout_list),
+                channelLayout == AppSettings.ChannelLayout.LIST,
+            ) { settings.setChannelLayout(AppSettings.ChannelLayout.LIST) }
+            Spacer(Modifier.height(8.dp))
             ToggleRow(
                 title = stringResource(R.string.settings_live_preview_title),
                 subtitle = stringResource(R.string.settings_live_preview_subtitle),
@@ -248,6 +260,45 @@ private fun TmdbKeySection(settings: AppSettings) {
         }
     }
 }
+
+/**
+ * The UI languages OpenTV ships translations for, each labelled with its own endonym. The tag is
+ * both the stored language tag and the resource qualifier (values-<tag>), so adding a language is
+ * just a new `values-xx/strings.xml` plus a line here.
+ */
+private val OpenTvLanguages: List<Pair<String, String>> = listOf(
+    "en" to "English",
+    "es" to "Español",
+    "fr" to "Français",
+    "de" to "Deutsch",
+    "it" to "Italiano",
+    "pt" to "Português",
+    "nl" to "Nederlands",
+    "pl" to "Polski",
+    "ru" to "Русский",
+    "tr" to "Türkçe",
+    "ar" to "العربية",
+    "zh" to "中文",
+    "ja" to "日本語",
+    "ko" to "한국어",
+    "hi" to "हिन्दी",
+    "sv" to "Svenska",
+    "da" to "Dansk",
+    "fi" to "Suomi",
+    "nb" to "Norsk",
+    "cs" to "Čeština",
+    "el" to "Ελληνικά",
+    "ro" to "Română",
+    "hu" to "Magyar",
+    "uk" to "Українська",
+    "id" to "Bahasa Indonesia",
+    "th" to "ไทย",
+    "vi" to "Tiếng Việt",
+    "bg" to "Български",
+    "sk" to "Slovenčina",
+    "hr" to "Hrvatski",
+    "fa" to "فارسی",
+)
 
 /** Persist the chosen language and recreate the activity so the whole UI reloads translated. */
 private fun changeLanguage(context: Context, settings: AppSettings, tag: String) {

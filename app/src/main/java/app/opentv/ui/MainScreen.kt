@@ -8,6 +8,7 @@ package app.opentv.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import app.opentv.R
+import app.opentv.core.findActivity
 import app.opentv.core.StatusBus
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -37,7 +38,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -130,9 +133,28 @@ fun MainScreen(
     }
 
     // Back from a non-home tab returns to the home tab rather than dropping out of the app.
-    // Only from the home tab itself does Back fall through to the system (leave / go to the
-    // launcher), so you're never one stray press away from closing the app while browsing.
     BackHandler(enabled = tab != homeTab) { tab = homeTab }
+
+    // On the home tab, Back would otherwise drop straight out to the TV launcher — one stray press
+    // and you've closed the app. Ask first. (A dialog or panel open in a child screen swallows Back
+    // before this, so this only fires at the true root.)
+    var showExit by remember { mutableStateOf(false) }
+    BackHandler(enabled = tab == homeTab) { showExit = true }
+    if (showExit) {
+        AlertDialog(
+            onDismissRequest = { showExit = false },
+            title = { Text(stringResource(R.string.exit_title)) },
+            text = { Text(stringResource(R.string.exit_body)) },
+            confirmButton = {
+                TextButton(onClick = { showExit = false; context.findActivity()?.finish() }) {
+                    Text(stringResource(R.string.exit_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExit = false }) { Text(stringResource(R.string.exit_cancel)) }
+            },
+        )
+    }
 
     // The rail sits beside the content and pushes it, rather than floating over it. The Live TV
     // screen has its own category rail down its left edge, and an overlaying menu would land on top

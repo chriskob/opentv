@@ -70,6 +70,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.ui.window.Dialog
 import app.opentv.R
+import app.opentv.core.AppSettings
 import app.opentv.core.ServiceLocator
 import app.opentv.core.findActivity
 import app.opentv.core.requestIgnoreBatteryOptimizations
@@ -120,12 +121,17 @@ fun HomeScreen(
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
     val previewEnabled by settings.guidePreviewVideo.collectAsState()
+    val channelLayout by settings.channelLayout.collectAsState()
 
     val categories by viewModel.visibleCategoryGroups.collectAsState()
     val rows by viewModel.rows.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
+    val sources by viewModel.sources.collectAsState()
+    val selectedSource by viewModel.selectedSource.collectAsState()
     val windowStart by viewModel.windowStartMillis.collectAsState()
+    // How many days ahead the guide is scrolled (0 = live now). Drives the ‹ Today › nav.
+    val guideDayOffset by viewModel.guideDayOffset.collectAsState()
     // Tri-state: null = still checking the catalogue, true = channels on disk, false = confirmed
     // empty. Drives the choice between the loading spinner and a recoverable error below.
     val channelsPresent by viewModel.channelsPresent.collectAsState()
@@ -212,6 +218,21 @@ fun HomeScreen(
         }
     }
 
+    // Watching a live channel while a recording runs opens a second stream on the same line — which
+    // cuts the recording and can get a single-connection account banned. So every jump to full-screen
+    // live is funnelled through [requestLive]: with a recording active it asks first.
+    var pendingLiveChannel by remember { mutableStateOf<Channel?>(null) }
+    fun startLive(channel: Channel) {
+        PlaybackQueue.items = rows.map {
+            PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
+        }
+        previewController.stop()
+        onPlayChannel(channel)
+    }
+    fun requestLive(channel: Channel) {
+        if (activeRecordings.isNotEmpty()) pendingLiveChannel = channel else startLive(channel)
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     var screenResumed by remember { mutableStateOf(true) }
     DisposableEffect(lifecycleOwner) {
@@ -248,9 +269,12 @@ fun HomeScreen(
 
     // Tune the preview to the highlighted channel, so it follows the d-pad as you browse — the
     // standard TV-guide behaviour. Debounced, so holding a direction doesn't re-tune every step.
-    LaunchedEffect(highlightedRow?.key, previewEnabled, screenResumed) {
+    // While a recording is running the preview is silenced entirely: on a single-connection line a
+    // muted preview is still a second stream, which fights the recording and risks a provider ban.
+    val recordingActive = activeRecordings.isNotEmpty()
+    LaunchedEffect(highlightedRow?.key, previewEnabled, screenResumed, recordingActive) {
         val row = highlightedRow
-        if (!previewEnabled || !screenResumed || row == null) {
+        if (!previewEnabled || !screenResumed || recordingActive || row == null) {
             previewController.stop()
             return@LaunchedEffect
         }
@@ -292,6 +316,33 @@ fun HomeScreen(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
+                // Provider switch — only when there's more than one source. Lets the user keep
+                // several playlists and flip between them (cardiodoc's request); "All" folds them.
+                if (sources.size > 1) {
+                    item(key = "provider-header") {
+                        Text(
+                            stringResource(R.string.channels_manager_source_header),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
+                    item(key = "provider-all") {
+                        RailEntry(
+                            label = stringResource(R.string.channels_manager_all_sources),
+                            selected = selectedSource == null,
+                            onClick = { viewModel.selectSource(null) },
+                        )
+                    }
+                    items(sources, key = { "src-${it.id}" }) { source ->
+                        RailEntry(
+                            label = source.name,
+                            selected = selectedSource == source.id,
+                            onClick = { viewModel.selectSource(source.id) },
+                        )
+                    }
+                    item(key = "provider-divider") { Spacer(Modifier.height(10.dp)) }
+                }
                 // The currently-selected entry carries the rail's FocusRequester, so reopening the
                 // rail (d-pad LEFT in the guide) lands focus straight back on the current category.
                 item {
@@ -342,13 +393,7 @@ fun HomeScreen(
                 }
             } else {
                 // Hand the player the list you're browsing so it can zap channel up/down.
-                fun goFullscreen(channel: Channel) {
-                    PlaybackQueue.items = rows.map {
-                        PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
-                    }
-                    previewController.stop()
-                    onPlayChannel(channel)
-                }
+                fun goFullscreen(channel: Channel) = requestLive(channel)
 
                 // Record the highlighted channel's now-programme (bounded to its end), or stop it
                 // if it's already recording. Powers the preview pane's quick record dot.
@@ -365,47 +410,70 @@ fun HomeScreen(
                     }
                 }
 
+                val dayLabel = when (guideDayOffset) {
+                    0 -> stringResource(R.string.guide_today)
+                    1 -> stringResource(R.string.guide_tomorrow)
+                    else -> remember(windowStart) {
+                        SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date(windowStart))
+                    }
+                }
                 GuidePreview(
                     row = highlightedRow,
                     nowMillis = nowMillis,
                     onWatch = { highlightedRow?.let { goFullscreen(it.primary) } },
                     onRefresh = onRefresh,
                     onAddSource = onAddSource,
-                    previewPlayer = if (previewEnabled) previewController.player else null,
+                    previewPlayer = if (previewEnabled && !recordingActive) previewController.player else null,
                     isRecording = highlightedRow?.primary?.id?.let { id ->
                         activeRecordings.any { it.channelId == id }
                     } == true,
                     onRecord = { recordSelected() },
+                    dayLabel = dayLabel,
+                    canGoPrevDay = guideDayOffset > 0,
+                    onPrevDay = { viewModel.nudgeGuideDay(-1) },
+                    onNextDay = { viewModel.nudgeGuideDay(1) },
                 )
-                GuideGrid(
-                    rows = rows,
-                    windowStartMillis = windowStart,
-                    selectedKey = highlightedRow?.key,
-                    // OK on a channel opens its menu: Watch, Record now, Schedule a later show,
-                    // Record series. The preview already follows the highlight as you browse.
-                    onSelectRow = { row -> channelMenu = row },
-                    onFocusRow = {
-                        highlightedRow = it
-                        // Focus is now in the guide's channel column — collapse the rail so the
-                        // grid gets full width. onExitLeftFromChannel brings it back on LEFT.
-                        railExpanded = false
-                    },
-                    onProgramme = { row, programme -> recordTarget = row to programme },
-                    onToggleFavourite = { viewModel.toggleFavourite(it) },
-                    onExitLeftFromChannel = {
-                        // Fires only from the leftmost (channel) column. Rail hidden: reveal it,
-                        // move focus onto the selected category, and consume the key. Rail already
-                        // shown: return false so normal left-navigation walks focus into the rail.
-                        if (!railExpanded) {
-                            railExpanded = true
-                            pendingRailFocus = true
-                            true
-                        } else {
-                            false
-                        }
-                    },
-                    modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
-                )
+                // Shared by both layouts: focus follows the highlight and collapses the rail; LEFT
+                // from the leftmost element reopens the rail (consumed only when it was hidden).
+                val onFocusChannel: (ChannelsViewModel.Row) -> Unit = {
+                    highlightedRow = it
+                    railExpanded = false
+                }
+                val onExitLeftChannel: () -> Boolean = {
+                    if (!railExpanded) {
+                        railExpanded = true
+                        pendingRailFocus = true
+                        true
+                    } else {
+                        false
+                    }
+                }
+                if (channelLayout == AppSettings.ChannelLayout.LIST) {
+                    ChannelList(
+                        rows = rows,
+                        selectedKey = highlightedRow?.key,
+                        onSelectRow = { row -> channelMenu = row },
+                        onFocusRow = onFocusChannel,
+                        onToggleFavourite = { viewModel.toggleFavourite(it) },
+                        onExitLeftFromChannel = onExitLeftChannel,
+                        modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
+                    )
+                } else {
+                    GuideGrid(
+                        rows = rows,
+                        windowStartMillis = windowStart,
+                        dayOffset = guideDayOffset,
+                        selectedKey = highlightedRow?.key,
+                        // OK on a channel opens its menu: Watch, Record now, Schedule a later show,
+                        // Record series. The preview already follows the highlight as you browse.
+                        onSelectRow = { row -> channelMenu = row },
+                        onFocusRow = onFocusChannel,
+                        onProgramme = { row, programme -> recordTarget = row to programme },
+                        onToggleFavourite = { viewModel.toggleFavourite(it) },
+                        onExitLeftFromChannel = onExitLeftChannel,
+                        modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
+                    )
+                }
             }
         }
     }
@@ -413,6 +481,21 @@ fun HomeScreen(
     // The record menu for a programme picked in the grid.
     recordTarget?.let { (targetRow, programme) ->
         val channel = targetRow.primary
+        // Which quality actually gets recorded. Defaults to the best variant, but the user can pick
+        // (Sky Q's "record HD or SD"). Each variant channel carries its own stream URL, so the pick
+        // flows straight through to the capture. Only surfaced when the channel has more than one.
+        var chosenVariant by remember(targetRow.primary.id) { mutableStateOf(targetRow.primary) }
+        // Which provider records it, when this channel exists on more than one. Recording from a
+        // second provider's account is what lets you keep watching on the first — the only real way
+        // around a single-connection provider (something even TiviMate can't do).
+        var sourceOptions by remember(channel.id) { mutableStateOf<List<Channel>>(emptyList()) }
+        LaunchedEffect(channel.id) { sourceOptions = graph.catalogRepository.recordSourceOptions(channel) }
+        val multiSource = sourceOptions.size > 1
+        LaunchedEffect(sourceOptions) {
+            if (sourceOptions.size > 1) {
+                chosenVariant = sourceOptions.firstOrNull { it.sourceId == channel.sourceId } ?: sourceOptions.first()
+            }
+        }
         val liveNow = nowMillis in programme.startUtcMillis until programme.endUtcMillis
         val recordingThis = activeRecordings.firstOrNull { it.channelId == channel.id }
         Dialog(onDismissRequest = { recordTarget = null }) {
@@ -438,6 +521,44 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(16.dp))
 
+                if (multiSource) {
+                    // Record from which provider — keeps the other account free to watch on.
+                    Text(
+                        stringResource(R.string.rec_record_from),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        sourceOptions.forEach { opt ->
+                            QualityChip(
+                                label = sources.firstOrNull { it.id == opt.sourceId }?.name
+                                    ?: stringResource(R.string.rec_source_unknown),
+                                selected = opt.id == chosenVariant.id,
+                                onClick = { chosenVariant = opt },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                } else if (targetRow.variants.size > 1) {
+                    Text(
+                        stringResource(R.string.rec_quality_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        targetRow.variants.forEach { variant ->
+                            QualityChip(
+                                label = variant.qualityLabel.ifBlank { stringResource(R.string.rec_quality_sd) },
+                                selected = variant.id == chosenVariant.id,
+                                onClick = { chosenVariant = variant },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+
                 val isPast = programme.endUtcMillis <= nowMillis
                 when {
                     liveNow && recordingThis != null -> RecordActionRow(stringResource(R.string.rec_stop_recording), primary = true) {
@@ -446,7 +567,7 @@ fun HomeScreen(
                         recordTarget = null
                     }
                     liveNow -> RecordActionRow(stringResource(R.string.rec_record_now), primary = true) {
-                        recordScope.launch { graph.recordingEngine.startChannel(channel, programme) }
+                        recordScope.launch { graph.recordingEngine.startChannel(chosenVariant, programme) }
                         Toast.makeText(context, context.getString(R.string.rec_recording_channel, channel.shownName), Toast.LENGTH_LONG).show()
                         promptBackgroundIfNeeded()
                         recordTarget = null
@@ -471,7 +592,7 @@ fun HomeScreen(
                         recordTarget = null
                     }
                     !isPast -> RecordActionRow(stringResource(R.string.rec_schedule_recording), primary = true) {
-                        recordScope.launch { graph.recordingEngine.scheduleProgramme(channel, programme) }
+                        recordScope.launch { graph.recordingEngine.scheduleProgramme(chosenVariant, programme) }
                         Toast.makeText(context, context.getString(R.string.rec_scheduled_title, programme.title), Toast.LENGTH_LONG).show()
                         promptBackgroundIfNeeded()
                         recordTarget = null
@@ -515,18 +636,48 @@ fun HomeScreen(
                     recordScope.launch {
                         graph.recordingEngine.recordSeries(channel, programme, targetRow.programmes)
                     }
+                    Toast.makeText(context, context.getString(R.string.rec_series_recording_set, programme.title), Toast.LENGTH_LONG).show()
                     promptBackgroundIfNeeded()
                     recordTarget = null
                 }
                 RecordActionRow(stringResource(R.string.guide_watch_channel)) {
                     recordTarget = null
-                    PlaybackQueue.items = rows.map {
-                        PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
-                    }
-                    previewController.stop()
-                    onPlayChannel(channel)
+                    requestLive(channel)
                 }
                 RecordActionRow(stringResource(R.string.common_cancel)) { recordTarget = null }
+            }
+        }
+    }
+
+    // Single-connection guard: confirm before opening a live stream that would fight a recording.
+    pendingLiveChannel?.let { liveChannel ->
+        val recTitle = activeRecordings.firstOrNull()?.title.orEmpty()
+        Dialog(onDismissRequest = { pendingLiveChannel = null }) {
+            Column(
+                Modifier
+                    .width(480.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(20.dp),
+            ) {
+                Text(
+                    stringResource(R.string.rec_live_warn_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.rec_live_warn_body, recTitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+                RecordActionRow(stringResource(R.string.rec_live_warn_watch)) {
+                    pendingLiveChannel = null
+                    activeRecordings.forEach { graph.recordingEngine.stop(it.id) }
+                    startLive(liveChannel)
+                }
+                RecordActionRow(stringResource(R.string.rec_live_warn_keep)) { pendingLiveChannel = null }
             }
         }
     }
@@ -571,11 +722,7 @@ fun HomeScreen(
                 ) {
                     RecordActionRow(stringResource(R.string.guide_watch)) {
                         channelMenu = null
-                        PlaybackQueue.items = rows.map {
-                            PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
-                        }
-                        previewController.stop()
-                        onPlayChannel(channel)
+                        requestLive(channel)
                     }
                     RecordActionRow(stringResource(R.string.guide_open_external)) {
                         channelMenu = null
@@ -706,6 +853,34 @@ private fun RecordActionRow(label: String, primary: Boolean = false, onClick: ()
             .background(bg)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
+    )
+}
+
+/** A small focusable quality pill (FHD / HD / SD…) for the record dialog's "record HD or SD" choice. */
+@Composable
+private fun QualityChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> MaterialTheme.colorScheme.primary
+        selected -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val fg = when {
+        focused -> MaterialTheme.colorScheme.onPrimary
+        selected -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        label,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        color = fg,
+        modifier = Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
     )
 }
 

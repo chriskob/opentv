@@ -76,33 +76,37 @@ class SmbDataSource(private val settings: AppSettings) : BaseDataSource(true) {
 }
 
 /**
- * Routes by URI scheme: `smb://` to [SmbDataSource], everything else (http, https, file, content)
- * to the normal source. Lets one player handle live streams, VOD, internal recordings and NAS
- * recordings without the caller caring which is which.
+ * Routes by URI scheme: each scheme in [bySchemes] (e.g. `smb://` for a NAS recording, `optvrec://`
+ * for one that's still being written) goes to its own source; everything else (http, https, file,
+ * content) to the normal source. Lets one player handle live streams, VOD, internal recordings,
+ * NAS recordings and in-progress captures without the caller caring which is which.
  */
 @OptIn(UnstableApi::class)
 class RoutingDataSourceFactory(
     private val default: DataSource.Factory,
-    private val smb: DataSource.Factory,
+    private val bySchemes: Map<String, DataSource.Factory>,
 ) : DataSource.Factory {
     override fun createDataSource(): DataSource =
-        RoutingDataSource(default.createDataSource(), smb.createDataSource())
+        RoutingDataSource(
+            default.createDataSource(),
+            bySchemes.mapValues { (_, factory) -> factory.createDataSource() },
+        )
 }
 
 @OptIn(UnstableApi::class)
 private class RoutingDataSource(
     private val default: DataSource,
-    private val smb: DataSource,
+    private val byScheme: Map<String, DataSource>,
 ) : DataSource {
     private var active: DataSource? = null
 
     override fun addTransferListener(transferListener: TransferListener) {
         default.addTransferListener(transferListener)
-        smb.addTransferListener(transferListener)
+        byScheme.values.forEach { it.addTransferListener(transferListener) }
     }
 
     override fun open(dataSpec: DataSpec): Long {
-        val source = if (dataSpec.uri.scheme.equals("smb", ignoreCase = true)) smb else default
+        val source = byScheme[dataSpec.uri.scheme?.lowercase().orEmpty()] ?: default
         active = source
         return source.open(dataSpec)
     }

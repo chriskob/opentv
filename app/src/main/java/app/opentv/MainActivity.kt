@@ -17,19 +17,39 @@ import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -51,6 +71,7 @@ import app.opentv.ui.settings.EpgSettingsScreen
 import app.opentv.ui.settings.ParentalControlsScreen
 import app.opentv.ui.settings.ProfilesScreen
 import app.opentv.ui.settings.ProvidersScreen
+import app.opentv.ui.settings.StremioAddonsScreen
 import app.opentv.ui.settings.RecordingSettingsScreen
 import app.opentv.ui.settings.SyncScreen
 import app.opentv.ui.settings.SettingsHubScreen
@@ -107,6 +128,10 @@ class MainActivity : ComponentActivity() {
     private fun handlePlayIntent(intent: Intent?) {
         val id = intent?.getLongExtra(EXTRA_PLAY_CHANNEL, 0L) ?: 0L
         if (id != 0L) app.opentv.core.PlayRequests.request(id)
+        val recId = intent?.getLongExtra(EXTRA_WATCH_RECORDING, 0L) ?: 0L
+        if (recId != 0L) {
+            app.opentv.core.RecordingSignals.requestWatch(recId, System.currentTimeMillis())
+        }
     }
 
     // ---- Picture-in-picture ------------------------------------------------------------------
@@ -151,6 +176,9 @@ class MainActivity : ComponentActivity() {
     companion object {
         /** A reminder notification carries the channel to tune to in this extra. */
         const val EXTRA_PLAY_CHANNEL = "opentv.play_channel"
+
+        /** A recording auto-switch notification carries the recording to watch in this extra. */
+        const val EXTRA_WATCH_RECORDING = "opentv.watch_recording"
     }
 }
 
@@ -163,6 +191,7 @@ object Routes {
     const val APP_SETTINGS = "app-settings"
     const val SETTINGS_HUB = "settings"
     const val PROVIDERS = "providers"
+    const val ADDONS = "addons"
     const val CHANNELS = "channels"
     const val WEB_MANAGER = "web-manager"
     const val PROFILES = "profiles"
@@ -238,6 +267,37 @@ private fun OpenTvApp(isTelevision: Boolean) {
         }
     }
 
+    // Auto-switch: a scheduled recording started, so move the live view onto the recording file
+    // (single-connection safe). Ignore a stale request a long-backgrounded app only now sees.
+    val watchRequest by app.opentv.core.RecordingSignals.watch.collectAsState()
+    LaunchedEffect(watchRequest) {
+        val req = watchRequest ?: return@LaunchedEffect
+        app.opentv.core.RecordingSignals.consumeWatch()
+        val fresh = System.currentTimeMillis() - req.requestedAtMillis < 10 * 60_000L
+        if (req.recordingId != 0L && fresh) {
+            val rec = runCatching {
+                ServiceLocator.get(bootContext).recordingRepository.byId(req.recordingId)
+            }.getOrNull() ?: return@LaunchedEffect
+            runCatching {
+                navController.navigate(
+                    Routes.vodPlayer(
+                        key = "rec:${rec.id}",
+                        url = "optvrec://${rec.id}",
+                        title = rec.title,
+                        ua = rec.userAgent,
+                    ),
+                ) {
+                    launchSingleTop = true
+                    // Drop the live channel we switched away from off the back stack, so Back from
+                    // the recording returns to the home screen — never to a live stream. On a single-
+                    // connection line, returning to live TV while still recording would open a second
+                    // stream and risk the provider banning the account.
+                    popUpTo(Routes.PLAYER) { inclusive = true }
+                }
+            }
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         NavHost(navController = navController, startDestination = start) {
             composable(Routes.ADD_SOURCE) {
@@ -276,8 +336,16 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onPlayRecording = { rec ->
                         // A NAS recording plays straight off its smb:// locator and a USB one off
                         // its content:// document URI (Media3 reads both); an internal one through
-                        // a file:// uri. All go through the VOD player, which seeks.
+                        // a file:// uri. An internal recording that's still capturing plays through
+                        // the tail-following optvrec:// source, so it can be watched as it records
+                        // with no second connection to the provider. All go through the VOD player.
+                        val stillRecording = rec.status == app.opentv.data.model.RecordingStatus.RECORDING
+                        // Internal and NAS in-progress recordings are both tail-followable via the
+                        // growing source; USB (content://) isn't.
+                        val growable = !app.opentv.recording.RecordingStorage.isContent(rec.filePath) &&
+                            !app.opentv.recording.RecordingStorage.isUsbPlaceholder(rec.filePath)
                         val url = when {
+                            stillRecording && growable -> "optvrec://${rec.id}"
                             app.opentv.recording.SmbClient.isSmb(rec.filePath) -> rec.filePath
                             app.opentv.recording.RecordingStorage.isContent(rec.filePath) -> rec.filePath
                             else -> android.net.Uri.fromFile(java.io.File(rec.filePath)).toString()
@@ -327,6 +395,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
             composable(Routes.SETTINGS_HUB) {
                 SettingsHubScreen(
                     onOpenProviders = { navController.navigate(Routes.PROVIDERS) },
+                    onOpenAddons = { navController.navigate(Routes.ADDONS) },
                     onOpenGuide = { navController.navigate(Routes.EPG_SETTINGS) },
                     onOpenChannels = { navController.navigate(Routes.CHANNELS) },
                     onOpenWebManager = { navController.navigate(Routes.WEB_MANAGER) },
@@ -365,6 +434,10 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onAddSource = { navController.navigate(Routes.ADD_SOURCE) },
                     onBack = { navController.popBackStack() },
                 )
+            }
+
+            composable(Routes.ADDONS) {
+                StremioAddonsScreen(onBack = { navController.popBackStack() })
             }
 
             composable(Routes.ABOUT) {
@@ -417,6 +490,11 @@ private fun OpenTvApp(isTelevision: Boolean) {
                             ),
                         )
                     },
+                    onPlayUrl = { key, url, title ->
+                        navController.navigate(
+                            Routes.vodPlayer(key = key, url = url, title = title, ua = "OpenTV/0.1 (Android)"),
+                        )
+                    },
                     onOpenMovie = { movie -> navController.navigate(Routes.movieDetail(movie.id)) },
                     onOpenPerson = { name -> navController.navigate(Routes.person(name)) },
                 )
@@ -449,6 +527,66 @@ private fun OpenTvApp(isTelevision: Boolean) {
 
         // Sits above the whole nav graph so a found update can prompt from any screen.
         UpdateGate()
+
+        // "About to switch to a recording" banner — shows 30s before an auto-switch fires.
+        RecordingSwitchBanner()
+    }
+}
+
+/**
+ * A slim banner shown 30 seconds before a scheduled recording takes over the screen (single-
+ * connection auto-switch). It gives the viewer a heads-up and a way out: "Keep watching" suppresses
+ * the switch for that booking. It clears itself once the switch would have happened.
+ */
+@Composable
+private fun RecordingSwitchBanner() {
+    val imminent by app.opentv.core.RecordingSignals.imminent.collectAsState()
+    val current = imminent ?: return
+
+    // Auto-clear a little after the switch instant, in case the switch itself never lands.
+    LaunchedEffect(current.recordingId) {
+        val wait = (current.startAtMillis + 5_000L) - System.currentTimeMillis()
+        kotlinx.coroutines.delay(wait.coerceIn(5_000L, 60_000L))
+        if (app.opentv.core.RecordingSignals.imminent.value?.recordingId == current.recordingId) {
+            app.opentv.core.RecordingSignals.clearImminent()
+        }
+    }
+
+    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.TopCenter) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.FiberManualRecord,
+                contentDescription = null,
+                tint = Color(0xFFE53935),
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                stringResource(R.string.rec_switch_banner, current.title, current.channelName),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Spacer(Modifier.width(14.dp))
+            var focused by remember { mutableStateOf(false) }
+            Text(
+                stringResource(R.string.rec_switch_keep_watching),
+                style = MaterialTheme.typography.labelLarge,
+                color = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (focused) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    .onFocusChanged { focused = it.isFocused }
+                    .focusable()
+                    .clickable { app.opentv.core.RecordingSignals.suppress(current.recordingId) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 

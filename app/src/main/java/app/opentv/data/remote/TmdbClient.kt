@@ -68,6 +68,26 @@ class TmdbClient(
     fun seriesMeta(title: String, year: Int?, tmdbId: String?): TmdbMeta? =
         lookup(isMovie = false, title = title, year = year, tmdbId = tmdbId)
 
+    /**
+     * The IMDb id (`tt…`) for a title, for handing to Stremio add-ons. Uses the provider's TMDB id
+     * when it gave one, otherwise a title(+year) search, then reads `imdb_id` from the movie details
+     * (top-level) or the TV `external_ids` endpoint. Null with no key, no match, or no IMDb mapping.
+     */
+    fun imdbId(title: String, year: Int?, isMovie: Boolean, tmdbId: String?): String? {
+        val key = settings.tmdbApiKey.value.trim()
+        if (key.isEmpty()) return null
+        val id = tmdbId?.takeIf { it.isNotBlank() }
+            ?: searchId(isMovie, searchTitle(title), year, key)
+            ?: return null
+        val builder = TMDB_BASE.newBuilder()
+            .addPathSegment(if (isMovie) "movie" else "tv")
+            .addPathSegment(id)
+        if (!isMovie) builder.addPathSegment("external_ids")
+        builder.addQueryParameter("api_key", key)
+        val o = get(builder.build())?.jsonObject ?: return null
+        return o["imdb_id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.startsWith("tt") }
+    }
+
     private fun lookup(isMovie: Boolean, title: String, year: Int?, tmdbId: String?): TmdbMeta? {
         val key = settings.tmdbApiKey.value.trim()
         if (key.isEmpty()) return null

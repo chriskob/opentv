@@ -93,25 +93,30 @@ fun AddSourceScreen(
     var url by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var mac by remember { mutableStateOf("") }
     var epgUrl by remember { mutableStateOf("") }
     var showAdvanced by remember { mutableStateOf(false) }
     var userAgent by remember { mutableStateOf(Source.DEFAULT_USER_AGENT) }
 
     fun draft() = Source(
         name = name.ifBlank {
-            if (kind == SourceKind.XTREAM) context.getString(R.string.onboarding_default_provider_name)
-            else context.getString(R.string.onboarding_default_playlist_name)
+            if (kind == SourceKind.M3U) context.getString(R.string.onboarding_default_playlist_name)
+            else context.getString(R.string.onboarding_default_provider_name)
         },
         kind = kind,
         url = url,
         username = username.takeIf { it.isNotBlank() },
         password = password.takeIf { it.isNotBlank() },
+        macAddress = mac.takeIf { it.isNotBlank() },
         epgUrl = epgUrl.takeIf { it.isNotBlank() },
         userAgent = userAgent.ifBlank { Source.DEFAULT_USER_AGENT },
     )
 
-    val canSubmit = url.isNotBlank() &&
-        (kind == SourceKind.M3U || (username.isNotBlank() && password.isNotBlank()))
+    val canSubmit = url.isNotBlank() && when (kind) {
+        SourceKind.XTREAM -> username.isNotBlank() && password.isNotBlank()
+        SourceKind.M3U -> true
+        SourceKind.STALKER -> mac.isNotBlank()
+    }
 
     Column(
         modifier = Modifier
@@ -142,6 +147,11 @@ fun AddSourceScreen(
                     onClick = { kind = SourceKind.M3U },
                     label = { Text(stringResource(R.string.onboarding_m3u_url)) },
                 )
+                FilterChip(
+                    selected = kind == SourceKind.STALKER,
+                    onClick = { kind = SourceKind.STALKER },
+                    label = { Text(stringResource(R.string.onboarding_stalker_portal)) },
+                )
             }
 
             Spacer(Modifier.height(20.dp))
@@ -159,14 +169,20 @@ fun AddSourceScreen(
                 value = url,
                 onValueChange = { url = it },
                 label = {
-                    Text(if (kind == SourceKind.XTREAM) stringResource(R.string.onboarding_server_address) else stringResource(R.string.onboarding_playlist_url))
+                    Text(
+                        when (kind) {
+                            SourceKind.XTREAM -> stringResource(R.string.onboarding_server_address)
+                            SourceKind.M3U -> stringResource(R.string.onboarding_playlist_url)
+                            SourceKind.STALKER -> stringResource(R.string.onboarding_portal_url)
+                        },
+                    )
                 },
                 supportingText = {
                     Text(
-                        if (kind == SourceKind.XTREAM) {
-                            stringResource(R.string.onboarding_server_help)
-                        } else {
-                            stringResource(R.string.onboarding_playlist_help)
+                        when (kind) {
+                            SourceKind.XTREAM -> stringResource(R.string.onboarding_server_help)
+                            SourceKind.M3U -> stringResource(R.string.onboarding_playlist_help)
+                            SourceKind.STALKER -> stringResource(R.string.onboarding_portal_help)
                         },
                     )
                 },
@@ -195,6 +211,19 @@ fun AddSourceScreen(
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            if (kind == SourceKind.STALKER) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = mac,
+                    onValueChange = { mac = it },
+                    label = { Text(stringResource(R.string.onboarding_mac_address)) },
+                    supportingText = { Text(stringResource(R.string.onboarding_mac_help)) },
+                    trailingIcon = { PasteButton { mac += it } },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

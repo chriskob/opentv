@@ -6,9 +6,13 @@
 package app.opentv.core
 
 import android.content.Context
+import app.opentv.data.model.StremioAddon
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * The handful of user preferences that are not "data" (sources, guides) but "how the app
@@ -22,11 +26,23 @@ class AppSettings private constructor(context: Context) {
     private val prefs =
         context.applicationContext.getSharedPreferences("opentv_settings", Context.MODE_PRIVATE)
 
+    private val addonJson = Json { ignoreUnknownKeys = true }
+
     /** How the app chooses light vs dark. TV defaults to dark under [ThemeMode.SYSTEM]. */
     enum class ThemeMode { SYSTEM, DARK, LIGHT }
 
     private val _themeMode = MutableStateFlow(readThemeMode())
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    /**
+     * How the live-TV channel list is laid out: the scrolling EPG time-[ChannelLayout.GRID], or a
+     * compact one-channel-per-row [ChannelLayout.LIST] (logo, name, now/next) for people who find
+     * the full grid busy. Defaults to the grid.
+     */
+    enum class ChannelLayout { GRID, LIST }
+
+    private val _channelLayout = MutableStateFlow(readChannelLayout())
+    val channelLayout: StateFlow<ChannelLayout> = _channelLayout.asStateFlow()
 
     /** Whether embedded subtitles/closed captions are shown when a stream carries them. */
     private val _subtitlesEnabled = MutableStateFlow(prefs.getBoolean(KEY_SUBTITLES, true))
@@ -103,6 +119,11 @@ class AppSettings private constructor(context: Context) {
         _themeMode.value = mode
     }
 
+    fun setChannelLayout(layout: ChannelLayout) {
+        prefs.edit().putString(KEY_CHANNEL_LAYOUT, layout.name).apply()
+        _channelLayout.value = layout
+    }
+
     fun setSubtitlesEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SUBTITLES, enabled).apply()
         _subtitlesEnabled.value = enabled
@@ -125,6 +146,49 @@ class AppSettings private constructor(context: Context) {
     fun setResumeLastChannel(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_RESUME_LAST, enabled).apply()
         _resumeLastChannel.value = enabled
+    }
+
+    // ---- Recording behaviour -----------------------------------------------------------------
+
+    /** Minutes to start a scheduled recording early, so a late start isn't clipped. */
+    private val _recordPadStartMinutes = MutableStateFlow(prefs.getInt(KEY_PAD_START, 1))
+    val recordPadStartMinutes: StateFlow<Int> = _recordPadStartMinutes.asStateFlow()
+
+    /** Minutes to keep recording past the listed end, so an overrun (sport/news) isn't cut off. */
+    private val _recordPadEndMinutes = MutableStateFlow(prefs.getInt(KEY_PAD_END, 5))
+    val recordPadEndMinutes: StateFlow<Int> = _recordPadEndMinutes.asStateFlow()
+
+    fun setRecordPadding(startMinutes: Int, endMinutes: Int) {
+        val s = startMinutes.coerceIn(0, 30)
+        val e = endMinutes.coerceIn(0, 60)
+        prefs.edit().putInt(KEY_PAD_START, s).putInt(KEY_PAD_END, e).apply()
+        _recordPadStartMinutes.value = s
+        _recordPadEndMinutes.value = e
+    }
+
+    /**
+     * When a scheduled recording starts, switch the box to it (playing from the growing file, so no
+     * extra provider connection). Essential on a single-connection provider, where recording one
+     * channel while another plays gets one of them cut. Default on.
+     */
+    private val _recordAutoSwitch = MutableStateFlow(prefs.getBoolean(KEY_REC_AUTOSWITCH, true))
+    val recordAutoSwitch: StateFlow<Boolean> = _recordAutoSwitch.asStateFlow()
+
+    fun setRecordAutoSwitch(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_REC_AUTOSWITCH, enabled).apply()
+        _recordAutoSwitch.value = enabled
+    }
+
+    /**
+     * Pause & rewind live TV via a rolling on-disk buffer of the current channel. Experimental and
+     * heavier on weak boxes, so it's opt-in (off by default); when off, playback is unchanged.
+     */
+    private val _livePauseEnabled = MutableStateFlow(prefs.getBoolean(KEY_LIVE_PAUSE, false))
+    val livePauseEnabled: StateFlow<Boolean> = _livePauseEnabled.asStateFlow()
+
+    fun setLivePauseEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LIVE_PAUSE, enabled).apply()
+        _livePauseEnabled.value = enabled
     }
 
     // ---- Content types -----------------------------------------------------------------------
@@ -200,6 +264,10 @@ class AppSettings private constructor(context: Context) {
     private fun readThemeMode(): ThemeMode =
         runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "") }
             .getOrDefault(ThemeMode.SYSTEM)
+
+    private fun readChannelLayout(): ChannelLayout =
+        runCatching { ChannelLayout.valueOf(prefs.getString(KEY_CHANNEL_LAYOUT, null) ?: "") }
+            .getOrDefault(ChannelLayout.GRID)
 
     // ---- Recording ---------------------------------------------------------------------------
 
@@ -323,8 +391,38 @@ class AppSettings private constructor(context: Context) {
         _tmdbApiKey.value = trimmed
     }
 
+    // ---- Stremio add-ons ---------------------------------------------------------------------
+
+    /**
+     * The user's Stremio add-ons, stored on-device as JSON. OpenTV ships with none; each entry is a
+     * manifest URL the user pasted (a debrid key, if any, is baked into that URL on the add-on's own
+     * site — never entered here). Empty = the whole feature stays inert.
+     */
+    private val _stremioAddons = MutableStateFlow(readStremioAddons())
+    val stremioAddons: StateFlow<List<StremioAddon>> = _stremioAddons.asStateFlow()
+
+    fun addStremioAddon(addon: StremioAddon) {
+        val deduped = _stremioAddons.value.filterNot { it.manifestUrl.equals(addon.manifestUrl, ignoreCase = true) }
+        persistStremioAddons(deduped + addon)
+    }
+
+    fun removeStremioAddon(manifestUrl: String) {
+        persistStremioAddons(_stremioAddons.value.filterNot { it.manifestUrl == manifestUrl })
+    }
+
+    private fun persistStremioAddons(list: List<StremioAddon>) {
+        prefs.edit().putString(KEY_STREMIO_ADDONS, addonJson.encodeToString(list)).apply()
+        _stremioAddons.value = list
+    }
+
+    private fun readStremioAddons(): List<StremioAddon> =
+        runCatching {
+            prefs.getString(KEY_STREMIO_ADDONS, null)?.let { addonJson.decodeFromString<List<StremioAddon>>(it) }
+        }.getOrNull() ?: emptyList()
+
     companion object {
         private const val KEY_THEME = "theme_mode"
+        private const val KEY_CHANNEL_LAYOUT = "channel_layout"
         private const val KEY_SUBTITLES = "subtitles_enabled"
         private const val KEY_PREVIEW_VIDEO = "guide_preview_video"
         private const val KEY_PREVIEW_SOUND = "guide_preview_sound"
@@ -358,6 +456,11 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_NAS_AUTO_SYNC = "nas_auto_sync"
         private const val KEY_VOD_SYNCED_AT = "vod_synced_at"
         private const val KEY_TMDB_KEY = "tmdb_api_key"
+        private const val KEY_STREMIO_ADDONS = "stremio_addons"
+        private const val KEY_PAD_START = "rec_pad_start_min"
+        private const val KEY_PAD_END = "rec_pad_end_min"
+        private const val KEY_REC_AUTOSWITCH = "rec_auto_switch"
+        private const val KEY_LIVE_PAUSE = "live_pause_enabled"
 
         @Volatile private var instance: AppSettings? = null
 

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +58,7 @@ import app.opentv.data.model.Profile
 import app.opentv.data.model.Recording
 import app.opentv.data.model.RecordingStatus
 import app.opentv.data.model.Reminder
+import app.opentv.data.model.SeriesRule
 import app.opentv.recording.RecordingStorage
 import app.opentv.reminders.ReminderScheduler
 import coil.compose.AsyncImage
@@ -80,6 +82,12 @@ class RecordingsViewModel(app: Application) : AndroidViewModel(app) {
         graph.profiles.observeAll()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Active series-link rules — shown as their own section so a link is visible even before its
+     *  first episode has been booked (e.g. the next airing isn't in the loaded guide window yet). */
+    val seriesRules: StateFlow<List<SeriesRule>> =
+        graph.recordingRepository.observeRules()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     // NB: cold-start reconciliation of orphaned "recording" rows happens once in OpenTvApp, NOT
     // here — opening this screen must never mark an actively-capturing recording as interrupted.
 
@@ -88,6 +96,11 @@ class RecordingsViewModel(app: Application) : AndroidViewModel(app) {
     /** Re-attempt a failed/interrupted recording (re-arms a future booking or restarts a live one). */
     fun retry(recording: Recording) {
         viewModelScope.launch { graph.recordingEngine.retry(recording) }
+    }
+
+    /** Delete a series link and cancel its future (not-yet-started) bookings. */
+    fun removeSeriesRule(rule: SeriesRule) {
+        viewModelScope.launch { graph.recordingEngine.removeSeriesRule(rule.id) }
     }
 
     fun cancelReminder(reminder: Reminder) {
@@ -112,6 +125,7 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
     val recordings by viewModel.recordings.collectAsState()
     val reminders by viewModel.reminders.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
+    val seriesRules by viewModel.seriesRules.collectAsState()
 
     val now = System.currentTimeMillis()
     val upcomingReminders = reminders.filter { !it.fired && it.endUtcMillis > now }
@@ -121,6 +135,19 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
     val recorded = recordings.filter { it.status != RecordingStatus.SCHEDULED }
     val profileNames = profiles.associate { it.id to it.name }
     val showProfiles = profiles.size > 1
+    // Flag scheduled bookings that overlap *on the same provider* — that's the real single-
+    // connection clash. Overlaps spread across two providers (the multi-provider fallback did its
+    // job) both record fine and aren't flagged.
+    val clashingIds = buildSet {
+        for (i in scheduled.indices) for (j in i + 1 until scheduled.size) {
+            val a = scheduled[i]; val b = scheduled[j]
+            if (a.sourceId == b.sourceId &&
+                a.scheduledStartMillis < b.scheduledEndMillis && b.scheduledStartMillis < a.scheduledEndMillis
+            ) {
+                add(a.id); add(b.id)
+            }
+        }
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp)) {
         Text(stringResource(R.string.rec_screen_title), style = MaterialTheme.typography.headlineMedium)
@@ -132,7 +159,7 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
         )
         Spacer(Modifier.height(16.dp))
 
-        if (recordings.isEmpty() && upcomingReminders.isEmpty()) {
+        if (recordings.isEmpty() && upcomingReminders.isEmpty() && seriesRules.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     stringResource(R.string.rec_empty_state),
@@ -147,6 +174,18 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
                         ReminderRow(reminder = rem, onCancel = { viewModel.cancelReminder(rem) })
                     }
                 }
+                if (seriesRules.isNotEmpty()) {
+                    item(key = "series-header") { SectionHeader(stringResource(R.string.rec_section_series_links)) }
+                    items(seriesRules, key = { "series-${it.id}" }) { rule ->
+                        val ruleEpisodes = scheduled.filter { it.seriesRuleId == rule.id }
+                        SeriesRuleRow(
+                            rule = rule,
+                            upcomingCount = ruleEpisodes.size,
+                            nextAtMillis = ruleEpisodes.minByOrNull { it.scheduledStartMillis }?.scheduledStartMillis,
+                            onRemove = { viewModel.removeSeriesRule(rule) },
+                        )
+                    }
+                }
                 if (scheduled.isNotEmpty()) {
                     item(key = "scheduled-header") { SectionHeader(stringResource(R.string.rec_section_scheduled)) }
                     items(scheduled, key = { "sch-${it.id}" }) { rec ->
@@ -154,6 +193,7 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
                             recording = rec,
                             profileNames = profileNames,
                             showProfiles = showProfiles,
+                            clashes = rec.id in clashingIds,
                             onPlay = { onPlay(rec) },
                             onStop = { viewModel.stop(rec.id) },
                             onRetry = { viewModel.retry(rec) },
@@ -241,10 +281,61 @@ private fun formatWhen(utcMillis: Long): String =
         .format(java.util.Date(utcMillis))
 
 @Composable
+private fun SeriesRuleRow(rule: SeriesRule, upcomingCount: Int, nextAtMillis: Long?, onRemove: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFFE53935).copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            // A repeat glyph, tinted record-red — reads as "records every time it's on".
+            Icon(Icons.Filled.Repeat, contentDescription = null, tint = Color(0xFFE53935))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                rule.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            // Show when the next episode actually records, once one's on the schedule; otherwise the
+            // rule is armed but the guide hasn't revealed the next airing yet.
+            val line = when {
+                nextAtMillis != null && upcomingCount > 1 ->
+                    stringResource(R.string.rec_series_next_more, formatWhen(nextAtMillis), upcomingCount - 1)
+                nextAtMillis != null ->
+                    stringResource(R.string.rec_series_next_at, rule.channelName, formatWhen(nextAtMillis))
+                else -> stringResource(R.string.rec_series_waiting, rule.channelName)
+            }
+            Text(
+                line,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        ActionButton(Icons.Filled.Delete, stringResource(R.string.rec_series_remove), onRemove)
+    }
+}
+
+@Composable
 private fun RecordingRow(
     recording: Recording,
     profileNames: Map<Long, String>,
     showProfiles: Boolean,
+    clashes: Boolean = false,
     onPlay: () -> Unit,
     onStop: () -> Unit,
     onRetry: () -> Unit,
@@ -252,6 +343,11 @@ private fun RecordingRow(
 ) {
     val playable = recording.status == RecordingStatus.COMPLETED
     val retryable = recording.status == RecordingStatus.FAILED
+    // An in-progress recording can be watched as it records — tail-followed off disk (internal) or
+    // over SMB (NAS), with no second provider connection. USB (SAF) in-progress isn't offered.
+    val watchableLive = recording.status == RecordingStatus.RECORDING &&
+        !RecordingStorage.isContent(recording.filePath) &&
+        !RecordingStorage.isUsbPlaceholder(recording.filePath)
     val profileName = recording.profileId?.takeIf { it != 0L }?.let { profileNames[it] }
     Row(
         Modifier
@@ -293,10 +389,24 @@ private fun RecordingRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (clashes) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    stringResource(R.string.rec_clashes),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Spacer(Modifier.width(10.dp))
         if (playable) {
             ActionButton(Icons.Filled.PlayArrow, stringResource(R.string.common_play), onPlay)
+            Spacer(Modifier.width(8.dp))
+        }
+        if (watchableLive) {
+            ActionButton(Icons.Filled.PlayArrow, stringResource(R.string.rec_watch_live), onPlay)
             Spacer(Modifier.width(8.dp))
         }
         if (recording.status == RecordingStatus.RECORDING) {

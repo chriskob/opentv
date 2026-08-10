@@ -692,6 +692,16 @@ interface RecordingDao {
     )
     suspend fun countForRuleAt(ruleId: Long, channelId: Long, startMillis: Long): Int
 
+    /** Any live/scheduled booking for this exact airing (same channel + start) — for manual de-dup. */
+    @Query(
+        """
+        SELECT * FROM recordings
+        WHERE channelId = :channelId AND scheduledStartMillis = :startMillis
+          AND status IN ('SCHEDULED', 'RECORDING') LIMIT 1
+        """
+    )
+    suspend fun bookingAt(channelId: Long, startMillis: Long): Recording?
+
     @Insert
     suspend fun insert(recording: Recording): Long
 

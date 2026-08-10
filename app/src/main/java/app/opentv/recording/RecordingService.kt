@@ -86,40 +86,77 @@ class RecordingService : Service() {
         var total = 0L
         var error: String? = null
         var sink: RecordingStorage.Sink? = null
-        var response: okhttp3.Response? = null
         try {
             repo.markStarted(id, System.currentTimeMillis())
+            // Announce the live capture so the player can watch this file while it grows.
+            RecordingLiveState.markActive(id, recording.filePath)
             sink = RecordingStorage.openSink(applicationContext, graph.settings, recording.filePath)
             // A USB (SAF) sink only learns its real content:// URI when the document is created —
             // persist it onto the row so the finished recording plays back and deletes correctly.
             sink.resolvedLocator?.let { actual ->
-                if (actual != recording.filePath) repo.setFilePath(id, actual)
+                if (actual != recording.filePath) {
+                    repo.setFilePath(id, actual)
+                    RecordingLiveState.updatePath(id, actual)
+                }
             }
 
-            val request = Request.Builder()
-                .url(recording.streamUrl)
-                .header("User-Agent", recording.userAgent)
-                .build()
-            val call = graph.streamingHttpClient.newCall(request)
-            captures[id]?.call = call
-            response = call.execute()
-            if (!response.isSuccessful) throw java.io.IOException("HTTP ${response.code}")
-
-            val input = response.body?.byteStream() ?: throw java.io.IOException("Empty response")
             val buffer = ByteArray(BUFFER_BYTES)
             var lastReport = 0L
+            var deadReconnects = 0
+
+            // Reconnect loop. Real IPTV `.ts` live endpoints commonly serve a rolling ~30s window and
+            // then close the socket, expecting the client to re-request (ExoPlayer does this on its own
+            // during playback). A single read-to-EOF therefore captures only ~30s — the exact bug. So
+            // when the connection drops we reopen it and keep appending to the same file, until the
+            // scheduled end, a user stop, or the stream is genuinely gone (several empty reconnects).
+            val scheduledEnd = recording.scheduledEndMillis
             while (kotlin.coroutines.coroutineContext[Job]?.isActive == true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                sink.output.write(buffer, 0, read)
-                total += read
-                // A guide-scheduled recording stops itself at the programme's end.
-                if (recording.scheduledEndMillis > 0 &&
-                    System.currentTimeMillis() >= recording.scheduledEndMillis
-                ) break
-                if (total - lastReport >= SIZE_REPORT_BYTES) {
-                    lastReport = total
-                    repo.setSize(id, total)
+                if (scheduledEnd > 0 && System.currentTimeMillis() >= scheduledEnd) break
+
+                val request = Request.Builder()
+                    .url(recording.streamUrl)
+                    .header("User-Agent", recording.userAgent)
+                    .build()
+                val call = graph.streamingHttpClient.newCall(request)
+                captures[id]?.call = call
+
+                val bytesThisLeg = try {
+                    call.execute().use { response ->
+                        if (!response.isSuccessful) throw java.io.IOException("HTTP ${response.code}")
+                        val input = response.body?.byteStream() ?: throw java.io.IOException("Empty response")
+                        var leg = 0L
+                        while (kotlin.coroutines.coroutineContext[Job]?.isActive == true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            sink.output.write(buffer, 0, read)
+                            total += read
+                            leg += read
+                            if (scheduledEnd > 0 && System.currentTimeMillis() >= scheduledEnd) break
+                            if (total - lastReport >= SIZE_REPORT_BYTES) {
+                                lastReport = total
+                                repo.setSize(id, total)
+                            }
+                        }
+                        leg
+                    }
+                } catch (t: kotlinx.coroutines.CancellationException) {
+                    throw t
+                } catch (t: java.io.IOException) {
+                    // A dropped connection isn't a failure — reconnect and carry on.
+                    Log.i(TAG, "Recording $id connection dropped (${t.message}); reconnecting")
+                    0L
+                }
+
+                // Nothing arrived this leg: count it, and give up only after several in a row so a
+                // truly dead stream can't spin forever. A leg that delivered bytes resets the counter.
+                if (bytesThisLeg <= 0L) {
+                    if (++deadReconnects >= MAX_DEAD_RECONNECTS) {
+                        if (total == 0L) error = getString(R.string.rec_error_nothing)
+                        break
+                    }
+                    kotlinx.coroutines.delay(RECONNECT_BACKOFF_MILLIS)
+                } else {
+                    deadReconnects = 0
                 }
             }
         } catch (t: Throwable) {
@@ -131,8 +168,9 @@ class RecordingService : Service() {
                 Log.w(TAG, "Recording $id failed", t)
             }
         } finally {
+            // The file is now at its final size — anyone watching it should see the true end.
+            RecordingLiveState.markInactive(id)
             runCatching { sink?.close() }
-            runCatching { response?.close() }
             val ok = total > 0 && error == null
             runCatching {
                 repo.markFinished(
@@ -255,6 +293,10 @@ class RecordingService : Service() {
         private const val BUFFER_BYTES = 64 * 1024
         private const val SIZE_REPORT_BYTES = 4L * 1024 * 1024
         private const val MAX_WAKE_MILLIS = 6L * 60 * 60 * 1000 // 6h safety cap
+        // Providers close a live .ts socket every ~30s; reconnect and keep appending. Give up only
+        // after this many consecutive reconnects deliver nothing (the stream is genuinely gone).
+        private const val MAX_DEAD_RECONNECTS = 5
+        private const val RECONNECT_BACKOFF_MILLIS = 1500L
 
         private const val ACTION_START = "app.opentv.recording.START"
         private const val ACTION_STOP = "app.opentv.recording.STOP"

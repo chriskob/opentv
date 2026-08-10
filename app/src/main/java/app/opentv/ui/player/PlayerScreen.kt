@@ -135,7 +135,12 @@ fun PlayerScreen(
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
     val subtitlesDefault by settings.subtitlesEnabled.collectAsState()
     val controller = remember {
-        PlayerController(context, scope, graph.streamingHttpClient, subtitlesEnabled = settings.subtitlesEnabled.value)
+        PlayerController(
+            context, scope, graph.streamingHttpClient,
+            subtitlesEnabled = settings.subtitlesEnabled.value,
+            // Opt-in shallow DVR so the transport's pause/rewind actually holds on a live stream.
+            dvr = settings.livePauseEnabled.value,
+        )
     }
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
@@ -212,9 +217,11 @@ fun PlayerScreen(
         settings.lastChannelId = channel.id
         scope.launch {
             val source = graph.sourceRepository.byId(channel.sourceId)
+            // Xtream/M3U carry a ready URL; a Stalker channel's URL is minted here from its cmd.
+            val url = graph.catalogRepository.resolvePlaybackUrl(channel, source)
             controller.play(
                 PlayerController.Request(
-                    url = channel.streamUrl,
+                    url = url,
                     title = channel.shownName,
                     userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
                     isLive = true,

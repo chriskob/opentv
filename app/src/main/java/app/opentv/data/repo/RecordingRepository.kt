@@ -65,4 +65,8 @@ class RecordingRepository(
 
     suspend fun alreadyBooked(ruleId: Long, channelId: Long, startMillis: Long): Boolean =
         dao.countForRuleAt(ruleId, channelId, startMillis) > 0
+
+    /** An existing live/scheduled booking for this exact airing (channel + start), or null. */
+    suspend fun bookingAt(channelId: Long, startMillis: Long): Recording? =
+        dao.bookingAt(channelId, startMillis)
 }

@@ -20,6 +20,7 @@ import app.opentv.data.model.Programme
 import app.opentv.data.model.Series
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
+import app.opentv.data.model.StremioStream
 import app.opentv.data.model.StreamKind
 import app.opentv.data.parser.displayTitle
 import app.opentv.data.parser.ChannelNameNormalizer
@@ -45,6 +46,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
@@ -214,6 +216,8 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     /** null = All. Exposed so the sidebar can highlight the active entry. */
     val selectedCategory = MutableStateFlow<String?>(null)
     val favouritesOnly = MutableStateFlow(false)
+    /** Provider filter for the live guide. null = every source. Only surfaced when there's >1 source. */
+    val selectedSource = MutableStateFlow<Long?>(null)
     private val query = MutableStateFlow("")
     private val nowTick = MutableStateFlow(System.currentTimeMillis())
 
@@ -228,9 +232,15 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     data class CategoryGroup(val key: String, val label: String, val ids: List<String>)
 
     val categoryGroups: StateFlow<List<CategoryGroup>> =
-        graph.catalogRepository.observeCategories(StreamKind.LIVE)
-            .map { foldCategories(it) }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        combine(
+            graph.catalogRepository.observeCategories(StreamKind.LIVE),
+            selectedSource,
+        ) { raw, sourceId ->
+            // Scope the category rail to the chosen provider, so a second playlist's categories show
+            // on their own (cardiodoc's "keep sources separate"); null folds across every provider.
+            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
+            foldCategories(scoped)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * Folds codec-split provider categories into one logical [CategoryGroup] each — 'UK| GENERAL
@@ -272,6 +282,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
      * quality of the same channel, for the in-player switch. `UK| BBC ONE SD/HD/FHD/RAW`
      * is one row, not four — the guide has one BBC One, and so should we.
      */
+    @androidx.compose.runtime.Immutable
     data class Row(
         val primary: Channel,
         val variants: List<Channel>,
@@ -287,10 +298,37 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
      * The guide's left edge: the current half-hour, rounded down. Programme block positions
      * are measured from here. Recomputed on each tick so the grid drifts with real time.
      */
-    val windowStartMillis: StateFlow<Long> = nowTick
-        .map { now -> now - (now % HALF_HOUR_MILLIS) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
-            System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS })
+    /** Which day the guide is browsing: 0 = today, 1 = tomorrow… so it pages forward like Sky Q. */
+    private val _guideDayOffset = MutableStateFlow(0)
+    val guideDayOffset: StateFlow<Int> = _guideDayOffset.asStateFlow()
+
+    /** Page the guide a day forward/back (clamped to today…+[GUIDE_MAX_DAYS]), or jump back to now. */
+    fun nudgeGuideDay(delta: Int) {
+        _guideDayOffset.value = (_guideDayOffset.value + delta).coerceIn(0, GUIDE_MAX_DAYS)
+    }
+
+    fun guideToNow() { _guideDayOffset.value = 0 }
+
+    val windowStartMillis: StateFlow<Long> =
+        combine(nowTick.map { it - it % HALF_HOUR_MILLIS }, _guideDayOffset) { base, day ->
+            // Today tracks the current half-hour so live is always on screen; a future day starts
+            // at that day's local midnight, so the whole day's schedule is browsable and drifts
+            // with real time only on the "today" page.
+            if (day <= 0) base else startOfLocalDay(base) + day * DAY_MILLIS
+        }.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS },
+        )
+
+    private fun startOfLocalDay(millis: Long): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = millis
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
 
     private data class RowsKey(
         val categoryIds: List<String>?,
@@ -312,9 +350,9 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private val programmeIndex: StateFlow<Map<String, List<Programme>>> =
-        nowTick
-            .map { it - it % HALF_HOUR_MILLIS }
-            .distinctUntilChanged()
+        // windowStartMillis is a StateFlow, which already conflates equal values — an explicit
+        // distinctUntilChanged() on it is a no-op (and a build error under our warnings-as-errors).
+        windowStartMillis
             .flatMapLatest { windowStart ->
                 graph.epgRepository
                     .observeWindow(windowStart, windowStart + GUIDE_LOOKAHEAD_MILLIS)
@@ -334,12 +372,13 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             val ids = category?.let { key -> groups.firstOrNull { it.key == key }?.ids }
             RowsKey(ids, favs, q, hidden)
         }
-            .flatMapLatest { key ->
+            .combine(selectedSource) { key, source -> key to source }
+            .flatMapLatest { (key, source) ->
                 val channelFlow = when {
                     key.query.isNotBlank() -> graph.catalogRepository.searchChannels(key.query)
                     key.favs -> graph.catalogRepository.observeFavouriteChannels()
                     key.categoryIds != null -> graph.catalogRepository.observeChannelsIn(key.categoryIds)
-                    else -> graph.catalogRepository.observeChannels()
+                    else -> graph.catalogRepository.observeChannels(source)
                 }
                 // Combine the (per-category) channel list with the shared, already-grouped
                 // programme index. Switching category rebuilds only the channel→row grouping;
@@ -350,11 +389,15 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                 // build instead; the guide's live progress bars advance off the screen's clock.
                 combine(channelFlow, programmeIndex) { channels, byEpgChannel ->
                     val now = System.currentTimeMillis()
+                    // Scope to the chosen provider. The "All" branch already fetched only this source
+                    // in SQL, so this is a no-op there; for favourites/search/category (which don't
+                    // take a sourceId) it's what actually keeps a second playlist separate.
+                    val scoped = if (source == null) channels else channels.filter { it.sourceId == source }
                     // Adult/hidden channels drop out everywhere they could otherwise leak —
                     // All, search and favourites — until the session is unlocked.
                     val visible =
-                        if (key.hiddenIds.isEmpty()) channels
-                        else channels.filter { it.categoryId !in key.hiddenIds }
+                        if (key.hiddenIds.isEmpty()) scoped
+                        else scoped.filter { it.categoryId !in key.hiddenIds }
                     // Show the size-aware loading bar for the FIRST guide build only (start-up).
                     // After that the guide is built and flicking between categories is cheap, so
                     // don't flash a loading line on every tap — that bar was only ever meant for
@@ -460,6 +503,13 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     fun selectFavourites() {
         favouritesOnly.value = true
         selectedCategory.value = null
+    }
+
+    /** Switch the live guide's provider filter; the category resets since categories differ per source. */
+    fun selectSource(sourceId: Long?) {
+        selectedSource.value = sourceId
+        selectedCategory.value = null
+        favouritesOnly.value = false
     }
 
     fun search(text: String) { query.value = text }
@@ -590,7 +640,9 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
-        const val GUIDE_LOOKAHEAD_MILLIS = 12 * 60 * 60 * 1000L
+        const val GUIDE_LOOKAHEAD_MILLIS = 24 * 60 * 60 * 1000L  // a full day fits the grid
+        const val DAY_MILLIS = 24 * 60 * 60 * 1000L
+        const val GUIDE_MAX_DAYS = 6  // browse up to a week out, matching typical XMLTV depth
         const val HALF_HOUR_MILLIS = 30 * 60 * 1000L
     }
 }
@@ -696,12 +748,29 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     private val movieCategory = MutableStateFlow<String?>(null)
     private val seriesCategory = MutableStateFlow<String?>(null)
 
+    /** Provider filter for Movies/Shows. null = every source. Surfaced only when there's >1 source. */
+    val selectedVodSource = MutableStateFlow<Long?>(null)
+
+    /** Providers, so Movies/Shows can offer a source filter (shown only when there's more than one). */
+    val sources: StateFlow<List<Source>> =
+        graph.sourceRepository.observeAll()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Category chips scoped to the chosen provider: pick a provider and you see only its categories,
+    // and since a category id belongs to one provider, the grid you then open is already that
+    // provider's titles. null folds categories across every provider ("All sources").
     val movieCategories: StateFlow<List<Category>> =
-        graph.catalogRepository.observeCategories(StreamKind.MOVIE)
+        combine(
+            graph.catalogRepository.observeCategories(StreamKind.MOVIE),
+            selectedVodSource,
+        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val seriesCategories: StateFlow<List<Category>> =
-        graph.catalogRepository.observeCategories(StreamKind.SERIES)
+        combine(
+            graph.catalogRepository.observeCategories(StreamKind.SERIES),
+            selectedVodSource,
+        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -717,6 +786,36 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     fun selectMovieCategory(id: String?) { movieCategory.value = id }
 
     fun selectSeriesCategory(id: String?) { seriesCategory.value = id }
+
+    /** True when at least one Stremio add-on is configured — gates the "add-on sources" button. */
+    val hasAddons: StateFlow<Boolean> =
+        settings.stremioAddons
+            .map { it.isNotEmpty() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), settings.stremioAddons.value.isNotEmpty())
+
+    /**
+     * The streams the configured add-ons offer for [movie], resolved through the user's TMDB key for
+     * the IMDb id. Empty when there's no key, no add-ons, no IMDb match, or nothing came back. Each
+     * add-on is queried independently so one failing doesn't sink the rest.
+     */
+    suspend fun addonStreams(movie: Movie): List<StremioStream> {
+        val addons = settings.stremioAddons.value
+        if (addons.isEmpty()) return emptyList()
+        val imdb = graph.catalogRepository.imdbIdFor(movie) ?: return emptyList()
+        return withContext(Dispatchers.IO) {
+            addons.flatMap { addon ->
+                runCatching { graph.stremioClient.streams(addon.manifestUrl, addon.name, "movie", imdb) }
+                    .getOrDefault(emptyList())
+            }
+        }
+    }
+
+    /** Switch the Movies/Shows provider filter; category selections reset since they differ per source. */
+    fun selectVodSource(sourceId: Long?) {
+        selectedVodSource.value = sourceId
+        movieCategory.value = null
+        seriesCategory.value = null
+    }
 
     // ---- Netflix-style home rows ----------------------------------------------------------------
     // "Recently added" is reactive: it fills in live as a VOD sync lands. The computed feeds
@@ -839,11 +938,11 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun syncVodIfStale(force: Boolean) {
         val now = System.currentTimeMillis()
 
-        // Warm-launch fast path. The catalogue is persisted in Room, so once fetched there is no
-        // reason to re-download and re-upsert a 40k-title list on every launch - that was both the
-        // multi-minute loading banner and the bandwidth hog that starved the live preview into
-        // buffering. When we synced recently and already have rows, skip the network entirely and
-        // just (re)build the home shelves off what is stored.
+        // Warm-launch fast path. The catalogue is persisted in Room, so once it has been fetched
+        // there is no reason to re-download and re-upsert a 40k-title list on every launch — that
+        // was both the multi-minute "Loading movies & shows…" and the bandwidth hog that starved
+        // the live preview into buffering. When we synced recently and already have rows, skip the
+        // network entirely and just (re)build the home shelves off what is stored.
         if (!force) {
             val haveCatalogue = runCatching {
                 graph.catalogRepository.movieCount() + graph.catalogRepository.seriesCount()
@@ -866,9 +965,9 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         }
         _vodLoading.value = false
         // Stamp the cache only when the fetch actually succeeded, so a failed sync retries on the
-        // next open instead of being remembered as fresh and leaving the user with no catalogue.
+        // next open instead of being remembered as "fresh" and leaving the user with no catalogue.
         if (synced) settings.vodSyncedAtMillis = now
-        // The catalogue may have grown - recompute the computed home rows off the fresh data.
+        // The catalogue may have grown — recompute the computed home rows off the fresh data.
         loadHomeFeeds()
     }
 
@@ -1159,7 +1258,7 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
  */
 class WebManagerViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = ServiceLocator.get(app)
-    private val server = ManagerServer(viewModelScope, graph.catalogRepository)
+    private val server = ManagerServer(viewModelScope, graph.catalogRepository, graph.settings)
 
     val state: StateFlow<ManagerServer.State> = server.state
 

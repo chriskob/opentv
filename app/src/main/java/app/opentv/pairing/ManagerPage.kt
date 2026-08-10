@@ -87,6 +87,20 @@ object ManagerPage {
           #status.ok { border-color:var(--ok); color:var(--ok); }
           #status.err { border-color:var(--err); color:#ffc9c9; }
           .privacy { color:var(--muted); font-size:.8rem; margin-top:28px; line-height:1.5; }
+          details.rec { background:var(--surface); border:1px solid var(--line); border-radius:12px; margin-bottom:16px; }
+          details.rec summary { padding:14px 16px; font-weight:600; cursor:pointer; list-style:none; }
+          details.rec summary::-webkit-details-marker { display:none; }
+          details.rec summary::before { content:'\25B8'; color:var(--muted); margin-right:8px; }
+          details.rec[open] summary::before { content:'\25BE'; }
+          details.rec .body { padding:0 16px 16px; }
+          .field { display:block; margin:10px 0; }
+          .field span { display:block; color:var(--muted); font-size:.8rem; margin-bottom:4px; }
+          .field input { width:100%; padding:11px 12px; font-size:16px; background:var(--bg); color:var(--text);
+                         border:1px solid var(--line); border-radius:9px; }
+          .field input:focus { outline:none; border-color:var(--accent); }
+          .save { margin-top:6px; padding:12px 18px; font-size:15px; font-weight:600;
+                  background:var(--accent2); color:var(--text); border:1px solid var(--accent); border-radius:10px; cursor:pointer; }
+          .save:active { transform:scale(.97); }
         </style>
         </head>
         <body>
@@ -95,6 +109,25 @@ object ManagerPage {
               <h1>OpenTV — manage channels</h1>
               <p class="hint">Changes apply to your TV the moment you make them.</p>
             </header>
+
+            <details class="rec" id="recCard">
+              <summary>Recording to NAS (SMB)</summary>
+              <div class="body">
+                <p class="hint">Point recordings at a network drive. Saved straight to your TV — the password stays on the TV.</p>
+                <label class="field"><span>Server (IP address)</span>
+                  <input id="recHost" placeholder="192.168.0.214" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+                <label class="field"><span>Share</span>
+                  <input id="recShare" placeholder="OpenTV" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+                <label class="field"><span>Folder (optional)</span>
+                  <input id="recFolder" placeholder="(leave blank)" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+                <label class="field"><span>Username</span>
+                  <input id="recUser" placeholder="record" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+                <label class="field"><span>Password</span>
+                  <input id="recPass" type="password" autocomplete="off"></label>
+                <button class="save" id="recSave">Save &amp; use NAS</button>
+                <button class="save" id="recTest" style="background:var(--surface2);border-color:var(--line);margin-left:8px;">Test connection</button>
+              </div>
+            </details>
 
             <section id="catView">
               <div id="srcBar" class="chips" hidden></div>
@@ -355,7 +388,53 @@ object ManagerPage {
               .catch(function(){ setStatus(UNREACH, 'err'); });
           }
 
+          // ---- Recording / NAS settings ------------------------------------------------------
+          async function loadRecording(){
+            try {
+              var r = await getJson('/recording');
+              el('recHost').value = r.host || '';
+              el('recShare').value = r.share || '';
+              el('recFolder').value = r.folder || '';
+              el('recUser').value = r.user || '';
+              el('recPass').placeholder = r.hasPassword ? '•••• (unchanged)' : '';
+              if (r.target === 'SMB') el('recCard').open = true;
+            } catch (e) { /* leave the form blank if the TV can't be reached yet */ }
+          }
+          function smbBody(){
+            return {
+              host: el('recHost').value.trim(),
+              share: el('recShare').value.trim(),
+              folder: el('recFolder').value.trim(),
+              user: el('recUser').value.trim(),
+              password: el('recPass').value
+            };
+          }
+          function showTest(r){
+            if (r && r.ok) setStatus('Connected to the NAS — recordings will save there. ✓', 'ok');
+            else setStatus("Couldn't reach the NAS: " + ((r && r.error) || 'check the details') , 'err');
+          }
+          el('recSave').onclick = function(){
+            var body = smbBody();
+            if (!body.host || !body.share) { setStatus('Server and share are required.', 'err'); return; }
+            setStatus('Saving & testing…');
+            post('/recording', body)
+              .then(function(){
+                el('recPass').value = '';
+                el('recPass').placeholder = '•••• (unchanged)';
+                return post('/recording/test', {});   // test the settings we just stored
+              })
+              .then(showTest)
+              .catch(function(){ setStatus(UNREACH, 'err'); });
+          };
+          el('recTest').onclick = function(){
+            setStatus('Testing…');
+            post('/recording/test', smbBody())
+              .then(showTest)
+              .catch(function(){ setStatus(UNREACH, 'err'); });
+          };
+
           loadMeta();
+          loadRecording();
         </script>
         </body>
         </html>

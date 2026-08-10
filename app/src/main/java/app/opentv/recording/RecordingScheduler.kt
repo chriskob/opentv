@@ -20,11 +20,35 @@ import android.os.Build
 object RecordingScheduler {
 
     const val ACTION_START = "app.opentv.recording.ALARM_START"
+    const val ACTION_WARN = "app.opentv.recording.ALARM_WARN"
     private const val EXTRA_ID = "recordingId"
 
-    fun set(context: Context, recordingId: Long, triggerAtMillis: Long) {
+    /** How long before a booking starts to warn the viewer that the screen is about to switch. */
+    const val WARN_LEAD_MILLIS = 30_000L
+
+    fun set(context: Context, recordingId: Long, triggerAtMillis: Long) =
+        arm(context, pendingIntent(context, recordingId, ACTION_START), triggerAtMillis)
+
+    fun cancel(context: Context, recordingId: Long) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val pending = pendingIntent(context, recordingId)
+        am.cancel(pendingIntent(context, recordingId, ACTION_START))
+    }
+
+    /** Arm the "about to switch" pre-alarm [WARN_LEAD_MILLIS] before [startAtMillis]; a no-op if
+     *  that instant has already passed (the recording is due immediately). */
+    fun setWarning(context: Context, recordingId: Long, startAtMillis: Long) {
+        val at = startAtMillis - WARN_LEAD_MILLIS
+        if (at <= System.currentTimeMillis()) return
+        arm(context, pendingIntent(context, recordingId, ACTION_WARN), at)
+    }
+
+    fun cancelWarning(context: Context, recordingId: Long) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        am.cancel(pendingIntent(context, recordingId, ACTION_WARN))
+    }
+
+    private fun arm(context: Context, pending: PendingIntent, triggerAtMillis: Long) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
         try {
             if (canExact) {
@@ -39,24 +63,19 @@ object RecordingScheduler {
         }
     }
 
-    fun cancel(context: Context, recordingId: Long) {
-        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        am.cancel(pendingIntent(context, recordingId))
-    }
-
     fun recordingIdFrom(intent: Intent): Long = intent.getLongExtra(EXTRA_ID, -1L)
 
-    private fun intentFor(context: Context, recordingId: Long): Intent =
+    private fun intentFor(context: Context, recordingId: Long, action: String): Intent =
         Intent(context, RecordingAlarmReceiver::class.java).apply {
-            action = ACTION_START
+            this.action = action
             putExtra(EXTRA_ID, recordingId)
         }
 
-    private fun pendingIntent(context: Context, recordingId: Long): PendingIntent =
+    private fun pendingIntent(context: Context, recordingId: Long, action: String): PendingIntent =
         PendingIntent.getBroadcast(
             context,
             recordingId.toInt(),
-            intentFor(context, recordingId),
+            intentFor(context, recordingId, action),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 }

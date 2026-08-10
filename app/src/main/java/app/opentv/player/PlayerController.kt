@@ -61,13 +61,32 @@ class PlayerController(
      */
     private val preview: Boolean = false,
     /**
+     * Turns the live player into a shallow DVR: a retained back-buffer so the viewer can pause and
+     * rewind live TV within the last few minutes. Off by default because holding minutes of video
+     * in memory is a real cost on a cheap box; the recording player and preview never set it.
+     */
+    private val dvr: Boolean = false,
+    /**
      * When set, `smb://` media (a recording on a NAS) is read through this source so it plays and
      * seeks in-app. Null for the live/VOD players, which never see an smb URI.
      */
     smbDataSourceFactory: androidx.media3.datasource.DataSource.Factory? = null,
+    /**
+     * When set, `optvrec://<id>` media (a recording still being written) is read through this
+     * tail-following source so it can be watched while it records. Null everywhere except the
+     * recording player.
+     */
+    growingDataSourceFactory: androidx.media3.datasource.DataSource.Factory? = null,
+    /**
+     * Playing a recording that is still being written (watch-while-recording). Playback is held a
+     * cushion *behind* the file's growing edge (see the LIVE_REC_* constants) so the bursty arrival
+     * of an IPTV source — worst when the recording is read back over SMB from a NAS, where each read
+     * is a network round-trip — rides over the gaps instead of stalling on every one.
+     */
+    private val liveRecording: Boolean = false,
 ) {
 
-    /** Channel-surf debounce for this controller - longer for the preview so browsing is calm. */
+    /** Channel-surf debounce for this controller — longer for the preview so browsing is calm. */
     private val switchDebounceMillis = if (preview) PREVIEW_SWITCH_DEBOUNCE_MILLIS else SWITCH_DEBOUNCE_MILLIS
 
     sealed interface State {
@@ -112,8 +131,11 @@ class PlayerController(
 
     private val dataSourceFactory: androidx.media3.datasource.DataSource.Factory =
         DefaultDataSource.Factory(context, httpFactory).let { default ->
-            if (smbDataSourceFactory != null) RoutingDataSourceFactory(default, smbDataSourceFactory)
-            else default
+            val custom = buildMap<String, androidx.media3.datasource.DataSource.Factory> {
+                if (smbDataSourceFactory != null) put("smb", smbDataSourceFactory)
+                if (growingDataSourceFactory != null) put("optvrec", growingDataSourceFactory)
+            }
+            if (custom.isEmpty()) default else RoutingDataSourceFactory(default, custom)
         }
 
     /**
@@ -169,10 +191,25 @@ class PlayerController(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
                     if (preview) PREVIEW_MIN_BUFFER_MILLIS else MIN_BUFFER_MILLIS,
-                    if (preview) PREVIEW_MAX_BUFFER_MILLIS else MAX_BUFFER_MILLIS,
-                    if (preview) PREVIEW_BUFFER_FOR_PLAYBACK_MILLIS else BUFFER_FOR_PLAYBACK_MILLIS,
-                    if (preview) PREVIEW_BUFFER_AFTER_REBUFFER_MILLIS else BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS,
+                    when {
+                        preview -> PREVIEW_MAX_BUFFER_MILLIS
+                        dvr -> DVR_MAX_BUFFER_MILLIS
+                        liveRecording -> LIVE_REC_MAX_BUFFER_MILLIS
+                        else -> MAX_BUFFER_MILLIS
+                    },
+                    when {
+                        preview -> PREVIEW_BUFFER_FOR_PLAYBACK_MILLIS
+                        liveRecording -> LIVE_REC_BUFFER_FOR_PLAYBACK_MILLIS
+                        else -> BUFFER_FOR_PLAYBACK_MILLIS
+                    },
+                    when {
+                        preview -> PREVIEW_BUFFER_AFTER_REBUFFER_MILLIS
+                        liveRecording -> LIVE_REC_BUFFER_AFTER_REBUFFER_MILLIS
+                        else -> BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS
+                    },
                 )
+                // Retain the last few minutes so pause/rewind of live TV has something to seek into.
+                .apply { if (dvr) setBackBuffer(DVR_BACK_BUFFER_MILLIS, true) }
                 .build(),
         )
         .build()
@@ -358,9 +395,25 @@ class PlayerController(
         const val BUFFER_FOR_PLAYBACK_MILLIS = 2_500
         const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 5_000
 
+        // DVR mode (pause & rewind live TV): keep a couple of minutes behind the live edge to seek
+        // into, and let the forward buffer grow to match so a pause of up to a couple of minutes
+        // resumes cleanly. Deliberately bounded — this is memory the box has to find.
+        const val DVR_BACK_BUFFER_MILLIS = 120_000
+        const val DVR_MAX_BUFFER_MILLIS = 120_000
+
+        // Watch-while-recording: hold playback a cushion *behind* the file's growing edge rather than
+        // right on it. IPTV sources arrive in bursts, so a shallow buffer drains to nothing between
+        // bursts and the picture stalls every second or two — worst over SMB to a NAS, where every
+        // read is a network round-trip. Waiting for ~8s of reservoir before playback (and rebuilding
+        // it after any stall) rides straight over those gaps; because playback and the recorder both
+        // advance at 1x, that cushion holds without ever catching the edge again.
+        const val LIVE_REC_MAX_BUFFER_MILLIS = 60_000
+        const val LIVE_REC_BUFFER_FOR_PLAYBACK_MILLIS = 8_000
+        const val LIVE_REC_BUFFER_AFTER_REBUFFER_MILLIS = 8_000
+
         // Guide-preview tuning: start fast and don't hoard buffer (the preview is muted and
         // low-stakes), and debounce channel-surfing harder so scrolling the list doesn't tune to
-        // every channel in passing. Kept within DefaultLoadControl constraints: min >= both
+        // every channel in passing. Kept within DefaultLoadControl's constraints: min >= both
         // playback thresholds, max >= min.
         const val PREVIEW_MIN_BUFFER_MILLIS = 5_000
         const val PREVIEW_MAX_BUFFER_MILLIS = 15_000

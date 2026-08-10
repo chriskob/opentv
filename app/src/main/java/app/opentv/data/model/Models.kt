@@ -26,6 +26,13 @@ enum class SourceKind {
 
     /** A plain M3U/M3U8 playlist URL, optionally with a separate XMLTV EPG URL. */
     M3U,
+
+    /**
+     * Stalker / Ministra portal (MAG-box middleware): identified by a MAC address rather than a
+     * login, with a token handshake and per-play `create_link` stream resolution. Its channels
+     * carry a [Channel.cmd] resolved to a real URL on demand at play time.
+     */
+    STALKER,
 }
 
 /** Live-stream container the panel is asked for. Xtream panels serve one or both. */
@@ -50,6 +57,11 @@ data class Source(
     val url: String,
     val username: String? = null,
     val password: String? = null,
+    /**
+     * Stalker/Ministra MAC address, e.g. `00:1A:79:xx:xx:xx` — the portal's identity and credential
+     * (it takes the place of username/password). Null for Xtream/M3U.
+     */
+    val macAddress: String? = null,
     /** Optional explicit XMLTV URL. For Xtream this is derived if left null. */
     val epgUrl: String? = null,
     /**
@@ -125,8 +137,14 @@ data class Channel(
     @ColumnInfo(defaultValue = "0") val tvArchive: Boolean = false,
     @ColumnInfo(defaultValue = "0") val tvArchiveDays: Int = 0,
     val number: Int?,
-    /** Fully-resolved playback URL. */
+    /** Fully-resolved playback URL. For Stalker channels this is a placeholder; [cmd] is resolved
+     *  to the real URL on demand at play time (see [SourceKind.STALKER]). */
     val streamUrl: String,
+    /**
+     * Stalker/Ministra play command (`ffmpeg http://…`, `auto …`, or a bare URL) that `create_link`
+     * turns into a short-lived playable URL at tune time. Null for Xtream/M3U.
+     */
+    val cmd: String? = null,
     val favourite: Boolean = false,
     val hidden: Boolean = false,
     val sortIndex: Int = 0,

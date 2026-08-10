@@ -8,6 +8,7 @@ package app.opentv.data.repo
 import app.opentv.data.db.SourceDao
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
+import app.opentv.data.remote.StalkerApi
 import app.opentv.data.remote.XtreamApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +17,7 @@ import kotlinx.coroutines.withContext
 class SourceRepository(
     private val dao: SourceDao,
     private val api: XtreamApi,
+    private val stalkerApi: StalkerApi,
 ) {
     fun observeAll(): Flow<List<Source>> = dao.observeAll()
 
@@ -50,6 +52,10 @@ class SourceRepository(
                     }
                 }
                 SourceKind.M3U -> "Playlist address looks valid. It will be checked on first sync."
+                SourceKind.STALKER -> {
+                    stalkerApi.handshakeTest(source.copy(url = normaliseUrl(source.url, source.kind)))
+                    "Portal accepted the MAC address. Loading channels…"
+                }
             }
         }
     }
@@ -73,6 +79,9 @@ class SourceRepository(
                 url = "http://$url"
             }
             if (kind == SourceKind.M3U) return url
+            // A Stalker portal URL is the portal path itself (e.g. .../stalker_portal or .../c) —
+            // stripping Xtream API paths would be wrong; just tidy the trailing slash.
+            if (kind == SourceKind.STALKER) return url.trimEnd('/')
 
             url = url.substringBefore("/player_api.php")
                 .substringBefore("/panel_api.php")

@@ -57,7 +57,9 @@ class RecordingEngine(
             streamUrl = recordUrlFor(channel.streamUrl),
             userAgent = ua,
             scheduledStartMillis = programme?.startUtcMillis ?: 0,
-            scheduledEndMillis = programme?.endUtcMillis ?: 0,
+            // Keep going past the listed end by the padding, so an overrun isn't cut off.
+            scheduledEndMillis = programme?.endUtcMillis
+                ?.let { it + settings.recordPadEndMinutes.value.coerceAtLeast(0) * 60_000L } ?: 0,
             startedAtMillis = now,
             status = RecordingStatus.RECORDING,
             seriesRuleId = ruleId,
@@ -96,32 +98,51 @@ class RecordingEngine(
         ruleId: Long? = null,
         profileId: Long = settings.activeProfileId.value,
     ): Long {
-        // De-dup: a series rule that re-scans mustn't book the same airing twice.
-        if (ruleId != null && repo.alreadyBooked(ruleId, channel.id, programme.startUtcMillis)) return -1L
+        // Padding: start early and keep going past the listed end, so a late start or an overrun
+        // (sport, news) isn't clipped — the Sky-Q behaviour.
+        val padStart = settings.recordPadStartMinutes.value.coerceAtLeast(0) * 60_000L
+        val padEnd = settings.recordPadEndMinutes.value.coerceAtLeast(0) * 60_000L
+        val scheduledStart = programme.startUtcMillis - padStart
+        val scheduledEnd = programme.endUtcMillis + padEnd
+        // De-dup on the (padded) start, deterministic per airing: a series rule that re-scans, or a
+        // double-press of Schedule, mustn't stack a second identical booking. Different quality
+        // variants have different channel ids, so recording HD *and* SD of the same show is allowed.
+        if (ruleId != null && repo.alreadyBooked(ruleId, channel.id, scheduledStart)) return -1L
+        repo.bookingAt(channel.id, scheduledStart)?.let { return it.id }
 
-        val source = sources.byId(channel.sourceId)
+        // Multi-provider clash fallback: if another recording already owns this window on this
+        // channel's provider, record from a *different* provider that has the same channel — two
+        // connections, no cut. Falls back to the original channel when there's no free alternate.
+        val recordFrom = alternateProviderForClash(channel, scheduledStart, scheduledEnd)
+        val source = sources.byId(recordFrom.sourceId)
         val ua = source?.userAgent ?: Source.DEFAULT_USER_AGENT
         val filename = RecordingStorage.fileNameFor(channel.displayName, programme.title, programme.startUtcMillis)
         val locator = RecordingStorage.plannedLocator(appContext, settings, filename)
 
         val recording = Recording(
+            // channelId stays the channel the user picked (keeps de-dup/booking stable); only the
+            // provider we pull bytes from may differ.
             channelId = channel.id,
-            sourceId = channel.sourceId,
+            sourceId = recordFrom.sourceId,
             channelName = channel.displayName,
             logoUrl = channel.logoUrl,
             title = programme.title,
             description = programme.description,
             filePath = locator,
-            streamUrl = recordUrlFor(channel.streamUrl),
+            streamUrl = recordUrlFor(recordFrom.streamUrl),
             userAgent = ua,
-            scheduledStartMillis = programme.startUtcMillis,
-            scheduledEndMillis = programme.endUtcMillis,
+            scheduledStartMillis = scheduledStart,
+            scheduledEndMillis = scheduledEnd,
             status = RecordingStatus.SCHEDULED,
             seriesRuleId = ruleId,
             profileId = profileId,
         )
         val id = repo.insert(recording)
-        RecordingScheduler.set(appContext, id, programme.startUtcMillis)
+        val armAt = scheduledStart.coerceAtLeast(System.currentTimeMillis() + 1_000L)
+        RecordingScheduler.set(appContext, id, armAt)
+        // Warn the viewer just before we switch their screen to the recording (single-connection
+        // auto-switch); only meaningful when auto-switch is on.
+        if (settings.recordAutoSwitch.value) RecordingScheduler.setWarning(appContext, id, armAt)
         return id
     }
 
@@ -158,15 +179,18 @@ class RecordingEngine(
      */
     suspend fun rearmScheduled() {
         val now = System.currentTimeMillis()
+        val autoSwitch = settings.recordAutoSwitch.value
         for (rec in repo.scheduled()) {
             val at = if (rec.scheduledStartMillis <= now) now + 1_000L else rec.scheduledStartMillis
             RecordingScheduler.set(appContext, rec.id, at)
+            if (autoSwitch) RecordingScheduler.setWarning(appContext, rec.id, at)
         }
     }
 
-    /** Cancel a scheduled recording: disarm the alarm and drop the row. */
+    /** Cancel a scheduled recording: disarm the alarm (and its pre-warning) and drop the row. */
     suspend fun cancelScheduled(recordingId: Long) {
         RecordingScheduler.cancel(appContext, recordingId)
+        RecordingScheduler.cancelWarning(appContext, recordingId)
         repo.delete(recordingId)
     }
 
@@ -191,6 +215,18 @@ class RecordingEngine(
         return ruleId
     }
 
+    /**
+     * Remove a series-link rule and cancel every still-scheduled (not-yet-started) airing it booked.
+     * Recordings already running or finished are left untouched — only the rule and its future
+     * bookings go, so the series simply stops recording from here on (Sky Q "delete series link").
+     */
+    suspend fun removeSeriesRule(ruleId: Long) {
+        repo.scheduled()
+            .filter { it.seriesRuleId == ruleId }
+            .forEach { cancelScheduled(it.id) }
+        repo.deleteRule(ruleId)
+    }
+
     /** Book every not-yet-booked airing in [programmes] whose title matches the rule. */
     suspend fun scheduleMatching(channel: Channel, titleKey: String, ruleId: Long, programmes: List<Programme>) {
         val now = System.currentTimeMillis()
@@ -198,6 +234,43 @@ class RecordingEngine(
             .filter { it.endUtcMillis > now && titleKeyOf(it.title) == titleKey }
             .forEach { recordProgramme(channel, it, ruleId) }
     }
+
+    /**
+     * If [channel]'s own provider is already busy recording during [startMillis]..[endMillis],
+     * return a copy of the same channel on a *free* provider so the two recordings don't fight over
+     * one connection. Returns [channel] unchanged when its provider is free, when there's only one
+     * provider, or when no alternate is directly recordable (a Stalker cmd can't be recorded as-is).
+     */
+    private suspend fun alternateProviderForClash(channel: Channel, startMillis: Long, endMillis: Long): Channel {
+        val busy = busyProviderIds(startMillis, endMillis)
+        // Our provider is free this window, or nothing else is booked — no need to move.
+        if (channel.sourceId !in busy) return channel
+        if (channel.groupKey.isEmpty()) return channel
+
+        val variants = channelDao.variantsInGroup(channel.groupKey)
+            .groupBy { it.sourceId }
+            .mapNotNull { (_, chans) -> chans.maxByOrNull { it.qualityRank } }
+
+        for (variant in variants) {
+            if (variant.sourceId == channel.sourceId || variant.sourceId in busy) continue
+            if (variant.streamUrl.isBlank()) continue
+            // Only a provider whose stream URL is directly fetchable is usable for a background
+            // capture; a Stalker portal needs a per-play create_link the recorder can't do here.
+            if (sources.byId(variant.sourceId)?.kind == app.opentv.data.model.SourceKind.STALKER) continue
+            return variant
+        }
+        return channel
+    }
+
+    /** Provider ids with a recording scheduled or running that overlaps [startMillis]..[endMillis]. */
+    private suspend fun busyProviderIds(startMillis: Long, endMillis: Long): Set<Long> =
+        (repo.scheduled() + repo.active())
+            .filter { rec ->
+                val recEnd = if (rec.scheduledEndMillis > 0) rec.scheduledEndMillis else Long.MAX_VALUE
+                rec.scheduledStartMillis < endMillis && startMillis < recEnd
+            }
+            .map { it.sourceId }
+            .toSet()
 
     /** Loose title match key — case- and punctuation-insensitive, so "Countryfile" == "countryfile". */
     fun titleKeyOf(title: String): String = title.lowercase().replace(Regex("[^a-z0-9]"), "")

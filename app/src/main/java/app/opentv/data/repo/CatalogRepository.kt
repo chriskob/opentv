@@ -26,6 +26,7 @@ import app.opentv.data.model.StreamKind
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.parser.M3uParser
 import app.opentv.data.parser.VodTitleCleaner
+import app.opentv.data.remote.StalkerApi
 import app.opentv.data.remote.TmdbClient
 import app.opentv.data.remote.XtreamApi
 import kotlinx.coroutines.CancellationException
@@ -49,6 +50,7 @@ internal fun distinctByQuality(channels: List<app.opentv.data.model.Channel>): L
 }
 
 /** A home/detail row: a genre label and the titles under it. Generic so movies and series share it. */
+@androidx.compose.runtime.Immutable
 data class GenreGroup<T>(val genre: String, val items: List<T>)
 
 /**
@@ -65,6 +67,7 @@ sealed interface PersonTitle {
 data class MovieVariant(val movie: Movie, val qualityLabel: String, val qualityRank: Int)
 
 /** One logical film with its switchable quality tiers, best first — the VOD analogue of a channel group. */
+@androidx.compose.runtime.Immutable
 data class MovieVariantGroup(
     /** Best-quality variant: what a row shows and plays by default. */
     val primary: Movie,
@@ -123,6 +126,7 @@ class CatalogRepository(
     private val episodeDao: EpisodeDao,
     private val positionDao: PlaybackPositionDao,
     private val api: XtreamApi,
+    private val stalkerApi: StalkerApi,
     private val http: OkHttpClient,
     private val settings: AppSettings,
 ) {
@@ -181,6 +185,15 @@ class CatalogRepository(
     suspend fun channel(id: Long): Channel? = channelDao.byId(id)
 
     suspend fun movie(id: Long): Movie? = movieDao.byId(id)
+
+    /**
+     * The IMDb id for a film, for Stremio add-on stream lookups. Resolved through the user's TMDB
+     * key (using the provider's TMDB id when present, else a title+year search). Null without a key
+     * or a match — the add-on feature stays inert rather than guessing.
+     */
+    suspend fun imdbIdFor(movie: Movie): String? = withContext(Dispatchers.IO) {
+        tmdb.imdbId(title = movie.name, year = movie.year, isMovie = true, tmdbId = movie.tmdbId)
+    }
 
     suspend fun episode(id: Long): Episode? = episodeDao.byId(id)
 
@@ -620,6 +633,7 @@ class CatalogRepository(
             when (source.kind) {
                 SourceKind.XTREAM -> syncXtreamLive(source, nowUtcMillis)
                 SourceKind.M3U -> syncM3u(source, nowUtcMillis)
+                SourceKind.STALKER -> syncStalkerLive(source, nowUtcMillis)
             }
         } catch (e: CancellationException) {
             throw e
@@ -655,6 +669,40 @@ class CatalogRepository(
         channelDao.replaceCatalogue(source.id, normalized(channels, categoryNames), nowUtcMillis)
         sourceDao.markCatalogSynced(source.id, nowUtcMillis)
         return SyncResult.Success(channels.size, 0, 0)
+    }
+
+    /**
+     * Stalker/Ministra live sync. Mirrors [syncXtreamLive] but the channels it stores carry a
+     * [Channel.cmd] instead of a directly-playable URL — [resolvePlaybackUrl] mints the real URL at
+     * play time. The handshake happens inside [StalkerApi] on first call; a bad MAC or URL throws
+     * here with a clear message, caught by [syncLive].
+     */
+    private suspend fun syncStalkerLive(source: Source, nowUtcMillis: Long): SyncResult {
+        val liveCategories = stalkerApi.liveCategories(source)
+        val channels = stalkerApi.liveChannels(source)
+        if (channels.isEmpty()) {
+            return SyncResult.Failed(
+                "The portal returned no channels. The MAC may not be authorised, or its package is empty.",
+                null,
+            )
+        }
+        categoryDao.upsertAll(liveCategories)
+        val categoryNames = liveCategories.associate { it.id to it.name }
+        channelDao.replaceCatalogue(source.id, normalized(channels, categoryNames), nowUtcMillis)
+        sourceDao.markCatalogSynced(source.id, nowUtcMillis)
+        return SyncResult.Success(channels.size, 0, 0)
+    }
+
+    /**
+     * The URL to actually feed the player for [channel]. Xtream/M3U channels already carry a playable
+     * [Channel.streamUrl]; a Stalker channel's real URL is short-lived, so it's minted now via
+     * create_link from the channel's [Channel.cmd]. Falls back to the stored streamUrl if resolution
+     * fails, so the player surfaces an error rather than silently doing nothing.
+     */
+    suspend fun resolvePlaybackUrl(channel: Channel, source: Source?): String {
+        if (source?.kind != SourceKind.STALKER) return channel.streamUrl
+        val cmd = channel.cmd?.takeIf { it.isNotBlank() } ?: return channel.streamUrl
+        return runCatching { stalkerApi.createLink(source, cmd) }.getOrNull() ?: channel.streamUrl
     }
 
     private suspend fun syncXtreamVod(source: Source, nowUtcMillis: Long) {
@@ -838,6 +886,20 @@ class CatalogRepository(
         if (channel.groupKey.isEmpty()) return listOf(channel)
         val all = channelDao.variantsInGroup(channel.groupKey)
         return distinctByQuality(all).ifEmpty { listOf(channel) }
+    }
+
+    /**
+     * The record menu's "record from which provider" options: one channel per source that carries
+     * this logical channel, each that source's best-quality copy, the current source first. With two
+     * providers this lets a recording run on one account while the user keeps watching on the other —
+     * the only real way around a provider's single-connection limit (which even TiviMate can't dodge).
+     */
+    suspend fun recordSourceOptions(channel: Channel): List<Channel> = withContext(Dispatchers.IO) {
+        if (channel.groupKey.isEmpty()) return@withContext listOf(channel)
+        channelDao.variantsInGroup(channel.groupKey)
+            .groupBy { it.sourceId }
+            .map { (_, chans) -> chans.maxByOrNull { it.qualityRank } ?: chans.first() }
+            .sortedByDescending { it.sourceId == channel.sourceId }
     }
 
     /**

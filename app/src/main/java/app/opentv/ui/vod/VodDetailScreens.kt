@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
@@ -38,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,10 +60,13 @@ import app.opentv.R
 import app.opentv.data.model.Episode
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
+import app.opentv.data.model.StremioStream
 import app.opentv.data.parser.displayTitle
 import app.opentv.ui.VodViewModel
 import coil.compose.AsyncImage
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * A film's cinematic detail page: a backdrop hero with title, meta and Watch/Resume + favourite
@@ -73,6 +78,7 @@ import kotlinx.coroutines.delay
 fun MovieDetailScreen(
     movieId: Long,
     onPlay: (Movie) -> Unit,
+    onPlayUrl: (key: String, url: String, title: String) -> Unit,
     onOpenMovie: (Movie) -> Unit,
     onOpenPerson: (String) -> Unit,
     viewModel: VodViewModel = viewModel(),
@@ -81,6 +87,11 @@ fun MovieDetailScreen(
     var moreLike by remember(movieId) { mutableStateOf<List<Movie>>(emptyList()) }
     var resumeExists by remember(movieId) { mutableStateOf(false) }
     val playFocus = remember { FocusRequester() }
+    val hasAddons by viewModel.hasAddons.collectAsState()
+    val scope = rememberCoroutineScope()
+    // null = the add-on picker is closed; a (possibly empty) list = show it. Separate flag for the spinner.
+    var addonStreams by remember(movieId) { mutableStateOf<List<StremioStream>?>(null) }
+    var addonLoading by remember(movieId) { mutableStateOf(false) }
 
     LaunchedEffect(movieId) {
         val loaded = viewModel.movieDetail(movieId)
@@ -115,6 +126,19 @@ fun MovieDetailScreen(
                     viewModel.toggleMovieFavourite(m)
                     movie = m.copy(favourite = !m.favourite)
                 }
+                // Only when the user has add-ons set up — queries them for this film's streams.
+                if (hasAddons) {
+                    DetailButton(
+                        icon = Icons.Filled.Extension,
+                        label = stringResource(R.string.vod_addon_sources),
+                    ) {
+                        addonLoading = true
+                        scope.launch {
+                            addonStreams = viewModel.addonStreams(m)
+                            addonLoading = false
+                        }
+                    }
+                }
             }
         }
         item(key = "info") {
@@ -131,6 +155,97 @@ fun MovieDetailScreen(
                 Spacer(Modifier.height(4.dp))
                 MoviePosterRow(stringResource(R.string.vod_more_like_this), moreLike, onOpenMovie)
             }
+        }
+    }
+
+    if (addonLoading || addonStreams != null) {
+        AddonStreamPicker(
+            loading = addonLoading,
+            streams = addonStreams.orEmpty(),
+            onPick = { stream ->
+                addonStreams = null
+                onPlayUrl("movie:${m.id}", stream.url, m.displayTitle)
+            },
+            onDismiss = { addonStreams = null; addonLoading = false },
+        )
+    }
+}
+
+/**
+ * The picker shown when the user taps "Add-on sources" on a film: a spinner while streams are
+ * fetched, then the list each add-on returned (already filtered to directly-playable URLs). Picking
+ * one plays it through the normal VOD player.
+ */
+@Composable
+private fun AddonStreamPicker(
+    loading: Boolean,
+    streams: List<StremioStream>,
+    onPick: (StremioStream) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .width(560.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(20.dp),
+        ) {
+            Text(
+                stringResource(R.string.vod_addon_pick_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Spacer(Modifier.height(12.dp))
+            when {
+                loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.height(22.dp).width(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text(stringResource(R.string.vod_addon_loading), style = MaterialTheme.typography.bodyMedium)
+                }
+                streams.isEmpty() -> Text(
+                    stringResource(R.string.vod_addon_none),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                else -> LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.height(360.dp),
+                ) {
+                    items(streams, key = { it.url }) { stream -> AddonStreamRow(stream, onPick) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddonStreamRow(stream: StremioStream, onPick: (StremioStream) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (focused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { onPick(stream) }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                stream.title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                stream.addonName,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
     }
 }

@@ -11,13 +11,45 @@ import app.opentv.core.LocaleUtils
 import app.opentv.core.ServiceLocator
 import app.opentv.data.repo.CatalogRepository
 import app.opentv.data.work.SyncWorker
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class OpenTvApp : Application() {
+class OpenTvApp : Application(), ImageLoaderFactory {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * The app-wide Coil loader, tuned for a poster-and-logo heavy UI on a low-end TV box. The
+     * default loader keeps a small memory cache and no disk cache, so scrolling back through a
+     * shelf — or reopening Movies — re-downloads and re-decodes every image. Here:
+     *  - a generous memory cache and a 256 MB disk cache mean art you've already seen paints from
+     *    cache, instantly, instead of hitting the network;
+     *  - no crossfade — an immediate swap reads as snappier on a d-pad grid than a fade, and skips
+     *    a frame of blending per image;
+     *  - RGB_565 for opaque art (posters/backdrops) halves the memory per bitmap, so more fits in
+     *    cache; Coil keeps ARGB_8888 for anything with transparency, so channel logos are untouched.
+     */
+    override fun newImageLoader(): ImageLoader =
+        ImageLoader.Builder(this)
+            .memoryCache {
+                MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(256L * 1024 * 1024)
+                    .build()
+            }
+            .crossfade(false)
+            .allowRgb565(true)
+            .build()
 
     // So notifications and any app-context resources use the chosen language too, not just the UI.
     override fun attachBaseContext(base: Context) {

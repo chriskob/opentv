@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
@@ -84,6 +86,10 @@ fun GuidePreview(
     previewPlayer: ExoPlayer?,
     isRecording: Boolean = false,
     onRecord: () -> Unit = {},
+    dayLabel: String = "",
+    canGoPrevDay: Boolean = false,
+    onPrevDay: () -> Unit = {},
+    onNextDay: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -157,6 +163,30 @@ fun GuidePreview(
         // ---- Now / next detail ------------------------------------------------------------
         Column(Modifier.weight(1f).fillMaxHeight()) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // ---- Day navigation (Sky Q-style): ‹ Today › ----------------------------
+                // Only shown once the caller wires a label in; keeps older callers unchanged.
+                if (dayLabel.isNotEmpty()) {
+                    IconButton(onClick = onPrevDay, enabled = canGoPrevDay) {
+                        Icon(
+                            Icons.Default.KeyboardArrowLeft,
+                            contentDescription = stringResource(R.string.guide_prev_day),
+                            tint = if (canGoPrevDay) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                        )
+                    }
+                    Text(
+                        dayLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                    IconButton(onClick = onNextDay) {
+                        Icon(
+                            Icons.Default.KeyboardArrowRight,
+                            contentDescription = stringResource(R.string.guide_next_day),
+                        )
+                    }
+                }
                 Spacer(Modifier.weight(1f))
                 if (row != null) {
                     IconButton(onClick = onRecord) {

@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
@@ -115,13 +117,29 @@ fun VodPlayerScreen(
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+    // A recording that's still being written plays through the tail-following source. It behaves a
+    // little differently in the transport: the "length" is how much has been recorded so far, which
+    // keeps growing, and seeking is bounded to that recorded extent.
+    val growingRec = remember(streamUrl) { streamUrl.startsWith("optvrec://") }
     // The SMB source lets a recording stored on a NAS play and seek in-app; harmless for the
     // http/file URLs of ordinary VOD.
     val controller = remember {
         PlayerController(
             context, scope, graph.streamingHttpClient, subtitlesEnabled = false,
             smbDataSourceFactory = app.opentv.player.SmbDataSource.Factory(graph.settings),
+            // Lets an `optvrec://<id>` recording play while it's still being written.
+            growingDataSourceFactory =
+                app.opentv.player.GrowingRecordingDataSource.Factory(context.applicationContext),
+            liveRecording = growingRec,
         )
+    }
+    // Skip forward/back within the recorded portion. For a growing recording ExoPlayer won't report
+    // the item as seekable (no fixed length), so we seek directly, clamped to what's on disk.
+    fun seekRelative(deltaMs: Long) {
+        val p = controller.player
+        val ceiling = if (growingRec) p.bufferedPosition.coerceAtLeast(0L)
+        else (p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
+        p.seekTo((p.currentPosition + deltaMs).coerceIn(0L, ceiling))
     }
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
@@ -207,17 +225,22 @@ fun VodPlayerScreen(
         while (isActive) {
             if (!scrubbing) {
                 positionMs = controller.player.currentPosition.coerceAtLeast(0)
-                durationMs = controller.player.duration.takeIf { it > 0 } ?: 0
+                // A growing recording has no fixed length; the recorded-so-far extent (how far you
+                // can skip ahead) is what's been read into the buffer.
+                durationMs = if (growingRec) controller.player.bufferedPosition.coerceAtLeast(0)
+                else controller.player.duration.takeIf { it > 0 } ?: 0
             }
             delay(500)
         }
     }
 
-    // Auto-hide when playing and not paused/scrubbing and no picker open.
+    // Auto-hide when playing and not paused/scrubbing and no picker open. A growing recording dips in
+    // and out of Buffering as it rides the write head, so for that case Buffering counts as "playing"
+    // here — otherwise a single hiccup would pin the transport bar on screen for the rest of the watch.
     LaunchedEffect(controlsVisible, interaction, state, paused, scrubbing, vodPanel) {
-        if (controlsVisible && !paused && !scrubbing && vodPanel == VodPanel.NONE &&
-            state is PlayerController.State.Playing
-        ) {
+        val activelyPlaying = state is PlayerController.State.Playing ||
+            (growingRec && state is PlayerController.State.Buffering)
+        if (controlsVisible && !paused && !scrubbing && vodPanel == VodPanel.NONE && activelyPlaying) {
             delay(5_000)
             controlsVisible = false
         }
@@ -233,9 +256,11 @@ fun VodPlayerScreen(
     }
 
     BackHandler {
+        val activelyPlaying = state is PlayerController.State.Playing ||
+            (growingRec && state is PlayerController.State.Buffering)
         when {
             vodPanel != VodPanel.NONE -> vodPanel = VodPanel.NONE
-            controlsVisible && state is PlayerController.State.Playing && !paused -> controlsVisible = false
+            controlsVisible && activelyPlaying && !paused -> controlsVisible = false
             else -> onBack()
         }
     }
@@ -327,6 +352,23 @@ fun VodPlayerScreen(
                     Spacer(Modifier.height(16.dp))
                 }
 
+                if (growingRec) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.FiberManualRecord,
+                            contentDescription = null,
+                            tint = Color(0xFFE53935),
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            stringResource(R.string.rec_watching_live_badge),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color(0xFFE53935),
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
                 Text(title, style = MaterialTheme.typography.headlineSmall, color = Color.White)
                 Spacer(Modifier.height(8.dp))
 
@@ -353,7 +395,9 @@ fun VodPlayerScreen(
                 Spacer(Modifier.height(10.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    VodChip(Icons.Filled.FastRewind, stringResource(R.string.player_rewind)) { controller.seekBackward(); interaction++ }
+                    VodChip(Icons.Filled.FastRewind, stringResource(R.string.player_rewind)) {
+                        if (growingRec) seekRelative(-15_000) else controller.seekBackward(); interaction++
+                    }
                     Spacer(Modifier.width(10.dp))
                     VodChip(
                         icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
@@ -365,7 +409,9 @@ fun VodPlayerScreen(
                         interaction++
                     }
                     Spacer(Modifier.width(10.dp))
-                    VodChip(Icons.Filled.FastForward, stringResource(R.string.player_forward)) { controller.seekForward(); interaction++ }
+                    VodChip(Icons.Filled.FastForward, stringResource(R.string.player_forward)) {
+                        if (growingRec) seekRelative(15_000) else controller.seekForward(); interaction++
+                    }
                     Spacer(Modifier.width(20.dp))
                     VodChip(Icons.Filled.ClosedCaption, stringResource(R.string.player_subtitles)) {
                         vodPanel = if (vodPanel == VodPanel.SUBTITLES) VodPanel.NONE else VodPanel.SUBTITLES

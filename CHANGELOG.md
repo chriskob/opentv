@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.11.4
+
+The big DVR release. Recordings behave like Sky Q, you can record straight to a NAS, watch a
+recording while it's still taping, and the whole interface now speaks 30 languages.
+
+### Recording & DVR
+
+- **Watch a recording while it's still recording.** Start playing something the moment it begins
+  taping — OpenTV reads the growing file straight off disk, so it costs **zero extra connections**
+  to your provider. On a single-stream account that's the difference between "wait until it's
+  finished" and "watch now". Fast-forward and rewind work within whatever's been taped so far.
+- **Record straight to a NAS.** Point recordings at a network share over SMB (Settings →
+  Recordings → NAS, or set it up from the phone/laptop web manager) so a cheap box isn't boxed in
+  by its own storage — and every OpenTV in the house can reach the same recordings.
+- **Single-connection auto-switch.** On a one-stream provider, if a recording is due to start on
+  another channel, OpenTV moves the screen onto that recording as it begins — with a **30-second
+  warning** first and a *Keep watching* button if you'd rather not. No more "why did my live stream
+  just cut out?" (Recordings → Recording behaviour → *Auto-switch when recording starts*.)
+- **Clash handling with multi-provider fallback.** Book two overlapping recordings and, if more
+  than one of your providers carries that channel, OpenTV records each from a **different provider**
+  so neither is cut. On a single provider it flags the clash instead.
+- **Recording padding.** Start each recording a minute early and run a few minutes past the listed
+  end, so a late kick-off or an overrun isn't clipped. Adjustable per side.
+- **Series links show the next episode.** A series link now tells you exactly when it next records.
+- **Storage readout.** See how much space recordings use and how much is left.
+
+### Live TV
+
+- **Pause & rewind live TV** *(experimental, opt-in).* Holds the last couple of minutes so you can
+  pause and jump back. Off by default — it uses more memory.
+
+### Languages
+
+- **30 languages.** The whole interface is translated into Spanish, French, German, Italian,
+  Portuguese, Dutch, Polish, Russian, Turkish, Arabic, Simplified Chinese, Japanese, Korean, Hindi,
+  Swedish, Danish, Finnish, Norwegian, Czech, Greek, Romanian, Hungarian, Ukrainian, Indonesian,
+  Thai, Vietnamese, Bulgarian, Slovak, Croatian and Persian. Settings → Language (each listed in
+  its own name), or leave it on *System* to follow your device.
+
+### Fixes & polish
+
+- Smoother watch-while-recording, especially from a NAS: playback now keeps a buffer behind the
+  live edge so a network share doesn't stutter at the write head.
+- Back never lands you on a stray live channel or drops you out by accident — coming back from a
+  recording returns to your recordings, and Back on the home screen asks before it exits.
+- Password fields are masked, with a show/hide toggle.
+- Recording stability: NAS write timeouts and reconnect handling, so a quiet network doesn't
+  silently freeze a capture.
+
+### Notes
+
+- Everything stays on your device — provider logins never leave the box.
+- Free and open source (GPL-3.0): https://github.com/opentvproject/opentv
+
+
 ## 0.10.0
 
 - **Movies & Shows, redesigned.** A Plex-style layout with big artwork, cast & director, "more with

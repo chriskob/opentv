@@ -87,8 +87,19 @@ class SmbReadHandle(
  */
 object SmbClient {
 
+    // Bound every SMB operation. Without this a write to a NAS that has gone quiet (a Wi-Fi blip, a
+    // drive spinning up, the session dropping) blocks forever — which silently freezes a recording
+    // mid-capture with no error. A timeout turns that hang into a normal dropped-connection the
+    // capture loop can retry.
+    private val smbjConfig by lazy {
+        com.hierynomus.smbj.SmbConfig.builder()
+            .withSoTimeout(35, java.util.concurrent.TimeUnit.SECONDS)
+            .withTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
     private fun connect(config: SmbConfig): Quad {
-        val client = SMBClient()
+        val client = SMBClient(smbjConfig)
         val connection = client.connect(config.host)
         val auth = AuthenticationContext(config.username, config.password.toCharArray(), null)
         val session = connection.authenticate(auth)
