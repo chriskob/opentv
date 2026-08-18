@@ -304,8 +304,6 @@
     <string name="about_built_open_title">Nyílt fejlesztés</string>
     <string name="about_built_open_body">Az OpenTV nyíltan fejlődik, a kód nagy részét mesterséges intelligencia írja emberi irányítás alatt — ezt nyíltan kimondjuk, nem titkoljuk. Mivel nyílt forráskódú, egyetlen ember távozása sem állíthatja meg: bárki elolvashatja az összes sort, lefordíthatja, és folytathatja.</string>
     <string name="about_support_title">Támogassa a projektet</string>
-    <string name="about_support_body">Az OpenTV ingyenes, és mindig is az marad — semmi sincs elzárva. Ha hasznosnak találja, és szívesen hozzájárulna, egy kávé segít abban, hogy folytatódjanak a frissítések: az új funkciók, javítások és támogatás mind a szabad estékből származnak. Teljesen opcionális, és őszintén hálásak vagyunk érte.</string>
-    <string name="about_buy_coffee">Hívjon meg egy kávéra</string>
     <string name="about_scan_to_donate">Olvassa be az adományozáshoz</string>
     <string name="about_licence_links_title">Licenc &amp; hivatkozások</string>
     <string name="about_licence_label">Licenc</string>

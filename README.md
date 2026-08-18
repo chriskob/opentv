@@ -6,12 +6,13 @@ No account. No subscription. No server of ours between you and your provider.
 
 [![Build](https://github.com/opentvproject/opentv/actions/workflows/build.yml/badge.svg)](https://github.com/opentvproject/opentv/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-ffdd00.svg)](https://buymeacoffee.com/opentvproject)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsors-ea4aaa.svg)](https://github.com/sponsors/legionnaireneyland)
 
 ---
 
 > **Support OpenTV** — it's free and always will be. If it saved you from a dead "lifetime"
-> app, you can chip in at **[buymeacoffee.com/opentvproject](https://buymeacoffee.com/opentvproject)**.
+> app, you can chip in via **[GitHub Sponsors](https://github.com/sponsors/legionnaireneyland)**
+> or **[PayPal](https://www.paypal.com/donate/?business=leetobin1982@gmail.com&item_name=Support+OpenTV&no_recurring=0&currency_code=GBP)**.
 > Entirely optional; the app is never paywalled.
 
 ## Why this exists
@@ -38,7 +39,7 @@ keep it alive. That is the entire point.
 - **Recording (DVR)** — record to the box, a USB drive or your NAS (SMB); schedule from the
   guide; series-link a whole show; play back in-app with full seeking
 - **Catch-up / archive** where your provider offers it, plus **programme reminders**
-- **Movies and series** - a cinematic layout with artwork, cast and director, "more with this cast" rows, and optional TMDB back-fill (bring your own free key, kept on-device); resume and per-profile watch history
+- **Movies and series** with resume and per-profile watch history
 - **Favourites, categories, hide channels, search**, picture-in-picture, aspect control, and
   hand-off to an external player
 - **Free sync between your own devices** — favourites, watch history and NAS recordings, over
@@ -142,9 +143,11 @@ OpenTV is free and always will be. There is nothing to buy, no premium tier, and
 subscription — the failure mode this project was built in response to is a promise nobody
 could keep, so we are not making one.
 
-If it saves you money or annoyance and you want to say thanks, the maintainers accept coffees.
-See [.github/FUNDING.yml](.github/FUNDING.yml). Contributions fund nothing except caffeine;
-nobody is owed a feature for a tip, and nothing is gated behind one.
+If it saves you money or annoyance and you want to say thanks, you can sponsor the project via
+[GitHub Sponsors](https://github.com/sponsors/legionnaireneyland) or
+[PayPal](https://www.paypal.com/donate/?business=leetobin1982@gmail.com&item_name=Support+OpenTV&no_recurring=0&currency_code=GBP)
+— see [.github/FUNDING.yml](.github/FUNDING.yml). Tips fund nothing except spare-evening development;
+nobody is owed a feature for one, and nothing is gated behind one.
 
 ## Licence
 

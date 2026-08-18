@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.5
+
+- **Add a provider from your phone or laptop.** The "Manage on phone or laptop" web page now has an
+  **Add a provider** section — pick Xtream, M3U or Stalker portal, fill it in with a real keyboard,
+  then Test and Add. Channels load straight onto the TV, so you never have to type a server address
+  or a MAC on the remote again.
+- **Fixed the "camera won't scan it?" web address.** The manage screen was printing that link without
+  its access token, so typing it into a browser hit a dead "Not found". It now shows the full working
+  URL, and the token is short enough to type.
+
+
 ## 0.11.4
 
 The big DVR release. Recordings behave like Sky Q, you can record straight to a NAS, watch a

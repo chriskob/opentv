@@ -304,8 +304,6 @@
     <string name="about_built_open_title">Açık şekilde geliştirildi</string>
     <string name="about_built_open_body">OpenTV açık bir şekilde geliştirilir; kodun büyük bir kısmını insan yönetiminde yapay zekâ yazar — bu açıkça belirtilir, gizlenmez. Açık kaynak olduğu için tek bir kişinin ayrılması projeyi sona erdiremez: herkes her satırı okuyabilir, derleyebilir ve geliştirmeye devam edebilir.</string>
     <string name="about_support_title">Projeyi destekleyin</string>
-    <string name="about_support_body">OpenTV ücretsizdir ve her zaman ücretsiz kalacak — hiçbir şey kilitli değil. Faydalı buluyorsanız ve katkıda bulunmak isterseniz, bir kahve güncellemelerin devam etmesine yardımcı olur: yeni özellikler, düzeltmeler ve destek boş akşamlardan çıkar. Tamamen isteğe bağlıdır ve gerçekten takdir edilir.</string>
-    <string name="about_buy_coffee">Bana bir kahve ısmarla</string>
     <string name="about_scan_to_donate">Bağış yapmak için tarayın</string>
     <string name="about_licence_links_title">Lisans ve bağlantılar</string>
     <string name="about_licence_label">Lisans</string>

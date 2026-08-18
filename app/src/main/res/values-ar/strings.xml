@@ -304,8 +304,6 @@
     <string name="about_built_open_title">تطوير مفتوح وشفاف</string>
     <string name="about_built_open_body">يُطوَّر OpenTV بشفافية، حيث يقوم الذكاء الاصطناعي بجزء كبير من البرمجة بتوجيه بشري — وهذا معلن بوضوح، لا يُخفى. ولأنه مفتوح المصدر، فإن رحيل شخص واحد لا يمكن أن يوقفه: بإمكان أي شخص قراءة كل سطر فيه وبناءه ومواصلة تطويره.</string>
     <string name="about_support_title">دعم المشروع</string>
-    <string name="about_support_body">تطبيق OpenTV مجاني وسيبقى كذلك دائمًا — لا شيء مقفل خلف رسوم. إذا كان مفيدًا لك وتودّ المساهمة، فإن ثمن فنجان قهوة يساعد على استمرار التحديثات: الميزات الجديدة والإصلاحات والدعم كلها تأتي من أمسيات فراغ. الأمر اختياري تمامًا، ومقدَّر بصدق.</string>
-    <string name="about_buy_coffee">اشترِ لي فنجان قهوة</string>
     <string name="about_scan_to_donate">امسح للتبرع</string>
     <string name="about_licence_links_title">الترخيص والروابط</string>
     <string name="about_licence_label">الترخيص</string>

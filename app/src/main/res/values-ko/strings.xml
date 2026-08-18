@@ -304,8 +304,6 @@
     <string name="about_built_open_title">공개 개발</string>
     <string name="about_built_open_body">OpenTV는 공개적으로 개발되며, 코드의 상당 부분은 사람의 지시에 따라 AI가 작성합니다 - 이는 숨기지 않고 명확히 밝힙니다. 오픈소스이기 때문에 특정 한 사람이 떠나더라도 프로젝트가 사라지지 않습니다. 누구나 모든 코드를 읽고 빌드하여 이어갈 수 있습니다.</string>
     <string name="about_support_title">프로젝트 후원</string>
-    <string name="about_support_body">OpenTV는 무료이며 앞으로도 계속 무료입니다 - 어떤 기능도 제한하지 않습니다. 유용하게 사용하고 계셔서 조금이나마 보태고 싶으시다면, 커피 한 잔의 후원이 업데이트를 계속 이어가는 데 도움이 됩니다. 새로운 기능, 버그 수정, 지원 모두 개발자의 여가 시간에서 나옵니다. 전적으로 선택 사항이며 진심으로 감사드립니다.</string>
-    <string name="about_buy_coffee">커피 한 잔 후원하기</string>
     <string name="about_scan_to_donate">스캔하여 후원</string>
     <string name="about_licence_links_title">라이선스 및 링크</string>
     <string name="about_licence_label">라이선스</string>

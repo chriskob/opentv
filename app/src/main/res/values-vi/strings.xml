@@ -304,8 +304,6 @@
     <string name="about_built_open_title">Được xây dựng công khai</string>
     <string name="about_built_open_body">OpenTV được phát triển công khai, với AI đảm nhận phần lớn việc viết mã dưới sự chỉ đạo của con người — điều này được nêu rõ ràng, không giấu giếm. Vì là mã nguồn mở, không một cá nhân nào rời đi có thể khiến nó biến mất: bất kỳ ai cũng có thể đọc từng dòng mã, biên dịch nó, và tiếp tục phát triển.</string>
     <string name="about_support_title">Ủng hộ dự án</string>
-    <string name="about_support_body">OpenTV miễn phí và sẽ luôn miễn phí — không có gì bị khóa. Nếu nó hữu ích với bạn và bạn muốn đóng góp, một tách cà phê sẽ giúp duy trì các bản cập nhật: tính năng mới, sửa lỗi và hỗ trợ đều đến từ những buổi tối rảnh rỗi. Hoàn toàn tùy chọn, và thực sự được trân trọng.</string>
-    <string name="about_buy_coffee">Mời tôi một tách cà phê</string>
     <string name="about_scan_to_donate">Quét để ủng hộ</string>
     <string name="about_licence_links_title">Giấy phép &amp; liên kết</string>
     <string name="about_licence_label">Giấy phép</string>

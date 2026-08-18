@@ -338,8 +338,9 @@
     <string name="about_built_open_title">Built in the open</string>
     <string name="about_built_open_body">OpenTV is developed openly, with AI doing a large share of the coding under human direction — that\'s stated plainly, not hidden. Because it\'s open source, no single person going away can take it down: anyone can read every line, build it, and carry it on.</string>
     <string name="about_support_title">Support the project</string>
-    <string name="about_support_body">OpenTV is free and always will be — nothing is gated. If it\'s useful to you and you\'d like to chip in, a coffee helps keep the updates coming: new features, fixes and support all come out of spare evenings. Entirely optional, and genuinely appreciated.</string>
-    <string name="about_buy_coffee">Buy me a coffee</string>
+    <string name="about_support_body">OpenTV is free and always will be — nothing is gated. If it\'s useful and you\'d like to chip in, GitHub Sponsors or a one-off tip keeps the updates coming: new features, fixes and support all come out of spare evenings. Entirely optional, and genuinely appreciated.</string>
+    <string name="about_sponsor_github">GitHub Sponsors</string>
+    <string name="about_donate_paypal">Donate via PayPal</string>
     <string name="about_scan_to_donate">Scan to donate</string>
     <string name="about_licence_links_title">Licence &amp; links</string>
     <string name="about_licence_label">Licence</string>

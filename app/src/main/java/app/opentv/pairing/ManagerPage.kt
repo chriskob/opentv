@@ -101,6 +101,12 @@ object ManagerPage {
           .save { margin-top:6px; padding:12px 18px; font-size:15px; font-weight:600;
                   background:var(--accent2); color:var(--text); border:1px solid var(--accent); border-radius:10px; cursor:pointer; }
           .save:active { transform:scale(.97); }
+          .field select { width:100%; padding:11px 12px; font-size:16px; background:var(--bg); color:var(--text);
+                          border:1px solid var(--line); border-radius:9px; }
+          .field select:focus { outline:none; border-color:var(--accent); }
+          /* `.field { display:block }` above would otherwise override the [hidden] attribute, leaving
+             a type's irrelevant fields (e.g. username/password on a Stalker portal) on screen. */
+          .field[hidden] { display:none; }
         </style>
         </head>
         <body>
@@ -109,6 +115,31 @@ object ManagerPage {
               <h1>OpenTV — manage channels</h1>
               <p class="hint">Changes apply to your TV the moment you make them.</p>
             </header>
+
+            <details class="rec" id="provCard">
+              <summary>Add a provider</summary>
+              <div class="body">
+                <p class="hint">Add an Xtream, M3U or Stalker portal from here — a real keyboard beats the TV remote. Your login stays on the TV.</p>
+                <label class="field"><span>Type</span>
+                  <select id="provKind">
+                    <option value="xtream">Xtream Codes login</option>
+                    <option value="m3u">M3U playlist URL</option>
+                    <option value="stalker">Stalker portal</option>
+                  </select></label>
+                <label class="field"><span>Name (optional)</span>
+                  <input id="provName" placeholder="My provider" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+                <label class="field"><span id="provUrlLabel">Server address</span>
+                  <input id="provUrl" placeholder="http://example.com:8080" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+                <label class="field" id="provUserField"><span>Username</span>
+                  <input id="provUser" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+                <label class="field" id="provPassField"><span>Password</span>
+                  <input id="provPass" type="password" autocomplete="off"></label>
+                <label class="field" id="provMacField"><span>MAC address</span>
+                  <input id="provMac" placeholder="00:1A:79:xx:xx:xx" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+                <button class="save" id="provSave">Add &amp; load channels</button>
+                <button class="save" id="provTest" style="background:var(--surface2);border-color:var(--line);margin-left:8px;">Test</button>
+              </div>
+            </details>
 
             <details class="rec" id="recCard">
               <summary>Recording to NAS (SMB)</summary>
@@ -228,7 +259,7 @@ object ManagerPage {
             var empty = el('catEmpty');
             if (cats.length === 0) {
               empty.hidden = false;
-              empty.textContent = (meta.categories && meta.categories.length) ? 'No categories match that.' : 'No channels yet. Add a provider on the TV first.';
+              empty.textContent = (meta.categories && meta.categories.length) ? 'No categories match that.' : 'No channels yet — add a provider above to get started.';
               return;
             }
             empty.hidden = true;
@@ -430,6 +461,52 @@ object ManagerPage {
             setStatus('Testing…');
             post('/recording/test', smbBody())
               .then(showTest)
+              .catch(function(){ setStatus(UNREACH, 'err'); });
+          };
+
+          // ---- Add a provider ----------------------------------------------------------------
+          function provType(){ return el('provKind').value; }
+          function syncProvFields(){
+            var k = provType();
+            el('provUserField').hidden = (k !== 'xtream');
+            el('provPassField').hidden = (k !== 'xtream');
+            el('provMacField').hidden = (k !== 'stalker');
+            el('provUrlLabel').textContent = (k === 'm3u') ? 'Playlist URL' : (k === 'stalker' ? 'Portal URL' : 'Server address');
+            el('provUrl').placeholder = (k === 'm3u') ? 'http://example.com/playlist.m3u'
+              : (k === 'stalker' ? 'http://portal.example.com:80/c' : 'http://example.com:8080');
+          }
+          el('provKind').addEventListener('change', syncProvFields);
+          syncProvFields();
+
+          function provBody(){
+            return { kind: provType(), name: el('provName').value.trim(), url: el('provUrl').value.trim(),
+                     username: el('provUser').value.trim(), password: el('provPass').value, mac: el('provMac').value.trim() };
+          }
+          function provInvalid(b){
+            if (!b.url) return 'Enter the URL.';
+            if (b.kind === 'xtream' && (!b.username || !b.password)) return 'Username and password are required.';
+            if (b.kind === 'stalker' && !b.mac) return 'A MAC address is required.';
+            return null;
+          }
+          el('provTest').onclick = function(){
+            var b = provBody(); var bad = provInvalid(b); if (bad){ setStatus(bad, 'err'); return; }
+            setStatus('Testing…');
+            post('/source/test', b)
+              .then(function(r){ if (r && r.ok) setStatus(r.message || 'Looks good.', 'ok'); else setStatus((r && r.error) || 'Test failed', 'err'); })
+              .catch(function(){ setStatus(UNREACH, 'err'); });
+          };
+          el('provSave').onclick = function(){
+            var b = provBody(); var bad = provInvalid(b); if (bad){ setStatus(bad, 'err'); return; }
+            setStatus('Adding & loading channels…');
+            post('/source', b)
+              .then(function(r){
+                if (r && r.ok){
+                  setStatus('Added — ' + (r.channels || 0) + ' channels loaded.', 'ok');
+                  el('provUrl').value = ''; el('provUser').value = ''; el('provPass').value = '';
+                  el('provMac').value = ''; el('provName').value = '';
+                  loadMeta();
+                } else setStatus((r && r.error) || 'Could not add the provider', 'err');
+              })
               .catch(function(){ setStatus(UNREACH, 'err'); });
           };
 

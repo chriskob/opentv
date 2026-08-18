@@ -304,8 +304,6 @@
     <string name="about_built_open_title">Offen entwickelt</string>
     <string name="about_built_open_body">OpenTV wird offen entwickelt, wobei KI unter menschlicher Anleitung einen großen Teil des Codes schreibt — das wird klar gesagt, nicht verschwiegen. Da es Open Source ist, kann keine einzelne Person durch ihr Ausscheiden das Projekt beenden: Jeder kann jede Zeile lesen, sie kompilieren und weiterführen.</string>
     <string name="about_support_title">Projekt unterstützen</string>
-    <string name="about_support_body">OpenTV ist kostenlos und wird es immer bleiben — nichts ist gesperrt. Wenn es dir nützlich ist und du etwas beitragen möchtest: Ein Kaffee hilft, die Updates am Laufen zu halten — neue Funktionen, Fehlerbehebungen und Support entstehen alle in freien Abendstunden. Völlig freiwillig, und wirklich willkommen.</string>
-    <string name="about_buy_coffee">Spendier mir einen Kaffee</string>
     <string name="about_scan_to_donate">Zum Spenden scannen</string>
     <string name="about_licence_links_title">Lizenz &amp; Links</string>
     <string name="about_licence_label">Lizenz</string>

@@ -304,8 +304,6 @@
     <string name="about_built_open_title">खुले में बनाया गया</string>
     <string name="about_built_open_body">OpenTV को खुले तौर पर विकसित किया जाता है, जिसमें AI इंसानी निर्देशन में कोडिंग का एक बड़ा हिस्सा करता है — यह साफ़ तौर पर बताया गया है, छिपाया नहीं गया। चूंकि यह ओपन सोर्स है, इसलिए किसी एक व्यक्ति के चले जाने से यह बंद नहीं हो सकता: कोई भी हर लाइन पढ़ सकता है, इसे बना सकता है, और इसे आगे बढ़ा सकता है।</string>
     <string name="about_support_title">प्रोजेक्ट को सपोर्ट करें</string>
-    <string name="about_support_body">OpenTV मुफ़्त है और हमेशा रहेगा — कुछ भी बंद नहीं है। अगर यह आपके लिए उपयोगी है और आप योगदान देना चाहते हैं, तो एक कॉफ़ी अपडेट जारी रखने में मदद करती है: नई सुविधाएं, फिक्स और सपोर्ट सभी खाली शामों से आते हैं। पूरी तरह वैकल्पिक, और सच में सराहनीय।</string>
-    <string name="about_buy_coffee">मुझे एक कॉफ़ी पिलाएं</string>
     <string name="about_scan_to_donate">दान करने के लिए स्कैन करें</string>
     <string name="about_licence_links_title">लाइसेंस &amp; लिंक</string>
     <string name="about_licence_label">लाइसेंस</string>

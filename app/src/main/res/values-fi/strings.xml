@@ -304,8 +304,6 @@
     <string name="about_built_open_title">Kehitetty avoimesti</string>
     <string name="about_built_open_body">OpenTV kehitetään avoimesti, ja tekoäly tekee suuren osan koodauksesta ihmisen ohjauksessa — tämä kerrotaan suoraan, eikä sitä salata. Koska se on avointa lähdekoodia, yhdenkään henkilön poistuminen ei voi lopettaa sitä: kuka tahansa voi lukea jokaisen rivin, koota sen ja jatkaa sitä.</string>
     <string name="about_support_title">Tue projektia</string>
-    <string name="about_support_body">OpenTV on ilmainen ja pysyy aina sellaisena — mitään ei ole lukittu maksumuurin taakse. Jos siitä on sinulle hyötyä ja haluat tukea sitä, kupillinen kahvia auttaa pitämään päivitykset tulossa: uudet ominaisuudet, korjaukset ja tuki syntyvät kaikki vapaa-ajan illoista. Täysin vapaaehtoista ja aidosti arvostettua.</string>
-    <string name="about_buy_coffee">Osta minulle kahvi</string>
     <string name="about_scan_to_donate">Skannaa lahjoittaaksesi</string>
     <string name="about_licence_links_title">Lisenssi ja linkit</string>
     <string name="about_licence_label">Lisenssi</string>

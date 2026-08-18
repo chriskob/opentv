@@ -132,7 +132,9 @@ private fun Listening(session: ManagerServer.Session, onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
-            Text(session.shortUrl, style = MaterialTheme.typography.titleLarge)
+            // The FULL url, token and all — this is the address that actually works when typed. The
+            // bare host:port would 404, because every route on the server requires the token.
+            Text(session.url, style = MaterialTheme.typography.titleLarge)
 
             Spacer(Modifier.height(20.dp))
             Text(

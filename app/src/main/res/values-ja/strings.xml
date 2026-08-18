@@ -304,8 +304,6 @@
     <string name="about_built_open_title">オープンな開発</string>
     <string name="about_built_open_body">OpenTVはオープンに開発されており、コードの大部分は人の指示のもとAIが記述しています——これは隠さず、はっきりと明示しています。オープンソースであるため、特定の誰か一人がいなくなってもプロジェクトが消えることはありません。誰でもすべてのコードを読み、ビルドし、引き継ぐことができます。</string>
     <string name="about_support_title">プロジェクトを支援</string>
-    <string name="about_support_body">OpenTVは無料で、これからもずっと無料です——機能を制限することはありません。役に立っていて応援したいと思っていただけたら、コーヒー一杯分のご支援がアップデートの継続に役立ちます。新機能、不具合修正、サポートはすべて開発者の空き時間から生まれています。完全に任意ですが、本当にありがたく思います。</string>
-    <string name="about_buy_coffee">コーヒーをおごる</string>
     <string name="about_scan_to_donate">スキャンして寄付</string>
     <string name="about_licence_links_title">ライセンスとリンク</string>
     <string name="about_licence_label">ライセンス</string>

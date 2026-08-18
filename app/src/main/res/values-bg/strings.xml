@@ -304,8 +304,6 @@
     <string name="about_built_open_title">Изграден публично</string>
     <string name="about_built_open_body">OpenTV се разработва открито, като AI поема голяма част от кодирането под човешко ръководство — това е заявено ясно, не е скрито. Тъй като е с отворен код, нито един човек, който си тръгне, не може да го унищожи: всеки може да прочете всеки ред, да го компилира и да продължи работата.</string>
     <string name="about_support_title">Подкрепете проекта</string>
-    <string name="about_support_body">OpenTV е безплатен и винаги ще бъде — нищо не е заключено. Ако ви е полезен и искате да допринесете, едно кафе помага да продължат актуализациите: новите функции, поправките и поддръжката идват от свободни вечери. Напълно по избор и искрено оценено.</string>
-    <string name="about_buy_coffee">Почерпете ме с кафе</string>
     <string name="about_scan_to_donate">Сканирайте, за да дарите</string>
     <string name="about_licence_links_title">Лиценз &amp; връзки</string>
     <string name="about_licence_label">Лиценз</string>

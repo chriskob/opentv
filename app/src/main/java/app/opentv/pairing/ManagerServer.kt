@@ -8,8 +8,11 @@ package app.opentv.pairing
 import android.util.Log
 import app.opentv.core.AppSettings
 import app.opentv.data.model.Channel
+import app.opentv.data.model.Source
+import app.opentv.data.model.SourceKind
 import app.opentv.data.model.shownName
 import app.opentv.data.repo.CatalogRepository
+import app.opentv.data.repo.SourceRepository
 import app.opentv.recording.SmbClient
 import app.opentv.recording.SmbConfig
 import java.io.BufferedReader
@@ -47,10 +50,12 @@ import kotlinx.serialization.json.Json
  * ## What stops the neighbours using it
  *
  * - Binds to the LAN on a **random high port**, and only while the manage screen is open.
- * - The URL carries a **192-bit random token**; every route checks it. Knowing the IP and port is
- *   not enough. The token is only ever shown on the TV (QR + link), so only someone who can see the
- *   telly can connect — which is the whole security model. Unlike pairing there is no six-digit
- *   code, because this handles no credentials and the point is to be frictionless.
+ * - The URL carries a **random token**; every route checks it. Knowing the IP and port is not
+ *   enough. The token is only ever shown on the TV (QR + link), so only someone who can see the
+ *   telly can connect — which is the whole security model. It is kept short enough to type, because
+ *   the TV shows the full URL (with the token) as a fallback for when the QR won't scan; a LAN-only,
+ *   private-IP-only, idle-closing server on a random port doesn't need more. Unlike pairing there is
+ *   no six-digit code, because this handles no credentials and the point is to be frictionless.
  * - Requests from non-private addresses are refused outright.
  * - Request bodies are capped ([MAX_BODY_BYTES]).
  * - Unlike pairing (which closes after the first submit) this keeps serving while the screen is
@@ -60,6 +65,7 @@ class ManagerServer(
     private val scope: CoroutineScope,
     private val catalog: CatalogRepository,
     private val settings: AppSettings,
+    private val sourceRepository: SourceRepository,
 ) {
 
     data class Session(
@@ -99,7 +105,12 @@ class ManagerServer(
         }
 
         val random = SecureRandom()
-        token = ByteArray(24).also(random::nextBytes).joinToString("") { "%02x".format(it) }
+        // A short token, not a long one, so the "camera won't scan the QR?" fallback URL the TV
+        // shows is actually typeable into a laptop browser. It only gates a LAN-only, private-IP-only
+        // server on a random high port that closes on idle and is shown solely on this TV screen, so
+        // ~40 bits is ample — brute-forcing it on the local network inside the session window isn't
+        // realistic.
+        token = ByteArray(5).also(random::nextBytes).joinToString("") { "%02x".format(it) }
 
         val socket = try {
             // Port 0 asks the OS for a free one. A fixed port would be predictable and would
@@ -220,6 +231,10 @@ class ManagerServer(
             method == "POST" && path == "/recording" -> handleRecording(output, body)
 
             method == "POST" && path == "/recording/test" -> handleRecordingTest(output, body)
+
+            method == "POST" && path == "/source" -> handleAddSource(output, body)
+
+            method == "POST" && path == "/source/test" -> handleTestSource(output, body)
 
             else -> output.write(PairingHttp.httpResponse("404 Not Found", "text/plain", "Not found."))
         }
@@ -357,6 +372,71 @@ class ManagerServer(
         output.write(PairingHttp.httpResponse("200 OK", "application/json", json.encodeToString(TestDto.serializer(), dto)))
     }
 
+    // ---- Add a provider ------------------------------------------------------------------------
+
+    /**
+     * `POST /source {kind,name,url,username?,password?,mac?}` → save the provider and pull its live
+     * channels, so the catalogue fills without anyone typing a server address on the TV remote.
+     * Mirrors the on-device Add-source screen: save, then load live channels first.
+     */
+    private fun handleAddSource(output: OutputStream, body: String) {
+        val draft = runCatching { json.decodeFromString(SourceReq.serializer(), body) }.getOrNull()?.toDraftOrNull()
+        if (draft == null) {
+            writeJson(output, AddResultDto.serializer(), AddResultDto(ok = false, error = "Fill in the required fields for this provider type."))
+            return
+        }
+        val result = runBlocking {
+            val id = sourceRepository.save(draft)
+            val saved = sourceRepository.byId(id)
+                ?: return@runBlocking AddResultDto(ok = false, error = "Could not save the source.")
+            when (val r = catalog.syncLive(saved, System.currentTimeMillis())) {
+                is CatalogRepository.SyncResult.Success -> AddResultDto(ok = true, channels = r.channelCount)
+                is CatalogRepository.SyncResult.Failed -> AddResultDto(ok = false, error = r.reason)
+            }
+        }
+        writeJson(output, AddResultDto.serializer(), result)
+    }
+
+    /** `POST /source/test {…}` → validate the provider details without saving (handshake / auth). */
+    private fun handleTestSource(output: OutputStream, body: String) {
+        val draft = runCatching { json.decodeFromString(SourceReq.serializer(), body) }.getOrNull()?.toDraftOrNull()
+        if (draft == null) {
+            writeJson(output, TestResultDto.serializer(), TestResultDto(ok = false, error = "Fill in the required fields for this provider type."))
+            return
+        }
+        val result = runBlocking { sourceRepository.test(draft) }
+        val dto = if (result.isSuccess) {
+            TestResultDto(ok = true, message = result.getOrNull())
+        } else {
+            TestResultDto(ok = false, error = result.exceptionOrNull()?.message ?: "Test failed.")
+        }
+        writeJson(output, TestResultDto.serializer(), dto)
+    }
+
+    /** Turn a web request into a [Source] draft, or null if a field required for its kind is missing. */
+    private fun SourceReq.toDraftOrNull(): Source? {
+        val k = runCatching { SourceKind.valueOf(kind.trim().uppercase()) }.getOrNull() ?: return null
+        if (url.isBlank()) return null
+        when (k) {
+            SourceKind.XTREAM -> if (username.isNullOrBlank() || password.isNullOrBlank()) return null
+            SourceKind.STALKER -> if (mac.isNullOrBlank()) return null
+            SourceKind.M3U -> Unit
+        }
+        return Source(
+            name = name.trim().ifBlank { if (k == SourceKind.M3U) "Playlist" else "Provider" },
+            kind = k,
+            url = url.trim(),
+            username = username?.takeIf { it.isNotBlank() },
+            password = password?.takeIf { it.isNotBlank() },
+            macAddress = mac?.takeIf { it.isNotBlank() },
+            userAgent = Source.DEFAULT_USER_AGENT,
+        )
+    }
+
+    private fun <T> writeJson(output: OutputStream, serializer: kotlinx.serialization.KSerializer<T>, value: T) {
+        output.write(PairingHttp.httpResponse("200 OK", "application/json", json.encodeToString(serializer, value)))
+    }
+
     private fun Channel.toDto() = ChannelDto(
         id = id,
         name = shownName,
@@ -460,3 +540,16 @@ class ManagerServer(
 )
 
 @Serializable private data class TestDto(val ok: Boolean, val error: String?)
+
+@Serializable private data class SourceReq(
+    val kind: String = "xtream",
+    val name: String = "",
+    val url: String = "",
+    val username: String? = null,
+    val password: String? = null,
+    val mac: String? = null,
+)
+
+@Serializable private data class AddResultDto(val ok: Boolean, val channels: Int = 0, val error: String? = null)
+
+@Serializable private data class TestResultDto(val ok: Boolean, val message: String? = null, val error: String? = null)

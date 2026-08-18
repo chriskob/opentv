@@ -304,8 +304,6 @@
     <string name="about_built_open_title">Construit în mod deschis</string>
     <string name="about_built_open_body">OpenTV este dezvoltat deschis, iar AI-ul realizează o mare parte din programare sub îndrumare umană — acest lucru este spus clar, nu ascuns. Fiind open source, plecarea unei singure persoane nu îl poate opri: oricine poate citi fiecare linie, îl poate compila și îl poate continua.</string>
     <string name="about_support_title">Susține proiectul</string>
-    <string name="about_support_body">OpenTV este gratuit și va rămâne mereu așa — nimic nu este blocat. Dacă îți este util și vrei să contribui, o cafea ajută să apară în continuare actualizări: funcții noi, remedieri și suport, toate realizate în serile libere. Complet opțional, dar apreciat cu adevărat.</string>
-    <string name="about_buy_coffee">Oferă-mi o cafea</string>
     <string name="about_scan_to_donate">Scanează pentru a dona</string>
     <string name="about_licence_links_title">Licență &amp; linkuri</string>
     <string name="about_licence_label">Licență</string>

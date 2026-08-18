@@ -304,8 +304,6 @@
     <string name="about_built_open_title">Vyvíjané otvorene</string>
     <string name="about_built_open_body">OpenTV sa vyvíja otvorene, pričom veľkú časť programovania vykonáva AI pod ľudským vedením — to je uvedené jasne, nie skryté. Keďže ide o otvorený zdrojový kód, odchod jedinej osoby ho nemôže zničiť: ktokoľvek si môže prečítať každý riadok, zostaviť ho a pokračovať v jeho vývoji.</string>
     <string name="about_support_title">Podporte projekt</string>
-    <string name="about_support_body">OpenTV je a vždy bude bezplatné — nič nie je uzamknuté. Ak je pre vás užitočné a chcete prispieť, káva pomáha udržiavať aktualizácie: nové funkcie, opravy a podpora vznikajú vo voľných večeroch. Úplne dobrovoľné a naozaj vítané.</string>
-    <string name="about_buy_coffee">Kúpte mi kávu</string>
     <string name="about_scan_to_donate">Naskenujte a prispejte</string>
     <string name="about_licence_links_title">Licencia &amp; odkazy</string>
     <string name="about_licence_label">Licencia</string>
