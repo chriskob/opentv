@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.7
+
+- **Stalker portals: closer to a real box.** Building on v0.11.6, OpenTV now sends the rest of the
+  identity a real MAG set-top box presents at login — the auth token in the session cookie (not just
+  the header), a hardware-version hash, a timestamp and the box's API signature — and it probes a
+  couple more portal paths. Some Ministra/Stalker panels only return the channel list when they see
+  all of this, so lines that connected but showed no channels have a better chance of loading. If a
+  portal still comes up empty, please open an issue and say which panel software it runs.
+
 ## 0.11.6
 
 - **Stalker portals: full set-top-box identity.** OpenTV now authenticates to Stalker/Ministra

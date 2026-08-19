@@ -190,9 +190,14 @@ class StalkerApi(
             .addQueryParameter("device_id", id.deviceId)
             .addQueryParameter("device_id2", id.deviceId2)
             .addQueryParameter("signature", sha256Upper(id.sn + mac + random))
+            .addQueryParameter("auth_second_step", "0")
             .addQueryParameter("hw_version", "1.7-BD-00")
+            .addQueryParameter("hw_version_2", sha1Upper(mac))
             .addQueryParameter("not_valid_token", "0")
+            .addQueryParameter("api_signature", "262")
             .addQueryParameter("metrics", metrics)
+            .addQueryParameter("timestamp", (System.currentTimeMillis() / 1000).toString())
+            .addQueryParameter("prehash", "")
             .addQueryParameter("JsHttpRequest", "1-xml")
             .build()
         execute(source, url, token)
@@ -207,6 +212,7 @@ class StalkerApi(
     }
 
     private fun sha256Upper(s: String): String = hashUpper("SHA-256", s)
+    private fun sha1Upper(s: String): String = hashUpper("SHA-1", s)
     private fun md5Upper(s: String): String = hashUpper("MD5", s)
     private fun hashUpper(algo: String, s: String): String =
         java.security.MessageDigest.getInstance(algo).digest(s.toByteArray(Charsets.UTF_8))
@@ -234,8 +240,14 @@ class StalkerApi(
         val mac = source.macAddress?.trim().orEmpty()
         // adid (the lower-case device id) rides in the cookie the way a real box sends it; some
         // portals key off it alongside the MAC.
-        val cookie = "mac=${URLEncoder.encode(mac, "UTF-8")}; stb_lang=en; timezone=Europe/London; " +
-            "adid=${stbIdentity(mac).deviceId2.lowercase()}"
+        val cookie = buildString {
+            append("mac=").append(URLEncoder.encode(mac, "UTF-8"))
+            append("; stb_lang=en; timezone=Europe/London")
+            append("; adid=").append(stbIdentity(mac).deviceId2.lowercase())
+            // Some Ministra backends read the token from the cookie, not the Authorization header —
+            // send it in both so those portals recognise the session and return the channel list.
+            if (token != null) append("; token=").append(token)
+        }
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", stbUserAgent(source))
@@ -261,8 +273,10 @@ class StalkerApi(
         val root = raw.removeSuffix("/c").trimEnd('/')
         return listOf(
             "$root/portal.php",
+            "$root/c/portal.php",
             "$root/server/load.php",
             "$root/stalker_portal/server/load.php",
+            "$root/magLoad.php",
         ).mapNotNull { it.toHttpUrlOrNull() }
     }
 
