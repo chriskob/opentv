@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.6
+
+- **Stalker portals: full set-top-box identity.** OpenTV now authenticates to Stalker/Ministra
+  portals the way a real MAG box does — sending the device serial, `device_id`, a signature and a
+  metrics blob derived from your MAC, instead of the MAC on its own. Many portals won't hand over
+  the channel list or stream links to a box that only presents a MAC, which is why some lines that
+  worked in other apps came up empty in OpenTV. This lets those portals authorise OpenTV. If a
+  portal still fails, please open an issue and say which one — it helps a lot.
+
 ## 0.11.5
 
 - **Add a provider from your phone or laptop.** The "Manage on phone or laptop" web page now has an

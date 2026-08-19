@@ -130,13 +130,15 @@ class StalkerApi(
         if (mac.isEmpty()) throw StalkerException("This portal needs a MAC address (e.g. 00:1A:79:xx:xx:xx).")
         var lastError: Throwable? = null
         for (endpoint in endpoints(source)) {
-            val token = runCatching { handshake(source, endpoint) }
+            val hs = runCatching { handshake(source, endpoint) }
                 .onFailure { lastError = it }
                 .getOrNull()
-            if (token != null) {
-                // Best-effort profile activation — some portals won't serve itv data until it's called.
-                runCatching { getProfile(source, endpoint, token) }
-                return Session(token, endpoint, now + TOKEN_TTL_MILLIS).also { sessions[source.id] = it }
+            if (hs != null) {
+                // Many portals won't serve itv data until get_profile is called with a full MAG
+                // identity (device_id/signature) — that's what unlocks the ones that authenticate the
+                // box rather than just accepting any MAC.
+                runCatching { getProfile(source, endpoint, hs.token, hs.random) }
+                return Session(hs.token, endpoint, now + TOKEN_TTL_MILLIS).also { sessions[source.id] = it }
             }
         }
         throw StalkerException(
@@ -145,27 +147,70 @@ class StalkerApi(
         )
     }
 
-    private fun handshake(source: Source, endpoint: HttpUrl): String? {
+    private data class Handshake(val token: String, val random: String)
+
+    private fun handshake(source: Source, endpoint: HttpUrl): Handshake? {
         val url = endpoint.newBuilder()
             .addQueryParameter("type", "stb")
             .addQueryParameter("action", "handshake")
             .addQueryParameter("token", "")
             .addQueryParameter("JsHttpRequest", "1-xml")
             .build()
-        val body = execute(source, url, token = null) ?: return null
-        return (body as? JsonObject)?.obj("js")?.str("token")?.takeIf { it.isNotBlank() }
+        val js = (execute(source, url, token = null) as? JsonObject)?.obj("js") ?: return null
+        val token = js.str("token")?.takeIf { it.isNotBlank() } ?: return null
+        // Some Ministra versions return a `random` at handshake that the box folds into the
+        // get_profile signature; capture it so we can.
+        return Handshake(token, js.str("random").orEmpty())
     }
 
-    private fun getProfile(source: Source, endpoint: HttpUrl, token: String) {
+    /**
+     * MAG-box emulation. A lot of real Stalker/Ministra portals won't hand over channels to a client
+     * that just presents a MAC — they expect the box's full identity: a serial, a `device_id` and a
+     * `signature`, all derived from the MAC, plus a `metrics` blob. The apps that "just work" against
+     * those portals send exactly this; sending only the MAC is the usual reason a portal that plays
+     * elsewhere returns nothing here. Everything is derived deterministically from the MAC so it's
+     * stable across sessions, and portals that don't check any of it simply ignore it.
+     */
+    private fun getProfile(source: Source, endpoint: HttpUrl, token: String, random: String) {
+        val mac = source.macAddress?.trim().orEmpty()
+        val id = stbIdentity(mac)
+        val metrics = "{\"mac\":\"$mac\",\"sn\":\"${id.sn}\",\"model\":\"MAG250\",\"type\":\"STB\"," +
+            "\"uid\":\"${id.deviceId}\",\"random\":\"$random\"}"
         val url = endpoint.newBuilder()
             .addQueryParameter("type", "stb")
             .addQueryParameter("action", "get_profile")
             .addQueryParameter("hd", "1")
+            .addQueryParameter("ver", STB_VER)
+            .addQueryParameter("num_banks", "2")
+            .addQueryParameter("sn", id.sn)
             .addQueryParameter("stb_type", "MAG250")
+            .addQueryParameter("client_type", "STB")
+            .addQueryParameter("image_version", "218")
+            .addQueryParameter("video_out", "hdmi")
+            .addQueryParameter("device_id", id.deviceId)
+            .addQueryParameter("device_id2", id.deviceId2)
+            .addQueryParameter("signature", sha256Upper(id.sn + mac + random))
+            .addQueryParameter("hw_version", "1.7-BD-00")
+            .addQueryParameter("not_valid_token", "0")
+            .addQueryParameter("metrics", metrics)
             .addQueryParameter("JsHttpRequest", "1-xml")
             .build()
         execute(source, url, token)
     }
+
+    private data class StbIdentity(val sn: String, val deviceId: String, val deviceId2: String)
+
+    /** The MAG identity a portal expects, derived deterministically from the MAC. */
+    private fun stbIdentity(mac: String): StbIdentity {
+        val deviceId = sha256Upper(mac.uppercase())
+        return StbIdentity(sn = md5Upper(mac).take(13), deviceId = deviceId, deviceId2 = deviceId)
+    }
+
+    private fun sha256Upper(s: String): String = hashUpper("SHA-256", s)
+    private fun md5Upper(s: String): String = hashUpper("MD5", s)
+    private fun hashUpper(algo: String, s: String): String =
+        java.security.MessageDigest.getInstance(algo).digest(s.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }.uppercase()
 
     // ---- HTTP --------------------------------------------------------------------------------
 
@@ -187,11 +232,15 @@ class StalkerApi(
 
     private fun execute(source: Source, url: HttpUrl, token: String?): JsonElement? {
         val mac = source.macAddress?.trim().orEmpty()
-        val cookie = "mac=${URLEncoder.encode(mac, "UTF-8")}; stb_lang=en; timezone=Europe/London"
+        // adid (the lower-case device id) rides in the cookie the way a real box sends it; some
+        // portals key off it alongside the MAC.
+        val cookie = "mac=${URLEncoder.encode(mac, "UTF-8")}; stb_lang=en; timezone=Europe/London; " +
+            "adid=${stbIdentity(mac).deviceId2.lowercase()}"
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", stbUserAgent(source))
             .header("X-User-Agent", "Model: MAG250; Link: WiFi")
+            .header("Referer", "${url.scheme}://${url.host}:${url.port}/c/")
             .header("Cookie", cookie)
             .apply { if (token != null) header("Authorization", "Bearer $token") }
             .build()
@@ -241,6 +290,12 @@ class StalkerApi(
         const val DEFAULT_STB_UA =
             "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) " +
                 "MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
+
+        /** A realistic MAG firmware version string, sent in get_profile like a real box would. */
+        const val STB_VER =
+            "ImageDescription: 0.2.18-r23-250; ImageDate: Wed Aug 29 10:49:53 EEST 2018; " +
+                "PORTAL version: 5.6.9; API Version: JS API version: 343; STB API version: 146; " +
+                "Player Engine version: 0x58c"
     }
 }
 
