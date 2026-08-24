@@ -17,6 +17,8 @@ import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -134,6 +136,60 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val backHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var isBackLongPress = false
+    private val longPressRunnable = Runnable {
+        isBackLongPress = true
+        triggerFullScreenLive()
+    }
+
+    private fun triggerFullScreenLive() {
+        val graph = ServiceLocator.get(this)
+        val lastId = graph.settings.lastChannelId
+        if (lastId > 0 && !app.opentv.core.PipState.inPip.value) {
+            app.opentv.core.PlayRequests.request(lastId)
+        } else {
+            lifecycleScope.launch {
+                val fallbackId = runCatching { graph.catalogRepository.firstChannel()?.id }.getOrNull() ?: 0L
+                if (fallbackId > 0 && !app.opentv.core.PipState.inPip.value) {
+                    app.opentv.core.PlayRequests.request(fallbackId)
+                }
+            }
+        }
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            when (event.action) {
+                android.view.KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0) {
+                        isBackLongPress = false
+                        backHandler.removeCallbacks(longPressRunnable)
+                        backHandler.postDelayed(longPressRunnable, 450L)
+                    }
+                }
+                android.view.KeyEvent.ACTION_UP -> {
+                    backHandler.removeCallbacks(longPressRunnable)
+                    if (isBackLongPress) {
+                        isBackLongPress = false
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        backHandler.removeCallbacks(longPressRunnable)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        backHandler.removeCallbacks(longPressRunnable)
+    }
+
     // ---- Picture-in-picture ------------------------------------------------------------------
 
     /** Home pressed while a programme is playing → shrink to a floating window instead of stopping. */
@@ -246,13 +302,21 @@ private fun OpenTvApp(isTelevision: Boolean) {
     // worst possible first impression.
     val start = if (sourcesUi.sources.isEmpty()) Routes.ADD_SOURCE else Routes.HOME
 
-    // Boot to last channel: if enabled and we have one, jump straight into the player on launch.
+    // Boot to last channel: if enabled, jump straight into the full-screen player on launch.
     // Runs once; backing out returns to the guide and doesn't re-trigger.
     val bootContext = androidx.compose.ui.platform.LocalContext.current
-    val bootSettings = remember { ServiceLocator.get(bootContext).settings }
+    val bootGraph = remember { ServiceLocator.get(bootContext) }
+    val bootSettings = remember { bootGraph.settings }
     LaunchedEffect(start) {
-        if (start == Routes.HOME && bootSettings.resumeLastChannel.value && bootSettings.lastChannelId != 0L) {
-            navController.navigate(Routes.player(bootSettings.lastChannelId))
+        if (start == Routes.HOME && bootSettings.resumeLastChannel.value) {
+            val targetId = if (bootSettings.lastChannelId != 0L) {
+                bootSettings.lastChannelId
+            } else {
+                runCatching { bootGraph.catalogRepository.firstChannel()?.id }.getOrNull() ?: 0L
+            }
+            if (targetId != 0L) {
+                navController.navigate(Routes.player(targetId))
+            }
         }
     }
 

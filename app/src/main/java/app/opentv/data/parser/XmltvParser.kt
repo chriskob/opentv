@@ -54,7 +54,7 @@ object XmltvParser {
     suspend fun parse(
         input: InputStream,
         feedId: Long,
-        onChannelAlias: (id: String, displayName: String?) -> Unit = { _, _ -> },
+        onChannelAlias: suspend (id: String, displayName: String?) -> Unit = { _, _ -> },
         onProgramme: suspend (Programme) -> Unit,
     ): Stats {
         var channelCount = 0

@@ -87,6 +87,7 @@ import app.opentv.ui.RecordingBackgroundPrompt
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
+import androidx.activity.compose.BackHandler
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -115,6 +116,7 @@ fun HomeScreen(
     onAddSource: () -> Unit,
     onRefresh: () -> Unit,
     onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit = { _, _, _, _ -> },
+    onOpenMainMenu: () -> Unit = {},
     viewModel: ChannelsViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -152,6 +154,8 @@ fun HomeScreen(
     var recordTarget by remember { mutableStateOf<Pair<ChannelsViewModel.Row, Programme>?>(null) }
     // The channel whose OK menu (Watch / Record / Schedule) is open.
     var channelMenu by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+    // When a recording is running and the user wants to watch a live stream, asks first.
+    var pendingLiveChannel by remember { mutableStateOf<Channel?>(null) }
 
     // First time the user records or schedules while OpenTV isn't exempt from battery optimisation,
     // offer the exemption so the capture survives standby. Once per session; never blocks recording.
@@ -167,7 +171,7 @@ fun HomeScreen(
     // The rail is full-width while focus is on it, then slides shut once focus moves into the
     // guide (onFocusRow) so the grid gets the whole width. Pressing d-pad LEFT from the guide's
     // leftmost (channel) column slides it back and drops focus on the selected category.
-    var railExpanded by remember { mutableStateOf(true) }
+    var railExpanded by remember { mutableStateOf(false) }
     val railWidth by animateDpAsState(
         targetValue = if (railExpanded) 240.dp else 0.dp,
         label = "railWidth",
@@ -186,6 +190,27 @@ fun HomeScreen(
         }
     }
 
+    // ---- Back button navigation flow ---------------------------------------------------------
+    // 1. If channel menu / recording dialog / background prompt is open, close it.
+    // 2. If browsing the guide grid (!railExpanded), Back opens the Category/Channel List rail.
+    // 3. If in the Category/Channel List rail (railExpanded), Back opens the Main Menu sidebar.
+    BackHandler(enabled = channelMenu != null || recordTarget != null || showBackgroundPrompt || pendingLiveChannel != null) {
+        channelMenu = null
+        recordTarget = null
+        showBackgroundPrompt = false
+        pendingLiveChannel = null
+    }
+
+    BackHandler(enabled = channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && !railExpanded) {
+        railExpanded = true
+        pendingRailFocus = true
+    }
+
+    BackHandler(enabled = channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && railExpanded) {
+        railExpanded = false
+        onOpenMainMenu()
+    }
+
     // Re-evaluate "now" once a minute so progress bars advance without leaving the screen.
     LaunchedEffect(Unit) {
         while (true) {
@@ -195,59 +220,74 @@ fun HomeScreen(
         }
     }
 
-    // Keep both valid as the list changes (e.g. switching category): stay on the same channel if
-    // it's still present, otherwise fall back to the top of the new list.
-    LaunchedEffect(rows) {
-        highlightedRow = rows.firstOrNull { it.key == highlightedRow?.key } ?: rows.firstOrNull()
-        selectedRow = rows.firstOrNull { it.key == selectedRow?.key } ?: rows.firstOrNull()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var screenResumed by remember { mutableStateOf(true) }
+
+    // Keep both valid as the list changes (e.g. switching category): prioritize the currently
+    // playing / last tuned channel if returning to the guide or on first load.
+    LaunchedEffect(rows, screenResumed) {
+        val lastId = settings.lastChannelId
+        val matchByLastId = if (lastId > 0) {
+            rows.firstOrNull { r -> r.primary.id == lastId || r.variants.any { it.id == lastId } }
+        } else null
+
+        if (matchByLastId != null) {
+            if (highlightedRow == null || highlightedRow?.primary?.id == lastId) {
+                highlightedRow = matchByLastId
+            }
+            if (selectedRow == null || selectedRow?.primary?.id == lastId) {
+                selectedRow = matchByLastId
+            }
+        } else {
+            if (highlightedRow == null) {
+                highlightedRow = rows.firstOrNull { it.key == highlightedRow?.key } ?: rows.firstOrNull()
+            }
+            if (selectedRow == null) {
+                selectedRow = rows.firstOrNull { it.key == selectedRow?.key } ?: rows.firstOrNull()
+            }
+        }
     }
 
     // ---- Live preview player -----------------------------------------------------------------
-    // One muted player, reused. It only ever decodes while the guide is the foreground screen,
-    // and is stopped before any hand-off to full-screen, so the box never runs two decoders at
-    // once — the thing that used to lock up cheap sticks.
-    val previewScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+    // Reused shared player for seamless transition between guide preview and full-screen.
     val previewController = remember {
-        PlayerController(context, previewScope, graph.httpClient, subtitlesEnabled = false, preview = true)
-            .also { it.player.volume = 0f }
-    }
-    DisposableEffect(Unit) {
-        onDispose {
-            previewController.release()
-            previewScope.cancel()
+        graph.livePlayer.also {
+            it.player.volume = 1f
         }
     }
 
-    // Watching a live channel while a recording runs opens a second stream on the same line — which
-    // cuts the recording and can get a single-connection account banned. So every jump to full-screen
-    // live is funnelled through [requestLive]: with a recording active it asks first.
-    var pendingLiveChannel by remember { mutableStateOf<Channel?>(null) }
-    fun startLive(channel: Channel) {
-        PlaybackQueue.items = rows.map {
-            PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
-        }
-        previewController.stop()
-        onPlayChannel(channel)
-    }
-    fun requestLive(channel: Channel) {
-        if (activeRecordings.isNotEmpty()) pendingLiveChannel = channel else startLive(channel)
-    }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var screenResumed by remember { mutableStateOf(true) }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> screenResumed = true
-                Lifecycle.Event.ON_PAUSE -> {
+                Lifecycle.Event.ON_RESUME -> {
+                    screenResumed = true
+                    previewController.player.volume = 1f
+                    previewController.player.playWhenReady = true
+                }
+                Lifecycle.Event.ON_STOP -> {
                     screenResumed = false
-                    previewController.stop()
+                    if (!app.opentv.core.PipState.inPip.value) {
+                        // Keep stream alive during intra-app transitions
+                    }
                 }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Watching a live channel while a recording runs opens a second stream on the same line — which
+    // cuts the recording and can get a single-connection account banned. So every jump to full-screen
+    // live is funnelled through [requestLive]: with a recording active it asks first.
+    fun startLive(channel: Channel) {
+        PlaybackQueue.items = rows.map {
+            PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
+        }
+        onPlayChannel(channel)
+    }
+    fun requestLive(channel: Channel) {
+        if (activeRecordings.isNotEmpty()) pendingLiveChannel = channel else startLive(channel)
     }
 
     // Hold the screen awake while the guide's live preview is playing — otherwise the box's
@@ -262,32 +302,27 @@ fun HomeScreen(
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // Preview audio follows the setting; muted by default so browsing stays quiet.
-    LaunchedEffect(previewSound) {
-        previewController.player.volume = if (previewSound) 1f else 0f
-    }
-
-    // Tune the preview to the highlighted channel, so it follows the d-pad as you browse — the
-    // standard TV-guide behaviour. Debounced, so holding a direction doesn't re-tune every step.
-    // While a recording is running the preview is silenced entirely: on a single-connection line a
-    // muted preview is still a second stream, which fights the recording and risks a provider ban.
+    // Play the currently selected channel in the preview pane. Scrolling up and down highlights
+    // other channels so you can view guide info, but the preview keeps playing the current channel
+    // until a new channel is explicitly selected.
     val recordingActive = activeRecordings.isNotEmpty()
-    LaunchedEffect(highlightedRow?.key, previewEnabled, screenResumed, recordingActive) {
-        val row = highlightedRow
-        if (!previewEnabled || !screenResumed || recordingActive || row == null) {
-            previewController.stop()
+    LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed, recordingActive) {
+        val row = selectedRow ?: return@LaunchedEffect
+        if (!previewEnabled || !screenResumed || recordingActive) {
             return@LaunchedEffect
         }
         val channel = row.primary
-        val source = graph.sourceRepository.byId(channel.sourceId)
+        val source = sources.firstOrNull { it.id == channel.sourceId }
+            ?: graph.sourceRepository.byId(channel.sourceId)
+        val url = graph.catalogRepository.resolvePlaybackUrl(channel, source)
         previewController.play(
             PlayerController.Request(
-                url = channel.streamUrl,
+                url = url,
                 title = channel.shownName,
                 userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
                 isLive = true,
             ),
-            debounce = true,
+            debounce = false,
         )
     }
 
@@ -452,11 +487,15 @@ fun HomeScreen(
                     ChannelList(
                         rows = rows,
                         selectedKey = highlightedRow?.key,
-                        onSelectRow = { row -> channelMenu = row },
+                        onSelectRow = { row ->
+                            selectedRow = row
+                            channelMenu = row
+                        },
+                        onLongSelectRow = { row -> requestLive(row.primary) },
                         onFocusRow = onFocusChannel,
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
-                        modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
+                        modifier = Modifier.weight(1f),
                     )
                 } else {
                     GuideGrid(
@@ -464,14 +503,16 @@ fun HomeScreen(
                         windowStartMillis = windowStart,
                         dayOffset = guideDayOffset,
                         selectedKey = highlightedRow?.key,
-                        // OK on a channel opens its menu: Watch, Record now, Schedule a later show,
-                        // Record series. The preview already follows the highlight as you browse.
-                        onSelectRow = { row -> channelMenu = row },
+                        onSelectRow = { row ->
+                            selectedRow = row
+                            channelMenu = row
+                        },
+                        onLongSelectRow = { row -> requestLive(row.primary) },
                         onFocusRow = onFocusChannel,
                         onProgramme = { row, programme -> recordTarget = row to programme },
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
-                        modifier = Modifier.weight(1f).padding(start = 12.dp, end = 12.dp),
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }

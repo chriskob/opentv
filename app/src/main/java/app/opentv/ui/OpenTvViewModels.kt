@@ -56,6 +56,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -214,8 +215,8 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = graph.settings
 
     /** null = All. Exposed so the sidebar can highlight the active entry. */
-    val selectedCategory = MutableStateFlow<String?>(null)
-    val favouritesOnly = MutableStateFlow(false)
+    val selectedCategory = MutableStateFlow<String?>(settings.lastCategoryKey)
+    val favouritesOnly = MutableStateFlow(settings.lastFavouritesOnly)
     /** Provider filter for the live guide. null = every source. Only surfaced when there's >1 source. */
     val selectedSource = MutableStateFlow<Long?>(null)
     private val query = MutableStateFlow("")
@@ -240,7 +241,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             // on their own (cardiodoc's "keep sources separate"); null folds across every provider.
             val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
             foldCategories(scoped)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
      * Folds codec-split provider categories into one logical [CategoryGroup] each — 'UK| GENERAL
@@ -267,13 +268,13 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         combine(categoryGroups, settings.hiddenCategories, settings.hiddenUnlocked) { groups, hidden, unlocked ->
             if (unlocked) emptySet()
             else groups.filter { it.key in hidden }.flatMap { it.ids }.toSet()
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     /** The rail's view of categories: hidden ones drop out until the session is unlocked. */
     val visibleCategoryGroups: StateFlow<List<CategoryGroup>> =
         combine(categoryGroups, settings.hiddenCategories, settings.hiddenUnlocked) { groups, hidden, unlocked ->
             if (unlocked) groups else groups.filter { it.key !in hidden }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
      * One row on screen = one *logical* channel.
@@ -316,7 +317,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             // with real time only on the "today" page.
             if (day <= 0) base else startOfLocalDay(base) + day * DAY_MILLIS
         }.stateIn(
-            viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            viewModelScope, SharingStarted.Eagerly,
             System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS },
         )
 
@@ -359,7 +360,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                     .map { programmes -> programmes.groupBy { it.epgChannelId } }
             }
             .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     /** Guards the start-up loading bar so it shows once, on the first build, not on every tap. */
     @Volatile
@@ -398,85 +399,69 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                     val visible =
                         if (key.hiddenIds.isEmpty()) scoped
                         else scoped.filter { it.categoryId !in key.hiddenIds }
-                    // Show the size-aware loading bar for the FIRST guide build only (start-up).
-                    // After that the guide is built and flicking between categories is cheap, so
-                    // don't flash a loading line on every tap — that bar was only ever meant for
-                    // the one-time heavy load, and leaking it per-category read as a stuck "100%".
-                    val firstBuild = !guideBuilt
-                    if (firstBuild) StatusBus.set(sizeMessage(visible.size), 0f)
-                    buildRows(visible, byEpgChannel, now, reportProgress = firstBuild)
+                    buildRows(visible, byEpgChannel, now)
                 }
             }
             // Grouping thousands of channels against a 12-hour, all-feeds programme window is heavy
             // enough to freeze the UI for a big provider — a category tap that took minutes. Run the
             // whole pipeline off the main thread so the list just appears when it's ready.
             .flowOn(Dispatchers.Default)
-            // Once the first guide is on screen, clear the start-up bar — and never show it for a
-            // plain category switch again.
             .onEach { if (!guideBuilt) { guideBuilt = true; StatusBus.set(null) } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private fun buildRows(
         channels: List<Channel>,
         byEpgChannel: Map<String, List<Programme>>,
         now: Long,
-        reportProgress: Boolean = false,
     ): List<Row> {
+        if (channels.isEmpty()) return emptyList()
         // The programme→channel grouping is done once upstream (see [programmeIndex]) and passed
         // in ready-made, rather than regrouping the whole EPG on every category tap. Grouping is
         // kept out of SQL because the programme query cannot take a channel-id list without
         // hitting SQLite's bound-variable cap, and quality-variant folding is pure list work.
-        val groups = LinkedHashMap<Any, MutableList<Channel>>()
+        val groups = LinkedHashMap<Any, MutableList<Channel>>(channels.size)
         for (channel in channels) {
-            val key: Any = channel.groupKey.ifEmpty { channel.id }
+            val key: Any = if (channel.groupKey.isEmpty()) channel.id else channel.groupKey
             groups.getOrPut(key) { mutableListOf() } += channel
         }
 
-        val total = groups.size.coerceAtLeast(1)
-        var built = 0
+        val hasEpg = byEpgChannel.isNotEmpty()
         return groups.values.map { group ->
-            group.sortByDescending { it.qualityRank }
+            if (group.size > 1) {
+                group.sortByDescending { it.qualityRank }
+            }
             // Only genuinely different qualities are switchable; identical-quality dupes
             // (same stream in two categories) collapse to one, so no false "2 qualities".
             val variants = distinctByQuality(group)
             val primary = variants.first()
 
-            // Walk every variant's guide-id candidates (override → provider → matched)
+            // Walk every variant's guide-id candidates (override -> provider -> matched)
             // and use the first that actually has programmes. An id that never lights up
             // must not shadow a sibling variant whose id does.
-            val list = variants
-                .flatMap { it.epgCandidates }
-                .firstNotNullOfOrNull { id -> byEpgChannel[id] }
-                ?.sortedBy { it.startUtcMillis }
-                .orEmpty()
-
-            // Feed the progress bar as rows come together — this is the slow part on a big
-            // provider, so it's what the percentage should actually track.
-            if (reportProgress) {
-                built++
-                if (built % 400 == 0 || built == total) {
-                    StatusBus.setProgress(built.toFloat() / total)
+            var list: List<Programme> = emptyList()
+            if (hasEpg) {
+                for (variant in variants) {
+                    for (id in variant.epgCandidates) {
+                        val progs = byEpgChannel[id]
+                        if (!progs.isNullOrEmpty()) {
+                            list = progs
+                            break
+                        }
+                    }
+                    if (list.isNotEmpty()) break
                 }
             }
 
             Row(
                 primary = primary,
                 variants = variants,
-                now = list.firstOrNull { it.isLiveAt(now) },
-                next = list.firstOrNull { it.startUtcMillis > now },
+                now = if (list.isEmpty()) null else list.firstOrNull { it.isLiveAt(now) },
+                next = if (list.isEmpty()) null else list.firstOrNull { it.startUtcMillis > now },
                 programmes = list,
             )
         }
     }
 
-    /** A friendly, size-aware line for the load — a small provider gets a quick word, a huge one
-     * gets a "bear with me". Used at start-up so the wait always says what it's doing. */
-    private fun sizeMessage(count: Int): String = when {
-        count <= 0 -> "Building the guide…"
-        count < 2000 -> "Loading $count channels — a small one, this'll be quick."
-        count < 8000 -> "Loading $count channels — a fair few, give me a moment…"
-        else -> "Loading $count channels — a big one, bear with me, I'm on it…"
-    }
 
     val favourites: StateFlow<List<Channel>> =
         graph.catalogRepository.observeFavouriteChannels()
@@ -493,16 +478,20 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     val channelsPresent: StateFlow<Boolean?> =
         graph.catalogRepository.observeChannelCount()
             .map { it > 0 }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     fun selectCategory(id: String?) {
         favouritesOnly.value = false
         selectedCategory.value = id
+        settings.lastCategoryKey = id
+        settings.lastFavouritesOnly = false
     }
 
     fun selectFavourites() {
         favouritesOnly.value = true
         selectedCategory.value = null
+        settings.lastCategoryKey = null
+        settings.lastFavouritesOnly = true
     }
 
     /** Switch the live guide's provider filter; the category resets since categories differ per source. */
@@ -510,6 +499,8 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         selectedSource.value = sourceId
         selectedCategory.value = null
         favouritesOnly.value = false
+        settings.lastCategoryKey = null
+        settings.lastFavouritesOnly = false
     }
 
     fun search(text: String) { query.value = text }
@@ -640,7 +631,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
-        const val GUIDE_LOOKAHEAD_MILLIS = 24 * 60 * 60 * 1000L  // a full day fits the grid
+        const val GUIDE_LOOKAHEAD_MILLIS = 6 * 60 * 60 * 1000L  // 6 hours of fast-loading timeline
         const val DAY_MILLIS = 24 * 60 * 60 * 1000L
         const val GUIDE_MAX_DAYS = 6  // browse up to a week out, matching typical XMLTV depth
         const val HALF_HOUR_MILLIS = 30 * 60 * 1000L

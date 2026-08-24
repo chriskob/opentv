@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.0
+
+- **Seamless TV Guide & Full Screen Playback Transition (TiviMate Architecture).** Switching between full-screen playback and the TV Guide is now instantaneous with continuous uninterrupted audio and zero buffering gap.
+- **Background TV Guide Browsing.** Pressing Back from live stream highlights and focuses the active playing channel in the guide. Scrolling up and down allows browsing programme information while the active channel plays continuously without re-tuning until a new channel is selected.
+- **TV Remote Navigation & Long-Press Controls.**
+  - Holding the Back button (450ms) anywhere in the app jumps directly back to full-screen live playback.
+  - Double-pressing Back prompts to confirm exit, preventing accidental app closure.
+  - Pressing OK in full screen reveals the bottom menu without pausing the stream.
+  - Back button inside menus dismisses the menu overlay without leaving full screen.
+- **Live Stream Telemetry Stats Badges.** Real-time badges in the bottom playback menu displaying stream resolution (e.g. `1920x1080`, `4K`), framerate (`60 fps`), video codec (`H.264`, `HEVC`), and audio format (`AAC Stereo`, `AC3 5.1`).
+- **7-Day EPG Persistence & Offline Caching.** Complete multi-day programme schedule persistence with room database caching for instant EPG display on app startup.
+
 ## 0.11.7
 
 - **Stalker portals: closer to a real box.** Building on v0.11.6, OpenTV now sends the rest of the

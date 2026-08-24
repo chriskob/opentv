@@ -12,6 +12,7 @@ import app.opentv.core.findActivity
 import app.opentv.core.StatusBus
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,9 +46,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -125,6 +137,7 @@ fun MainScreen(
     val homeTab = visibleTabs.first()
 
     var tab by remember { mutableStateOf(homeTab) }
+    var liveNavRailVisible by remember { mutableStateOf(false) }
 
     // If the selected tab gets hidden (its type toggled off while it's open), drop back to the
     // home tab so the content area never tries to show a tab that's no longer there.
@@ -132,14 +145,26 @@ fun MainScreen(
         if (tab !in visibleTabs) tab = homeTab
     }
 
-    // Back from a non-home tab returns to the home tab rather than dropping out of the app.
-    BackHandler(enabled = tab != homeTab) { tab = homeTab }
-
-    // On the home tab, Back would otherwise drop straight out to the TV launcher — one stray press
-    // and you've closed the app. Ask first. (A dialog or panel open in a child screen swallows Back
-    // before this, so this only fires at the true root.)
+    // Double-press Back at the root (when on the main menu / nav rail) shows the exit dialog
+    var lastBackPressMillis by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     var showExit by remember { mutableStateOf(false) }
-    BackHandler(enabled = tab == homeTab) { showExit = true }
+
+    BackHandler(enabled = (tab == Tab.LIVE && liveNavRailVisible) || (tab != Tab.LIVE && tab == homeTab)) {
+        val now = System.currentTimeMillis()
+        if (now - lastBackPressMillis <= 2000L) {
+            showExit = true
+        } else {
+            lastBackPressMillis = now
+            android.widget.Toast.makeText(context, "Press back again to exit", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Back from a non-home tab returns to the home tab with the main menu open
+    BackHandler(enabled = tab != homeTab) {
+        tab = homeTab
+        liveNavRailVisible = true
+    }
+
     if (showExit) {
         AlertDialog(
             onDismissRequest = { showExit = false },
@@ -161,15 +186,26 @@ fun MainScreen(
     // of it and leave a sliver poking out — so they live side by side and never collide.
     Column(Modifier.fillMaxSize()) {
       Row(Modifier.weight(1f).fillMaxWidth()) {
-        NavRail(
-            tabs = visibleTabs,
-            current = tab,
-            onSelect = { tab = it },
-            onOpenSearch = onOpenSearch,
-            onOpenSettings = onOpenSettings,
-            onOpenProfiles = onOpenProfiles,
-            activeProfileName = activeProfileName,
-        )
+        if (tab != Tab.LIVE || liveNavRailVisible) {
+            NavRail(
+                tabs = visibleTabs,
+                current = tab,
+                onSelect = {
+                    tab = it
+                    liveNavRailVisible = false
+                },
+                onOpenSearch = onOpenSearch,
+                onOpenSettings = onOpenSettings,
+                onOpenProfiles = onOpenProfiles,
+                activeProfileName = activeProfileName,
+                requestFocusOnStart = (tab == Tab.LIVE && liveNavRailVisible),
+                onExitRight = {
+                    if (tab == Tab.LIVE) {
+                        liveNavRailVisible = false
+                    }
+                },
+            )
+        }
 
         Box(Modifier.weight(1f).fillMaxHeight()) {
             when (tab) {
@@ -181,6 +217,7 @@ fun MainScreen(
                     onAddSource = onAddSource,
                     onRefresh = onRefresh,
                     onPlayCatchup = onPlayCatchup,
+                    onOpenMainMenu = { liveNavRailVisible = true },
                 )
                 Tab.MOVIES -> MoviesScreen(
                     onOpenMovie = onOpenMovie,
@@ -262,8 +299,18 @@ private fun NavRail(
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
     activeProfileName: String,
+    onExitRight: () -> Unit = {},
+    requestFocusOnStart: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val navFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(requestFocusOnStart) {
+        if (requestFocusOnStart) {
+            delay(50)
+            runCatching { navFocusRequester.requestFocus() }
+        }
+    }
+
     // Expand whenever focus is anywhere inside the rail; collapse back to icons when it leaves.
     var expanded by remember { mutableStateOf(false) }
     val width by animateDpAsState(
@@ -278,6 +325,12 @@ private fun NavRail(
             .background(MaterialTheme.colorScheme.surface)
             .focusGroup()
             .onFocusChanged { expanded = it.hasFocus }
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
+                    onExitRight()
+                    false
+                } else false
+            }
             .padding(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -307,7 +360,15 @@ private fun NavRail(
         Spacer(Modifier.height(8.dp))
 
         tabs.forEach { t ->
-            RailItem(t.icon, stringResource(t.labelRes), expanded, current == t) { onSelect(t) }
+            val isCurrent = current == t
+            RailItem(
+                icon = t.icon,
+                label = stringResource(t.labelRes),
+                expanded = expanded,
+                selected = isCurrent,
+                onClick = { onSelect(t) },
+                modifier = if (isCurrent) Modifier.focusRequester(navFocusRequester) else Modifier,
+            )
         }
 
         Spacer(Modifier.height(1.dp).fillMaxWidth())
@@ -326,6 +387,7 @@ private fun RailItem(
     expanded: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
     val bg = when {
@@ -338,11 +400,15 @@ private fun RailItem(
     else MaterialTheme.colorScheme.onSurfaceVariant
 
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(bg)
+            .then(
+                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.onPrimary, RoundedCornerShape(10.dp))
+                else Modifier
+            )
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),

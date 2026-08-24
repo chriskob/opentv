@@ -260,6 +260,11 @@ class PlayerController(
      * that rapid presses collapse into a single tune. Pass false for a deliberate selection.
      */
     fun play(request: Request, debounce: Boolean = true) {
+        if (current?.url == request.url && (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)) {
+            current = request
+            player.playWhenReady = true
+            return
+        }
         // Cancelling here is what makes fast channel-changing safe: the previous switch never
         // reaches the player, so we never stack prepares.
         switchJob?.cancel()

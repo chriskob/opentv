@@ -71,7 +71,7 @@ class Converters {
         SeriesRule::class,
         Reminder::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -259,16 +259,20 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
-        /**
-         * v10 → v11: Stalker/Ministra portal support. Adds a nullable `macAddress` to sources (the
-         * portal credential) and a nullable `cmd` to channels (the play command resolved on demand
-         * at tune time). Both nullable TEXT with no default, matching the `String?` fields, so the
-         * schema-identity check passes and favourites/overrides survive the upgrade.
-         */
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `sources` ADD COLUMN `macAddress` TEXT")
                 db.execSQL("ALTER TABLE `channels` ADD COLUMN `cmd` TEXT")
+            }
+        }
+
+        /**
+         * v11 → v12: Composite range indexes on programmes table for instant TV guide query.
+         */
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_programmes_endUtcMillis_startUtcMillis` ON `programmes` (`endUtcMillis`, `startUtcMillis`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_programmes_epgChannelId_endUtcMillis_startUtcMillis` ON `programmes` (`epgChannelId`, `endUtcMillis`, `startUtcMillis`)")
             }
         }
 
@@ -279,7 +283,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 .addMigrations(
                     MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
+                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                 )
                 /*
                  * Pre-1.0 policy: schema changes drop and rebuild the database. Everything

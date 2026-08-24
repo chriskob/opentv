@@ -17,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
@@ -60,8 +62,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,7 +84,9 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -132,15 +138,12 @@ fun PlayerScreen(
     val view = LocalView.current
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
-    val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+    val scope = rememberCoroutineScope()
     val subtitlesDefault by settings.subtitlesEnabled.collectAsState()
     val controller = remember {
-        PlayerController(
-            context, scope, graph.streamingHttpClient,
-            subtitlesEnabled = settings.subtitlesEnabled.value,
-            // Opt-in shallow DVR so the transport's pause/rewind actually holds on a live stream.
-            dvr = settings.livePauseEnabled.value,
-        )
+        graph.livePlayer.also {
+            it.player.volume = 1f
+        }
     }
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
@@ -158,8 +161,6 @@ fun PlayerScreen(
         onDispose {
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             view.keepScreenOn = false
-            controller.release()
-            scope.cancel()
         }
     }
 
@@ -202,11 +203,84 @@ fun PlayerScreen(
     val rootFocus = remember { FocusRequester() }
     val listFocus = remember { FocusRequester() }
 
+    var menuOpenedAt by remember { mutableLongStateOf(0L) }
+    var videoSizeText by remember { mutableStateOf("") }
+    var fpsText by remember { mutableStateOf("") }
+    var videoCodecText by remember { mutableStateOf("") }
+    var audioCodecText by remember { mutableStateOf("") }
+
+    DisposableEffect(controller.player) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    videoSizeText = "${videoSize.width}x${videoSize.height}"
+                }
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                val videoGroup = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }
+                val videoFormat = videoGroup?.let { g ->
+                    (0 until g.length).firstOrNull { g.isTrackSelected(it) }?.let { g.getTrackFormat(it) }
+                }
+                if (videoFormat != null) {
+                    if (videoFormat.width > 0 && videoFormat.height > 0) {
+                        videoSizeText = "${videoFormat.width}x${videoFormat.height}"
+                    }
+                    if (videoFormat.frameRate > 0f) {
+                        fpsText = "${videoFormat.frameRate.toInt()} fps"
+                    }
+                    val mime = videoFormat.sampleMimeType ?: ""
+                    videoCodecText = when {
+                        mime.contains("avc", ignoreCase = true) || mime.contains("h264", ignoreCase = true) -> "H.264"
+                        mime.contains("hevc", ignoreCase = true) || mime.contains("h265", ignoreCase = true) -> "HEVC"
+                        mime.contains("vp9", ignoreCase = true) -> "VP9"
+                        mime.contains("av01", ignoreCase = true) || mime.contains("av1", ignoreCase = true) -> "AV1"
+                        mime.isNotEmpty() -> mime.substringAfterLast("/").uppercase()
+                        else -> ""
+                    }
+                }
+
+                val audioGroup = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
+                val audioFormat = audioGroup?.let { g ->
+                    (0 until g.length).firstOrNull { g.isTrackSelected(it) }?.let { g.getTrackFormat(it) }
+                }
+                if (audioFormat != null) {
+                    val ch = when (audioFormat.channelCount) {
+                        6 -> "5.1"
+                        2 -> "Stereo"
+                        1 -> "Mono"
+                        else -> if (audioFormat.channelCount > 0) "${audioFormat.channelCount}ch" else ""
+                    }
+                    val mime = audioFormat.sampleMimeType ?: ""
+                    val codec = when {
+                        mime.contains("mp4a-latm", ignoreCase = true) || mime.contains("aac", ignoreCase = true) -> "AAC"
+                        mime.contains("ac3", ignoreCase = true) || mime.contains("eac3", ignoreCase = true) -> "AC3"
+                        mime.contains("opus", ignoreCase = true) -> "Opus"
+                        mime.isNotEmpty() -> mime.substringAfterLast("/").uppercase()
+                        else -> ""
+                    }
+                    audioCodecText = listOf(codec, ch).filter { it.isNotEmpty() }.joinToString(" ")
+                }
+            }
+        }
+
+        val vs = controller.player.videoSize
+        if (vs.width > 0 && vs.height > 0) {
+            videoSizeText = "${vs.width}x${vs.height}"
+        }
+
+        controller.player.addListener(listener)
+        onDispose {
+            controller.player.removeListener(listener)
+        }
+    }
+
     // The channel list you were browsing, for channel up/down and the in-player list. Snapshotted
     // on entry so it doesn't shift under you mid-session.
     val queue = remember { PlaybackQueue.items }
 
     fun reveal() {
+        menuOpenedAt = System.currentTimeMillis()
         controlsVisible = true
         interaction++
     }
@@ -239,6 +313,24 @@ fun PlayerScreen(
             val channel = graph.catalogRepository.channel(id) ?: return@launch
             variants = graph.catalogRepository.variants(channel)
             tuneTo(variants.firstOrNull { it.id == channel.id } ?: channel)
+        }
+    }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    if (!app.opentv.core.PipState.inPip.value && currentId != null && !paused) {
+                        currentId?.let { playChannelId(it) }
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -314,17 +406,14 @@ fun PlayerScreen(
         }
     }
 
-    // Back steps back out one layer at a time — channel list, then picker, then the control bar —
-    // and only leaves the player once nothing is on screen. From immersive it's a single press out,
-    // so it never traps you, but it also no longer throws you all the way to the guide just because
-    // you wanted to dismiss the bar.
+    // Pressing the Back button immediately returns to the TV Guide, matching TiviMate behavior.
+    // If a secondary overlay panel (channel list or audio/subtitle picker) is open, Back closes that first.
     BackHandler {
         when {
-            channelListVisible -> channelListVisible = false
             panel != Panel.NONE -> panel = Panel.NONE
+            channelListVisible -> channelListVisible = false
             controlsVisible -> controlsVisible = false
             else -> {
-                controller.stop()
                 onBack()
             }
         }
@@ -375,7 +464,13 @@ fun PlayerScreen(
                     // channel banner, then it auto-hides.
                     event.key == Key.DirectionUp || event.key == Key.ChannelUp -> { zapBy(-1); reveal(); true }
                     event.key == Key.DirectionDown || event.key == Key.ChannelDown -> { zapBy(1); reveal(); true }
-                    // With the bar up, left/right drive its buttons; let them through.
+                    // Center/Enter/OK button on remote:
+                    // If controls are hidden, pressing OK reveals the bottom menu without pausing playback.
+                    !controlsVisible && (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) -> {
+                        reveal()
+                        true
+                    }
+                    // With the bar up, left/right/center drive its buttons; let them through.
                     controlsVisible -> {
                         interaction++
                         false
@@ -400,6 +495,8 @@ fun PlayerScreen(
                 PlayerView(ctx).apply {
                     player = controller.player
                     useController = false
+                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     subtitleView?.setUserDefaultStyle()
                     subtitleView?.setUserDefaultTextSize()
                     layoutParams = ViewGroup.LayoutParams(
@@ -408,7 +505,11 @@ fun PlayerScreen(
                     )
                 }
             },
-            update = { it.resizeMode = resizeMode },
+            update = {
+                it.player = controller.player
+                it.resizeMode = resizeMode
+            },
+            onRelease = { it.player = null },
         )
 
         // The channel number as you type it, top-right, until it resolves.
@@ -500,21 +601,64 @@ fun PlayerScreen(
                     Spacer(Modifier.height(16.dp))
                 }
 
-                if (channelTitle.isNotEmpty()) {
-                    Text(
-                        channelTitle,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(12.dp))
+                if (channelTitle.isNotEmpty() || videoSizeText.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (channelTitle.isNotEmpty()) {
+                            Text(
+                                channelTitle,
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (videoSizeText.isNotEmpty()) {
+                            Spacer(Modifier.width(14.dp))
+                            StatBadge(videoSizeText)
+                        }
+                        if (fpsText.isNotEmpty()) {
+                            Spacer(Modifier.width(6.dp))
+                            StatBadge(fpsText)
+                        }
+                        if (videoCodecText.isNotEmpty()) {
+                            Spacer(Modifier.width(6.dp))
+                            StatBadge(videoCodecText)
+                        }
+                        if (audioCodecText.isNotEmpty()) {
+                            Spacer(Modifier.width(6.dp))
+                            StatBadge(audioCodecText)
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val allowChipClick = { System.currentTimeMillis() - menuOpenedAt >= 250L }
+
+                    BarChip(
+                        icon = Icons.Filled.List,
+                        label = stringResource(R.string.common_channels),
+                        selected = channelListVisible,
+                        focusRequester = barFocus,
+                        canClick = allowChipClick,
+                    ) {
+                        channelListVisible = !channelListVisible
+                        interaction++
+                    }
+                    Spacer(Modifier.width(10.dp))
+
                     if (controller.isSeekable) {
-                        BarChip(Icons.Filled.FastRewind, stringResource(R.string.player_rewind), false) {
-                            controller.seekBackward(); interaction++
+                        BarChip(
+                            icon = Icons.Filled.FastRewind,
+                            label = stringResource(R.string.player_rewind),
+                            selected = false,
+                            canClick = allowChipClick,
+                        ) {
+                            controller.seekBackward()
+                            interaction++
                         }
                         Spacer(Modifier.width(10.dp))
                     }
@@ -522,7 +666,7 @@ fun PlayerScreen(
                         icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                         label = if (paused) stringResource(R.string.common_play) else stringResource(R.string.player_pause),
                         selected = false,
-                        focusRequester = barFocus,
+                        canClick = allowChipClick,
                     ) {
                         paused = !paused
                         controller.player.playWhenReady = !paused
@@ -530,28 +674,58 @@ fun PlayerScreen(
                     }
                     if (controller.isSeekable) {
                         Spacer(Modifier.width(10.dp))
-                        BarChip(Icons.Filled.FastForward, stringResource(R.string.player_forward), false) {
-                            controller.seekForward(); interaction++
+                        BarChip(
+                            icon = Icons.Filled.FastForward,
+                            label = stringResource(R.string.player_forward),
+                            selected = false,
+                            canClick = allowChipClick,
+                        ) {
+                            controller.seekForward()
+                            interaction++
                         }
                     }
 
-                    Spacer(Modifier.width(20.dp))
-                    BarChip(Icons.Filled.Subtitles, stringResource(R.string.player_subtitles), panel == Panel.SUBTITLES) {
-                        panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES; interaction++
+                    Spacer(Modifier.width(10.dp))
+                    BarChip(
+                        icon = Icons.Filled.Subtitles,
+                        label = stringResource(R.string.player_subtitles),
+                        selected = panel == Panel.SUBTITLES,
+                        canClick = allowChipClick,
+                    ) {
+                        panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES
+                        interaction++
                     }
                     Spacer(Modifier.width(10.dp))
-                    BarChip(Icons.Filled.Audiotrack, stringResource(R.string.player_audio), panel == Panel.AUDIO) {
-                        panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO; interaction++
+                    BarChip(
+                        icon = Icons.Filled.Audiotrack,
+                        label = stringResource(R.string.player_audio),
+                        selected = panel == Panel.AUDIO,
+                        canClick = allowChipClick,
+                    ) {
+                        panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO
+                        interaction++
                     }
                     if (variants.size > 1) {
                         Spacer(Modifier.width(10.dp))
-                        BarChip(Icons.Filled.HighQuality, stringResource(R.string.player_quality), panel == Panel.QUALITY) {
-                            panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY; interaction++
+                        BarChip(
+                            icon = Icons.Filled.HighQuality,
+                            label = stringResource(R.string.player_quality),
+                            selected = panel == Panel.QUALITY,
+                            canClick = allowChipClick,
+                        ) {
+                            panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY
+                            interaction++
                         }
                     }
                     Spacer(Modifier.width(10.dp))
-                    BarChip(Icons.Filled.AspectRatio, stringResource(R.string.player_aspect), panel == Panel.ASPECT) {
-                        panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT; interaction++
+                    BarChip(
+                        icon = Icons.Filled.AspectRatio,
+                        label = stringResource(R.string.player_aspect),
+                        selected = panel == Panel.ASPECT,
+                        canClick = allowChipClick,
+                    ) {
+                        panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT
+                        interaction++
                     }
                     Spacer(Modifier.width(10.dp))
                     val recordingThis = activeRecordings.any { it.channelId == currentId }
@@ -560,10 +734,16 @@ fun PlayerScreen(
                         label = if (recordingThis) stringResource(R.string.common_stop) else stringResource(R.string.player_record),
                         selected = recordingThis,
                         iconTint = Color(0xFFE53935),
+                        canClick = allowChipClick,
                     ) { toggleRecord() }
                     if (pipSupported) {
                         Spacer(Modifier.width(10.dp))
-                        BarChip(Icons.Filled.PictureInPictureAlt, stringResource(R.string.player_pop_out), false) {
+                        BarChip(
+                            icon = Icons.Filled.PictureInPictureAlt,
+                            label = stringResource(R.string.player_pop_out),
+                            selected = false,
+                            canClick = allowChipClick,
+                        ) {
                             (context.findActivity() as? app.opentv.MainActivity)?.enterPipNow()
                             interaction++
                         }
@@ -851,12 +1031,30 @@ private fun OptionRow(
 }
 
 @Composable
+private fun StatBadge(text: String) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.White.copy(alpha = 0.18f))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.95f),
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
 private fun BarChip(
     icon: ImageVector,
     label: String,
     selected: Boolean,
     focusRequester: FocusRequester? = null,
     iconTint: Color? = null,
+    canClick: () -> Boolean = { true },
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -874,16 +1072,16 @@ private fun BarChip(
             .clip(RoundedCornerShape(12.dp))
             .background(container)
             .then(
-                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(12.dp))
                 else Modifier,
             )
-            .clickable(onClick = onClick)
+            .clickable(onClick = { if (canClick()) onClick() })
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, contentDescription = label, tint = if (focused) content else (iconTint ?: content))
         Spacer(Modifier.width(6.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge, color = content)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = content, fontWeight = if (focused) FontWeight.Bold else FontWeight.Normal)
     }
 }
 

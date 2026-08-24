@@ -139,4 +139,22 @@ class M3uParserTest {
         assertThat(result.channels).isEmpty()
         assertThat(result.skippedEntries).isEqualTo(0)
     }
+
+    @Test
+    fun `channels and category groups maintain playlist order`() {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="z" group-title="Sports",Channel Z
+            http://example.com/z.m3u8
+            #EXTINF:-1 tvg-id="a" group-title="News",Channel A
+            http://example.com/a.m3u8
+            #EXTINF:-1 tvg-id="m" group-title="Movies",Channel M
+            http://example.com/m.m3u8
+        """.trimIndent()
+
+        val channels = M3uParser.parse(playlist, sourceId = 1).channels
+        val categories = channels.mapNotNull { it.categoryId }.distinct()
+
+        assertThat(categories).containsExactly("Sports", "News", "Movies").inOrder()
+    }
 }

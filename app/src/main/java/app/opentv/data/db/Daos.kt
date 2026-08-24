@@ -183,6 +183,9 @@ interface ChannelDao {
     @Query("SELECT COUNT(*) FROM channels WHERE hidden = 0")
     fun observeVisibleCount(): Flow<Int>
 
+    @Query("SELECT * FROM channels WHERE hidden = 0 ORDER BY favourite DESC, sortIndex, displayName LIMIT 1")
+    suspend fun firstVisible(): Channel?
+
     @Query("UPDATE channels SET favourite = :favourite WHERE id = :id")
     suspend fun setFavourite(id: Long, favourite: Boolean)
 
@@ -222,9 +225,19 @@ interface ChannelDao {
     @Query("UPDATE channels SET epgOverrideId = :epgId WHERE id = :id")
     suspend fun setEpgOverride(id: Long, epgId: String?)
 
-    /** The matcher's working set: id, group key, and what is already known. */
+    /** The matcher's lightweight working set: id, group key, and what is already known. */
+    @Query("SELECT id, name, groupKey, epgOverrideId, epgChannelId, matchedEpgId FROM channels")
+    suspend fun allForMatching(): List<ChannelMatchingRow>
+
     @Query("SELECT * FROM channels")
-    suspend fun allForMatching(): List<Channel>
+    suspend fun allChannels(): List<Channel>
+
+    @Transaction
+    suspend fun updateMatchedEpgIds(updates: List<Pair<Long, String?>>) {
+        for ((id, match) in updates) {
+            setMatchedEpgId(id, match)
+        }
+    }
 
     @Upsert
     suspend fun upsertAll(channels: List<Channel>)
@@ -283,9 +296,34 @@ interface ChannelDao {
         deleteStale(sourceId, syncStamp)
     }
 
-    @Query("SELECT * FROM channels WHERE sourceId = :sourceId")
-    suspend fun userStateForSource(sourceId: Long): List<Channel>
+    @Query("SELECT id, streamId, favourite, hidden, sortIndex, customName, epgOverrideId, matchedEpgId FROM channels WHERE sourceId = :sourceId")
+    suspend fun userStateForSource(sourceId: Long): List<ChannelUserState>
 }
+
+/** Lightweight projection for matching channels to EPG. */
+data class ChannelMatchingRow(
+    val id: Long,
+    val name: String,
+    val groupKey: String,
+    val epgOverrideId: String?,
+    val epgChannelId: String?,
+    val matchedEpgId: String?,
+) {
+    val epgCandidates: List<String>
+        get() = listOfNotNull(epgOverrideId, epgChannelId, matchedEpgId)
+}
+
+/** Lightweight projection for preserving user state across catalogue refreshes. */
+data class ChannelUserState(
+    val id: Long,
+    val streamId: String,
+    val favourite: Boolean,
+    val hidden: Boolean,
+    val sortIndex: Int,
+    val customName: String?,
+    val epgOverrideId: String?,
+    val matchedEpgId: String?,
+)
 
 @Dao
 interface CategoryDao {

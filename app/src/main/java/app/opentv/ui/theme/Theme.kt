@@ -24,23 +24,23 @@ import androidx.compose.ui.unit.sp
  * actively unpleasant on a 55" panel at night, so everything here is anchored near-black with
  * a single restrained accent used only for focus and selection.
  */
-private val Accent = Color(0xFF7C93FF)
-private val AccentDim = Color(0xFF4B5DB8)
+private val Accent = Color(0xFF26C6DA)
+private val AccentDim = Color(0xFF1E3A4A)
 
 private val DarkScheme = darkColorScheme(
     primary = Accent,
-    onPrimary = Color(0xFF0A0C14),
-    primaryContainer = AccentDim,
-    onPrimaryContainer = Color(0xFFE6EAFF),
-    secondary = Color(0xFF9AA3C0),
-    background = Color(0xFF07080C),
-    onBackground = Color(0xFFE8EAF0),
-    surface = Color(0xFF0D0F16),
-    onSurface = Color(0xFFE8EAF0),
-    surfaceVariant = Color(0xFF171A24),
-    onSurfaceVariant = Color(0xFFA8AEC0),
-    outline = Color(0xFF2A2F3D),
-    error = Color(0xFFFF6B6B),
+    onPrimary = Color(0xFF0D141C),
+    primaryContainer = Color(0xFF1F303E),
+    onPrimaryContainer = Color(0xFFE0F7FA),
+    secondary = Color(0xFF80DEEA),
+    background = Color(0xFF131A22),
+    onBackground = Color(0xFFECEFF1),
+    surface = Color(0xFF19222B),
+    onSurface = Color(0xFFECEFF1),
+    surfaceVariant = Color(0xFF232D37),
+    onSurfaceVariant = Color(0xFF90A4AE),
+    outline = Color(0xFF171F27),
+    error = Color(0xFFFF5252),
     onError = Color(0xFF1A0505),
 )
 
@@ -61,16 +61,20 @@ private val LightScheme = lightColorScheme(
     outline = Color(0xFFD3D7E2),
 )
 
-/** Scaled up from the Material defaults: ten-foot viewing needs bigger text than a phone. */
+/** Scaled for TV viewing, adjusted one size smaller for sleekness and clarity. */
 private val OpenTvTypography = Typography(
-    displaySmall = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.SemiBold),
-    headlineMedium = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.SemiBold),
-    headlineSmall = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium),
-    titleMedium = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium),
-    bodyLarge = TextStyle(fontSize = 16.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp),
-    labelLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+    displaySmall = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.SemiBold),
+    headlineMedium = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold),
+    headlineSmall = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium),
+    titleMedium = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+    titleSmall = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+    bodyLarge = TextStyle(fontSize = 14.sp),
+    bodyMedium = TextStyle(fontSize = 12.sp),
+    bodySmall = TextStyle(fontSize = 11.sp),
+    labelLarge = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium),
+    labelSmall = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium),
 )
 
 @Composable

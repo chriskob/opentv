@@ -184,7 +184,7 @@ class EpgRepository(
 
     private suspend fun syncFeed(feed: EpgFeed, nowUtcMillis: Long): FeedResult {
         val batch = ArrayList<Programme>(BATCH_SIZE)
-        val aliases = ArrayList<EpgChannelAlias>(256)
+        val aliases = ArrayList<EpgChannelAlias>(BATCH_SIZE)
         var written = 0
 
         try {
@@ -199,6 +199,10 @@ class EpgRepository(
                             displayName = displayName ?: id,
                             normalizedKey = ChannelNameNormalizer.normalize(displayName ?: id).groupKey,
                         )
+                        if (aliases.size >= BATCH_SIZE) {
+                            aliasDao.upsertAll(aliases)
+                            aliases.clear()
+                        }
                     },
                     onProgramme = { programme ->
                         // Skip anything that finished before the retention cut-off; no point
@@ -216,9 +220,11 @@ class EpgRepository(
                 if (batch.isNotEmpty()) {
                     programmeDao.upsertAll(batch)
                     written += batch.size
+                    batch.clear()
                 }
                 if (aliases.isNotEmpty()) {
-                    aliases.chunked(BATCH_SIZE).forEach { aliasDao.upsertAll(it) }
+                    aliasDao.upsertAll(aliases)
+                    aliases.clear()
                 }
 
                 if (written == 0 && stats.programmeCount == 0) {
@@ -285,15 +291,22 @@ class EpgRepository(
 
         val channels = channelDao.allForMatching()
         var matched = 0
+        val updates = ArrayList<Pair<Long, String?>>()
 
         for (channel in channels) {
             val newMatch = index.match(channel.groupKey)
             if (newMatch != channel.matchedEpgId) {
-                channelDao.setMatchedEpgId(channel.id, newMatch)
+                updates += channel.id to newMatch
             }
             val works = channel.epgCandidates.any { it in populated } ||
                 (newMatch != null && newMatch in populated)
             if (works) matched++
+        }
+
+        if (updates.isNotEmpty()) {
+            updates.chunked(BATCH_SIZE).forEach { chunk ->
+                channelDao.updateMatchedEpgIds(chunk)
+            }
         }
 
         Log.i(

@@ -229,6 +229,8 @@ data class EpgChannelAlias(
         Index(value = ["feedId", "epgChannelId", "startUtcMillis"], unique = true),
         Index(value = ["endUtcMillis"]),
         Index(value = ["epgChannelId"]),
+        Index(value = ["endUtcMillis", "startUtcMillis"]),
+        Index(value = ["epgChannelId", "endUtcMillis", "startUtcMillis"]),
     ],
 )
 data class Programme(

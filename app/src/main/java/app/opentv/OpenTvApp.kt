@@ -97,6 +97,9 @@ class OpenTvApp : Application(), ImageLoaderFactory {
         }
 
         appScope.launch {
+            // Defer startup background tasks so the live UI and DB can render immediately
+            // on cold start without I/O contention or immediate table invalidation.
+            kotlinx.coroutines.delay(10000)
             val prefs = getSharedPreferences("opentv", MODE_PRIVATE)
             val seen = prefs.getInt("normalizer_version", 0)
             if (seen < CatalogRepository.NORMALIZER_VERSION) {

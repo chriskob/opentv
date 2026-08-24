@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -29,13 +30,16 @@ import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,33 +96,37 @@ fun GuidePreview(
     onNextDay: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
+    val timeFmt = remember(is24) {
+        if (is24) SimpleDateFormat("HH:mm", Locale.getDefault())
+        else SimpleDateFormat("hh:mm a", Locale.getDefault())
+    }
+
     Row(
         modifier
             .fillMaxWidth()
-            .height(212.dp)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .height(160.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
     ) {
-        // ---- Logo / "watch" card ----------------------------------------------------------
+        // ---- 16:9 Video preview / Logo card (clean, matching TiviMate) ----
         Box(
             Modifier
                 .fillMaxHeight()
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .background(Color.Black)
                 .clickable(onClick = onWatch),
             contentAlignment = Alignment.Center,
         ) {
-            // Logo sits behind everything as the fallback / shutter.
             if (row != null) {
                 AsyncImage(
                     model = row.primary.logoUrl,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize(0.6f),
+                    modifier = Modifier.fillMaxSize(0.55f),
                 )
             }
 
-            // Live video on top of the logo when preview playback is on. The transparent
-            // shutter means the logo behind shows through until the first frame arrives.
             if (previewPlayer != null && row != null) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
@@ -136,149 +144,102 @@ fun GuidePreview(
                         }
                     },
                     update = { it.player = previewPlayer },
+                    onRelease = { it.player = null },
                 )
-            }
-
-            Row(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(10.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.guide_watch_label), color = Color.White, style = MaterialTheme.typography.labelMedium)
             }
         }
 
-        Spacer(Modifier.width(18.dp))
+        Spacer(Modifier.width(16.dp))
 
-        // ---- Now / next detail ------------------------------------------------------------
-        Column(Modifier.weight(1f).fillMaxHeight()) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                // ---- Day navigation (Sky Q-style): ‹ Today › ----------------------------
-                // Only shown once the caller wires a label in; keeps older callers unchanged.
-                if (dayLabel.isNotEmpty()) {
-                    IconButton(onClick = onPrevDay, enabled = canGoPrevDay) {
-                        Icon(
-                            Icons.Default.KeyboardArrowLeft,
-                            contentDescription = stringResource(R.string.guide_prev_day),
-                            tint = if (canGoPrevDay) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                        )
-                    }
-                    Text(
-                        dayLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                    )
-                    IconButton(onClick = onNextDay) {
-                        Icon(
-                            Icons.Default.KeyboardArrowRight,
-                            contentDescription = stringResource(R.string.guide_next_day),
-                        )
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                if (row != null) {
-                    IconButton(onClick = onRecord) {
-                        // Red throughout — the record convention — but the glyph switches to a
-                        // stop square while a recording is running, so a press visibly does
-                        // something (● start → ■ stop) rather than looking inert.
-                        Icon(
-                            if (isRecording) Icons.Default.Stop else Icons.Default.FiberManualRecord,
-                            contentDescription = if (isRecording) stringResource(R.string.guide_cd_stop_recording) else stringResource(R.string.guide_cd_record_now),
-                            tint = Color(0xFFE53935),
-                        )
-                    }
-                }
-                IconButton(onClick = onRefresh) {
-                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.guide_cd_refresh))
-                }
-                IconButton(onClick = onAddSource) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.guide_cd_add_source))
-                }
-            }
+        // ---- Programme details (TiviMate structure) ----
+        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val nowProg = row?.now
 
-            if (row == null) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
-                    Text(
-                        stringResource(R.string.guide_highlight_hint),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-                return@Column
-            }
+            // Line 1: Large Bold Programme Title
+            val titleText = nowProg?.title ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
+            Text(
+                text = titleText,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    row.primary.shownName,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (row.variants.size > 1) {
-                    Text(
-                        stringResource(R.string.guide_qualities_count, row.variants.size),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            val nowProg = row.now
+            // Line 2: Time range, duration, Category/Source, and Favorite Star
             if (nowProg != null) {
-                Text(
-                    "${formatTime(nowProg.startUtcMillis)}–${formatTime(nowProg.endUtcMillis)}   ${nowProg.title}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(6.dp))
-                LinearProgressIndicator(
-                    progress = { nowProg.progressAt(nowMillis) },
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                )
-                nowProg.description?.takeIf { it.isNotBlank() }?.let { synopsis ->
-                    Spacer(Modifier.height(8.dp))
+                val startStr = timeFmt.format(Date(nowProg.startUtcMillis))
+                val endStr = timeFmt.format(Date(nowProg.endUtcMillis))
+                val durationMins = (nowProg.durationMillis / 60_000L).coerceAtLeast(1)
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "$startStr – $endStr  —  $durationMins min",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val categoryTag = row.primary.qualityLabel.ifBlank { row.primary.categoryId.orEmpty() }.takeIf { it.isNotBlank() }
+                        if (categoryTag != null) {
+                            Text(
+                                text = categoryTag.uppercase(Locale.getDefault()),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Icon(
+                            imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                            contentDescription = null,
+                            tint = if (row.primary.favourite) Color(0xFFFFD54F) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+
+                // Progress indicator line
+                val progress = nowProg.progressAt(nowMillis)
+                Box(
+                    Modifier
+                        .fillMaxWidth(0.5f)
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(progress.coerceIn(0f, 1f))
+                            .height(3.dp)
+                            .background(MaterialTheme.colorScheme.primary),
+                    )
+                }
+
+                // Line 3: Description / Synopsis
+                val synopsis = nowProg.description?.takeIf { it.isNotBlank() }
+                if (synopsis != null) {
                     Text(
-                        synopsis,
+                        text = synopsis,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-            } else {
+            } else if (row != null) {
                 Text(
-                    stringResource(R.string.guide_no_info_channel),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            row.next?.let { next ->
-                Spacer(Modifier.weight(1f))
-                Text(
-                    stringResource(R.string.guide_next_prefix, formatTime(next.startUtcMillis), next.title),
+                    text = row.primary.shownName,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

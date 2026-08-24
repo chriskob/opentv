@@ -45,7 +45,8 @@ import okhttp3.Request
  * a single option, and turns a falsely-multi-quality channel back into a single one.
  */
 internal fun distinctByQuality(channels: List<app.opentv.data.model.Channel>): List<app.opentv.data.model.Channel> {
-    val seen = HashSet<String>()
+    if (channels.size <= 1) return channels
+    val seen = HashSet<String>(channels.size)
     return channels.filter { seen.add("${it.qualityRank}|${it.qualityLabel.lowercase()}") }
 }
 
@@ -159,6 +160,8 @@ class CatalogRepository(
         channelDao.observeInCategoriesIncludingHidden(sourceId, categoryIds)
 
     fun observeFavouriteChannels(): Flow<List<Channel>> = channelDao.observeFavourites()
+
+    suspend fun firstChannel(): Channel? = channelDao.firstVisible()
 
     /** Reactive number of visible channels on disk — the UI uses this to tell "guide still
      * building" (channels exist) apart from "nothing loaded" (a failed or empty sync). */
@@ -755,11 +758,10 @@ class CatalogRepository(
             )
         }
 
-        // Synthesise categories from group-title so the UI has something to group by.
+        // Synthesise categories from group-title in the order they appear in the playlist.
         val categories = parsed.channels
             .mapNotNull { it.categoryId }
             .distinct()
-            .sorted()
             .mapIndexed { index, name ->
                 Category(
                     id = name,
@@ -842,7 +844,7 @@ class CatalogRepository(
      * on the next launch instead of the next sync. Bump [NORMALIZER_VERSION] to trigger it.
      */
     suspend fun renormalizeAll(): Int = withContext(Dispatchers.IO) {
-        val existing = channelDao.allForMatching()
+        val existing = channelDao.allChannels()
         if (existing.isEmpty()) return@withContext 0
 
         val bySource = existing.groupBy { it.sourceId }

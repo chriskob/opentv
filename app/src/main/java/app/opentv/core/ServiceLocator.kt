@@ -15,8 +15,11 @@ import app.opentv.data.repo.EpgRepository
 import app.opentv.data.repo.RecordingRepository
 import app.opentv.data.repo.ReminderRepository
 import app.opentv.data.repo.SourceRepository
-import app.opentv.recording.RecordingEngine
+import app.opentv.player.PlayerController
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import okhttp3.OkHttpClient
 
 /**
@@ -126,10 +129,24 @@ object ServiceLocator {
             ReminderRepository(database.reminders())
         }
 
-        val recordingEngine: RecordingEngine by lazy {
-            RecordingEngine(
+        val recordingEngine: app.opentv.recording.RecordingEngine by lazy {
+            app.opentv.recording.RecordingEngine(
                 appContext, recordingRepository, sourceRepository, settings,
                 database.channels(), epgRepository,
+            )
+        }
+
+        /**
+         * Shared Live TV player instance across full screen and the guide preview pane.
+         * Keeps the stream playing uninterrupted with zero buffering when backing out to the guide.
+         */
+        val livePlayer: PlayerController by lazy {
+            PlayerController(
+                context = appContext,
+                scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+                httpClient = streamingHttpClient,
+                subtitlesEnabled = true,
+                dvr = false,
             )
         }
     }

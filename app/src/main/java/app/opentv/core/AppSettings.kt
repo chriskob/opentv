@@ -52,8 +52,8 @@ class AppSettings private constructor(context: Context) {
     private val _guidePreviewVideo = MutableStateFlow(prefs.getBoolean(KEY_PREVIEW_VIDEO, true))
     val guidePreviewVideo: StateFlow<Boolean> = _guidePreviewVideo.asStateFlow()
 
-    /** Whether the guide preview plays sound (off by default — quieter while browsing). */
-    private val _guidePreviewSound = MutableStateFlow(prefs.getBoolean(KEY_PREVIEW_SOUND, false))
+    /** Whether the guide preview plays sound (on by default so audio continues playing). */
+    private val _guidePreviewSound = MutableStateFlow(prefs.getBoolean(KEY_PREVIEW_SOUND, true))
     val guidePreviewSound: StateFlow<Boolean> = _guidePreviewSound.asStateFlow()
 
     /** The profile whose watch history is active. Defaults to the built-in profile (id 1). */
@@ -64,6 +64,16 @@ class AppSettings private constructor(context: Context) {
         prefs.edit().putLong(KEY_ACTIVE_PROFILE, id).apply()
         _activeProfileId.value = id
     }
+
+    /** Last selected live TV category group key to restore instantly on launch. */
+    var lastCategoryKey: String?
+        get() = prefs.getString(KEY_LAST_CATEGORY_KEY, null)
+        set(value) = prefs.edit().putString(KEY_LAST_CATEGORY_KEY, value).apply()
+
+    /** Whether Favourites was the last selected category filter on launch. */
+    var lastFavouritesOnly: Boolean
+        get() = prefs.getBoolean(KEY_LAST_FAVOURITES_ONLY, false)
+        set(value) = prefs.edit().putBoolean(KEY_LAST_FAVOURITES_ONLY, value).apply()
 
     // ---- Parental controls -------------------------------------------------------------------
 
@@ -140,7 +150,7 @@ class AppSettings private constructor(context: Context) {
     }
 
     /** Whether launching the app jumps straight back to the last channel you watched. */
-    private val _resumeLastChannel = MutableStateFlow(prefs.getBoolean(KEY_RESUME_LAST, false))
+    private val _resumeLastChannel = MutableStateFlow(prefs.getBoolean(KEY_RESUME_LAST, true))
     val resumeLastChannel: StateFlow<Boolean> = _resumeLastChannel.asStateFlow()
 
     fun setResumeLastChannel(enabled: Boolean) {
@@ -434,6 +444,8 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_CONTENT_MOVIES = "content_movies"
         private const val KEY_CONTENT_SERIES = "content_series"
         private const val KEY_LAST_CHANNEL = "last_channel_id"
+        private const val KEY_LAST_CATEGORY_KEY = "last_category_key"
+        private const val KEY_LAST_FAVOURITES_ONLY = "last_favourites_only"
         private const val KEY_RESIZE_MODE = "player_resize_mode"
         private const val KEY_LANGUAGE = "language_tag"
 
