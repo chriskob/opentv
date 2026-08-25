@@ -233,15 +233,13 @@ fun HomeScreen(
         } else null
 
         if (matchByLastId != null) {
-            if (highlightedRow == null || highlightedRow?.primary?.id == lastId) {
-                highlightedRow = matchByLastId
-            }
-            if (selectedRow == null || selectedRow?.primary?.id == lastId) {
-                selectedRow = matchByLastId
-            }
+            highlightedRow = matchByLastId
+            selectedRow = matchByLastId
+            highlightedProgramme = matchByLastId.now
         } else {
             if (highlightedRow == null) {
                 highlightedRow = rows.firstOrNull { it.key == highlightedRow?.key } ?: rows.firstOrNull()
+                highlightedProgramme = highlightedRow?.now
             }
             if (selectedRow == null) {
                 selectedRow = rows.firstOrNull { it.key == selectedRow?.key } ?: rows.firstOrNull()

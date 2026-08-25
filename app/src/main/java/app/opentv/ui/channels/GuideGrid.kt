@@ -37,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,7 +45,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -98,9 +102,9 @@ fun GuideGrid(
     val scroll = rememberScrollState()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val now = System.currentTimeMillis()
-    androidx.compose.runtime.LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
+    LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
 
-    androidx.compose.runtime.LaunchedEffect(selectedKey) {
+    LaunchedEffect(selectedKey) {
         val index = rows.indexOfFirst { it.key == selectedKey }
         if (index >= 0) {
             val target = (index - 2).coerceAtLeast(0)
@@ -117,12 +121,14 @@ fun GuideGrid(
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             items(rows, key = { it.key }) { row ->
+                val isSelected = row.key == selectedKey
                 GuideRow(
                     row = row,
                     windowStartMillis = windowStartMillis,
                     nowMillis = now,
                     scroll = scroll,
-                    isSelected = row.key == selectedKey,
+                    isSelected = isSelected,
+                    shouldRequestFocus = isSelected,
                     onSelect = { onSelectRow(row) },
                     onLongSelect = { onLongSelectRow(row) },
                     onFocus = { prog -> onFocusRow(row, prog) },
@@ -153,7 +159,7 @@ fun ChannelList(
     val now = System.currentTimeMillis()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
-    androidx.compose.runtime.LaunchedEffect(selectedKey) {
+    LaunchedEffect(selectedKey) {
         val index = rows.indexOfFirst { it.key == selectedKey }
         if (index >= 0) {
             val target = (index - 2).coerceAtLeast(0)
@@ -168,10 +174,12 @@ fun ChannelList(
         verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
         items(rows, key = { it.key }) { row ->
+            val isSelected = row.key == selectedKey
             ChannelListRow(
                 row = row,
                 nowMillis = now,
-                isSelected = row.key == selectedKey,
+                isSelected = isSelected,
+                shouldRequestFocus = isSelected,
                 onSelect = { onSelectRow(row) },
                 onLongSelect = { onLongSelectRow(row) },
                 onFocus = { prog -> onFocusRow(row, prog) },
@@ -188,6 +196,7 @@ private fun ChannelListRow(
     row: ChannelsViewModel.Row,
     nowMillis: Long,
     isSelected: Boolean,
+    shouldRequestFocus: Boolean = false,
     onSelect: () -> Unit,
     onLongSelect: () -> Unit = {},
     onFocus: (Programme?) -> Unit,
@@ -195,6 +204,15 @@ private fun ChannelListRow(
     onExitLeft: () -> Boolean,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(shouldRequestFocus) {
+        if (shouldRequestFocus) {
+            delay(50)
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
+
     val isLive = isSelected
 
     Row(
@@ -206,6 +224,12 @@ private fun ChannelListRow(
                 else if (isSelected) Color(0xFF1E2F3E)
                 else Color(0xFF18222C),
             )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White)
+                else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA))
+                else Modifier,
+            )
+            .focusRequester(focusRequester)
             .onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) onExitLeft() else false
             }
@@ -345,6 +369,7 @@ private fun GuideRow(
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     isSelected: Boolean,
+    shouldRequestFocus: Boolean = false,
     onSelect: () -> Unit,
     onLongSelect: () -> Unit = {},
     onFocus: (Programme?) -> Unit,
@@ -353,6 +378,14 @@ private fun GuideRow(
     onExitLeft: () -> Boolean = { false },
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(shouldRequestFocus) {
+        if (shouldRequestFocus) {
+            delay(50)
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
 
     Row(Modifier.fillMaxWidth().height(ROW_HEIGHT)) {
 
@@ -362,13 +395,16 @@ private fun GuideRow(
                 .width(CHANNEL_COLUMN)
                 .fillMaxSize()
                 .background(
-                    if (isSelected) Color(0xFF1A2B38)
+                    if (focused) Color(0xFFF0F4F8)
+                    else if (isSelected) Color(0xFF1A2B38)
                     else Color(0xFF161F27),
                 )
                 .then(
-                    if (focused) Modifier.border(2.dp, Color(0xFF26C6DA))
+                    if (focused) Modifier.border(2.dp, Color.White)
+                    else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA))
                     else Modifier,
                 )
+                .focusRequester(focusRequester)
                 .onPreviewKeyEvent { e ->
                     if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) onExitLeft()
                     else false
@@ -389,7 +425,7 @@ private fun GuideRow(
                 Text(
                     "$num",
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF78909C),
+                    color = if (focused) Color(0xFF37474F) else Color(0xFF78909C),
                     maxLines = 1,
                     modifier = Modifier.width(26.dp),
                 )
@@ -399,7 +435,7 @@ private fun GuideRow(
             AsyncImage(
                 model = row.primary.logoUrl,
                 contentDescription = null,
-                modifier = Modifier.size(28.dp).clip(RoundedCornerShape(2.dp)),
+                modifier = Modifier.size(32.dp).clip(RoundedCornerShape(2.dp)),
             )
 
             Spacer(Modifier.width(8.dp))
@@ -409,8 +445,8 @@ private fun GuideRow(
                 Text(
                     row.primary.shownName,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (isSelected) Color(0xFF26C6DA) else Color.White,
+                    fontWeight = if (focused || isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (focused) Color(0xFF10171E) else if (isSelected) Color(0xFF26C6DA) else Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -420,10 +456,21 @@ private fun GuideRow(
             if (row.primary.tvArchive) {
                 Spacer(Modifier.width(4.dp))
                 Icon(
-                    imageVector = Icons.Default.Star,
+                    imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Catchup",
-                    tint = Color(0xFF78909C),
+                    tint = if (focused) Color(0xFF00838F) else Color(0xFF00ACC1),
                     modifier = Modifier.size(14.dp),
+                )
+            }
+
+            // Favorite Icon if favorited
+            if (row.primary.favourite) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Filled.Star,
+                    contentDescription = "Favorite",
+                    tint = Color(0xFFFFD54F),
+                    modifier = Modifier.size(16.dp),
                 )
             }
 
@@ -433,7 +480,7 @@ private fun GuideRow(
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Playing",
-                    tint = Color(0xFF26C6DA),
+                    tint = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
                     modifier = Modifier.size(16.dp),
                 )
             }
@@ -445,18 +492,31 @@ private fun GuideRow(
         Row(Modifier.horizontalScroll(scroll)) {
             val programmes = row.programmes
             if (programmes.isEmpty()) {
+                var emptyFocused by remember { mutableStateOf(false) }
                 Box(
                     Modifier
                         .width(HALF_HOUR_WIDTH * HOURS_IN_WINDOW.toFloat() * 2)
                         .fillMaxSize()
-                        .background(Color(0xFF1A232C))
+                        .background(
+                            if (emptyFocused) Color(0xFFF0F4F8)
+                            else Color(0xFF1A232C),
+                        )
+                        .then(
+                            if (emptyFocused) Modifier.border(2.dp, Color.White)
+                            else Modifier.border(0.5.dp, Color(0xFF141C24)),
+                        )
+                        .onFocusChanged {
+                            emptyFocused = it.isFocused
+                            if (it.isFocused) onFocus(null)
+                        }
+                        .clickable(onClick = onSelect)
                         .padding(start = 8.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
                         stringResource(R.string.guide_no_info),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF78909C),
+                        color = if (emptyFocused) Color(0xFF10171E) else Color(0xFF78909C),
                     )
                 }
             } else {

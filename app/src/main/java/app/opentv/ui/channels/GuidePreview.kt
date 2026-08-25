@@ -117,8 +117,7 @@ fun GuidePreview(
                 .fillMaxHeight()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color.Black)
-                .clickable(onClick = onWatch),
+                .background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
             if (row != null) {

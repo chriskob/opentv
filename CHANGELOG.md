@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.3
+
+- **TV Guide Cursor & Focus Improvements.**
+  - Fixed cursor trapping: Disabled focusable/clickable behavior on the 16:9 preview video player card so D-Pad UP from the top row never escapes into the preview pane.
+  - Automatic focus request on playing channel: Returning to the TV Guide from full-screen live playback immediately places and visibly renders the active cursor on the currently playing channel row.
+  - Empty EPG focus handling: Channels with no schedule information now have focusable empty blocks with high-contrast borders, preventing the cursor from disappearing when scrolling past channels without EPG data.
+
 ## 0.12.2
 
 - **Enhanced TV Guide Grid Dimensions.** Adjusted grid layout to display exactly 6 channels vertically with increased row height (56dp) and widened timeline blocks (5.2dp/min, ~2.5 hours visible horizontally) so show titles and details are significantly more legible.
