@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.4
+
+- **Full-Screen Player OSD / Sub Menu Redesign (TiviMate Style).**
+  - **Top Header Bar**: Added top overlay displaying playlist & category info on the left, and current date & time on the right.
+  - **Programme Details & Telemetry**: Shows large bold current show title, start/end time, remaining duration, channel number + name, and stream quality/audio telemetry badges (`HD`, `60 FPS`, `Stereo`, `HEVC`/`H.264`). Also previews the upcoming next programme.
+  - **Cyan Timeline Scrubber**: Full-width live progress bar with glowing white scrubber indicator.
+  - **Quick Action & Channel Cards Carousel**: Bottom quick bar with TV Guide card, History (Last channel) card, and horizontally scrollable channel cards with logos and current playing shows.
+  - **Expandable Secondary Controls**: Down arrow toggle reveals Audio, Subtitles, Quality, Aspect Ratio, Record, and PIP controls.
+
 ## 0.12.3
 
 - **TV Guide Cursor & Focus Improvements.**

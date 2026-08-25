@@ -114,6 +114,8 @@
     <string name="rec_background_prompt_not_now">Not now</string>
 
     <!-- ============================ Player controls ============================ -->
+    <string name="player_tv_guide">TV guide</string>
+    <string name="player_history">History</string>
     <string name="player_rewind">Rewind</string>
     <string name="player_pause">Pause</string>
     <string name="player_forward">Forward</string>

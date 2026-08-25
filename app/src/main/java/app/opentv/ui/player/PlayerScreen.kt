@@ -20,6 +20,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,9 +34,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -46,11 +50,15 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.ViewStream
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -102,19 +110,25 @@ import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
 import app.opentv.core.requestIgnoreBatteryOptimizations
 import app.opentv.data.model.Channel
+import app.opentv.data.model.Programme
+import app.opentv.data.model.Source
 import app.opentv.data.model.shownName
 import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
 import app.opentv.ui.RecordingBackgroundDialog
 import app.opentv.ui.RecordingBackgroundPrompt
 import coil.compose.AsyncImage
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import java.util.Locale
+import kotlinx.coroutines.withContext
 
 /**
  * Full-screen live playback.
@@ -176,10 +190,36 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var panel by remember { mutableStateOf(Panel.NONE) }
     var channelListVisible by remember { mutableStateOf(false) }
+    var showSecondaryControls by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
     // Offered once per session the first time the user records here while OpenTV isn't exempt from
     // battery optimisation, so the capture survives the screen sleeping. Never blocks recording.
     var showBackgroundPrompt by remember { mutableStateOf(false) }
+
+    var currentChannel by remember { mutableStateOf<Channel?>(null) }
+    var currentSource by remember { mutableStateOf<Source?>(null) }
+    var currentCategoryName by remember { mutableStateOf<String?>(null) }
+    var currentProg by remember { mutableStateOf<Programme?>(null) }
+    var nextProg by remember { mutableStateOf<Programme?>(null) }
+    var queueProgrammes by remember { mutableStateOf<Map<Long, Programme>>(emptyMap()) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
+    val headerDateTimeFmt = remember(is24) {
+        if (is24) SimpleDateFormat("EEE, MMM d, HH:mm", Locale.getDefault())
+        else SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault())
+    }
+    val timeFmt = remember(is24) {
+        if (is24) SimpleDateFormat("HH:mm", Locale.getDefault())
+        else SimpleDateFormat("hh:mm a", Locale.getDefault())
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMillis = System.currentTimeMillis()
+            kotlinx.coroutines.delay(30_000L)
+        }
+    }
 
     // Picture-in-picture. While the player is on it is "eligible" to shrink to a floating window
     // (pressing Home does it, handled in MainActivity); [inPip] drives hiding all the chrome.
@@ -363,6 +403,52 @@ fun PlayerScreen(
         tuneTo(variants.firstOrNull { it.id == channel.id } ?: channel)
     }
 
+    LaunchedEffect(currentId, nowMillis) {
+        val id = currentId ?: return@LaunchedEffect
+        val channel = graph.catalogRepository.channel(id)
+        currentChannel = channel
+        if (channel != null) {
+            currentSource = graph.sourceRepository.byId(channel.sourceId)
+            val catId = channel.categoryId
+            if (catId != null) {
+                val catNames = graph.database.categories().namesFor(setOf(catId))
+                currentCategoryName = catNames.firstOrNull()?.name
+            } else {
+                currentCategoryName = null
+            }
+            val epgId = channel.epgChannelId
+            if (epgId != null) {
+                val up = graph.epgRepository.upcoming(epgId, nowMillis, limit = 4)
+                currentProg = up.firstOrNull { nowMillis in it.startUtcMillis until it.endUtcMillis } ?: up.firstOrNull()
+                nextProg = if (currentProg != null) {
+                    up.firstOrNull { it.startUtcMillis >= (currentProg?.endUtcMillis ?: 0L) }
+                } else up.getOrNull(1)
+            } else {
+                currentProg = null
+                nextProg = null
+            }
+        }
+    }
+
+    LaunchedEffect(queue, nowMillis) {
+        if (queue.isEmpty()) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            val queueChannels = queue.mapNotNull { graph.catalogRepository.channel(it.id) }
+            val nowProgs = graph.epgRepository.observeNow(nowMillis).firstOrNull() ?: emptyList()
+            val progByEpg = nowProgs.associateBy { it.epgChannelId }
+            val map = mutableMapOf<Long, Programme>()
+            for (ch in queueChannels) {
+                val eId = ch.epgChannelId
+                if (eId != null && progByEpg.containsKey(eId)) {
+                    map[ch.id] = progByEpg[eId]!!
+                }
+            }
+            withContext(Dispatchers.Main) {
+                queueProgrammes = map
+            }
+        }
+    }
+
     // Sleep timer: when the armed deadline passes, stop and leave the player. Re-arming from
     // settings restarts this effect with the new deadline.
     val sleepDeadline by SleepTimer.deadline.collectAsState()
@@ -386,8 +472,8 @@ fun PlayerScreen(
     }
 
     // Auto-hide the bar after a few seconds — but never while paused or with a picker open.
-    LaunchedEffect(controlsVisible, interaction, state, paused, panel) {
-        if (controlsVisible && !paused && panel == Panel.NONE &&
+    LaunchedEffect(controlsVisible, interaction, state, paused, panel, showSecondaryControls) {
+        if (controlsVisible && !paused && panel == Panel.NONE && !showSecondaryControls &&
             state is PlayerController.State.Playing
         ) {
             delay(CONTROLS_TIMEOUT_MILLIS)
@@ -411,6 +497,7 @@ fun PlayerScreen(
     BackHandler {
         when {
             panel != Panel.NONE -> panel = Panel.NONE
+            showSecondaryControls -> showSecondaryControls = false
             channelListVisible -> channelListVisible = false
             controlsVisible -> controlsVisible = false
             else -> {
@@ -571,6 +658,48 @@ fun PlayerScreen(
             else -> ""
         }
 
+        // Top Header: Source & Category on left, Date & Time on right
+        AnimatedVisibility(
+            visible = controlsVisible && !inPip,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.82f), Color.Transparent)
+                        )
+                    )
+                    .padding(horizontal = 32.dp, vertical = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val groupText = buildString {
+                    currentSource?.name?.takeIf { it.isNotBlank() }?.let { append(it) }
+                    if (isNotEmpty() && !currentCategoryName.isNullOrBlank()) append(" • ")
+                    currentCategoryName?.takeIf { it.isNotBlank() }?.let { append(it) }
+                }.ifEmpty { currentChannel?.shownName ?: "" }
+
+                Text(
+                    text = groupText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.85f),
+                )
+
+                Text(
+                    text = headerDateTimeFmt.format(Date(nowMillis)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                )
+            }
+        }
+
+        // Bottom Sub Menu Overlay
         AnimatedVisibility(
             visible = controlsVisible && !inPip,
             enter = fadeIn(),
@@ -580,10 +709,19 @@ fun PlayerScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f))))
-                    .padding(horizontal = 28.dp, vertical = 20.dp),
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.65f),
+                                Color.Black.copy(alpha = 0.92f),
+                                Color.Black.copy(alpha = 0.98f),
+                            )
+                        )
+                    )
+                    .padding(start = 28.dp, end = 28.dp, top = 24.dp, bottom = 12.dp),
             ) {
-                // The open picker sits above the transport row.
+                // Secondary Option Panel (Subtitles / Audio / Quality / Aspect)
                 if (panel != Panel.NONE) {
                     OptionPanel(
                         panel = panel,
@@ -598,154 +736,268 @@ fun PlayerScreen(
                         firstFocus = panelFocus,
                         onDone = { panel = Panel.NONE; interaction++ },
                     )
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(14.dp))
                 }
 
-                if (channelTitle.isNotEmpty() || videoSizeText.isNotEmpty()) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+                // ---- Middle Info Section: Logo + Programme details ----
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Channel Logo Badge
+                    Box(
+                        Modifier
+                            .size(62.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        if (channelTitle.isNotEmpty()) {
+                        AsyncImage(
+                            model = currentChannel?.logoUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(0.85f),
+                        )
+                    }
+
+                    Spacer(Modifier.width(16.dp))
+
+                    Column(Modifier.weight(1f)) {
+                        // Line 1: Active Show Title
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                channelTitle,
-                                style = MaterialTheme.typography.headlineSmall,
+                                text = currentProg?.title ?: currentChannel?.shownName ?: channelTitle,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        if (videoSizeText.isNotEmpty()) {
-                            Spacer(Modifier.width(14.dp))
-                            StatBadge(videoSizeText)
+
+                        Spacer(Modifier.height(3.dp))
+
+                        // Line 2: Times, remaining duration, channel number/name, telemetry badges
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (currentProg != null) {
+                                val startStr = timeFmt.format(Date(currentProg!!.startUtcMillis))
+                                val endStr = timeFmt.format(Date(currentProg!!.endUtcMillis))
+                                val remainingMins = ((currentProg!!.endUtcMillis - nowMillis) / 60_000L).coerceAtLeast(0)
+
+                                Text(
+                                    text = "$startStr – $endStr",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    text = "  —  $remainingMins min   ",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White.copy(alpha = 0.75f),
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+
+                            val numStr = currentChannel?.number?.let { "$it " } ?: ""
+                            val chName = currentChannel?.shownName ?: channelTitle
+                            Text(
+                                text = "$numStr$chName",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+
+                            if (videoSizeText.isNotEmpty()) {
+                                Spacer(Modifier.width(12.dp))
+                                StatBadge(videoSizeText)
+                            }
+                            if (fpsText.isNotEmpty()) {
+                                Spacer(Modifier.width(6.dp))
+                                StatBadge(fpsText)
+                            }
+                            if (audioCodecText.isNotEmpty()) {
+                                Spacer(Modifier.width(6.dp))
+                                StatBadge(audioCodecText)
+                            }
+                            if (videoCodecText.isNotEmpty()) {
+                                Spacer(Modifier.width(6.dp))
+                                StatBadge(videoCodecText)
+                            }
                         }
-                        if (fpsText.isNotEmpty()) {
-                            Spacer(Modifier.width(6.dp))
-                            StatBadge(fpsText)
-                        }
-                        if (videoCodecText.isNotEmpty()) {
-                            Spacer(Modifier.width(6.dp))
-                            StatBadge(videoCodecText)
-                        }
-                        if (audioCodecText.isNotEmpty()) {
-                            Spacer(Modifier.width(6.dp))
-                            StatBadge(audioCodecText)
+
+                        // Line 3: Next Show Preview
+                        if (nextProg != null) {
+                            Spacer(Modifier.height(2.dp))
+                            val nextStart = timeFmt.format(Date(nextProg!!.startUtcMillis))
+                            val nextEnd = timeFmt.format(Date(nextProg!!.endUtcMillis))
+                            Text(
+                                text = "$nextStart – $nextEnd   ${nextProg!!.title}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.65f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
-                    Spacer(Modifier.height(14.dp))
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val allowChipClick = { System.currentTimeMillis() - menuOpenedAt >= 250L }
+                Spacer(Modifier.height(12.dp))
 
-                    BarChip(
-                        icon = Icons.Filled.List,
-                        label = stringResource(R.string.common_channels),
-                        selected = channelListVisible,
-                        focusRequester = barFocus,
-                        canClick = allowChipClick,
-                    ) {
-                        channelListVisible = !channelListVisible
-                        interaction++
-                    }
-                    Spacer(Modifier.width(10.dp))
+                // ---- Cyan Timeline Progress Bar ----
+                val progFraction = currentProg?.progressAt(nowMillis) ?: 0f
+                LiveTimelineBar(
+                    progress = progFraction,
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
-                    if (controller.isSeekable) {
-                        BarChip(
-                            icon = Icons.Filled.FastRewind,
-                            label = stringResource(R.string.player_rewind),
-                            selected = false,
-                            canClick = allowChipClick,
-                        ) {
-                            controller.seekBackward()
-                            interaction++
-                        }
-                        Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.height(14.dp))
+
+                // ---- Bottom Quick Action & Channel Cards Carousel ----
+                val allowChipClick = { System.currentTimeMillis() - menuOpenedAt >= 250L }
+                val quickListState = rememberLazyListState()
+
+                // Auto scroll carousel so current channel is in view
+                LaunchedEffect(currentId, queue) {
+                    val curIdx = queue.indexOfFirst { it.id == currentId }
+                    if (curIdx >= 0) {
+                        runCatching { quickListState.scrollToItem(curIdx + 2) }
                     }
-                    BarChip(
-                        icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        label = if (paused) stringResource(R.string.common_play) else stringResource(R.string.player_pause),
-                        selected = false,
-                        canClick = allowChipClick,
-                    ) {
-                        paused = !paused
-                        controller.player.playWhenReady = !paused
-                        interaction++
-                    }
-                    if (controller.isSeekable) {
-                        Spacer(Modifier.width(10.dp))
-                        BarChip(
-                            icon = Icons.Filled.FastForward,
-                            label = stringResource(R.string.player_forward),
-                            selected = false,
+                }
+
+                LazyRow(
+                    state = quickListState,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Card 1: TV guide
+                    item(key = "quick-guide") {
+                        QuickActionCard(
+                            icon = Icons.Filled.ViewStream,
+                            label = stringResource(R.string.player_tv_guide),
+                            focusRequester = barFocus,
                             canClick = allowChipClick,
-                        ) {
-                            controller.seekForward()
-                            interaction++
-                        }
+                            onClick = { onBack() },
+                        )
                     }
 
-                    Spacer(Modifier.width(10.dp))
-                    BarChip(
-                        icon = Icons.Filled.Subtitles,
-                        label = stringResource(R.string.player_subtitles),
-                        selected = panel == Panel.SUBTITLES,
-                        canClick = allowChipClick,
-                    ) {
-                        panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES
-                        interaction++
+                    // Card 2: History (Last channel)
+                    item(key = "quick-history") {
+                        QuickActionCard(
+                            icon = Icons.Filled.History,
+                            label = stringResource(R.string.player_history),
+                            canClick = allowChipClick,
+                            onClick = {
+                                val targetId = previousId ?: queue.firstOrNull { it.id != currentId }?.id
+                                if (targetId != null) playChannelId(targetId)
+                            },
+                        )
                     }
-                    Spacer(Modifier.width(10.dp))
-                    BarChip(
-                        icon = Icons.Filled.Audiotrack,
-                        label = stringResource(R.string.player_audio),
-                        selected = panel == Panel.AUDIO,
-                        canClick = allowChipClick,
-                    ) {
-                        panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO
-                        interaction++
+
+                    // Cards 3+: Quick Channel Cards
+                    items(queue, key = { "quick-ch-${it.id}" }) { ch ->
+                        QuickChannelCard(
+                            item = ch,
+                            programme = queueProgrammes[ch.id],
+                            isCurrent = ch.id == currentId,
+                            canClick = allowChipClick,
+                            onClick = { playChannelId(ch.id) },
+                        )
                     }
-                    if (variants.size > 1) {
-                        Spacer(Modifier.width(10.dp))
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                // ---- Down Arrow / Secondary options toggle ----
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (showSecondaryControls) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                        contentDescription = "Options",
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clickable { showSecondaryControls = !showSecondaryControls },
+                    )
+                }
+
+                // Secondary Option Chips (Subtitles, Audio, Quality, Aspect, Record, PIP)
+                AnimatedVisibility(visible = showSecondaryControls) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         BarChip(
-                            icon = Icons.Filled.HighQuality,
-                            label = stringResource(R.string.player_quality),
-                            selected = panel == Panel.QUALITY,
+                            icon = Icons.Filled.Subtitles,
+                            label = stringResource(R.string.player_subtitles),
+                            selected = panel == Panel.SUBTITLES,
                             canClick = allowChipClick,
                         ) {
-                            panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY
+                            panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES
                             interaction++
                         }
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    BarChip(
-                        icon = Icons.Filled.AspectRatio,
-                        label = stringResource(R.string.player_aspect),
-                        selected = panel == Panel.ASPECT,
-                        canClick = allowChipClick,
-                    ) {
-                        panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT
-                        interaction++
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    val recordingThis = activeRecordings.any { it.channelId == currentId }
-                    BarChip(
-                        icon = Icons.Filled.FiberManualRecord,
-                        label = if (recordingThis) stringResource(R.string.common_stop) else stringResource(R.string.player_record),
-                        selected = recordingThis,
-                        iconTint = Color(0xFFE53935),
-                        canClick = allowChipClick,
-                    ) { toggleRecord() }
-                    if (pipSupported) {
-                        Spacer(Modifier.width(10.dp))
+
                         BarChip(
-                            icon = Icons.Filled.PictureInPictureAlt,
-                            label = stringResource(R.string.player_pop_out),
-                            selected = false,
+                            icon = Icons.Filled.Audiotrack,
+                            label = stringResource(R.string.player_audio),
+                            selected = panel == Panel.AUDIO,
                             canClick = allowChipClick,
                         ) {
-                            (context.findActivity() as? app.opentv.MainActivity)?.enterPipNow()
+                            panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO
                             interaction++
+                        }
+
+                        if (variants.size > 1) {
+                            BarChip(
+                                icon = Icons.Filled.HighQuality,
+                                label = stringResource(R.string.player_quality),
+                                selected = panel == Panel.QUALITY,
+                                canClick = allowChipClick,
+                            ) {
+                                panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY
+                                interaction++
+                            }
+                        }
+
+                        BarChip(
+                            icon = Icons.Filled.AspectRatio,
+                            label = stringResource(R.string.player_aspect),
+                            selected = panel == Panel.ASPECT,
+                            canClick = allowChipClick,
+                        ) {
+                            panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT
+                            interaction++
+                        }
+
+                        val recordingThis = activeRecordings.any { it.channelId == currentId }
+                        BarChip(
+                            icon = Icons.Filled.FiberManualRecord,
+                            label = if (recordingThis) stringResource(R.string.common_stop) else stringResource(R.string.player_record),
+                            selected = recordingThis,
+                            iconTint = Color(0xFFE53935),
+                            canClick = allowChipClick,
+                        ) { toggleRecord() }
+
+                        if (pipSupported) {
+                            BarChip(
+                                icon = Icons.Filled.PictureInPictureAlt,
+                                label = stringResource(R.string.player_pop_out),
+                                selected = false,
+                                canClick = allowChipClick,
+                            ) {
+                                (context.findActivity() as? app.opentv.MainActivity)?.enterPipNow()
+                                interaction++
+                            }
                         }
                     }
                 }
@@ -1043,6 +1295,162 @@ private fun StatBadge(text: String) {
             style = MaterialTheme.typography.labelSmall,
             color = Color.White.copy(alpha = 0.95f),
             fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun QuickActionCard(
+    icon: ImageVector,
+    label: String,
+    focusRequester: FocusRequester? = null,
+    canClick: () -> Boolean = { true },
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .width(108.dp)
+            .height(84.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (focused) Color(0xFFF0F4F8)
+                else Color(0xFF1E2833).copy(alpha = 0.88f),
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                else Modifier.border(0.5.dp, Color(0xFF2C3E50), RoundedCornerShape(8.dp)),
+            )
+            .focusable()
+            .clickable { if (canClick()) onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (focused) Color(0xFF10171E) else Color.White,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
+                color = if (focused) Color(0xFF10171E) else Color.White,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickChannelCard(
+    item: PlaybackQueue.Item,
+    programme: Programme?,
+    isCurrent: Boolean,
+    canClick: () -> Boolean = { true },
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .width(148.dp)
+            .height(84.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (focused) Color(0xFFF0F4F8)
+                else if (isCurrent) Color(0xFF1A2F3E).copy(alpha = 0.95f)
+                else Color(0xFF1E2833).copy(alpha = 0.88f),
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                else if (isCurrent) Modifier.border(1.5.dp, Color(0xFF26C6DA), RoundedCornerShape(8.dp))
+                else Modifier.border(0.5.dp, Color(0xFF2C3E50), RoundedCornerShape(8.dp)),
+            )
+            .focusable()
+            .clickable { if (canClick()) onClick() }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            AsyncImage(
+                model = item.logoUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (focused || isCurrent) FontWeight.Bold else FontWeight.Medium,
+                color = if (focused) Color(0xFF10171E) else if (isCurrent) Color(0xFF26C6DA) else Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = programme?.title ?: "",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (focused) Color(0xFF37474F) else Color.White.copy(alpha = 0.65f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiveTimelineBar(
+    progress: Float,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(14.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        val width = maxWidth
+        val safeProgress = progress.coerceIn(0f, 1f)
+
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color.White.copy(alpha = 0.25f)),
+        )
+
+        Box(
+            Modifier
+                .fillMaxWidth(safeProgress)
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color(0xFF26C6DA)),
+        )
+
+        val dotOffset = (width - 10.dp) * safeProgress
+        Box(
+            Modifier
+                .padding(start = dotOffset.coerceAtLeast(0.dp))
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(Color.White),
         )
     }
 }
