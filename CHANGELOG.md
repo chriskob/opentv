@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.2
+
+- **Enhanced TV Guide Grid Dimensions.** Adjusted grid layout to display exactly 6 channels vertically with increased row height (56dp) and widened timeline blocks (5.2dp/min, ~2.5 hours visible horizontally) so show titles and details are significantly more legible.
+
 ## 0.12.1
 
 - **Interactive TV Guide Focus & Metadata Header.** Scrolling and navigating the TV Guide timeline now dynamically updates the top header with the full title, start/end time, duration, and synopsis of whatever specific programme is currently highlighted by the remote cursor (while keeping the live channel stream playing in the preview box).

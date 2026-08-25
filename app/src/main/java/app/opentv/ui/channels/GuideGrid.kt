@@ -560,12 +560,12 @@ private fun widthFor(fromMillis: Long, toMillis: Long): Dp {
     return (minutes * MINUTE_DP).dp
 }
 
-private const val MINUTE_DP = 4f
+private const val MINUTE_DP = 5.2f
 private const val HOURS_IN_WINDOW = 24
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
 private val CHANNEL_COLUMN = 220.dp
-private val ROW_HEIGHT = 48.dp
-private val MIN_BLOCK_WIDTH = 72.dp
+private val ROW_HEIGHT = 56.dp
+private val MIN_BLOCK_WIDTH = 80.dp
 private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 
 private val clockFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
