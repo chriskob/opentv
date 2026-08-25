@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.5
+
+- **Watched Channel History in Sub Menu Carousel.**
+  - The bottom quick bar carousel now exclusively displays previously and recently watched channels (watch history), with newly watched channels appearing first at the front of the list.
+  - Channels only tune/switch when explicitly clicked (OK / Enter pressed) — navigating and highlighting cards with the cursor no longer triggers auto-tuning.
+
 ## 0.12.4
 
 - **Full-Screen Player OSD / Sub Menu Redesign (TiviMate Style).**

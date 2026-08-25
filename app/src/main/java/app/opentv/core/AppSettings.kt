@@ -75,6 +75,24 @@ class AppSettings private constructor(context: Context) {
         get() = prefs.getBoolean(KEY_LAST_FAVOURITES_ONLY, false)
         set(value) = prefs.edit().putBoolean(KEY_LAST_FAVOURITES_ONLY, value).apply()
 
+    /** Channel watch history, ordered newest first. */
+    private val _recentChannelIds = MutableStateFlow(readRecentChannelIds())
+    val recentChannelIds: StateFlow<List<Long>> = _recentChannelIds.asStateFlow()
+
+    private fun readRecentChannelIds(): List<Long> {
+        val raw = prefs.getString(KEY_RECENT_CHANNELS, null) ?: return emptyList()
+        return raw.split(",").mapNotNull { it.trim().toLongOrNull() }
+    }
+
+    fun recordChannelWatched(channelId: Long) {
+        val current = readRecentChannelIds().toMutableList()
+        current.remove(channelId)
+        current.add(0, channelId)
+        val trimmed = current.take(30)
+        prefs.edit().putString(KEY_RECENT_CHANNELS, trimmed.joinToString(",")).apply()
+        _recentChannelIds.value = trimmed
+    }
+
     // ---- Parental controls -------------------------------------------------------------------
 
     /** Whether a parental PIN is set. The PIN itself is only ever stored as a salted hash. */
@@ -473,6 +491,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_PAD_END = "rec_pad_end_min"
         private const val KEY_REC_AUTOSWITCH = "rec_auto_switch"
         private const val KEY_LIVE_PAUSE = "live_pause_enabled"
+        private const val KEY_RECENT_CHANNELS = "recent_watched_channels"
 
         @Volatile private var instance: AppSettings? = null
 

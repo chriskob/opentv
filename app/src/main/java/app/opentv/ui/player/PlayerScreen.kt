@@ -202,6 +202,8 @@ fun PlayerScreen(
     var currentProg by remember { mutableStateOf<Programme?>(null) }
     var nextProg by remember { mutableStateOf<Programme?>(null) }
     var queueProgrammes by remember { mutableStateOf<Map<Long, Programme>>(emptyMap()) }
+    val recentChannelIds by settings.recentChannelIds.collectAsState()
+    var recentChannels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
@@ -329,6 +331,7 @@ fun PlayerScreen(
         currentId = channel.id
         paused = false
         settings.lastChannelId = channel.id
+        settings.recordChannelWatched(channel.id)
         scope.launch {
             val source = graph.sourceRepository.byId(channel.sourceId)
             // Xtream/M3U carry a ready URL; a Stalker channel's URL is minted here from its cmd.
@@ -430,14 +433,23 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(queue, nowMillis) {
-        if (queue.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(recentChannelIds, currentId) {
         withContext(Dispatchers.IO) {
-            val queueChannels = queue.mapNotNull { graph.catalogRepository.channel(it.id) }
+            val ids = (listOfNotNull(currentId) + recentChannelIds).distinct()
+            val loaded = ids.mapNotNull { graph.catalogRepository.channel(it) }
+            withContext(Dispatchers.Main) {
+                recentChannels = loaded
+            }
+        }
+    }
+
+    LaunchedEffect(recentChannels, nowMillis) {
+        if (recentChannels.isEmpty()) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
             val nowProgs = graph.epgRepository.observeNow(nowMillis).firstOrNull() ?: emptyList()
             val progByEpg = nowProgs.associateBy { it.epgChannelId }
             val map = mutableMapOf<Long, Programme>()
-            for (ch in queueChannels) {
+            for (ch in recentChannels) {
                 val eId = ch.epgChannelId
                 if (eId != null && progByEpg.containsKey(eId)) {
                     map[ch.id] = progByEpg[eId]!!
@@ -860,14 +872,6 @@ fun PlayerScreen(
                 val allowChipClick = { System.currentTimeMillis() - menuOpenedAt >= 250L }
                 val quickListState = rememberLazyListState()
 
-                // Auto scroll carousel so current channel is in view
-                LaunchedEffect(currentId, queue) {
-                    val curIdx = queue.indexOfFirst { it.id == currentId }
-                    if (curIdx >= 0) {
-                        runCatching { quickListState.scrollToItem(curIdx + 2) }
-                    }
-                }
-
                 LazyRow(
                     state = quickListState,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -891,16 +895,16 @@ fun PlayerScreen(
                             label = stringResource(R.string.player_history),
                             canClick = allowChipClick,
                             onClick = {
-                                val targetId = previousId ?: queue.firstOrNull { it.id != currentId }?.id
+                                val targetId = previousId ?: recentChannels.firstOrNull { it.id != currentId }?.id
                                 if (targetId != null) playChannelId(targetId)
                             },
                         )
                     }
 
-                    // Cards 3+: Quick Channel Cards
-                    items(queue, key = { "quick-ch-${it.id}" }) { ch ->
+                    // Cards 3+: Watched Channels History (newest first)
+                    items(recentChannels, key = { "recent-ch-${it.id}" }) { ch ->
                         QuickChannelCard(
-                            item = ch,
+                            channel = ch,
                             programme = queueProgrammes[ch.id],
                             isCurrent = ch.id == currentId,
                             canClick = allowChipClick,
@@ -1352,7 +1356,7 @@ private fun QuickActionCard(
 
 @Composable
 private fun QuickChannelCard(
-    item: PlaybackQueue.Item,
+    channel: Channel,
     programme: Programme?,
     isCurrent: Boolean,
     canClick: () -> Boolean = { true },
@@ -1386,7 +1390,7 @@ private fun QuickChannelCard(
             verticalArrangement = Arrangement.Center,
         ) {
             AsyncImage(
-                model = item.logoUrl,
+                model = channel.logoUrl,
                 contentDescription = null,
                 modifier = Modifier
                     .size(34.dp)
@@ -1394,7 +1398,7 @@ private fun QuickChannelCard(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = item.name,
+                text = channel.shownName,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (focused || isCurrent) FontWeight.Bold else FontWeight.Medium,
                 color = if (focused) Color(0xFF10171E) else if (isCurrent) Color(0xFF26C6DA) else Color.White,
