@@ -143,6 +143,7 @@ fun HomeScreen(
     //  - selectedRow: what the preview pane plays. Only changes when you press OK, so scrolling
     //    the list is calm and silent instead of re-tuning a stream on every keypress.
     var highlightedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+    var highlightedProgramme by remember { mutableStateOf<Programme?>(null) }
     var selectedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
     val previewSound by settings.guidePreviewSound.collectAsState()
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -454,8 +455,9 @@ fun HomeScreen(
                 }
                 GuidePreview(
                     row = highlightedRow,
+                    programme = highlightedProgramme,
                     nowMillis = nowMillis,
-                    onWatch = { highlightedRow?.let { goFullscreen(it.primary) } },
+                    onWatch = { (selectedRow ?: highlightedRow)?.let { goFullscreen(it.primary) } },
                     onRefresh = onRefresh,
                     onAddSource = onAddSource,
                     previewPlayer = if (previewEnabled && !recordingActive) previewController.player else null,
@@ -470,8 +472,9 @@ fun HomeScreen(
                 )
                 // Shared by both layouts: focus follows the highlight and collapses the rail; LEFT
                 // from the leftmost element reopens the rail (consumed only when it was hidden).
-                val onFocusChannel: (ChannelsViewModel.Row) -> Unit = {
-                    highlightedRow = it
+                val onFocusChannel: (ChannelsViewModel.Row, Programme?) -> Unit = { r, prog ->
+                    highlightedRow = r
+                    highlightedProgramme = prog ?: r.now
                     railExpanded = false
                 }
                 val onExitLeftChannel: () -> Boolean = {

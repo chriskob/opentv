@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.1
+
+- **Interactive TV Guide Focus & Metadata Header.** Scrolling and navigating the TV Guide timeline now dynamically updates the top header with the full title, start/end time, duration, and synopsis of whatever specific programme is currently highlighted by the remote cursor (while keeping the live channel stream playing in the preview box).
+
 ## 0.12.0
 
 - **Seamless TV Guide & Full Screen Playback Transition (TiviMate Architecture).** Switching between full-screen playback and the TV Guide is now instantaneous with continuous uninterrupted audio and zero buffering gap.

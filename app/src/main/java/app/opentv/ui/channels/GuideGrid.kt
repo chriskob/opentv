@@ -87,7 +87,7 @@ fun GuideGrid(
     windowStartMillis: Long,
     selectedKey: Any?,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
-    onFocusRow: (ChannelsViewModel.Row) -> Unit,
+    onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
     onProgramme: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
@@ -125,7 +125,7 @@ fun GuideGrid(
                     isSelected = row.key == selectedKey,
                     onSelect = { onSelectRow(row) },
                     onLongSelect = { onLongSelectRow(row) },
-                    onFocus = { onFocusRow(row) },
+                    onFocus = { prog -> onFocusRow(row, prog) },
                     onProgramme = { programme -> onProgramme(row, programme) },
                     onToggleFavourite = { onToggleFavourite(row) },
                     onExitLeft = onExitLeftFromChannel,
@@ -144,7 +144,7 @@ fun ChannelList(
     rows: List<ChannelsViewModel.Row>,
     selectedKey: Any?,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
-    onFocusRow: (ChannelsViewModel.Row) -> Unit,
+    onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onExitLeftFromChannel: () -> Boolean = { false },
@@ -174,7 +174,7 @@ fun ChannelList(
                 isSelected = row.key == selectedKey,
                 onSelect = { onSelectRow(row) },
                 onLongSelect = { onLongSelectRow(row) },
-                onFocus = { onFocusRow(row) },
+                onFocus = { prog -> onFocusRow(row, prog) },
                 onToggleFavourite = { onToggleFavourite(row) },
                 onExitLeft = onExitLeftFromChannel,
             )
@@ -190,7 +190,7 @@ private fun ChannelListRow(
     isSelected: Boolean,
     onSelect: () -> Unit,
     onLongSelect: () -> Unit = {},
-    onFocus: () -> Unit,
+    onFocus: (Programme?) -> Unit,
     onToggleFavourite: () -> Unit,
     onExitLeft: () -> Boolean,
 ) {
@@ -211,7 +211,7 @@ private fun ChannelListRow(
             }
             .onFocusChanged {
                 focused = it.isFocused
-                if (it.isFocused) onFocus()
+                if (it.isFocused) onFocus(row.now)
             }
             .combinedClickable(
                 onClick = onSelect,
@@ -347,7 +347,7 @@ private fun GuideRow(
     isSelected: Boolean,
     onSelect: () -> Unit,
     onLongSelect: () -> Unit = {},
-    onFocus: () -> Unit,
+    onFocus: (Programme?) -> Unit,
     onProgramme: (Programme) -> Unit,
     onToggleFavourite: () -> Unit = {},
     onExitLeft: () -> Boolean = { false },
@@ -375,7 +375,7 @@ private fun GuideRow(
                 }
                 .onFocusChanged {
                     focused = it.isFocused
-                    if (it.isFocused) onFocus()
+                    if (it.isFocused) onFocus(row.now)
                 }
                 .combinedClickable(
                     onClick = onSelect,
@@ -481,6 +481,7 @@ private fun GuideRow(
                         width = drawnWidth,
                         isNow = isNow,
                         progress = if (isNow) programme.progressAt(nowMillis) else 0f,
+                        onFocus = { onFocus(programme) },
                         onClick = { onProgramme(programme) },
                     )
                     cursor = end
@@ -496,6 +497,7 @@ private fun ProgrammeBlock(
     width: Dp,
     isNow: Boolean,
     progress: Float,
+    onFocus: () -> Unit = {},
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -516,7 +518,10 @@ private fun ProgrammeBlock(
                 if (focused) Modifier.border(2.dp, Color.White)
                 else Modifier.border(0.5.dp, Color(0xFF141C24)),
             )
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocus()
+            }
             .focusable()
             .clickable(onClick = onClick),
     ) {

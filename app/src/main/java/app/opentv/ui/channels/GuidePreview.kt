@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import app.opentv.R
+import app.opentv.data.model.Programme
 import app.opentv.data.model.shownName
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -83,6 +84,7 @@ import java.util.Locale
 @Composable
 fun GuidePreview(
     row: ChannelsViewModel.Row?,
+    programme: Programme? = null,
     nowMillis: Long,
     onWatch: () -> Unit,
     onRefresh: () -> Unit,
@@ -153,10 +155,10 @@ fun GuidePreview(
 
         // ---- Programme details (TiviMate structure) ----
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            val nowProg = row?.now
+            val displayProg = programme ?: row?.now
 
             // Line 1: Large Bold Programme Title
-            val titleText = nowProg?.title ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
+            val titleText = displayProg?.title ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
             Text(
                 text = titleText,
                 style = MaterialTheme.typography.titleLarge,
@@ -167,10 +169,10 @@ fun GuidePreview(
             )
 
             // Line 2: Time range, duration, Category/Source, and Favorite Star
-            if (nowProg != null) {
-                val startStr = timeFmt.format(Date(nowProg.startUtcMillis))
-                val endStr = timeFmt.format(Date(nowProg.endUtcMillis))
-                val durationMins = (nowProg.durationMillis / 60_000L).coerceAtLeast(1)
+            if (displayProg != null) {
+                val startStr = timeFmt.format(Date(displayProg.startUtcMillis))
+                val endStr = timeFmt.format(Date(displayProg.endUtcMillis))
+                val durationMins = (displayProg.durationMillis / 60_000L).coerceAtLeast(1)
 
                 Row(
                     Modifier.fillMaxWidth(),
@@ -187,7 +189,7 @@ fun GuidePreview(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        val categoryTag = row.primary.qualityLabel.ifBlank { row.primary.categoryId.orEmpty() }.takeIf { it.isNotBlank() }
+                        val categoryTag = row?.primary?.qualityLabel?.ifBlank { row.primary.categoryId.orEmpty() }?.takeIf { it.isNotBlank() }
                         if (categoryTag != null) {
                             Text(
                                 text = categoryTag.uppercase(Locale.getDefault()),
@@ -198,34 +200,39 @@ fun GuidePreview(
                             )
                             Spacer(Modifier.width(8.dp))
                         }
-                        Icon(
-                            imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                            contentDescription = null,
-                            tint = if (row.primary.favourite) Color(0xFFFFD54F) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp),
+                        if (row != null) {
+                            Icon(
+                                imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                                contentDescription = null,
+                                tint = if (row.primary.favourite) Color(0xFFFFD54F) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                }
+
+                // Progress indicator line (if currently playing show)
+                val isLiveShow = nowMillis in displayProg.startUtcMillis until displayProg.endUtcMillis
+                if (isLiveShow) {
+                    val progress = displayProg.progressAt(nowMillis)
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                                .height(3.dp)
+                                .background(MaterialTheme.colorScheme.primary),
                         )
                     }
                 }
 
-                // Progress indicator line
-                val progress = nowProg.progressAt(nowMillis)
-                Box(
-                    Modifier
-                        .fillMaxWidth(0.5f)
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth(progress.coerceIn(0f, 1f))
-                            .height(3.dp)
-                            .background(MaterialTheme.colorScheme.primary),
-                    )
-                }
-
                 // Line 3: Description / Synopsis
-                val synopsis = nowProg.description?.takeIf { it.isNotBlank() }
+                val synopsis = displayProg.description?.takeIf { it.isNotBlank() }
                 if (synopsis != null) {
                     Text(
                         text = synopsis,
