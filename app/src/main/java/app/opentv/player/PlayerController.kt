@@ -424,7 +424,9 @@ class PlayerController(
         const val PREVIEW_MAX_BUFFER_MILLIS = 15_000
         const val PREVIEW_BUFFER_FOR_PLAYBACK_MILLIS = 1_000
         const val PREVIEW_BUFFER_AFTER_REBUFFER_MILLIS = 1_500
-        const val PREVIEW_SWITCH_DEBOUNCE_MILLIS = 700L
+        // P1: Reduced from 700ms to 350ms so the preview pane tunes faster after pressing OK on a
+        // channel, while still debouncing rapid scrolling.
+        const val PREVIEW_SWITCH_DEBOUNCE_MILLIS = 350L
 
         const val LIVE_TARGET_OFFSET_MILLIS = 10_000L
     }

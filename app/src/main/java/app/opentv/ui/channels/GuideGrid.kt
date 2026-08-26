@@ -112,9 +112,11 @@ fun GuideGrid(
         val index = rows.indexOfFirst { it.key == selectedKey }
         if (index >= 0) {
             val target = (index - 2).coerceAtLeast(0)
-            listState.animateScrollToItem(target)
+            // P0: Instant scroll instead of animated — eliminates 300ms+ perceived lag
+            listState.scrollToItem(target)
             if (!hasFocusedPlaying) {
-                delay(60)
+                // P0: Reduced from 60ms to one frame (16ms) for snappy focus hand-off
+                delay(16)
                 runCatching { initialFocusRequester.requestFocus() }
                 hasFocusedPlaying = true
             }
@@ -127,7 +129,7 @@ fun GuideGrid(
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             items(rows, key = { it.key }) { row ->
                 val isSelected = row.key == selectedKey
@@ -174,9 +176,10 @@ fun ChannelList(
         val index = rows.indexOfFirst { it.key == selectedKey }
         if (index >= 0) {
             val target = (index - 2).coerceAtLeast(0)
-            listState.animateScrollToItem(target)
+            // P0: Instant scroll for snappy channel list navigation
+            listState.scrollToItem(target)
             if (!hasFocusedPlaying) {
-                delay(60)
+                delay(16)
                 runCatching { initialFocusRequester.requestFocus() }
                 hasFocusedPlaying = true
             }
@@ -187,7 +190,7 @@ fun ChannelList(
         state = listState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(1.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         items(rows, key = { it.key }) { row ->
             val isSelected = row.key == selectedKey
@@ -205,6 +208,9 @@ fun ChannelList(
         }
     }
 }
+
+/** Shared rounded-corner shape used on all guide cells for a smooth TiviMate-style look. */
+private val GuideCellShape = RoundedCornerShape(6.dp)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -235,14 +241,15 @@ private fun ChannelListRow(
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .fillMaxWidth()
             .height(ROW_HEIGHT)
+            .clip(GuideCellShape)
             .background(
                 if (focused) Color(0xFFF0F4F8)
                 else if (isSelected) Color(0xFF1E2F3E)
                 else Color(0xFF18222C),
             )
             .then(
-                if (focused) Modifier.border(2.dp, Color.White)
-                else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA))
+                if (focused) Modifier.border(2.dp, Color.White, GuideCellShape)
+                else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA), GuideCellShape)
                 else Modifier,
             )
             .onPreviewKeyEvent { e ->
@@ -329,7 +336,8 @@ private fun TimeHeader(
     Row(
         Modifier
             .fillMaxWidth()
-            .height(26.dp)
+            .height(28.dp)
+            .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
             .background(Color(0xFF141C24)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -360,7 +368,7 @@ private fun TimeHeader(
                 Box(
                     Modifier
                         .width(HALF_HOUR_WIDTH)
-                        .height(26.dp)
+                        .height(28.dp)
                         .padding(start = 6.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
@@ -396,19 +404,20 @@ private fun GuideRow(
 
     Row(Modifier.fillMaxWidth().height(ROW_HEIGHT)) {
 
-        // ---- Channel column (Fixed left, TiviMate style) ----
+        // ---- Channel column (Fixed left, TiviMate style with rounded corners) ----
         Row(
             Modifier
                 .width(CHANNEL_COLUMN)
                 .fillMaxSize()
+                .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
                 .background(
                     if (focused) Color(0xFFF0F4F8)
                     else if (isSelected) Color(0xFF1A2B38)
                     else Color(0xFF161F27),
                 )
                 .then(
-                    if (focused) Modifier.border(2.dp, Color.White)
-                    else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA))
+                    if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
+                    else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA), RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
                     else Modifier,
                 )
                 .onPreviewKeyEvent { e ->
@@ -492,7 +501,7 @@ private fun GuideRow(
             }
         }
 
-        Spacer(Modifier.width(1.dp))
+        Spacer(Modifier.width(2.dp))
 
         // ---- Scrolling programme timeline blocks ----
         Row(Modifier.horizontalScroll(scroll)) {
@@ -504,13 +513,14 @@ private fun GuideRow(
                         .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                         .width(HALF_HOUR_WIDTH * HOURS_IN_WINDOW.toFloat() * 2)
                         .fillMaxSize()
+                        .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
                         .background(
                             if (emptyFocused) Color(0xFFF0F4F8)
                             else Color(0xFF1A232C),
                         )
                         .then(
-                            if (emptyFocused) Modifier.border(2.dp, Color.White)
-                            else Modifier.border(0.5.dp, Color(0xFF141C24)),
+                            if (emptyFocused) Modifier.border(2.dp, Color.White, RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
+                            else Modifier.border(0.5.dp, Color(0xFF141C24), RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp)),
                         )
                         .onFocusChanged {
                             emptyFocused = it.isFocused
@@ -528,7 +538,11 @@ private fun GuideRow(
                     )
                 }
             } else {
-                val blockLayouts = remember(programmes, windowStartMillis, nowMillis) {
+                // P3: Removed nowMillis from the remember key so block layouts don't recompute
+                // every 60 seconds when the clock tick fires. The progress bar inside each
+                // ProgrammeBlock handles live-position independently via its own progress field,
+                // which is cheap to update without triggering full relayout.
+                val blockLayouts = remember(programmes, windowStartMillis) {
                     val layouts = mutableListOf<BlockLayout>()
                     var cursor = windowStartMillis
                     var debt = 0.dp
@@ -545,7 +559,7 @@ private fun GuideRow(
                         val drawnWidth = maxOf(trueWidth, MIN_BLOCK_WIDTH)
                         debt += drawnWidth - trueWidth
                         val shouldAttachFocus = if (hasNow) isNow else (pIdx == 0)
-                        
+
                         layouts.add(BlockLayout(
                             spacerWidth = spacer,
                             blockWidth = drawnWidth,
@@ -610,7 +624,8 @@ private fun ProgrammeBlock(
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .width(width)
             .fillMaxSize()
-            .padding(end = 1.dp)
+            .padding(end = 2.dp)
+            .clip(GuideCellShape)
             .background(
                 when {
                     focused -> Color(0xFFF0F4F8) // High-contrast White/Light-grey for active focused cell
@@ -619,8 +634,8 @@ private fun ProgrammeBlock(
                 },
             )
             .then(
-                if (focused) Modifier.border(2.dp, Color.White)
-                else Modifier.border(0.5.dp, Color(0xFF141C24)),
+                if (focused) Modifier.border(2.dp, Color.White, GuideCellShape)
+                else Modifier.border(0.5.dp, Color(0xFF141C24), GuideCellShape),
             )
             .onFocusChanged {
                 focused = it.isFocused
@@ -652,6 +667,7 @@ private fun ProgrammeBlock(
                     .align(Alignment.BottomStart)
                     .fillMaxWidth(progress.coerceIn(0f, 1f))
                     .height(2.5.dp)
+                    .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp))
                     .background(Color(0xFF26C6DA)),
             )
         }

@@ -16,6 +16,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import app.opentv.core.AppSettings
 import app.opentv.core.ServiceLocator
 import app.opentv.data.repo.CatalogRepository
 import java.util.concurrent.TimeUnit
@@ -34,6 +35,7 @@ class SyncWorker(
 
     override suspend fun doWork(): Result {
         val graph = ServiceLocator.get(applicationContext)
+        val settings = AppSettings.get(applicationContext)
         val now = System.currentTimeMillis()
         val sources = graph.sourceRepository.enabled()
         if (sources.isEmpty()) return Result.success()
@@ -52,18 +54,22 @@ class SyncWorker(
 
         }
 
-        // Guides sync as one pass across every enabled feed — provider guides, built-in
-        // free sources and user URLs merge into a single guide, then the matcher runs.
-        val summary = graph.epgRepository.syncAll(now)
-        if (summary.feedsFailed > 0) anyFailed = true
-        Log.i(
-            TAG,
-            "Guide: ${summary.programmesWritten} programmes from ${summary.feedsSucceeded} " +
-                "feed(s), ${summary.channelsMatched}/${summary.channelsTotal} channels matched",
-        )
+        // Only sync the guide here when the user wants it bundled with the playlist refresh.
+        // Otherwise the guide refreshes on its own staleness window controlled by epgRefreshHours.
+        if (settings.epgSyncWithPlaylist.value) {
+            // Guides sync as one pass across every enabled feed — provider guides, built-in
+            // free sources and user URLs merge into a single guide, then the matcher runs.
+            val summary = graph.epgRepository.syncAll(now)
+            if (summary.feedsFailed > 0) anyFailed = true
+            Log.i(
+                TAG,
+                "Guide: ${summary.programmesWritten} programmes from ${summary.feedsSucceeded} " +
+                    "feed(s), ${summary.channelsMatched}/${summary.channelsTotal} channels matched",
+            )
 
-        // Book any newly-revealed series-link airings from this fresh guide.
-        runCatching { graph.recordingEngine.rescanSeriesRules() }
+            // Book any newly-revealed series-link airings from this fresh guide.
+            runCatching { graph.recordingEngine.rescanSeriesRules() }
+        }
 
         // A partial failure is still a retry — but the user keeps everything already on disk.
         return if (anyFailed) Result.retry() else Result.success()
@@ -95,8 +101,20 @@ class SyncWorker(
             )
         }
 
-        fun schedule(context: Context) {
-            val request = PeriodicWorkRequestBuilder<SyncWorker>(6, TimeUnit.HOURS)
+        /**
+         * Schedule (or cancel) the periodic background sync.
+         *
+         * @param intervalHours How often to run, in hours. Pass 0 to cancel the periodic job
+         *   (manual-only mode). Uses [ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE] so a
+         *   changed interval takes effect immediately.
+         */
+        fun schedule(context: Context, intervalHours: Int = 6) {
+            val wm = WorkManager.getInstance(context)
+            if (intervalHours <= 0) {
+                wm.cancelUniqueWork(WORK_NAME)
+                return
+            }
+            val request = PeriodicWorkRequestBuilder<SyncWorker>(intervalHours.toLong(), TimeUnit.HOURS)
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -109,9 +127,9 @@ class SyncWorker(
                 )
                 .build()
 
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            wm.enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
                 request,
             )
         }

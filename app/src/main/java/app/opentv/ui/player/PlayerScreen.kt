@@ -497,7 +497,7 @@ fun PlayerScreen(
     // catcher (so the next remote press brings the bar back).
     LaunchedEffect(controlsVisible, panel) {
         if (controlsVisible) {
-            delay(40)
+            delay(16)
             runCatching { if (panel != Panel.NONE) panelFocus.requestFocus() else barFocus.requestFocus() }
         } else {
             runCatching { rootFocus.requestFocus() }
@@ -531,7 +531,7 @@ fun PlayerScreen(
     // Focus the channel list when it opens; hand focus back to the video catcher when it closes.
     LaunchedEffect(channelListVisible) {
         if (channelListVisible) {
-            delay(40)
+            delay(16)
             runCatching { listFocus.requestFocus() }
         } else if (!controlsVisible) {
             runCatching { rootFocus.requestFocus() }

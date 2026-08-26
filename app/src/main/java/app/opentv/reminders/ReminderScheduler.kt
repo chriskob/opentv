@@ -10,6 +10,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 
 /**
  * Books a programme reminder to fire at its start time.
@@ -45,6 +46,32 @@ object ReminderScheduler {
     }
 
     fun reminderIdFrom(intent: Intent): Long = intent.getLongExtra(EXTRA_ID, -1L)
+
+    /**
+     * Returns true if exact alarms are available. On Android 12+ the user must grant this
+     * permission manually in system settings; without it, set() falls back to inexact alarms
+     * that may fire minutes or hours late — breaking the auto-tune use case.
+     */
+    fun canScheduleExact(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return am.canScheduleExactAlarms()
+    }
+
+    /**
+     * Opens the system settings page where the user can grant SCHEDULE_EXACT_ALARM.
+     * Call this before setting a reminder if [canScheduleExact] returns false, so the
+     * reminder fires on time instead of arriving late via an inexact alarm.
+     */
+    fun promptExactAlarmPermission(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.startActivity(
+                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+        }
+    }
 
     private fun intentFor(context: Context, reminderId: Long): Intent =
         Intent(context, ReminderAlarmReceiver::class.java).apply {

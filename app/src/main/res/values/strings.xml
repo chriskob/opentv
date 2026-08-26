@@ -199,6 +199,23 @@
     <string name="settings_sleep_off">Off</string>
     <string name="settings_sleep_minutes">%1$d minutes</string>
 
+    <!-- ============================ Data refresh settings ============================ -->
+    <string name="settings_section_data_refresh">Data Refresh</string>
+    <string name="settings_data_refresh_note">How often the playlist and guide are re-downloaded in the background. Data is saved and cached — it only reloads when stale.</string>
+    <string name="settings_playlist_refresh">Playlist refresh</string>
+    <string name="settings_guide_refresh">Guide refresh</string>
+    <string name="settings_refresh_2h">Every 2 hours</string>
+    <string name="settings_refresh_4h">Every 4 hours</string>
+    <string name="settings_refresh_6h">Every 6 hours</string>
+    <string name="settings_refresh_8h">Every 8 hours</string>
+    <string name="settings_refresh_12h">Every 12 hours</string>
+    <string name="settings_refresh_24h">Every 24 hours</string>
+    <string name="settings_refresh_manual">Manual only</string>
+    <string name="settings_epg_sync_with_playlist_title">Update guide with playlist</string>
+    <string name="settings_epg_sync_with_playlist_subtitle">When on, the guide refreshes automatically whenever the playlist refreshes. Turn off to refresh them independently.</string>
+    <string name="settings_refresh_now">Refresh now</string>
+    <string name="settings_refresh_now_toast">Refreshing playlist and guide…</string>
+
     <!-- ============================ Parental controls ============================ -->
     <string name="parental_hidden_categories">Hidden categories</string>
     <string name="parental_hidden_desc">Anything switched on here is removed from Live TV until you turn on “Show hidden now” below. With a PIN set, this screen stays locked, so hidden stays hidden.</string>

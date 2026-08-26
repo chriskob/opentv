@@ -134,8 +134,17 @@ class EpgRepository(
 
     // ---- Sync ------------------------------------------------------------------------------
 
-    /** Downloads every enabled feed, merges, prunes, and re-runs the matcher. */
-    suspend fun syncAll(nowUtcMillis: Long, force: Boolean = false): SyncSummary =
+    /** Downloads every enabled feed, merges, prunes, and re-runs the matcher.
+     *
+     * @param refreshIntervalMillis The minimum time between re-downloads of a single feed.
+     *   Defaults to [REFRESH_INTERVAL_MILLIS] (6 h). Pass 0 to force-refresh regardless. The
+     *   caller reads [AppSettings.epgRefreshHours] and converts to millis.
+     */
+    suspend fun syncAll(
+        nowUtcMillis: Long,
+        force: Boolean = false,
+        refreshIntervalMillis: Long = REFRESH_INTERVAL_MILLIS,
+    ): SyncSummary =
         withContext(Dispatchers.IO) {
             ensureFeeds()
             maybeAutoEnableRegionalFeed()
@@ -145,7 +154,7 @@ class EpgRepository(
             var written = 0
 
             for (feed in feedDao.enabled()) {
-                if (!force && nowUtcMillis - feed.lastSyncMillis < REFRESH_INTERVAL_MILLIS) {
+                if (!force && nowUtcMillis - feed.lastSyncMillis < refreshIntervalMillis) {
                     succeeded++
                     continue
                 }

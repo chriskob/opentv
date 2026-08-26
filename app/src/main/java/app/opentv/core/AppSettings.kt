@@ -400,6 +400,42 @@ class AppSettings private constructor(context: Context) {
     // ---- Catalogue freshness & TMDB ----------------------------------------------------------
 
     /**
+     * How often the playlist (catalogue) is refreshed in the background, in hours.
+     * 0 = manual only (periodic WorkManager job is cancelled). Default 6.
+     */
+    private val _playlistRefreshHours = MutableStateFlow(prefs.getInt(KEY_PLAYLIST_REFRESH_HOURS, 6))
+    val playlistRefreshHours: StateFlow<Int> = _playlistRefreshHours.asStateFlow()
+
+    fun setPlaylistRefreshHours(hours: Int) {
+        prefs.edit().putInt(KEY_PLAYLIST_REFRESH_HOURS, hours).apply()
+        _playlistRefreshHours.value = hours
+    }
+
+    /**
+     * How often the EPG (guide) data is refreshed, in hours. 0 = manual only. Default 6.
+     * This controls the staleness check in [app.opentv.data.repo.EpgRepository.syncAll].
+     */
+    private val _epgRefreshHours = MutableStateFlow(prefs.getInt(KEY_EPG_REFRESH_HOURS, 6))
+    val epgRefreshHours: StateFlow<Int> = _epgRefreshHours.asStateFlow()
+
+    fun setEpgRefreshHours(hours: Int) {
+        prefs.edit().putInt(KEY_EPG_REFRESH_HOURS, hours).apply()
+        _epgRefreshHours.value = hours
+    }
+
+    /**
+     * When true the guide is refreshed whenever the playlist refreshes (existing behaviour).
+     * When false the guide refreshes on its own [epgRefreshHours] interval independently.
+     */
+    private val _epgSyncWithPlaylist = MutableStateFlow(prefs.getBoolean(KEY_EPG_SYNC_WITH_PLAYLIST, true))
+    val epgSyncWithPlaylist: StateFlow<Boolean> = _epgSyncWithPlaylist.asStateFlow()
+
+    fun setEpgSyncWithPlaylist(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_EPG_SYNC_WITH_PLAYLIST, enabled).apply()
+        _epgSyncWithPlaylist.value = enabled
+    }
+
+    /**
      * When the VOD (movies + series) catalogue was last fetched from the provider, in epoch
      * millis; 0 = never. A provider's 40k-title VOD list is expensive to re-download and
      * re-write, so [app.opentv.ui.VodViewModel.ensureVodLoaded] uses this to skip the sync on a
@@ -497,6 +533,9 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_REC_AUTOSWITCH = "rec_auto_switch"
         private const val KEY_LIVE_PAUSE = "live_pause_enabled"
         private const val KEY_RECENT_CHANNELS = "recent_watched_channels"
+        private const val KEY_PLAYLIST_REFRESH_HOURS = "playlist_refresh_hours"
+        private const val KEY_EPG_REFRESH_HOURS = "epg_refresh_hours"
+        private const val KEY_EPG_SYNC_WITH_PLAYLIST = "epg_sync_with_playlist"
 
         @Volatile private var instance: AppSettings? = null
 

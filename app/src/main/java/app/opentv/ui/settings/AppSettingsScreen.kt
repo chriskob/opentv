@@ -68,6 +68,9 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val liveEnabled by settings.liveEnabled.collectAsState()
     val moviesEnabled by settings.moviesEnabled.collectAsState()
     val seriesEnabled by settings.seriesEnabled.collectAsState()
+    val playlistRefreshHours by settings.playlistRefreshHours.collectAsState()
+    val epgRefreshHours by settings.epgRefreshHours.collectAsState()
+    val epgSyncWithPlaylist by settings.epgSyncWithPlaylist.collectAsState()
 
     // A refresh next to each content toggle kicks a full catalogue re-sync (which now honours the
     // toggles, so a type just switched on is fetched). Runs as background work so it isn't cut short
@@ -140,6 +143,81 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 onToggle = settings::setSeriesEnabled,
                 onRefresh = onRefreshContent,
             )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        SettingsSection(stringResource(R.string.settings_section_data_refresh)) {
+            Text(
+                stringResource(R.string.settings_data_refresh_note),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+
+            // ---- Playlist refresh interval
+            Text(
+                stringResource(R.string.settings_playlist_refresh),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            val playlistOptions = listOf(2, 4, 6, 8, 12, 24, 0)
+            for (hours in playlistOptions) {
+                val label = when (hours) {
+                    2 -> stringResource(R.string.settings_refresh_2h)
+                    4 -> stringResource(R.string.settings_refresh_4h)
+                    6 -> stringResource(R.string.settings_refresh_6h)
+                    8 -> stringResource(R.string.settings_refresh_8h)
+                    12 -> stringResource(R.string.settings_refresh_12h)
+                    24 -> stringResource(R.string.settings_refresh_24h)
+                    else -> stringResource(R.string.settings_refresh_manual)
+                }
+                ThemeOption(label, playlistRefreshHours == hours) {
+                    settings.setPlaylistRefreshHours(hours)
+                    SyncWorker.schedule(context, hours)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ---- Guide refresh interval
+            Text(
+                stringResource(R.string.settings_guide_refresh),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            val guideOptions = listOf(2, 4, 6, 8, 12, 24, 0)
+            for (hours in guideOptions) {
+                val label = when (hours) {
+                    2 -> stringResource(R.string.settings_refresh_2h)
+                    4 -> stringResource(R.string.settings_refresh_4h)
+                    6 -> stringResource(R.string.settings_refresh_6h)
+                    8 -> stringResource(R.string.settings_refresh_8h)
+                    12 -> stringResource(R.string.settings_refresh_12h)
+                    24 -> stringResource(R.string.settings_refresh_24h)
+                    else -> stringResource(R.string.settings_refresh_manual)
+                }
+                ThemeOption(label, epgRefreshHours == hours) {
+                    settings.setEpgRefreshHours(hours)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ---- Sync guide with playlist toggle
+            ToggleRow(
+                title = stringResource(R.string.settings_epg_sync_with_playlist_title),
+                subtitle = stringResource(R.string.settings_epg_sync_with_playlist_subtitle),
+                checked = epgSyncWithPlaylist,
+                onToggle = settings::setEpgSyncWithPlaylist,
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // ---- Refresh now button
+            val refreshNowMessage = stringResource(R.string.settings_refresh_now_toast)
+            OutlinedButton(onClick = {
+                SyncWorker.refreshNow(context)
+                Toast.makeText(context, refreshNowMessage, Toast.LENGTH_SHORT).show()
+            }) { Text(stringResource(R.string.settings_refresh_now)) }
         }
 
         Spacer(Modifier.height(16.dp))

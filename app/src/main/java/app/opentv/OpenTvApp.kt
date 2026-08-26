@@ -59,7 +59,8 @@ class OpenTvApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         val graph = ServiceLocator.get(this)
-        SyncWorker.schedule(this)
+        val settings = graph.settings
+        SyncWorker.schedule(this, settings.playlistRefreshHours.value)
 
         // When the normaliser has moved on since the catalogue was last processed, re-clean
         // the stored channels and re-run the guide matcher — locally, no re-download. This
@@ -110,7 +111,15 @@ class OpenTvApp : Application(), ImageLoaderFactory {
             // refresh window are skipped), but it is what makes the free regional guide turn
             // itself on and download the first time — without waiting for the user to find
             // the refresh button. ensureFeeds + auto-enable-by-region + matcher all live here.
-            graph.epgRepository.syncAll(System.currentTimeMillis(), force = false)
+            // The refresh interval now comes from the user's setting instead of a hardcoded 6h.
+            val epgIntervalMillis = java.util.concurrent.TimeUnit.HOURS.toMillis(
+                settings.epgRefreshHours.value.toLong().coerceAtLeast(1)
+            )
+            graph.epgRepository.syncAll(
+                System.currentTimeMillis(),
+                force = false,
+                refreshIntervalMillis = epgIntervalMillis,
+            )
         }
     }
 }

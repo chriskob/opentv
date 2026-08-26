@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.13
+
+- **Configurable Playlist & Guide Refresh Intervals & Persistent Startup Cache.**
+  - **Persistent Guide Caching on Startup**: Cold starts now load directly from the local database cache and only trigger network EPG sync when the data has exceeded the user's configured refresh interval.
+  - **Custom Playlist Refresh Interval**: Added setting in Display Settings under "Data Refresh" with options for 2h, 4h, 6h, 8h, 12h, 24h, or Manual only (cancels background WorkManager sync).
+  - **Custom Guide Refresh Interval**: Added independent EPG refresh interval configuration with matching hourly intervals or manual-only mode.
+  - **Update Guide with Playlist Toggle**: Added toggle to synchronize guide refreshes whenever the playlist updates or decouple them for independent refreshing.
+  - **Manual Refresh Now Action**: Added a direct "Refresh now" button inside the Data Refresh settings.
+
 ## 0.12.12
 
 - **Tier 1 Performance & Responsiveness Enhancements (TiviMate UX Polish).**

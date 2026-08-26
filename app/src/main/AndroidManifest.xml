@@ -113,15 +113,19 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 
-        <!-- Fires a programme reminder when its alarm goes off; re-arms reminders after a reboot. -->
+        <!-- Fires a programme reminder when its alarm goes off; re-arms reminders after a reboot.
+             LOCKED_BOOT_COMPLETED ensures re-arming even on direct-boot devices (Android 7+). -->
         <receiver
             android:name=".reminders.ReminderAlarmReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="app.opentv.reminder.ALARM_REMIND" />
             </intent-filter>
         </receiver>
 
