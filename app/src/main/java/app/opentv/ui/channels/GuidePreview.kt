@@ -48,6 +48,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import app.opentv.R
@@ -108,8 +109,8 @@ fun GuidePreview(
     Row(
         modifier
             .fillMaxWidth()
-            .height(160.dp)
-            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            .height(154.dp)
+            .padding(start = 8.dp, end = 12.dp, top = 4.dp, bottom = 6.dp),
     ) {
         // ---- 16:9 Video preview / Logo card (clean, matching TiviMate) ----
         Box(
@@ -156,14 +157,14 @@ fun GuidePreview(
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val displayProg = programme ?: row?.now
 
-            // Line 1: Large Bold Programme Title
+            // Line 1: Large Bold Programme Title (allows 2 lines so full titles never cut off)
             val titleText = displayProg?.title ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
             Text(
                 text = titleText,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
 
@@ -230,14 +231,14 @@ fun GuidePreview(
                     }
                 }
 
-                // Line 3: Description / Synopsis
+                // Line 3: Description / Synopsis (up to 3 lines)
                 val synopsis = displayProg.description?.takeIf { it.isNotBlank() }
                 if (synopsis != null) {
                     Text(
                         text = synopsis,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                        maxLines = 2,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 18.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

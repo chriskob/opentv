@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.opentv.R
 import app.opentv.data.model.Channel
 import app.opentv.data.model.Programme
@@ -97,11 +98,14 @@ fun GuideGrid(
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onExitLeftFromChannel: () -> Boolean = { false },
     dayOffset: Int = 0,
+    nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    val now = System.currentTimeMillis()
+    val initialFocusRequester = remember { FocusRequester() }
+    var hasFocusedPlaying by remember { mutableStateOf(false) }
+
     LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
 
     LaunchedEffect(selectedKey) {
@@ -109,11 +113,16 @@ fun GuideGrid(
         if (index >= 0) {
             val target = (index - 2).coerceAtLeast(0)
             listState.animateScrollToItem(target)
+            if (!hasFocusedPlaying) {
+                delay(60)
+                runCatching { initialFocusRequester.requestFocus() }
+                hasFocusedPlaying = true
+            }
         }
     }
 
     Column(modifier.fillMaxSize()) {
-        TimeHeader(windowStartMillis, now, scroll)
+        TimeHeader(windowStartMillis, nowMillis, scroll)
 
         LazyColumn(
             state = listState,
@@ -125,10 +134,10 @@ fun GuideGrid(
                 GuideRow(
                     row = row,
                     windowStartMillis = windowStartMillis,
-                    nowMillis = now,
+                    nowMillis = nowMillis,
                     scroll = scroll,
                     isSelected = isSelected,
-                    shouldRequestFocus = isSelected,
+                    focusRequester = if (isSelected) initialFocusRequester else null,
                     onSelect = { onSelectRow(row) },
                     onLongSelect = { onLongSelectRow(row) },
                     onFocus = { prog -> onFocusRow(row, prog) },
@@ -154,16 +163,23 @@ fun ChannelList(
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onExitLeftFromChannel: () -> Boolean = { false },
+    nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier,
 ) {
-    val now = System.currentTimeMillis()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val initialFocusRequester = remember { FocusRequester() }
+    var hasFocusedPlaying by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedKey) {
         val index = rows.indexOfFirst { it.key == selectedKey }
         if (index >= 0) {
             val target = (index - 2).coerceAtLeast(0)
             listState.animateScrollToItem(target)
+            if (!hasFocusedPlaying) {
+                delay(60)
+                runCatching { initialFocusRequester.requestFocus() }
+                hasFocusedPlaying = true
+            }
         }
     }
 
@@ -177,9 +193,9 @@ fun ChannelList(
             val isSelected = row.key == selectedKey
             ChannelListRow(
                 row = row,
-                nowMillis = now,
+                nowMillis = nowMillis,
                 isSelected = isSelected,
-                shouldRequestFocus = isSelected,
+                focusRequester = if (isSelected) initialFocusRequester else null,
                 onSelect = { onSelectRow(row) },
                 onLongSelect = { onLongSelectRow(row) },
                 onFocus = { prog -> onFocusRow(row, prog) },
@@ -196,7 +212,7 @@ private fun ChannelListRow(
     row: ChannelsViewModel.Row,
     nowMillis: Long,
     isSelected: Boolean,
-    shouldRequestFocus: Boolean = false,
+    focusRequester: FocusRequester? = null,
     onSelect: () -> Unit,
     onLongSelect: () -> Unit = {},
     onFocus: (Programme?) -> Unit,
@@ -204,19 +220,19 @@ private fun ChannelListRow(
     onExitLeft: () -> Boolean,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(shouldRequestFocus) {
-        if (shouldRequestFocus) {
-            delay(50)
-            runCatching { focusRequester.requestFocus() }
-        }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
+    val clockFmt = remember(is24) {
+        if (is24) SimpleDateFormat("HH:mm", Locale.getDefault())
+        else SimpleDateFormat("hh:mm a", Locale.getDefault())
     }
 
     val isLive = isSelected
 
     Row(
         Modifier
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .fillMaxWidth()
             .height(ROW_HEIGHT)
             .background(
@@ -229,7 +245,6 @@ private fun ChannelListRow(
                 else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA))
                 else Modifier,
             )
-            .focusRequester(focusRequester)
             .onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) onExitLeft() else false
             }
@@ -283,7 +298,7 @@ private fun ChannelListRow(
             val nowProg = row.now
             if (nowProg != null) {
                 Text(
-                    text = "${clockFormat.format(Date(nowProg.startUtcMillis))}  ${nowProg.title}",
+                    text = "${clockFmt.format(Date(nowProg.startUtcMillis))}  ${nowProg.title}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (focused) Color(0xFF455A64) else Color(0xFF90A4AE),
                     maxLines = 1,
@@ -327,9 +342,9 @@ private fun TimeHeader(
         ) {
             Text(
                 text = currentDateTimeFmt.format(Date(nowMillis)),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.5.sp),
                 color = Color(0xFF26C6DA),
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
             )
         }
@@ -351,9 +366,9 @@ private fun TimeHeader(
                 ) {
                     Text(
                         slotTimeFmt.format(Date(slotStart)),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF90A4AE),
-                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                        color = Color(0xFFB0BEC5),
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
             }
@@ -369,7 +384,7 @@ private fun GuideRow(
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     isSelected: Boolean,
-    shouldRequestFocus: Boolean = false,
+    focusRequester: FocusRequester? = null,
     onSelect: () -> Unit,
     onLongSelect: () -> Unit = {},
     onFocus: (Programme?) -> Unit,
@@ -378,14 +393,6 @@ private fun GuideRow(
     onExitLeft: () -> Boolean = { false },
 ) {
     var focused by remember { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(shouldRequestFocus) {
-        if (shouldRequestFocus) {
-            delay(50)
-            runCatching { focusRequester.requestFocus() }
-        }
-    }
 
     Row(Modifier.fillMaxWidth().height(ROW_HEIGHT)) {
 
@@ -404,7 +411,6 @@ private fun GuideRow(
                     else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA))
                     else Modifier,
                 )
-                .focusRequester(focusRequester)
                 .onPreviewKeyEvent { e ->
                     if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) onExitLeft()
                     else false
@@ -424,10 +430,10 @@ private fun GuideRow(
             row.primary.number?.let { num ->
                 Text(
                     "$num",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (focused) Color(0xFF37474F) else Color(0xFF78909C),
+                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp),
+                    color = if (focused) Color(0xFF37474F) else Color(0xFF90A4AE),
                     maxLines = 1,
-                    modifier = Modifier.width(26.dp),
+                    modifier = Modifier.width(28.dp),
                 )
             }
 
@@ -444,8 +450,8 @@ private fun GuideRow(
             Column(Modifier.weight(1f)) {
                 Text(
                     row.primary.shownName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = if (focused || isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.5.sp),
+                    fontWeight = if (focused || isSelected) FontWeight.Bold else FontWeight.Medium,
                     color = if (focused) Color(0xFF10171E) else if (isSelected) Color(0xFF26C6DA) else Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -495,6 +501,7 @@ private fun GuideRow(
                 var emptyFocused by remember { mutableStateOf(false) }
                 Box(
                     Modifier
+                        .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                         .width(HALF_HOUR_WIDTH * HOURS_IN_WINDOW.toFloat() * 2)
                         .fillMaxSize()
                         .background(
@@ -509,42 +516,77 @@ private fun GuideRow(
                             emptyFocused = it.isFocused
                             if (it.isFocused) onFocus(null)
                         }
+                        .focusable()
                         .clickable(onClick = onSelect)
                         .padding(start = 8.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
                         stringResource(R.string.guide_no_info),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
                         color = if (emptyFocused) Color(0xFF10171E) else Color(0xFF78909C),
                     )
                 }
             } else {
-                var cursor = windowStartMillis
-                var debt = 0.dp
-                for (programme in programmes) {
-                    val start = programme.startUtcMillis.coerceAtLeast(windowStartMillis)
-                    val gap = widthFor(cursor, start)
-                    val repaid = minOf(debt, gap)
-                    debt -= repaid
-                    val spacer = gap - repaid
-                    if (spacer > 0.dp) {
-                        Spacer(Modifier.width(spacer))
+                val blockLayouts = remember(programmes, windowStartMillis, nowMillis) {
+                    val layouts = mutableListOf<BlockLayout>()
+                    var cursor = windowStartMillis
+                    var debt = 0.dp
+                    val hasNow = programmes.any { nowMillis in it.startUtcMillis until it.endUtcMillis }
+                    for ((pIdx, programme) in programmes.withIndex()) {
+                        val start = programme.startUtcMillis.coerceAtLeast(windowStartMillis)
+                        val gap = widthFor(cursor, start)
+                        val repaid = minOf(debt, gap)
+                        debt -= repaid
+                        val spacer = gap - repaid
+                        val end = programme.endUtcMillis
+                        val isNow = nowMillis in programme.startUtcMillis until end
+                        val trueWidth = widthFor(start, end)
+                        val drawnWidth = maxOf(trueWidth, MIN_BLOCK_WIDTH)
+                        debt += drawnWidth - trueWidth
+                        val shouldAttachFocus = if (hasNow) isNow else (pIdx == 0)
+                        
+                        layouts.add(BlockLayout(
+                            spacerWidth = spacer,
+                            blockWidth = drawnWidth,
+                            isNow = isNow,
+                            progress = if (isNow) programme.progressAt(nowMillis) else 0f,
+                            programmeIndex = pIdx,
+                            shouldAttachFocus = shouldAttachFocus
+                        ))
+                        cursor = end
                     }
-                    val end = programme.endUtcMillis
-                    val isNow = nowMillis in programme.startUtcMillis until end
-                    val trueWidth = widthFor(start, end)
-                    val drawnWidth = maxOf(trueWidth, MIN_BLOCK_WIDTH)
-                    debt += drawnWidth - trueWidth
+                    layouts
+                }
+
+                for (layout in blockLayouts) {
+                    if (layout.spacerWidth > 0.dp) Spacer(Modifier.width(layout.spacerWidth))
                     ProgrammeBlock(
-                        title = programme.title,
-                        width = drawnWidth,
-                        isNow = isNow,
-                        progress = if (isNow) programme.progressAt(nowMillis) else 0f,
-                        onFocus = { onFocus(programme) },
-                        onClick = { onProgramme(programme) },
+                        title = programmes[layout.programmeIndex].title,
+                        width = layout.blockWidth,
+                        isNow = layout.isNow,
+                        progress = layout.progress,
+                        focusRequester = if (layout.shouldAttachFocus) focusRequester else null,
+                        onFocus = { onFocus(programmes[layout.programmeIndex]) },
+                        onClick = { onProgramme(programmes[layout.programmeIndex]) },
                     )
-                    cursor = end
+                }
+
+                // Trailing filler block to guarantee 100% focus coverage across the entire window
+                val windowEnd = windowStartMillis + (HOURS_IN_WINDOW * 60 * 60 * 1000L)
+                val lastCursor = programmes.lastOrNull()?.endUtcMillis ?: windowStartMillis
+                if (lastCursor < windowEnd) {
+                    val remainingWidth = widthFor(lastCursor, windowEnd)
+                    if (remainingWidth > 0.dp) {
+                        ProgrammeBlock(
+                            title = stringResource(R.string.guide_no_info),
+                            width = remainingWidth,
+                            isNow = false,
+                            progress = 0f,
+                            onFocus = { onFocus(null) },
+                            onClick = onSelect,
+                        )
+                    }
                 }
             }
         }
@@ -557,6 +599,7 @@ private fun ProgrammeBlock(
     width: Dp,
     isNow: Boolean,
     progress: Float,
+    focusRequester: FocusRequester? = null,
     onFocus: () -> Unit = {},
     onClick: () -> Unit,
 ) {
@@ -564,6 +607,7 @@ private fun ProgrammeBlock(
 
     Box(
         Modifier
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .width(width)
             .fillMaxSize()
             .padding(end = 1.dp)
@@ -587,18 +631,18 @@ private fun ProgrammeBlock(
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (focused || isNow) FontWeight.Medium else FontWeight.Normal,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 16.sp),
+            fontWeight = if (focused || isNow) FontWeight.Bold else FontWeight.Medium,
             color = when {
                 focused -> Color(0xFF10171E) // Dark charcoal text on white focus background
                 isNow -> Color.White
-                else -> Color(0xFFD0D7DE)
+                else -> Color(0xFFE2E8F0)
             },
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 6.dp, vertical = 2.dp),
         )
 
         // Live progress line
@@ -607,7 +651,7 @@ private fun ProgrammeBlock(
                 Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth(progress.coerceIn(0f, 1f))
-                    .height(2.dp)
+                    .height(2.5.dp)
                     .background(Color(0xFF26C6DA)),
             )
         }
@@ -620,13 +664,19 @@ private fun widthFor(fromMillis: Long, toMillis: Long): Dp {
     return (minutes * MINUTE_DP).dp
 }
 
-private const val MINUTE_DP = 5.2f
+private const val MINUTE_DP = 7.0f
 private const val HOURS_IN_WINDOW = 24
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
-private val CHANNEL_COLUMN = 220.dp
-private val ROW_HEIGHT = 56.dp
-private val MIN_BLOCK_WIDTH = 80.dp
+private val CHANNEL_COLUMN = 230.dp
+private val ROW_HEIGHT = 58.dp
+private val MIN_BLOCK_WIDTH = 95.dp
 private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 
-private val clockFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-
+private data class BlockLayout(
+    val spacerWidth: Dp,
+    val blockWidth: Dp,
+    val isNow: Boolean,
+    val progress: Float,
+    val programmeIndex: Int,
+    val shouldAttachFocus: Boolean,
+)

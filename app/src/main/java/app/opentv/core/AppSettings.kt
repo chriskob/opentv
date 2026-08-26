@@ -93,6 +93,11 @@ class AppSettings private constructor(context: Context) {
         _recentChannelIds.value = trimmed
     }
 
+    fun clearRecentChannels() {
+        prefs.edit().remove(KEY_RECENT_CHANNELS).apply()
+        _recentChannelIds.value = emptyList()
+    }
+
     // ---- Parental controls -------------------------------------------------------------------
 
     /** Whether a parental PIN is set. The PIN itself is only ever stored as a salted hash. */

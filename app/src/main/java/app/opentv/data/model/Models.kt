@@ -102,6 +102,7 @@ data class Category(
     indices = [
         Index(value = ["sourceId", "streamId"], unique = true),
         Index(value = ["sourceId", "categoryId"]),
+        Index(value = ["sourceId"]),
         Index(value = ["groupKey"]),
         Index(value = ["favourite"]),
     ],

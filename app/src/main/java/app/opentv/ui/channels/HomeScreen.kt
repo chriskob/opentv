@@ -325,7 +325,7 @@ fun HomeScreen(
         )
     }
 
-    Row(Modifier.fillMaxSize()) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
 
         // ---- Category rail -----------------------------------------------------------------
         // Width animates to 0 while focus is in the guide (see onFocusRow) so the grid gets the
@@ -470,18 +470,22 @@ fun HomeScreen(
                 )
                 // Shared by both layouts: focus follows the highlight and collapses the rail; LEFT
                 // from the leftmost element reopens the rail (consumed only when it was hidden).
-                val onFocusChannel: (ChannelsViewModel.Row, Programme?) -> Unit = { r, prog ->
-                    highlightedRow = r
-                    highlightedProgramme = prog ?: r.now
-                    railExpanded = false
+                val onFocusChannel: (ChannelsViewModel.Row, Programme?) -> Unit = remember {
+                    { r: ChannelsViewModel.Row, prog: Programme? ->
+                        highlightedRow = r
+                        highlightedProgramme = prog ?: r.now
+                        railExpanded = false
+                    }
                 }
-                val onExitLeftChannel: () -> Boolean = {
-                    if (!railExpanded) {
-                        railExpanded = true
-                        pendingRailFocus = true
-                        true
-                    } else {
-                        false
+                val onExitLeftChannel: () -> Boolean = remember {
+                    {
+                        if (!railExpanded) {
+                            railExpanded = true
+                            pendingRailFocus = true
+                            true
+                        } else {
+                            false
+                        }
                     }
                 }
                 if (channelLayout == AppSettings.ChannelLayout.LIST) {
@@ -496,6 +500,7 @@ fun HomeScreen(
                         onFocusRow = onFocusChannel,
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
+                        nowMillis = nowMillis,
                         modifier = Modifier.weight(1f),
                     )
                 } else {
@@ -513,6 +518,7 @@ fun HomeScreen(
                         onProgramme = { row, programme -> recordTarget = row to programme },
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
+                        nowMillis = nowMillis,
                         modifier = Modifier.weight(1f),
                     )
                 }

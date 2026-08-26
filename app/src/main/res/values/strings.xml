@@ -503,4 +503,6 @@
     <string name="settings_tmdb_save">Save key</string>
     <string name="settings_tmdb_saved">TMDB key saved</string>
     <string name="settings_tmdb_active">Active</string>
+    <string name="history_clear">Clear history</string>
+    <string name="history_cleared">Watch history cleared</string>
 </resources>

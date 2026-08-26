@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.12.12
+
+- **Tier 1 Performance & Responsiveness Enhancements (TiviMate UX Polish).**
+  - **Optimized Guide Timeline Layout**: Memoized programme block layout calculations and debt-reconciliation math in `GuideRow` using `remember(programmes, windowStartMillis, nowMillis)` to eliminate heavy frame math during scrolling.
+  - **Smooth Channel Navigation**: Added smooth `animateScrollToItem` with easing for D-pad channel navigation in the TV guide.
+  - **Synchronized Time Updates**: Centralized `nowMillis` tick across `HomeScreen`, `GuideGrid`, and `ChannelList` for seamless progress bar updates without re-instantiating date formatters.
+  - **Eliminated Sub-Composition in Player**: Refactored `LiveTimelineBar` in `PlayerScreen` from `BoxWithConstraints` to `Modifier.onSizeChanged`, avoiding forced sub-composition passes during playback.
+  - **Database Index Optimization**: Added standalone index on `channels.sourceId` (Room schema v13 + `MIGRATION_12_13`) to eliminate full table scans on single-source queries.
+  - **Startup Memory Optimization**: Refactored `renormalizeAll()` in `CatalogRepository` to process channels source-by-source, preventing large allocations on 1GB TV devices.
+
+## 0.12.11
+
+- **Focus Current Playing Channel & Programme on Return from Player.**
+  - When returning from full-screen playback (Back button), focus lands directly on the currently playing channel and its active program in the TV guide timeline.
+
+## 0.12.10
+
+- **Guide Timeline Navigation Fix & Immersive Playback Entry.**
+  - Removed focus hijacking on the channel column in `GuideGrid` so you can scroll freely through timeline programme blocks without being forced back to the channel name.
+  - Going full-screen (via long press or channel selection) now starts cleanly with full-screen video without popping up the sub menu.
+  - Pre-seeded recent watched channels synchronously so opening the sub menu reliably focuses on the first channel card on frame 0.
+
+## 0.12.9
+
+- **Sub Menu Initial Focus, Clear History Button & Options Highlight.**
+  - Opening the player sub menu (OK button) now places focus directly on the first watched channel card instead of the TV guide button.
+  - Added a "Clear history" button at the end of the sub menu carousel to reset watched channel history.
+  - Fixed focus highlight on the "More options" toggle button so it highlights distinctly in solid high-contrast white with dark text.
+
+## 0.12.8
+
+- **TV Overscan Margins & 2-Line Text Wrapping in Guide.**
+  - Added TV overscan safe padding to `HomeScreen` so the top preview pane, left channel column, and descriptions are never clipped by the TV bezel.
+  - Enabled 2-line title rendering (`maxLines = 2`) in `ProgrammeBlock` with dedicated line height so titles like "Wheel of Fortune" wrap and fit fully without ellipsis truncation.
+  - Expanded Guide Preview header to allow 2-line show titles and 3-line synopses so long titles and descriptions are fully readable.
+  - Widened channel column and timeline slots for clean text formatting.
+
+## 0.12.7
+
+- **Cursor Retention, Guide Typography & About Clean-up.**
+  - Fixed cursor dropping in Sub Menu and Guide by adding trailing timeline filler blocks to guarantee 100% continuous focus coverage across the entire time window, and preventing root Box from capturing focus while controls are up.
+  - Added dedicated focusable "More options" pill in player sub menu for smooth vertical navigation.
+  - Increased typography size in Guide (channels, show titles, timeline slots) and reduced horizontal padding to eliminate premature `...` truncation.
+  - Removed donation links and QR code from the About screen.
+
+## 0.12.6
+
+- **Sub Menu Navigation & History Population Fix.**
+  - Fixed D-Pad key event handling so navigating left/right/up/down while the sub menu is visible passes all events directly to UI focus without intercepting and zapping through background channels.
+  - Sub menu watch history strictly contains only channels deliberately tuned and watched.
+
 ## 0.12.5
 
 - **Watched Channel History in Sub Menu Carousel.**

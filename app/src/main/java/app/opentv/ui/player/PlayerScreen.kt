@@ -7,6 +7,7 @@ package app.opentv.ui.player
 
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -20,7 +21,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -97,6 +98,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
@@ -178,6 +181,7 @@ fun PlayerScreen(
         }
     }
 
+    val queue = remember { PlaybackQueue.items }
     var variants by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var currentId by remember { mutableStateOf<Long?>(null) }
     // The channel we were on before this one — powers the "Last channel" recall in the list.
@@ -187,7 +191,7 @@ fun PlayerScreen(
     var paused by remember { mutableStateOf(false) }
     var resizeMode by remember { mutableIntStateOf(settings.playerResizeMode.value) }
 
-    var controlsVisible by remember { mutableStateOf(true) }
+    var controlsVisible by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf(Panel.NONE) }
     var channelListVisible by remember { mutableStateOf(false) }
     var showSecondaryControls by remember { mutableStateOf(false) }
@@ -316,10 +320,6 @@ fun PlayerScreen(
             controller.player.removeListener(listener)
         }
     }
-
-    // The channel list you were browsing, for channel up/down and the in-player list. Snapshotted
-    // on entry so it doesn't shift under you mid-session.
-    val queue = remember { PlaybackQueue.items }
 
     fun reveal() {
         menuOpenedAt = System.currentTimeMillis()
@@ -558,23 +558,23 @@ fun PlayerScreen(
                         interaction++
                         false
                     }
-                    // Channel up/down works whether or not the bar is showing — this remote has no
-                    // CH+/CH- keys, so up/down IS the channel changer. Each zap flashes the bar as a
-                    // channel banner, then it auto-hides.
-                    event.key == Key.DirectionUp || event.key == Key.ChannelUp -> { zapBy(-1); reveal(); true }
-                    event.key == Key.DirectionDown || event.key == Key.ChannelDown -> { zapBy(1); reveal(); true }
-                    // Center/Enter/OK button on remote:
-                    // If controls are hidden, pressing OK reveals the bottom menu without pausing playback.
-                    !controlsVisible && (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) -> {
-                        reveal()
-                        true
-                    }
-                    // With the bar up, left/right/center drive its buttons; let them through.
+                    // With the menu/controls visible, let Compose handle all d-pad navigation (left, right, up, down, OK)
+                    // so users can freely navigate cards without zapping or changing channels!
                     controlsVisible -> {
                         interaction++
                         false
                     }
-                    // Immersive: left opens the channel list, right the quality picker.
+                    // When in full-screen (controls hidden):
+                    event.key == Key.ChannelUp -> { zapBy(-1); reveal(); true }
+                    event.key == Key.ChannelDown -> { zapBy(1); reveal(); true }
+                    event.key == Key.DirectionUp -> { zapBy(-1); reveal(); true }
+                    event.key == Key.DirectionDown -> { reveal(); true }
+                    // Center/Enter/OK button on remote: reveals the bottom menu without pausing playback.
+                    event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter -> {
+                        reveal()
+                        true
+                    }
+                    // Immersive shortcuts when hidden:
                     event.key == Key.DirectionLeft -> { if (queue.isNotEmpty()) channelListVisible = true; true }
                     event.key == Key.DirectionRight -> {
                         if (variants.size > 1) { reveal(); panel = Panel.QUALITY }; true
@@ -583,7 +583,7 @@ fun PlayerScreen(
                 }
             }
             .focusRequester(rootFocus)
-            .focusable()
+            .then(if (!controlsVisible && panel == Panel.NONE && !channelListVisible) Modifier.focusable() else Modifier)
             .pointerInput(Unit) {
                 detectTapGestures { if (controlsVisible) controlsVisible = false else reveal() }
             },
@@ -882,7 +882,7 @@ fun PlayerScreen(
                         QuickActionCard(
                             icon = Icons.Filled.ViewStream,
                             label = stringResource(R.string.player_tv_guide),
-                            focusRequester = barFocus,
+                            focusRequester = if (recentChannels.isEmpty()) barFocus else null,
                             canClick = allowChipClick,
                             onClick = { onBack() },
                         )
@@ -902,34 +902,75 @@ fun PlayerScreen(
                     }
 
                     // Cards 3+: Watched Channels History (newest first)
-                    items(recentChannels, key = { "recent-ch-${it.id}" }) { ch ->
+                    // The first watched channel carries barFocus so opening the sub menu focuses directly on it
+                    itemsIndexed(recentChannels, key = { _, ch -> "recent-ch-${ch.id}" }) { idx, ch ->
                         QuickChannelCard(
                             channel = ch,
                             programme = queueProgrammes[ch.id],
                             isCurrent = ch.id == currentId,
+                            focusRequester = if (idx == 0) barFocus else null,
                             canClick = allowChipClick,
                             onClick = { playChannelId(ch.id) },
                         )
+                    }
+
+                    // Card End: Clear History Button
+                    if (recentChannels.isNotEmpty()) {
+                        item(key = "quick-clear-history") {
+                            QuickActionCard(
+                                icon = Icons.Filled.Delete,
+                                label = stringResource(R.string.history_clear),
+                                canClick = allowChipClick,
+                                onClick = {
+                                    settings.clearRecentChannels()
+                                    Toast.makeText(context, context.getString(R.string.history_cleared), Toast.LENGTH_SHORT).show()
+                                },
+                            )
+                        }
                     }
                 }
 
                 Spacer(Modifier.height(4.dp))
 
-                // ---- Down Arrow / Secondary options toggle ----
+                // ---- Down Arrow / Secondary options toggle button ----
+                var toggleFocused by remember { mutableStateOf(false) }
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 2.dp),
+                        .padding(vertical = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = if (showSecondaryControls) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                        contentDescription = "Options",
-                        tint = Color.White.copy(alpha = 0.7f),
+                    Row(
                         modifier = Modifier
-                            .size(22.dp)
-                            .clickable { showSecondaryControls = !showSecondaryControls },
-                    )
+                            .onFocusChanged { toggleFocused = it.isFocused }
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (toggleFocused) Color(0xFFF0F4F8)
+                                else Color.White.copy(alpha = 0.12f),
+                            )
+                            .then(
+                                if (toggleFocused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                                else Modifier.border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp)),
+                            )
+                            .focusable()
+                            .clickable { showSecondaryControls = !showSecondaryControls }
+                            .padding(horizontal = 18.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = if (showSecondaryControls) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                            contentDescription = "Options",
+                            tint = if (toggleFocused) Color(0xFF10171E) else Color.White,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (showSecondaryControls) "Hide options" else "More options",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (toggleFocused) Color(0xFF10171E) else Color.White,
+                            fontWeight = if (toggleFocused) FontWeight.Bold else FontWeight.Medium,
+                        )
+                    }
                 }
 
                 // Secondary Option Chips (Subtitles, Audio, Quality, Aspect, Record, PIP)
@@ -1359,6 +1400,7 @@ private fun QuickChannelCard(
     channel: Channel,
     programme: Programme?,
     isCurrent: Boolean,
+    focusRequester: FocusRequester? = null,
     canClick: () -> Boolean = { true },
     onClick: () -> Unit,
 ) {
@@ -1366,6 +1408,7 @@ private fun QuickChannelCard(
 
     Box(
         modifier = Modifier
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .width(148.dp)
             .height(84.dp)
             .onFocusChanged { focused = it.isFocused }
@@ -1423,15 +1466,18 @@ private fun LiveTimelineBar(
     progress: Float,
     modifier: Modifier = Modifier,
 ) {
-    BoxWithConstraints(
+    var widthPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val widthDp = remember(widthPx) { with(density) { widthPx.toDp() } }
+    val safeProgress = progress.coerceIn(0f, 1f)
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(14.dp),
+            .height(14.dp)
+            .onSizeChanged { widthPx = it.width },
         contentAlignment = Alignment.CenterStart,
     ) {
-        val width = maxWidth
-        val safeProgress = progress.coerceIn(0f, 1f)
-
         Box(
             Modifier
                 .fillMaxWidth()
@@ -1448,14 +1494,16 @@ private fun LiveTimelineBar(
                 .background(Color(0xFF26C6DA)),
         )
 
-        val dotOffset = (width - 10.dp) * safeProgress
-        Box(
-            Modifier
-                .padding(start = dotOffset.coerceAtLeast(0.dp))
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(Color.White),
-        )
+        if (widthDp > 0.dp) {
+            val dotOffset = (widthDp - 10.dp) * safeProgress
+            Box(
+                Modifier
+                    .padding(start = dotOffset.coerceAtLeast(0.dp))
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(Color.White),
+            )
+        }
     }
 }
 

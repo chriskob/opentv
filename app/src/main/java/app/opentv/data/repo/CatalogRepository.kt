@@ -844,12 +844,13 @@ class CatalogRepository(
      * on the next launch instead of the next sync. Bump [NORMALIZER_VERSION] to trigger it.
      */
     suspend fun renormalizeAll(): Int = withContext(Dispatchers.IO) {
-        val existing = channelDao.allChannels()
-        if (existing.isEmpty()) return@withContext 0
+        val sourceIds = channelDao.allSourceIds()
+        if (sourceIds.isEmpty()) return@withContext 0
 
-        val bySource = existing.groupBy { it.sourceId }
         var changed = 0
-        for ((_, channels) in bySource) {
+        for (sourceId in sourceIds) {
+            val channels = channelDao.channelsBySource(sourceId)
+            if (channels.isEmpty()) continue
             val names = channelCategoryNames(channels)
             val renamed = normalized(channels, names)
             // Only write rows that actually changed, to keep the write small.

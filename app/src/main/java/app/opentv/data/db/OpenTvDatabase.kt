@@ -71,7 +71,7 @@ class Converters {
         SeriesRule::class,
         Reminder::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -276,6 +276,17 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v12 → v13: Standalone index on channels.sourceId for queries that filter by source
+         * without categoryId — avoids full table scans on the composite (sourceId, streamId)
+         * index.
+         */
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_channels_sourceId` ON `channels` (`sourceId`)")
+            }
+        }
+
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
@@ -284,6 +295,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
                 .addMigrations(
                     MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
+                    MIGRATION_12_13,
                 )
                 /*
                  * Pre-1.0 policy: schema changes drop and rebuild the database. Everything

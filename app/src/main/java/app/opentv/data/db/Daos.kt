@@ -232,6 +232,12 @@ interface ChannelDao {
     @Query("SELECT * FROM channels")
     suspend fun allChannels(): List<Channel>
 
+    @Query("SELECT DISTINCT sourceId FROM channels")
+    suspend fun allSourceIds(): List<Long>
+
+    @Query("SELECT * FROM channels WHERE sourceId = :sourceId")
+    suspend fun channelsBySource(sourceId: Long): List<Channel>
+
     @Transaction
     suspend fun updateMatchedEpgIds(updates: List<Pair<Long, String?>>) {
         for ((id, match) in updates) {
