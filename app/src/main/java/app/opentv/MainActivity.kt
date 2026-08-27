@@ -321,7 +321,11 @@ private fun OpenTvApp(isTelevision: Boolean) {
     // First run goes straight to setup — an empty channel list with no explanation is the
     // worst possible first impression. When "Resume last channel" is enabled, boot directly into
     // the player to begin video playback in ~1-2 seconds with zero intermediate screens or EPG contention.
-    val start = if (sourcesUi.sources.isEmpty()) Routes.ADD_SOURCE else Routes.HOME
+    val start = when {
+        sourcesUi.sources.isEmpty() -> Routes.ADD_SOURCE
+        bootSettings.resumeLastChannel.value && bootSettings.lastChannelId > 0L -> Routes.player(bootSettings.lastChannelId)
+        else -> Routes.HOME
+    }
 
     // A tapped reminder notification asks for a specific channel. Consume it so it fires once and
     // never re-triggers on a later launch.

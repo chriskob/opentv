@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.17
+
+- **Restored Clean Navigation & Complete TV Guide Rendering.**
+  - **Fixed Blank TV Guide Overlay**: Removed the SurfaceView occlusion conflict so the TV Guide renders with 100% full opacity, restoring category rails, channel numbers, logos, and EPG timelines.
+  - **Fluid Navigation**: Seamless full-screen playback with zero re-tuning delays, instant guide return, and no full-screen loading banners.
+
 ## 0.12.16
 
 - **Eliminated 'Loading your channels' on Guide Return & Fixed Black Screen / Loading Circle on 'Watch'.**

@@ -257,8 +257,6 @@ fun HomeScreen(
         }
     }
 
-    var isFullScreenLive by remember { mutableStateOf(settings.resumeLastChannel.value && settings.lastChannelId > 0L) }
-    var fullScreenChannelId by remember { mutableStateOf<Long?>(null) }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -285,8 +283,7 @@ fun HomeScreen(
         PlaybackQueue.items = rows.map {
             PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
         }
-        fullScreenChannelId = channel.id
-        isFullScreenLive = true
+        onPlayChannel(channel)
     }
     fun requestLive(channel: Channel) {
         if (activeRecordings.isNotEmpty()) pendingLiveChannel = channel else startLive(channel)
@@ -308,8 +305,7 @@ fun HomeScreen(
     // other channels so you can view guide info, but the preview keeps playing the current channel
     // until a new channel is explicitly selected.
     val recordingActive = activeRecordings.isNotEmpty()
-    LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed, recordingActive, isFullScreenLive) {
-        if (isFullScreenLive) return@LaunchedEffect
+    LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed, recordingActive) {
         val row = selectedRow ?: return@LaunchedEffect
         if (!previewEnabled || !screenResumed || recordingActive) {
             return@LaunchedEffect
@@ -329,13 +325,7 @@ fun HomeScreen(
         )
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-                .then(if (isFullScreenLive) Modifier.alpha(0f) else Modifier)
-        ) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
 
         // ---- Category rail -----------------------------------------------------------------
         // Width animates to 0 while focus is in the guide (see onFocusRow) so the grid gets the
@@ -423,12 +413,12 @@ fun HomeScreen(
             if (rows.isEmpty()) {
                 when {
                     favouritesOnly -> NoFavouritesState()
-                    // Work genuinely in progress: a sync is running, the catalogue check hasn't
-                    // returned yet, or channels ARE on disk and the guide is still building. A
-                    // large provider takes a while, and showing "No channels" during it reads as
-                    // failure — which is how someone concludes an app is broken thirty seconds
-                    // after installing it.
-                    isSyncing || channelsPresent == null || channelsPresent == true -> LoadingState(isSyncing)
+                    isSyncing || channelsPresent == null -> LoadingState(isSyncing)
+                    channelsPresent == true -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
                     // Nothing is syncing and the catalogue is confirmed empty. With a provider
                     // configured, the last load failed or returned nothing — surface a clear error
                     // with Retry and a way back to setup instead of spinning forever.
@@ -535,20 +525,6 @@ fun HomeScreen(
             }
         }
     }
-
-    if (isFullScreenLive) {
-        val targetId = fullScreenChannelId
-            ?: settings.lastChannelId.takeIf { it > 0L }
-            ?: highlightedRow?.primary?.id
-            ?: rows.firstOrNull()?.primary?.id
-        PlayerScreen(
-            channelId = targetId,
-            onBack = {
-                isFullScreenLive = false
-            },
-        )
-    }
-}
 
     // The record menu for a programme picked in the grid.
     recordTarget?.let { (targetRow, programme) ->
