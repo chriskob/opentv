@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.15
+
+- **Seamless Uninterrupted Live TV Playback & In-Place Guide Transition (TiviMate Architecture).**
+  - **Zero Audio/Video Interruption on Guide Transition**: Full screen and TV Guide now share the same persistent in-place player surface inside `HomeScreen`. Transitioning between the Guide preview and Full Screen never stops, resets, or re-buffers the media stream.
+  - **No Intra-App Surface Detach**: Preserved the active `ExoPlayer` surface across view transitions without clearing `it.player`, ensuring video decoding remains 100% fluid at 60fps without black flashes or codec re-initializations.
+  - **Clean App Backgrounding**: `MainActivity.onStop` exclusively handles app-level backgrounding to pause playback when switching apps or pressing the TV Home button, while intra-app navigation preserves uninterrupted audio and video.
+
 ## 0.12.14
 
 - **Instant Startup Playback & Zero-Lag Guide Return (TiviMate Speed Tuning).**

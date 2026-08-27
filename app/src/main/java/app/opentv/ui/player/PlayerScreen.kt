@@ -349,6 +349,9 @@ fun PlayerScreen(
     }
 
     fun playChannelId(id: Long) {
+        if (currentId == id && (controller.player.playbackState == androidx.media3.common.Player.STATE_READY || controller.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)) {
+            return
+        }
         // Remember where we came from so "Last channel" can bounce straight back. Quality switches
         // go through tuneTo directly, so they never count as a channel change here.
         currentId?.let { if (it != id) previousId = it }
@@ -366,11 +369,6 @@ fun PlayerScreen(
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
                     if (!app.opentv.core.PipState.inPip.value && currentId != null && !paused) {
                         currentId?.let { playChannelId(it) }
-                    }
-                }
-                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
-                    if (!app.opentv.core.PipState.inPip.value) {
-                        controller.player.pause()
                     }
                 }
                 else -> Unit
@@ -613,7 +611,7 @@ fun PlayerScreen(
                 it.player = controller.player
                 it.resizeMode = resizeMode
             },
-            onRelease = { it.player = null },
+            onRelease = { /* Keep player attached for seamless transition to guide preview */ },
         )
 
         // The channel number as you type it, top-right, until it resolves.

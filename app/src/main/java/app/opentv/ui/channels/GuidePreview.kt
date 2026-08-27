@@ -146,7 +146,7 @@ fun GuidePreview(
                         }
                     },
                     update = { it.player = previewPlayer },
-                    onRelease = { it.player = null },
+                    onRelease = { /* Keep player attached for seamless transition to full screen */ },
                 )
             }
         }

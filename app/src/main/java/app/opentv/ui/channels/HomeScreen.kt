@@ -82,6 +82,7 @@ import app.opentv.reminders.ReminderScheduler
 import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
 import app.opentv.ui.ChannelsViewModel
+import app.opentv.ui.player.PlayerScreen
 import app.opentv.ui.RecordingBackgroundDialog
 import app.opentv.ui.RecordingBackgroundPrompt
 import coil.compose.AsyncImage
@@ -255,6 +256,9 @@ fun HomeScreen(
         }
     }
 
+    var isFullScreenLive by remember { mutableStateOf(settings.resumeLastChannel.value && settings.lastChannelId > 0L) }
+    var fullScreenChannelId by remember { mutableStateOf<Long?>(null) }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -265,9 +269,6 @@ fun HomeScreen(
                 }
                 Lifecycle.Event.ON_STOP -> {
                     screenResumed = false
-                    if (!app.opentv.core.PipState.inPip.value) {
-                        previewController.player.pause()
-                    }
                 }
                 else -> Unit
             }
@@ -283,7 +284,8 @@ fun HomeScreen(
         PlaybackQueue.items = rows.map {
             PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
         }
-        onPlayChannel(channel)
+        fullScreenChannelId = channel.id
+        isFullScreenLive = true
     }
     fun requestLive(channel: Channel) {
         if (activeRecordings.isNotEmpty()) pendingLiveChannel = channel else startLive(channel)
@@ -325,7 +327,20 @@ fun HomeScreen(
         )
     }
 
-    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
+    Box(Modifier.fillMaxSize()) {
+        if (isFullScreenLive) {
+            val targetId = fullScreenChannelId
+                ?: settings.lastChannelId.takeIf { it > 0L }
+                ?: highlightedRow?.primary?.id
+                ?: rows.firstOrNull()?.primary?.id
+            PlayerScreen(
+                channelId = targetId,
+                onBack = {
+                    isFullScreenLive = false
+                },
+            )
+        } else {
+            Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
 
         // ---- Category rail -----------------------------------------------------------------
         // Width animates to 0 while focus is in the guide (see onFocusRow) so the grid gets the
@@ -525,6 +540,8 @@ fun HomeScreen(
             }
         }
     }
+}
+}
 
     // The record menu for a programme picked in the grid.
     recordTarget?.let { (targetRow, programme) ->
