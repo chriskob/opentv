@@ -115,6 +115,7 @@ class PlayerController(
 
     private var switchJob: Job? = null
     private var current: Request? = null
+    val currentRequest: Request? get() = current
     private var consecutiveFailures = 0
 
     /**

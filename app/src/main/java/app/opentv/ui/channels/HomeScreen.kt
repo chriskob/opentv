@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
@@ -307,7 +308,8 @@ fun HomeScreen(
     // other channels so you can view guide info, but the preview keeps playing the current channel
     // until a new channel is explicitly selected.
     val recordingActive = activeRecordings.isNotEmpty()
-    LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed, recordingActive) {
+    LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed, recordingActive, isFullScreenLive) {
+        if (isFullScreenLive) return@LaunchedEffect
         val row = selectedRow ?: return@LaunchedEffect
         if (!previewEnabled || !screenResumed || recordingActive) {
             return@LaunchedEffect
@@ -328,19 +330,12 @@ fun HomeScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        if (isFullScreenLive) {
-            val targetId = fullScreenChannelId
-                ?: settings.lastChannelId.takeIf { it > 0L }
-                ?: highlightedRow?.primary?.id
-                ?: rows.firstOrNull()?.primary?.id
-            PlayerScreen(
-                channelId = targetId,
-                onBack = {
-                    isFullScreenLive = false
-                },
-            )
-        } else {
-            Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
+        Row(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .then(if (isFullScreenLive) Modifier.alpha(0f) else Modifier)
+        ) {
 
         // ---- Category rail -----------------------------------------------------------------
         // Width animates to 0 while focus is in the guide (see onFocusRow) so the grid gets the
@@ -540,7 +535,19 @@ fun HomeScreen(
             }
         }
     }
-}
+
+    if (isFullScreenLive) {
+        val targetId = fullScreenChannelId
+            ?: settings.lastChannelId.takeIf { it > 0L }
+            ?: highlightedRow?.primary?.id
+            ?: rows.firstOrNull()?.primary?.id
+        PlayerScreen(
+            channelId = targetId,
+            onBack = {
+                isFullScreenLive = false
+            },
+        )
+    }
 }
 
     // The record menu for a programme picked in the grid.

@@ -406,7 +406,16 @@ fun PlayerScreen(
         val id = channelId ?: return@LaunchedEffect
         val channel = graph.catalogRepository.channel(id) ?: return@LaunchedEffect
         variants = graph.catalogRepository.variants(channel)
-        tuneTo(variants.firstOrNull { it.id == channel.id } ?: channel)
+        val targetVariant = variants.firstOrNull { it.id == channel.id } ?: channel
+        val source = graph.sourceRepository.byId(targetVariant.sourceId)
+        val url = graph.catalogRepository.resolvePlaybackUrl(targetVariant, source)
+        if (controller.currentRequest?.url == url && (controller.player.playbackState == androidx.media3.common.Player.STATE_READY || controller.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)) {
+            currentId = targetVariant.id
+            currentChannel = targetVariant
+            currentSource = source
+            return@LaunchedEffect
+        }
+        tuneTo(targetVariant)
     }
 
     LaunchedEffect(currentId, nowMillis) {
@@ -630,11 +639,13 @@ fun PlayerScreen(
 
         when (val current = state) {
             is PlayerController.State.Buffering -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
-                        Spacer(Modifier.height(16.dp))
-                        Text(current.title, color = Color.White)
+                if (!controller.player.isPlaying && controller.player.playbackState != androidx.media3.common.Player.STATE_READY) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(16.dp))
+                            Text(current.title, color = Color.White)
+                        }
                     }
                 }
             }

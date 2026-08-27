@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.16
+
+- **Eliminated 'Loading your channels' on Guide Return & Fixed Black Screen / Loading Circle on 'Watch'.**
+  - **Zero 'Loading your channels' Spinner**: Kept the Guide layout continuously mounted in memory behind full-screen playback, eliminating all Guide unmounting and re-evaluations on back navigation.
+  - **Fixed Black Screen on 'Watch' Selection**: Selecting "Watch" in the channel action popup checks if the channel stream is already running on the active player and skips redundant re-tuning, avoiding video decoder resets.
+  - **Filtered Buffering Overlay**: Prevented the dark buffering overlay from rendering if playback is already active and streaming audio/video.
+
 ## 0.12.15
 
 - **Seamless Uninterrupted Live TV Playback & In-Place Guide Transition (TiviMate Architecture).**
