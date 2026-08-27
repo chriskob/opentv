@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.18
+
+- **Instant Full-Screen Play on Live Programmes & Popup Only for Future Airings (TiviMate Standard).**
+  - **Instant Live Playback**: Pressing OK on a currently airing programme or on a channel card instantly launches full-screen playback with zero popup dialogs.
+  - **Contextual Future Airing Dialog**: Selecting a future programme in the EPG timeline opens the schedule dialog (Record now, Remind me, Auto-switch when it starts, Record series).
+  - **Quick Channel Menu**: Long-pressing a channel card retains access to provider options and channel series rules.
+
 ## 0.12.17
 
 - **Restored Clean Navigation & Complete TV Guide Rendering.**

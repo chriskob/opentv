@@ -492,11 +492,8 @@ fun HomeScreen(
                     ChannelList(
                         rows = rows,
                         selectedKey = highlightedRow?.key,
-                        onSelectRow = { row ->
-                            selectedRow = row
-                            channelMenu = row
-                        },
-                        onLongSelectRow = { row -> requestLive(row.primary) },
+                        onSelectRow = { row -> requestLive(row.primary) },
+                        onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
@@ -509,13 +506,17 @@ fun HomeScreen(
                         windowStartMillis = windowStart,
                         dayOffset = guideDayOffset,
                         selectedKey = highlightedRow?.key,
-                        onSelectRow = { row ->
-                            selectedRow = row
-                            channelMenu = row
-                        },
-                        onLongSelectRow = { row -> requestLive(row.primary) },
+                        onSelectRow = { row -> requestLive(row.primary) },
+                        onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
-                        onProgramme = { row, programme -> recordTarget = row to programme },
+                        onProgramme = { row, programme ->
+                            val liveNow = nowMillis in programme.startUtcMillis until programme.endUtcMillis
+                            if (liveNow) {
+                                requestLive(row.primary)
+                            } else {
+                                recordTarget = row to programme
+                            }
+                        },
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
                         nowMillis = nowMillis,
