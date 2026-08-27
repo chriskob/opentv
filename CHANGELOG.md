@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.14
+
+- **Instant Startup Playback & Zero-Lag Guide Return (TiviMate Speed Tuning).**
+  - **Instant Boot-to-Playback (1-2s cold start)**: When "Resume last channel" is active, NavHost boots directly into `PlayerScreen` on frame 0, bypassing initial HomeScreen rendering, preview player conflicts, and startup EPG queries.
+  - **Activity-Scoped ChannelsViewModel (0s guide return)**: Promoted `ChannelsViewModel` to Activity scope so channel rows and EPG groupings remain warm in memory across all navigation transitions (Home <-> Player), eliminating the 5-6s loading spinner when pressing Back to the guide.
+  - **Fast-Start Live Buffering**: Optimized ExoPlayer live playback thresholds (`BUFFER_FOR_PLAYBACK_MILLIS` reduced from 2.5s to 1.0s, rebuffer to 2.0s) for rapid stream startup matching TiviMate tuning.
+  - **Instant Audio Stop on Exit**: Added `onStop` lifecycle handlers across `MainActivity`, `PlayerScreen`, and `HomeScreen` to instantly pause ExoPlayer when exiting the app, eliminating background audio bleeding after exit.
+  - **Back Navigation Handling**: Backing out from player when booted as root cleanly transitions straight to the TV Guide.
+
 ## 0.12.13
 
 - **Configurable Playlist & Guide Refresh Intervals & Persistent Startup Cache.**

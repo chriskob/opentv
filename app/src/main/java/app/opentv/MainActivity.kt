@@ -64,6 +64,7 @@ import app.opentv.ui.ProfilesViewModel
 import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.channels.ChannelManagerScreen
 import app.opentv.ui.channels.SearchScreen
+import app.opentv.ui.ChannelsViewModel
 import app.opentv.ui.VodViewModel
 import app.opentv.ui.onboarding.AddSourceScreen
 import app.opentv.ui.player.PlayerScreen
@@ -185,9 +186,23 @@ class MainActivity : ComponentActivity() {
         backHandler.removeCallbacks(longPressRunnable)
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (!app.opentv.core.PipState.inPip.value) {
+            runCatching {
+                val graph = ServiceLocator.get(this)
+                graph.livePlayer.player.pause()
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         backHandler.removeCallbacks(longPressRunnable)
+        runCatching {
+            val graph = ServiceLocator.get(this)
+            graph.livePlayer.stop()
+        }
     }
 
     // ---- Picture-in-picture ------------------------------------------------------------------
@@ -282,6 +297,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
     val sourcesViewModel: SourcesViewModel = viewModel()
     val vodViewModel: VodViewModel = viewModel()
     val profilesViewModel: ProfilesViewModel = viewModel()
+    val channelsViewModel: ChannelsViewModel = viewModel()
     val sourcesUi by sourcesViewModel.ui.collectAsState()
     val profiles by profilesViewModel.profiles.collectAsState()
     val activeProfileId by profilesViewModel.activeProfileId.collectAsState()
@@ -298,26 +314,17 @@ private fun OpenTvApp(isTelevision: Boolean) {
         return
     }
 
-    // First run goes straight to setup — an empty channel list with no explanation is the
-    // worst possible first impression.
-    val start = if (sourcesUi.sources.isEmpty()) Routes.ADD_SOURCE else Routes.HOME
-
-    // Boot to last channel: if enabled, jump straight into the full-screen player on launch.
-    // Runs once; backing out returns to the guide and doesn't re-trigger.
     val bootContext = androidx.compose.ui.platform.LocalContext.current
     val bootGraph = remember { ServiceLocator.get(bootContext) }
     val bootSettings = remember { bootGraph.settings }
-    LaunchedEffect(start) {
-        if (start == Routes.HOME && bootSettings.resumeLastChannel.value) {
-            val targetId = if (bootSettings.lastChannelId != 0L) {
-                bootSettings.lastChannelId
-            } else {
-                runCatching { bootGraph.catalogRepository.firstChannel()?.id }.getOrNull() ?: 0L
-            }
-            if (targetId != 0L) {
-                navController.navigate(Routes.player(targetId))
-            }
-        }
+
+    // First run goes straight to setup — an empty channel list with no explanation is the
+    // worst possible first impression. When "Resume last channel" is enabled, boot directly into
+    // the player to begin video playback in ~1-2 seconds with zero intermediate screens or EPG contention.
+    val start = when {
+        sourcesUi.sources.isEmpty() -> Routes.ADD_SOURCE
+        bootSettings.resumeLastChannel.value && bootSettings.lastChannelId > 0L -> Routes.player(bootSettings.lastChannelId)
+        else -> Routes.HOME
     }
 
     // A tapped reminder notification asks for a specific channel. Consume it so it fires once and
@@ -380,6 +387,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     isTelevision = isTelevision,
                     hasSources = sourcesUi.sources.isNotEmpty(),
                     isSyncing = sourcesUi.syncing,
+                    channelsViewModel = channelsViewModel,
                     onPlayChannel = { channel -> navController.navigate(Routes.player(channel.id)) },
                     onOpenMovie = { movie ->
                         navController.navigate(Routes.movieDetail(movie.id))
@@ -520,7 +528,13 @@ private fun OpenTvApp(isTelevision: Boolean) {
                 val channelId = entry.arguments?.getString("channelId")?.toLongOrNull()
                 PlayerScreen(
                     channelId = channelId,
-                    onBack = { navController.popBackStack() },
+                    onBack = {
+                        if (!navController.popBackStack()) {
+                            navController.navigate(Routes.HOME) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    },
                 )
             }
 

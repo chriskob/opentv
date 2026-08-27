@@ -368,6 +368,11 @@ fun PlayerScreen(
                         currentId?.let { playChannelId(it) }
                     }
                 }
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    if (!app.opentv.core.PipState.inPip.value) {
+                        controller.player.pause()
+                    }
+                }
                 else -> Unit
             }
         }

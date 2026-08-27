@@ -81,6 +81,7 @@ import app.opentv.ui.channels.HomeScreen
 import app.opentv.ui.recordings.RecordingsScreen
 import app.opentv.ui.vod.MoviesScreen
 import app.opentv.ui.vod.SeriesScreen
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 /**
  * The shell: a slim navigation rail down the left over a content area. The rail sits collapsed as
@@ -115,6 +116,7 @@ fun MainScreen(
     onPlayRecording: (Recording) -> Unit,
     onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit,
     activeProfileName: String,
+    channelsViewModel: ChannelsViewModel = viewModel(),
 ) {
     // Content-type toggles: a switched-off type has its tab hidden here (and its sync skipped in
     // CatalogRepository). Recordings is never a content type, so it always stays — which also means
@@ -213,6 +215,7 @@ fun MainScreen(
                     isTelevision = isTelevision,
                     hasSources = hasSources,
                     isSyncing = isSyncing,
+                    viewModel = channelsViewModel,
                     onPlayChannel = onPlayChannel,
                     onAddSource = onAddSource,
                     onRefresh = onRefresh,

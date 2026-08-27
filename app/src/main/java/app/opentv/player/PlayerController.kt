@@ -392,13 +392,14 @@ class PlayerController(
         const val AUTO_RESTART_DELAY_MILLIS = 1_500L
 
         /**
-         * Larger than ExoPlayer's defaults. IPTV sources are much twitchier than a CDN, and a
-         * deeper buffer is the difference between a momentary hiccup and a visible stall.
+         * Fast initial start buffer for IPTV live streams (matching TiviMate tuning).
+         * 1.0s buffer threshold starts playback immediately on first chunk arrival,
+         * while retaining a healthy 10s-30s buffer ceiling to ride out network jitter.
          */
-        const val MIN_BUFFER_MILLIS = 15_000
-        const val MAX_BUFFER_MILLIS = 60_000
-        const val BUFFER_FOR_PLAYBACK_MILLIS = 2_500
-        const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 5_000
+        const val MIN_BUFFER_MILLIS = 10_000
+        const val MAX_BUFFER_MILLIS = 30_000
+        const val BUFFER_FOR_PLAYBACK_MILLIS = 1_000
+        const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 2_000
 
         // DVR mode (pause & rewind live TV): keep a couple of minutes behind the live edge to seek
         // into, and let the forward buffer grow to match so a pause of up to a couple of minutes

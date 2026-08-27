@@ -266,7 +266,7 @@ fun HomeScreen(
                 Lifecycle.Event.ON_STOP -> {
                     screenResumed = false
                     if (!app.opentv.core.PipState.inPip.value) {
-                        // Keep stream alive during intra-app transitions
+                        previewController.player.pause()
                     }
                 }
                 else -> Unit
