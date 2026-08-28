@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.19
+
+- **Live Current Time Line Indicator, Continuous D-Pad Looping, Timeframe Alignment & Zero-Black-Screen Transitions.**
+  - **Live Current Time Indicator Line**: Added a vibrant vertical line indicator across the EPG header and timeline rows that marks and tracks the current minute in real time.
+  - **Continuous D-Pad Looping**: D-pad navigation continuously wraps between the top channel (row 0) and bottom channel without escaping out of the guide.
+  - **Live Timeframe Alignment**: Vertical navigation across rows is anchored to the currently airing programme ("Now" column), preventing focus drift into past or future shows.
+  - **Active Channel Focus on Return**: Returning to the guide always scrolls to and highlights the currently playing channel with zero jump back to Channel 1.
+  - **Zero-Black-Screen Transitions**: Shared persistent video surface between Guide Preview and PlayerScreen eliminates video decoder teardown and black flashes.
+
 ## 0.12.18
 
 - **Instant Full-Screen Play on Live Programmes & Popup Only for Future Airings (TiviMate Standard).**

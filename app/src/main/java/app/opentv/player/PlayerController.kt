@@ -254,6 +254,34 @@ class PlayerController(
             })
         }
 
+    private var sharedPlayerView: androidx.media3.ui.PlayerView? = null
+
+    /**
+     * Returns a reusable persistent [PlayerView] attached to this controller.
+     * Reusing the same view across GuidePreview and PlayerScreen avoids tearing down
+     * the underlying video surface, eliminating the black flash on transitions.
+     */
+    fun getSharedPlayerView(context: Context): androidx.media3.ui.PlayerView {
+        val existing = sharedPlayerView
+        if (existing != null) {
+            (existing.parent as? android.view.ViewGroup)?.removeView(existing)
+            return existing
+        }
+        return androidx.media3.ui.PlayerView(context.applicationContext).apply {
+            player = this@PlayerController.player
+            useController = false
+            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            subtitleView?.setUserDefaultStyle()
+            subtitleView?.setUserDefaultTextSize()
+            layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            sharedPlayerView = this
+        }
+    }
+
     /**
      * Switches playback.
      *

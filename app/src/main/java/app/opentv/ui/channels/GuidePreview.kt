@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import app.opentv.R
+import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Programme
 import app.opentv.data.model.shownName
 import androidx.media3.exoplayer.ExoPlayer
@@ -133,19 +134,16 @@ fun GuidePreview(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            player = previewPlayer
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                            )
-                        }
+                        val graph = ServiceLocator.get(ctx)
+                        val pv = graph.livePlayer.getSharedPlayerView(ctx)
+                        pv.player = previewPlayer
+                        pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        pv
                     },
-                    update = { it.player = previewPlayer },
+                    update = { pv ->
+                        if (pv.player != previewPlayer) pv.player = previewPlayer
+                        pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    },
                     onRelease = { /* Keep player attached for seamless transition to full screen */ },
                 )
             }

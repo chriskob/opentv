@@ -603,22 +603,14 @@ fun PlayerScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = controller.player
-                    useController = false
-                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    subtitleView?.setUserDefaultStyle()
-                    subtitleView?.setUserDefaultTextSize()
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    )
-                }
+                val pv = controller.getSharedPlayerView(ctx)
+                pv.player = controller.player
+                pv.resizeMode = resizeMode
+                pv
             },
-            update = {
-                it.player = controller.player
-                it.resizeMode = resizeMode
+            update = { pv ->
+                if (pv.player != controller.player) pv.player = controller.player
+                pv.resizeMode = resizeMode
             },
             onRelease = { /* Keep player attached for seamless transition to guide preview */ },
         )
