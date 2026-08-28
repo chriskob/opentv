@@ -495,18 +495,21 @@ fun HomeScreen(
                     ChannelList(
                         rows = rows,
                         selectedKey = highlightedRow?.key,
+                        playingKey = selectedRow?.key,
                         onSelectRow = { row -> requestLive(row.primary) },
                         onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
                         onWrapToBottom = {
-                            highlightedRow = rows.lastOrNull()
-                            selectedRow = rows.lastOrNull()
+                            val last = rows.lastOrNull()
+                            highlightedRow = last
+                            highlightedProgramme = last?.now
                         },
                         onWrapToTop = {
-                            highlightedRow = rows.firstOrNull()
-                            selectedRow = rows.firstOrNull()
+                            val first = rows.firstOrNull()
+                            highlightedRow = first
+                            highlightedProgramme = first?.now
                         },
                         nowMillis = nowMillis,
                         modifier = Modifier.weight(1f),
@@ -517,6 +520,7 @@ fun HomeScreen(
                         windowStartMillis = windowStart,
                         dayOffset = guideDayOffset,
                         selectedKey = highlightedRow?.key,
+                        playingKey = selectedRow?.key,
                         onSelectRow = { row -> requestLive(row.primary) },
                         onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
@@ -531,12 +535,14 @@ fun HomeScreen(
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
                         onWrapToBottom = {
-                            highlightedRow = rows.lastOrNull()
-                            selectedRow = rows.lastOrNull()
+                            val last = rows.lastOrNull()
+                            highlightedRow = last
+                            highlightedProgramme = last?.now
                         },
                         onWrapToTop = {
-                            highlightedRow = rows.firstOrNull()
-                            selectedRow = rows.firstOrNull()
+                            val first = rows.firstOrNull()
+                            highlightedRow = first
+                            highlightedProgramme = first?.now
                         },
                         nowMillis = nowMillis,
                         modifier = Modifier.weight(1f),

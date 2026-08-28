@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.23
+
+- **Fixed Uninterrupted Audio & Playback on Continuous Guide Looping.**
+  - **Preserved Active Stream during Guide Wrap**: D-pad navigation wrapping from top-to-bottom or bottom-to-top now exclusively moves the guide cursor highlight without touching the actively playing channel, ensuring continuous uninterrupted picture and sound.
+  - **Independent Playing & Highlight Indicators**: Separated the currently tuned playing channel marker (cyan play triangle & border) from the cursor focus highlight so browsing and looping never trigger stream reload or audio cutouts.
+
 ## 0.12.22
 
 - **Complete Modern TV Redesign for Settings Hub & All Settings Subscreens.**

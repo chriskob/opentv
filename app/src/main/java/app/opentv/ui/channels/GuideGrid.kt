@@ -97,6 +97,7 @@ fun GuideGrid(
     rows: List<ChannelsViewModel.Row>,
     windowStartMillis: Long,
     selectedKey: Any?,
+    playingKey: Any? = null,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
@@ -137,7 +138,8 @@ fun GuideGrid(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
-                    val isSelected = row.key == selectedKey
+                    val isHighlighted = row.key == selectedKey
+                    val isPlaying = row.key == playingKey
                     GuideRow(
                         row = row,
                         rowIndex = index,
@@ -145,8 +147,8 @@ fun GuideGrid(
                         windowStartMillis = windowStartMillis,
                         nowMillis = nowMillis,
                         scroll = scroll,
-                        isSelected = isSelected,
-                        focusRequester = if (isSelected) initialFocusRequester else null,
+                        isSelected = isPlaying,
+                        focusRequester = if (isHighlighted) initialFocusRequester else null,
                         onSelect = { onSelectRow(row) },
                         onLongSelect = { onLongSelectRow(row) },
                         onFocus = { prog -> onFocusRow(row, prog) },
@@ -199,6 +201,7 @@ fun GuideGrid(
 fun ChannelList(
     rows: List<ChannelsViewModel.Row>,
     selectedKey: Any?,
+    playingKey: Any? = null,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
@@ -231,14 +234,15 @@ fun ChannelList(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
-            val isSelected = row.key == selectedKey
+            val isHighlighted = row.key == selectedKey
+            val isPlaying = row.key == playingKey
             ChannelListRow(
                 row = row,
                 rowIndex = index,
                 totalRows = rows.size,
                 nowMillis = nowMillis,
-                isSelected = isSelected,
-                focusRequester = if (isSelected) initialFocusRequester else null,
+                isSelected = isPlaying,
+                focusRequester = if (isHighlighted) initialFocusRequester else null,
                 onSelect = { onSelectRow(row) },
                 onLongSelect = { onLongSelectRow(row) },
                 onFocus = { prog -> onFocusRow(row, prog) },
