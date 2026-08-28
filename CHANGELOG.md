@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.21
+
+- **Continuous Guide Looping with Seamless Cursor Focus & Playlist Settings Editing in Providers.**
+  - **Smooth & Continuous Guide Looping**: D-pad UP at row 0 wraps seamlessly to the bottom row, and D-pad DOWN at the bottom row wraps to row 0 with immediate focus attachment so the cursor never disappears.
+  - **Edit Playlist / Provider Settings**: Added an "Edit" button to every provider card allowing instant customization of playlist name, server/playlist URL, credentials, MAC address, custom EPG XMLTV URL, User-Agent header, live stream format, and testing connections with optional re-sync on save.
+
 ## 0.12.20
 
 - **Fixed Guide & Sub Menu Focus Stability, Cursor Visibility, and Player Sub Menu Shortcut Channels.**

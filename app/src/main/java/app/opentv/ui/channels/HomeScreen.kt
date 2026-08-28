@@ -500,6 +500,14 @@ fun HomeScreen(
                         onFocusRow = onFocusChannel,
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
+                        onWrapToBottom = {
+                            highlightedRow = rows.lastOrNull()
+                            selectedRow = rows.lastOrNull()
+                        },
+                        onWrapToTop = {
+                            highlightedRow = rows.firstOrNull()
+                            selectedRow = rows.firstOrNull()
+                        },
                         nowMillis = nowMillis,
                         modifier = Modifier.weight(1f),
                     )
@@ -522,6 +530,14 @@ fun HomeScreen(
                         },
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
+                        onWrapToBottom = {
+                            highlightedRow = rows.lastOrNull()
+                            selectedRow = rows.lastOrNull()
+                        },
+                        onWrapToTop = {
+                            highlightedRow = rows.firstOrNull()
+                            selectedRow = rows.firstOrNull()
+                        },
                         nowMillis = nowMillis,
                         modifier = Modifier.weight(1f),
                     )

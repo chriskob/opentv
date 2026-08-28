@@ -103,6 +103,8 @@ fun GuideGrid(
     onProgramme: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onExitLeftFromChannel: () -> Boolean = { false },
+    onWrapToBottom: () -> Unit = {},
+    onWrapToTop: () -> Unit = {},
     dayOffset: Int = 0,
     nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier,
@@ -152,14 +154,20 @@ fun GuideGrid(
                         onToggleFavourite = { onToggleFavourite(row) },
                         onExitLeft = onExitLeftFromChannel,
                         onWrapToBottom = {
+                            onWrapToBottom()
                             coroutineScope.launch {
                                 val last = (rows.size - 1).coerceAtLeast(0)
                                 listState.scrollToItem(last)
+                                delay(32)
+                                runCatching { initialFocusRequester.requestFocus() }
                             }
                         },
                         onWrapToTop = {
+                            onWrapToTop()
                             coroutineScope.launch {
                                 listState.scrollToItem(0)
+                                delay(32)
+                                runCatching { initialFocusRequester.requestFocus() }
                             }
                         },
                     )
@@ -196,6 +204,8 @@ fun ChannelList(
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onExitLeftFromChannel: () -> Boolean = { false },
+    onWrapToBottom: () -> Unit = {},
+    onWrapToTop: () -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier,
 ) {
@@ -235,14 +245,20 @@ fun ChannelList(
                 onToggleFavourite = { onToggleFavourite(row) },
                 onExitLeft = onExitLeftFromChannel,
                 onWrapToBottom = {
+                    onWrapToBottom()
                     coroutineScope.launch {
                         val last = (rows.size - 1).coerceAtLeast(0)
                         listState.scrollToItem(last)
+                        delay(32)
+                        runCatching { initialFocusRequester.requestFocus() }
                     }
                 },
                 onWrapToTop = {
+                    onWrapToTop()
                     coroutineScope.launch {
                         listState.scrollToItem(0)
+                        delay(32)
+                        runCatching { initialFocusRequester.requestFocus() }
                     }
                 },
             )
@@ -301,8 +317,14 @@ private fun ChannelListRow(
                 if (e.type == KeyEventType.KeyDown) {
                     when {
                         e.key == Key.DirectionLeft -> onExitLeft()
-                        e.key == Key.DirectionUp && rowIndex == 0 -> true
-                        e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> true
+                        e.key == Key.DirectionUp && rowIndex == 0 -> {
+                            onWrapToBottom()
+                            true
+                        }
+                        e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
+                            onWrapToTop()
+                            true
+                        }
                         else -> false
                     }
                 } else false
@@ -496,8 +518,14 @@ private fun GuideRow(
                     if (e.type == KeyEventType.KeyDown) {
                         when {
                             e.key == Key.DirectionLeft -> onExitLeft()
-                            e.key == Key.DirectionUp && rowIndex == 0 -> true
-                            e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> true
+                            e.key == Key.DirectionUp && rowIndex == 0 -> {
+                                onWrapToBottom()
+                                true
+                            }
+                            e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
+                                onWrapToTop()
+                                true
+                            }
                             else -> false
                         }
                     } else false
@@ -603,8 +631,14 @@ private fun GuideRow(
                         .onPreviewKeyEvent { e ->
                             if (e.type == KeyEventType.KeyDown) {
                                 when {
-                                    e.key == Key.DirectionUp && rowIndex == 0 -> true
-                                    e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> true
+                                    e.key == Key.DirectionUp && rowIndex == 0 -> {
+                                        onWrapToBottom()
+                                        true
+                                    }
+                                    e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
+                                        onWrapToTop()
+                                        true
+                                    }
                                     else -> false
                                 }
                             } else false
@@ -739,8 +773,14 @@ private fun ProgrammeBlock(
             .onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown) {
                     when {
-                        e.key == Key.DirectionUp && rowIndex == 0 -> true
-                        e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> true
+                        e.key == Key.DirectionUp && rowIndex == 0 -> {
+                            onWrapToBottom()
+                            true
+                        }
+                        e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
+                            onWrapToTop()
+                            true
+                        }
                         else -> false
                     }
                 } else false

@@ -207,6 +207,25 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun updateSource(source: Source, resync: Boolean = false, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            graph.sourceRepository.save(source)
+            if (resync) {
+                _ui.value = _ui.value.copy(syncing = true, syncMessage = "Refreshing playlist…")
+                val now = System.currentTimeMillis()
+                graph.catalogRepository.sync(source, now)
+                graph.epgRepository.syncAll(now, force = true)
+                runCatching { graph.recordingEngine.rescanSeriesRules() }
+                _ui.value = _ui.value.copy(syncing = false, syncMessage = "Playlist updated.")
+            }
+            onDone(true)
+        }
+    }
+
+    suspend fun testSource(source: Source): Result<String> {
+        return graph.sourceRepository.test(source)
+    }
+
     fun blankDraft() = Source(name = "", kind = SourceKind.XTREAM, url = "")
 }
 
