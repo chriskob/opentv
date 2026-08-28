@@ -301,14 +301,8 @@ private fun ChannelListRow(
                 if (e.type == KeyEventType.KeyDown) {
                     when {
                         e.key == Key.DirectionLeft -> onExitLeft()
-                        e.key == Key.DirectionUp && rowIndex == 0 -> {
-                            onWrapToBottom()
-                            true
-                        }
-                        e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
-                            onWrapToTop()
-                            true
-                        }
+                        e.key == Key.DirectionUp && rowIndex == 0 -> true
+                        e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> true
                         else -> false
                     }
                 } else false
@@ -502,14 +496,8 @@ private fun GuideRow(
                     if (e.type == KeyEventType.KeyDown) {
                         when {
                             e.key == Key.DirectionLeft -> onExitLeft()
-                            e.key == Key.DirectionUp && rowIndex == 0 -> {
-                                onWrapToBottom()
-                                true
-                            }
-                            e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
-                                onWrapToTop()
-                                true
-                            }
+                            e.key == Key.DirectionUp && rowIndex == 0 -> true
+                            e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> true
                             else -> false
                         }
                     } else false
@@ -615,14 +603,8 @@ private fun GuideRow(
                         .onPreviewKeyEvent { e ->
                             if (e.type == KeyEventType.KeyDown) {
                                 when {
-                                    e.key == Key.DirectionUp && rowIndex == 0 -> {
-                                        onWrapToBottom()
-                                        true
-                                    }
-                                    e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
-                                        onWrapToTop()
-                                        true
-                                    }
+                                    e.key == Key.DirectionUp && rowIndex == 0 -> true
+                                    e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> true
                                     else -> false
                                 }
                             } else false
@@ -757,14 +739,8 @@ private fun ProgrammeBlock(
             .onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown) {
                     when {
-                        e.key == Key.DirectionUp && rowIndex == 0 -> {
-                            onWrapToBottom()
-                            true
-                        }
-                        e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
-                            onWrapToTop()
-                            true
-                        }
+                        e.key == Key.DirectionUp && rowIndex == 0 -> true
+                        e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> true
                         else -> false
                     }
                 } else false

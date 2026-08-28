@@ -349,6 +349,7 @@ fun PlayerScreen(
     }
 
     fun playChannelId(id: Long) {
+        controlsVisible = false
         if (currentId == id && (controller.player.playbackState == androidx.media3.common.Player.STATE_READY || controller.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)) {
             return
         }
@@ -875,7 +876,6 @@ fun PlayerScreen(
                 Spacer(Modifier.height(14.dp))
 
                 // ---- Bottom Quick Action & Channel Cards Carousel ----
-                val allowChipClick = { System.currentTimeMillis() - menuOpenedAt >= 250L }
                 val quickListState = rememberLazyListState()
 
                 LazyRow(
@@ -889,8 +889,10 @@ fun PlayerScreen(
                             icon = Icons.Filled.ViewStream,
                             label = stringResource(R.string.player_tv_guide),
                             focusRequester = if (recentChannels.isEmpty()) barFocus else null,
-                            canClick = allowChipClick,
-                            onClick = { onBack() },
+                            onClick = {
+                                controlsVisible = false
+                                onBack()
+                            },
                         )
                     }
 
@@ -899,7 +901,6 @@ fun PlayerScreen(
                         QuickActionCard(
                             icon = Icons.Filled.History,
                             label = stringResource(R.string.player_history),
-                            canClick = allowChipClick,
                             onClick = {
                                 val targetId = previousId ?: recentChannels.firstOrNull { it.id != currentId }?.id
                                 if (targetId != null) playChannelId(targetId)
@@ -915,7 +916,6 @@ fun PlayerScreen(
                             programme = queueProgrammes[ch.id],
                             isCurrent = ch.id == currentId,
                             focusRequester = if (idx == 0) barFocus else null,
-                            canClick = allowChipClick,
                             onClick = { playChannelId(ch.id) },
                         )
                     }
@@ -926,7 +926,6 @@ fun PlayerScreen(
                             QuickActionCard(
                                 icon = Icons.Filled.Delete,
                                 label = stringResource(R.string.history_clear),
-                                canClick = allowChipClick,
                                 onClick = {
                                     settings.clearRecentChannels()
                                     Toast.makeText(context, context.getString(R.string.history_cleared), Toast.LENGTH_SHORT).show()
@@ -992,7 +991,6 @@ fun PlayerScreen(
                             icon = Icons.Filled.Subtitles,
                             label = stringResource(R.string.player_subtitles),
                             selected = panel == Panel.SUBTITLES,
-                            canClick = allowChipClick,
                         ) {
                             panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES
                             interaction++
@@ -1002,7 +1000,6 @@ fun PlayerScreen(
                             icon = Icons.Filled.Audiotrack,
                             label = stringResource(R.string.player_audio),
                             selected = panel == Panel.AUDIO,
-                            canClick = allowChipClick,
                         ) {
                             panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO
                             interaction++
@@ -1013,7 +1010,6 @@ fun PlayerScreen(
                                 icon = Icons.Filled.HighQuality,
                                 label = stringResource(R.string.player_quality),
                                 selected = panel == Panel.QUALITY,
-                                canClick = allowChipClick,
                             ) {
                                 panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY
                                 interaction++
@@ -1024,7 +1020,6 @@ fun PlayerScreen(
                             icon = Icons.Filled.AspectRatio,
                             label = stringResource(R.string.player_aspect),
                             selected = panel == Panel.ASPECT,
-                            canClick = allowChipClick,
                         ) {
                             panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT
                             interaction++
@@ -1036,7 +1031,6 @@ fun PlayerScreen(
                             label = if (recordingThis) stringResource(R.string.common_stop) else stringResource(R.string.player_record),
                             selected = recordingThis,
                             iconTint = Color(0xFFE53935),
-                            canClick = allowChipClick,
                         ) { toggleRecord() }
 
                         if (pipSupported) {
@@ -1044,7 +1038,6 @@ fun PlayerScreen(
                                 icon = Icons.Filled.PictureInPictureAlt,
                                 label = stringResource(R.string.player_pop_out),
                                 selected = false,
-                                canClick = allowChipClick,
                             ) {
                                 (context.findActivity() as? app.opentv.MainActivity)?.enterPipNow()
                                 interaction++
@@ -1355,7 +1348,6 @@ private fun QuickActionCard(
     icon: ImageVector,
     label: String,
     focusRequester: FocusRequester? = null,
-    canClick: () -> Boolean = { true },
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1376,7 +1368,7 @@ private fun QuickActionCard(
                 else Modifier.border(0.5.dp, Color(0xFF2C3E50), RoundedCornerShape(8.dp)),
             )
             .focusable()
-            .clickable { if (canClick()) onClick() },
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -1407,7 +1399,6 @@ private fun QuickChannelCard(
     programme: Programme?,
     isCurrent: Boolean,
     focusRequester: FocusRequester? = null,
-    canClick: () -> Boolean = { true },
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1430,7 +1421,7 @@ private fun QuickChannelCard(
                 else Modifier.border(0.5.dp, Color(0xFF2C3E50), RoundedCornerShape(8.dp)),
             )
             .focusable()
-            .clickable { if (canClick()) onClick() }
+            .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -1520,7 +1511,6 @@ private fun BarChip(
     selected: Boolean,
     focusRequester: FocusRequester? = null,
     iconTint: Color? = null,
-    canClick: () -> Boolean = { true },
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1541,7 +1531,7 @@ private fun BarChip(
                 if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(12.dp))
                 else Modifier,
             )
-            .clickable(onClick = { if (canClick()) onClick() })
+            .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

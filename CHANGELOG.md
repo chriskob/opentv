@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.20
+
+- **Fixed Guide & Sub Menu Focus Stability, Cursor Visibility, and Player Sub Menu Shortcut Channels.**
+  - **Fixed Disappearing Cursor at Guide Boundaries**: Clamped D-pad navigation at the top and bottom of the TV Guide and channel list so focus remains firmly locked on screen without losing focus or disappearing into offscreen space.
+  - **Visible Cursor in Category Sub Menu**: Added high-contrast white card highlighting and bold text state to category rail items so the cursor is clearly visible when browsing categories.
+  - **Fixed Shortcut Channels in Player Sub Menu**: Removed the click lockout delay and ensured selecting any channel card or quick action immediately tunes to the channel and dismisses the overlay.
+
 ## 0.12.19
 
 - **Live Current Time Line Indicator, Continuous D-Pad Looping, Timeframe Alignment & Zero-Black-Screen Transitions.**

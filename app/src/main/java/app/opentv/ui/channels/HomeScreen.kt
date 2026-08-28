@@ -54,6 +54,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -934,22 +937,36 @@ private fun QualityChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RailEntry(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun RailEntry(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
     Text(
         text = label,
         style = MaterialTheme.typography.titleMedium,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+        fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Medium,
+        color = if (focused) Color(0xFF10171E)
+        else if (selected) MaterialTheme.colorScheme.onPrimaryContainer
         else MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surface,
+                if (focused) Color(0xFFF0F4F8)
+                else if (selected) MaterialTheme.colorScheme.primaryContainer
+                else Color.Transparent,
             )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                else Modifier,
+            )
+            .focusable()
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     )
