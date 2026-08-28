@@ -134,6 +134,44 @@
     <string name="player_none_available">None available</string>
     <string name="player_subtitles_off">Off</string>
 
+    <!-- Sub Menu Buttons -->
+    <string name="submenu_btn_search">Search</string>
+    <string name="submenu_btn_movies">Movies</string>
+    <string name="submenu_btn_shows">Shows</string>
+    <string name="submenu_btn_recordings">Recordings</string>
+    <string name="submenu_btn_multiview">Multiview</string>
+    <string name="submenu_btn_quality">Video Resolution &amp; Quality</string>
+    <string name="submenu_btn_audio">Audio Track</string>
+    <string name="submenu_btn_audio_delay">Audio Delay (Sync)</string>
+    <string name="submenu_btn_subtitles">Subtitles (CC)</string>
+    <string name="submenu_btn_aspect">Aspect Ratio</string>
+    <string name="submenu_btn_channels_list">Channels List</string>
+    <string name="submenu_btn_favorites">Add to Favorites</string>
+    <string name="submenu_btn_channel_options">Channel Options</string>
+    <string name="submenu_btn_settings">Settings</string>
+
+    <string name="submenu_search">Search</string>
+    <string name="submenu_movies">Movies</string>
+    <string name="submenu_shows">Shows</string>
+    <string name="submenu_recordings">Recordings</string>
+    <string name="submenu_multiview">Multiview</string>
+    <string name="submenu_channels_list">Channels list</string>
+    <string name="submenu_add_favorites">Add to Favorites</string>
+    <string name="submenu_in_favorites">In Favorites</string>
+    <string name="submenu_channel_options">Channel options</string>
+    <string name="submenu_settings">Settings</string>
+    <string name="submenu_audio_delay_title">Audio Delay / Sync</string>
+    <string name="submenu_audio_delay_reset">Reset (0 ms)</string>
+    <string name="submenu_channel_options_title">Channel Options</string>
+    <string name="submenu_multiview_title">Multiview Mode</string>
+    <string name="submenu_multiview_desc">Watch multiple live channels simultaneously in split-screen or grid view.</string>
+
+    <!-- Settings: Sub Menu Customization -->
+    <string name="settings_section_submenu_buttons">Player Sub Menu Buttons</string>
+    <string name="settings_submenu_buttons_note">Choose which quick action buttons appear on the bottom sub menu while playing live TV.</string>
+    <string name="settings_submenu_enable_all">Enable all</string>
+    <string name="settings_submenu_disable_all">Disable all</string>
+
     <!-- ============================ Settings hub ============================ -->
     <string name="settings_providers_title">Providers</string>
     <string name="settings_providers_subtitle">Add, remove and re-test your IPTV sources</string>

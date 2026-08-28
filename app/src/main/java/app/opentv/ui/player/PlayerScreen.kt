@@ -46,25 +46,40 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsSuggest
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.SyncAlt
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewStream
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -101,6 +116,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.Tracks
@@ -108,6 +124,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.opentv.R
+import app.opentv.core.AppSettings
 import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
@@ -150,6 +167,11 @@ import kotlinx.coroutines.withContext
 fun PlayerScreen(
     channelId: Long?,
     onBack: () -> Unit,
+    onOpenSearch: () -> Unit = {},
+    onOpenMovies: () -> Unit = {},
+    onOpenShows: () -> Unit = {},
+    onOpenRecordings: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -249,6 +271,13 @@ fun PlayerScreen(
     val rootFocus = remember { FocusRequester() }
     val listFocus = remember { FocusRequester() }
 
+    val enabledSubMenuButtons by settings.enabledSubMenuButtons.collectAsState()
+    val audioDelayMs by settings.audioDelayMs.collectAsState()
+    var showMultiviewDialog by remember { mutableStateOf(false) }
+    var showChannelOptionsDialog by remember { mutableStateOf(false) }
+    var selectedSubtitleLabel by remember { mutableStateOf("Off") }
+    var selectedAudioLabel by remember { mutableStateOf("Stereo") }
+
     var menuOpenedAt by remember { mutableLongStateOf(0L) }
     var videoSizeText by remember { mutableStateOf("") }
     var fpsText by remember { mutableStateOf("") }
@@ -306,7 +335,18 @@ fun PlayerScreen(
                         else -> ""
                     }
                     audioCodecText = listOf(codec, ch).filter { it.isNotEmpty() }.joinToString(" ")
+                    selectedAudioLabel = ch.ifEmpty {
+                        audioFormat.language?.takeIf { it.isNotBlank() }?.uppercase() ?: "Stereo"
+                    }
                 }
+
+                val textGroup = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }
+                val textFormat = textGroup?.let { g ->
+                    (0 until g.length).firstOrNull { g.isTrackSelected(it) }?.let { g.getTrackFormat(it) }
+                }
+                selectedSubtitleLabel = textFormat?.language?.takeIf { it.isNotBlank() }?.uppercase()
+                    ?: textFormat?.label?.takeIf { it.isNotBlank() }
+                    ?: if (textGroup != null) "On" else "Off"
             }
         }
 
@@ -875,172 +915,217 @@ fun PlayerScreen(
 
                 Spacer(Modifier.height(14.dp))
 
-                // ---- Bottom Quick Action & Channel Cards Carousel ----
-                val quickListState = rememberLazyListState()
-
-                LazyRow(
-                    state = quickListState,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Card 1: TV guide
-                    item(key = "quick-guide") {
-                        QuickActionCard(
-                            icon = Icons.Filled.ViewStream,
-                            label = stringResource(R.string.player_tv_guide),
-                            focusRequester = if (recentChannels.isEmpty()) barFocus else null,
-                            onClick = {
-                                controlsVisible = false
-                                onBack()
-                            },
-                        )
-                    }
-
-                    // Card 2: History (Last channel)
-                    item(key = "quick-history") {
-                        QuickActionCard(
-                            icon = Icons.Filled.History,
-                            label = stringResource(R.string.player_history),
-                            onClick = {
-                                val targetId = previousId ?: recentChannels.firstOrNull { it.id != currentId }?.id
-                                if (targetId != null) playChannelId(targetId)
-                            },
-                        )
-                    }
-
-                    // Cards 3+: Watched Channels History (newest first)
-                    // The first watched channel carries barFocus so opening the sub menu focuses directly on it
-                    itemsIndexed(recentChannels, key = { _, ch -> "recent-ch-${ch.id}" }) { idx, ch ->
-                        QuickChannelCard(
-                            channel = ch,
-                            programme = queueProgrammes[ch.id],
-                            isCurrent = ch.id == currentId,
-                            focusRequester = if (idx == 0) barFocus else null,
-                            onClick = { playChannelId(ch.id) },
-                        )
-                    }
-
-                    // Card End: Clear History Button
-                    if (recentChannels.isNotEmpty()) {
-                        item(key = "quick-clear-history") {
-                            QuickActionCard(
-                                icon = Icons.Filled.Delete,
-                                label = stringResource(R.string.history_clear),
-                                onClick = {
-                                    settings.clearRecentChannels()
-                                    Toast.makeText(context, context.getString(R.string.history_cleared), Toast.LENGTH_SHORT).show()
-                                },
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(4.dp))
-
-                // ---- Down Arrow / Secondary options toggle button ----
-                var toggleFocused by remember { mutableStateOf(false) }
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .onFocusChanged { toggleFocused = it.isFocused }
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (toggleFocused) Color(0xFFF0F4F8)
-                                else Color.White.copy(alpha = 0.12f),
-                            )
-                            .then(
-                                if (toggleFocused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                                else Modifier.border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp)),
-                            )
-                            .focusable()
-                            .clickable { showSecondaryControls = !showSecondaryControls }
-                            .padding(horizontal = 18.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = if (showSecondaryControls) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                            contentDescription = "Options",
-                            tint = if (toggleFocused) Color(0xFF10171E) else Color.White,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = if (showSecondaryControls) "Hide options" else "More options",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (toggleFocused) Color(0xFF10171E) else Color.White,
-                            fontWeight = if (toggleFocused) FontWeight.Bold else FontWeight.Medium,
-                        )
-                    }
-                }
-
-                // Secondary Option Chips (Subtitles, Audio, Quality, Aspect, Record, PIP)
-                AnimatedVisibility(visible = showSecondaryControls) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
+                // ---- Watched Channels History Carousel (if any) ----
+                if (recentChannels.isNotEmpty()) {
+                    val quickListState = rememberLazyListState()
+                    LazyRow(
+                        state = quickListState,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 8.dp),
                     ) {
-                        BarChip(
-                            icon = Icons.Filled.Subtitles,
-                            label = stringResource(R.string.player_subtitles),
-                            selected = panel == Panel.SUBTITLES,
-                        ) {
-                            panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES
-                            interaction++
+                        itemsIndexed(recentChannels, key = { _, ch -> "recent-ch-${ch.id}" }) { _, ch ->
+                            QuickChannelCard(
+                                channel = ch,
+                                programme = queueProgrammes[ch.id],
+                                isCurrent = ch.id == currentId,
+                                focusRequester = null,
+                                onClick = { playChannelId(ch.id) },
+                            )
                         }
+                    }
+                }
 
-                        BarChip(
-                            icon = Icons.Filled.Audiotrack,
-                            label = stringResource(R.string.player_audio),
-                            selected = panel == Panel.AUDIO,
-                        ) {
-                            panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO
-                            interaction++
-                        }
+                // ---- Player Sub Menu Quick Action Buttons ----
+                val subMenuListState = rememberLazyListState()
 
-                        if (variants.size > 1) {
-                            BarChip(
-                                icon = Icons.Filled.HighQuality,
-                                label = stringResource(R.string.player_quality),
-                                selected = panel == Panel.QUALITY,
-                            ) {
-                                panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY
-                                interaction++
-                            }
-                        }
-
-                        BarChip(
-                            icon = Icons.Filled.AspectRatio,
-                            label = stringResource(R.string.player_aspect),
-                            selected = panel == Panel.ASPECT,
-                        ) {
-                            panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT
-                            interaction++
-                        }
-
-                        val recordingThis = activeRecordings.any { it.channelId == currentId }
-                        BarChip(
-                            icon = Icons.Filled.FiberManualRecord,
-                            label = if (recordingThis) stringResource(R.string.common_stop) else stringResource(R.string.player_record),
-                            selected = recordingThis,
-                            iconTint = Color(0xFFE53935),
-                        ) { toggleRecord() }
-
-                        if (pipSupported) {
-                            BarChip(
-                                icon = Icons.Filled.PictureInPictureAlt,
-                                label = stringResource(R.string.player_pop_out),
-                                selected = false,
-                            ) {
-                                (context.findActivity() as? app.opentv.MainActivity)?.enterPipNow()
-                                interaction++
+                LazyRow(
+                    state = subMenuListState,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                ) {
+                    AppSettings.SubMenuButton.entries.forEachIndexed { idx, btn ->
+                        if (enabledSubMenuButtons.contains(btn)) {
+                            item(key = "sub-btn-${btn.key}") {
+                                when (btn) {
+                                    AppSettings.SubMenuButton.SEARCH -> {
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.Search,
+                                            label = stringResource(R.string.submenu_search),
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                controlsVisible = false
+                                                onOpenSearch()
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.MOVIES -> {
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.Movie,
+                                            label = stringResource(R.string.submenu_movies),
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                controlsVisible = false
+                                                onOpenMovies()
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.SHOWS -> {
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.Tv,
+                                            label = stringResource(R.string.submenu_shows),
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                controlsVisible = false
+                                                onOpenShows()
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.RECORDINGS -> {
+                                        val recordingThis = activeRecordings.any { it.channelId == currentId }
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.FiberManualRecord,
+                                            label = if (recordingThis) "Recording" else stringResource(R.string.submenu_recordings),
+                                            isSelected = recordingThis,
+                                            iconTint = if (recordingThis) Color(0xFFE53935) else null,
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = { toggleRecord() },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.MULTIVIEW -> {
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.GridView,
+                                            label = stringResource(R.string.submenu_multiview),
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = { showMultiviewDialog = true },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.QUALITY -> {
+                                        val qualLabel = if (videoSizeText.isNotEmpty()) videoSizeText.replace("x", " × ") else "Quality"
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.Videocam,
+                                            label = qualLabel,
+                                            isSelected = panel == Panel.QUALITY,
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY
+                                                interaction++
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.AUDIO -> {
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.VolumeUp,
+                                            label = selectedAudioLabel,
+                                            isSelected = panel == Panel.AUDIO,
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO
+                                                interaction++
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.AUDIO_DELAY -> {
+                                        val delayLabel = if (audioDelayMs == 0) "0 ms" else if (audioDelayMs > 0) "+$audioDelayMs ms" else "$audioDelayMs ms"
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.SyncAlt,
+                                            label = delayLabel,
+                                            isSelected = panel == Panel.AUDIO_DELAY,
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                panel = if (panel == Panel.AUDIO_DELAY) Panel.NONE else Panel.AUDIO_DELAY
+                                                interaction++
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.SUBTITLES -> {
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.ClosedCaption,
+                                            label = selectedSubtitleLabel,
+                                            isSelected = panel == Panel.SUBTITLES,
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES
+                                                interaction++
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.ASPECT_RATIO -> {
+                                        val aspectLabel = when (resizeMode) {
+                                            AspectRatioFrameLayout.RESIZE_MODE_FIT -> "Normal"
+                                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Fill"
+                                            AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Stretch"
+                                            else -> "Normal"
+                                        }
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.AspectRatio,
+                                            label = aspectLabel,
+                                            isSelected = panel == Panel.ASPECT,
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT
+                                                interaction++
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.CHANNELS_LIST -> {
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.FormatListBulleted,
+                                            label = stringResource(R.string.submenu_channels_list),
+                                            isSelected = channelListVisible,
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                channelListVisible = !channelListVisible
+                                                interaction++
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.FAVORITES -> {
+                                        val isFav = currentChannel?.favourite == true
+                                        SubMenuButtonCard(
+                                            icon = if (isFav) Icons.Filled.Star else Icons.Filled.StarBorder,
+                                            label = if (isFav) stringResource(R.string.submenu_in_favorites) else stringResource(R.string.submenu_add_favorites),
+                                            isSelected = isFav,
+                                            iconTint = if (isFav) Color(0xFFFFD54F) else null,
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                val ch = currentChannel
+                                                if (ch != null) {
+                                                    val newFav = !ch.favourite
+                                                    scope.launch {
+                                                        graph.catalogRepository.setChannelFavourite(ch.id, newFav)
+                                                        currentChannel = ch.copy(favourite = newFav)
+                                                        withContext(Dispatchers.Main) {
+                                                            val msg = if (newFav) "Added to Favorites" else "Removed from Favorites"
+                                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                }
+                                                interaction++
+                                            },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.CHANNEL_OPTIONS -> {
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.SettingsSuggest,
+                                            label = stringResource(R.string.submenu_channel_options),
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = { showChannelOptionsDialog = true },
+                                        )
+                                    }
+                                    AppSettings.SubMenuButton.SETTINGS -> {
+                                        SubMenuButtonCard(
+                                            icon = Icons.Filled.Settings,
+                                            label = stringResource(R.string.submenu_settings),
+                                            focusRequester = if (idx == 0) barFocus else null,
+                                            onClick = {
+                                                controlsVisible = false
+                                                onOpenSettings()
+                                            },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1113,6 +1198,51 @@ fun PlayerScreen(
             onDismiss = { showBackgroundPrompt = false },
         )
     }
+
+    if (showMultiviewDialog) {
+        AlertDialog(
+            onDismissRequest = { showMultiviewDialog = false },
+            title = { Text(stringResource(R.string.submenu_multiview_title), color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    stringResource(R.string.submenu_multiview_desc),
+                    color = Color.White.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showMultiviewDialog = false }) {
+                    Text(stringResource(R.string.common_done), color = Color(0xFF26C6DA), fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFF18222C),
+        )
+    }
+
+    if (showChannelOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showChannelOptionsDialog = false },
+            title = { Text(stringResource(R.string.submenu_channel_options_title), color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val ch = currentChannel
+                    val src = currentSource
+                    Text("Channel: ${ch?.shownName ?: "Live TV"}", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    if (ch?.number != null) Text("Number: ${ch.number}", color = Color.White.copy(alpha = 0.8f))
+                    if (src != null) Text("Provider: ${src.name}", color = Color.White.copy(alpha = 0.8f))
+                    if (videoSizeText.isNotEmpty()) Text("Resolution: $videoSizeText $fpsText", color = Color.White.copy(alpha = 0.8f))
+                    if (audioCodecText.isNotEmpty()) Text("Audio: $audioCodecText", color = Color.White.copy(alpha = 0.8f))
+                    if (videoCodecText.isNotEmpty()) Text("Video Codec: $videoCodecText", color = Color.White.copy(alpha = 0.8f))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showChannelOptionsDialog = false }) {
+                    Text(stringResource(R.string.common_done), color = Color(0xFF26C6DA), fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFF18222C),
+        )
+    }
 }
 
 @Composable
@@ -1159,7 +1289,7 @@ private fun ChannelListRow(
     }
 }
 
-private enum class Panel { NONE, SUBTITLES, AUDIO, QUALITY, ASPECT }
+private enum class Panel { NONE, SUBTITLES, AUDIO, QUALITY, ASPECT, AUDIO_DELAY }
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -1181,6 +1311,7 @@ private fun OptionPanel(
     val fitLabel = stringResource(R.string.player_aspect_fit)
     val fillLabel = stringResource(R.string.player_aspect_fill)
     val stretchLabel = stringResource(R.string.player_aspect_stretch)
+    val audioDelayMs by settings.audioDelayMs.collectAsState()
     val options: List<Option> = when (panel) {
         Panel.SUBTITLES -> buildSubtitleOptions(controller, settings, tracks, offLabel, onDone)
         Panel.AUDIO -> buildAudioOptions(controller, tracks, onDone)
@@ -1198,6 +1329,17 @@ private fun OptionPanel(
                 onResize(AspectRatioFrameLayout.RESIZE_MODE_FILL); onDone()
             },
         )
+        Panel.AUDIO_DELAY -> listOf(
+            Option("-200 ms", audioDelayMs == -200) { settings.setAudioDelayMs(-200); onDone() },
+            Option("-100 ms", audioDelayMs == -100) { settings.setAudioDelayMs(-100); onDone() },
+            Option("-50 ms", audioDelayMs == -50) { settings.setAudioDelayMs(-50); onDone() },
+            Option("0 ms (Default)", audioDelayMs == 0) { settings.setAudioDelayMs(0); onDone() },
+            Option("+50 ms", audioDelayMs == 50) { settings.setAudioDelayMs(50); onDone() },
+            Option("+100 ms", audioDelayMs == 100) { settings.setAudioDelayMs(100); onDone() },
+            Option("+200 ms", audioDelayMs == 200) { settings.setAudioDelayMs(200); onDone() },
+            Option("+300 ms", audioDelayMs == 300) { settings.setAudioDelayMs(300); onDone() },
+            Option("+500 ms", audioDelayMs == 500) { settings.setAudioDelayMs(500); onDone() },
+        )
         Panel.NONE -> emptyList()
     }
 
@@ -1206,6 +1348,7 @@ private fun OptionPanel(
         Panel.AUDIO -> stringResource(R.string.player_audio)
         Panel.QUALITY -> stringResource(R.string.player_quality)
         Panel.ASPECT -> stringResource(R.string.player_aspect_ratio_title)
+        Panel.AUDIO_DELAY -> stringResource(R.string.submenu_audio_delay_title)
         Panel.NONE -> ""
     }
 
@@ -1538,6 +1681,76 @@ private fun BarChip(
         Icon(icon, contentDescription = label, tint = if (focused) content else (iconTint ?: content))
         Spacer(Modifier.width(6.dp))
         Text(label, style = MaterialTheme.typography.labelLarge, color = content, fontWeight = if (focused) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+@Composable
+private fun SubMenuButtonCard(
+    icon: ImageVector,
+    label: String,
+    isSelected: Boolean = false,
+    iconTint: Color? = null,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> Color(0xFFFFFFFF)
+        isSelected -> Color(0xFF1E3A4B)
+        else -> Color(0xFF18222C)
+    }
+    val icTint = when {
+        focused -> Color(0xFF10171E)
+        iconTint != null -> iconTint
+        isSelected -> Color(0xFF26C6DA)
+        else -> Color.White
+    }
+    val textColor = when {
+        focused -> Color.White
+        isSelected -> Color(0xFF26C6DA)
+        else -> Color.White.copy(alpha = 0.85f)
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .widthIn(min = 68.dp)
+            .padding(horizontal = 2.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(46.dp)
+                .clip(CircleShape)
+                .background(bg)
+                .then(
+                    if (focused) Modifier.border(2.dp, Color.White, CircleShape)
+                    else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA), CircleShape)
+                    else Modifier.border(1.dp, Color(0xFF263442), CircleShape)
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = icTint,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Spacer(Modifier.height(5.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+            fontWeight = if (focused || isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = textColor,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

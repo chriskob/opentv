@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.24
+
+- **Full Suite of 14 Player Sub-Menu Quick Action Buttons & Settings Customization.**
+  - **14 Player Quick Action Buttons**: Added the complete suite of sub-menu action buttons matching TiviMate (Search, Movies, Shows, Recordings, Multiview, Video Resolution/Quality, Audio Track, Audio Delay, Subtitles/CC, Aspect Ratio, Channels List, Add to Favorites, Channel Options, Settings).
+  - **Live State & Telemetry Display**: Action buttons show dynamic stream properties such as current resolution (e.g. `1280 × 720`), audio format (`Stereo`, `5.1`), audio delay (`0 ms`), subtitles (`Off`, language), aspect ratio (`Normal`, `Fill`, `Stretch`), and favorite status.
+  - **Audio Delay & Sync Adjuster**: Added audio sync delay adjustment panel with quick step offsets (-200ms to +500ms).
+  - **Player Sub Menu Buttons Settings Section**: Added dedicated customization settings in Display Settings with "Enable all" / "Disable all" and individual toggle switches for every button (all enabled by default).
+
 ## 0.12.23
 
 - **Fixed Uninterrupted Audio & Playback on Continuous Guide Looping.**

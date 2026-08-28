@@ -83,6 +83,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val playlistRefreshHours by settings.playlistRefreshHours.collectAsState()
     val epgRefreshHours by settings.epgRefreshHours.collectAsState()
     val epgSyncWithPlaylist by settings.epgSyncWithPlaylist.collectAsState()
+    val enabledSubMenuButtons by settings.enabledSubMenuButtons.collectAsState()
 
     // A refresh next to each content toggle kicks a full catalogue re-sync (which now honours the
     // toggles, so a type just switched on is fetched). Runs as background work so it isn't cut short
@@ -311,6 +312,42 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 checked = resumeLast,
                 onToggle = settings::setResumeLastChannel,
             )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        SettingsSection(stringResource(R.string.settings_section_submenu_buttons)) {
+            Text(
+                stringResource(R.string.settings_submenu_buttons_note),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.7f),
+            )
+            Spacer(Modifier.height(8.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsActionButton(
+                    text = stringResource(R.string.settings_submenu_enable_all),
+                    isPrimary = true,
+                    onClick = { settings.setAllSubMenuButtons(true) },
+                )
+                SettingsActionButton(
+                    text = stringResource(R.string.settings_submenu_disable_all),
+                    isPrimary = false,
+                    onClick = { settings.setAllSubMenuButtons(false) },
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            AppSettings.SubMenuButton.entries.forEach { btn ->
+                val isEnabled = enabledSubMenuButtons.contains(btn)
+                ToggleRow(
+                    title = stringResource(btn.titleRes),
+                    subtitle = btn.subtitle,
+                    checked = isEnabled,
+                    onToggle = { settings.setSubMenuButtonEnabled(btn, it) },
+                )
+            }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -710,4 +747,46 @@ private fun SettingsBackButton(onClick: () -> Unit) {
         )
     }
 }
+
+@Composable
+private fun SettingsActionButton(
+    text: String,
+    isPrimary: Boolean,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> Color(0xFFF0F4F8)
+        isPrimary -> Color(0xFF00695C)
+        else -> Color(0xFF1E2833)
+    }
+    val fg = when {
+        focused -> Color(0xFF10171E)
+        isPrimary -> Color(0xFF80CBC4)
+        else -> Color(0xFFB0BEC5)
+    }
+    Row(
+        Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                else if (isPrimary) Modifier.border(1.dp, Color(0xFF26C6DA).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(8.dp)),
+            )
+            .focusable()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (focused || isPrimary) FontWeight.Bold else FontWeight.Medium,
+            color = fg,
+        )
+    }
+}
+
 

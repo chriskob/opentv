@@ -535,6 +535,26 @@ private fun OpenTvApp(isTelevision: Boolean) {
                             }
                         }
                     },
+                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                    onOpenMovies = {
+                        bootSettings.requestedHomeTab = "movies"
+                        if (!navController.popBackStack()) {
+                            navController.navigate(Routes.HOME)
+                        }
+                    },
+                    onOpenShows = {
+                        bootSettings.requestedHomeTab = "shows"
+                        if (!navController.popBackStack()) {
+                            navController.navigate(Routes.HOME)
+                        }
+                    },
+                    onOpenRecordings = {
+                        bootSettings.requestedHomeTab = "recordings"
+                        if (!navController.popBackStack()) {
+                            navController.navigate(Routes.HOME)
+                        }
+                    },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
                 )
             }
 

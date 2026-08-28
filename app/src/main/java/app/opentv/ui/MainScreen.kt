@@ -147,6 +147,24 @@ fun MainScreen(
         if (tab !in visibleTabs) tab = homeTab
     }
 
+    LaunchedEffect(settings.requestedHomeTab) {
+        val req = settings.requestedHomeTab
+        if (req != null) {
+            settings.requestedHomeTab = null
+            val targetTab = when (req) {
+                "movies" -> Tab.MOVIES
+                "shows" -> Tab.SHOWS
+                "recordings" -> Tab.RECORDINGS
+                "live" -> Tab.LIVE
+                else -> null
+            }
+            if (targetTab != null && targetTab in visibleTabs) {
+                tab = targetTab
+                liveNavRailVisible = false
+            }
+        }
+    }
+
     // Double-press Back at the root (when on the main menu / nav rail) shows the exit dialog
     var lastBackPressMillis by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     var showExit by remember { mutableStateOf(false) }

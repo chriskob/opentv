@@ -489,8 +489,62 @@ class AppSettings private constructor(context: Context) {
             prefs.getString(KEY_STREMIO_ADDONS, null)?.let { addonJson.decodeFromString<List<StremioAddon>>(it) }
         }.getOrNull() ?: emptyList()
 
+    // ---- Player sub-menu buttons -----------------------------------------------------------
+
+    /** Player sub-menu button identifiers */
+    enum class SubMenuButton(val key: String, val titleRes: Int, val subtitle: String) {
+        SEARCH("search", app.opentv.R.string.submenu_btn_search, "Global search for channels and VOD"),
+        MOVIES("movies", app.opentv.R.string.submenu_btn_movies, "Jump to Movies library"),
+        SHOWS("shows", app.opentv.R.string.submenu_btn_shows, "Jump to TV Shows library"),
+        RECORDINGS("recordings", app.opentv.R.string.submenu_btn_recordings, "Toggle DVR recording for the playing channel"),
+        MULTIVIEW("multiview", app.opentv.R.string.submenu_btn_multiview, "Multiview multi-screen mode"),
+        QUALITY("quality", app.opentv.R.string.submenu_btn_quality, "Stream resolution and quality selector"),
+        AUDIO("audio", app.opentv.R.string.submenu_btn_audio, "Audio track and channel format"),
+        AUDIO_DELAY("audio_delay", app.opentv.R.string.submenu_btn_audio_delay, "Audio sync delay adjuster (-100ms to +500ms)"),
+        SUBTITLES("subtitles", app.opentv.R.string.submenu_btn_subtitles, "Subtitles and Closed Captions"),
+        ASPECT_RATIO("aspect", app.opentv.R.string.submenu_btn_aspect, "Aspect ratio (Normal, Fill, Stretch)"),
+        CHANNELS_LIST("channels_list", app.opentv.R.string.submenu_btn_channels_list, "Side channel list and guide overlay"),
+        FAVORITES("favorites", app.opentv.R.string.submenu_btn_favorites, "Add or remove channel from favorites"),
+        CHANNEL_OPTIONS("channel_options", app.opentv.R.string.submenu_btn_channel_options, "Channel details, stream specs, and timer"),
+        SETTINGS("settings", app.opentv.R.string.submenu_btn_settings, "Open application settings hub"),
+    }
+
+    private val _enabledSubMenuButtons = MutableStateFlow(readEnabledSubMenuButtons())
+    val enabledSubMenuButtons: StateFlow<Set<SubMenuButton>> = _enabledSubMenuButtons.asStateFlow()
+
+    private fun readEnabledSubMenuButtons(): Set<SubMenuButton> {
+        val raw = prefs.getString(KEY_SUBMENU_BUTTONS, null) ?: return SubMenuButton.entries.toSet()
+        val storedKeys = raw.split(",").map { it.trim() }.toSet()
+        return SubMenuButton.entries.filter { it.key in storedKeys }.toSet()
+    }
+
+    fun setSubMenuButtonEnabled(button: SubMenuButton, enabled: Boolean) {
+        val current = _enabledSubMenuButtons.value.toMutableSet()
+        if (enabled) current.add(button) else current.remove(button)
+        prefs.edit().putString(KEY_SUBMENU_BUTTONS, current.joinToString(",") { it.key }).apply()
+        _enabledSubMenuButtons.value = current
+    }
+
+    fun setAllSubMenuButtons(enabled: Boolean) {
+        val updated = if (enabled) SubMenuButton.entries.toSet() else emptySet()
+        prefs.edit().putString(KEY_SUBMENU_BUTTONS, updated.joinToString(",") { it.key }).apply()
+        _enabledSubMenuButtons.value = updated
+    }
+
+    private val _audioDelayMs = MutableStateFlow(prefs.getInt(KEY_AUDIO_DELAY_MS, 0))
+    val audioDelayMs: StateFlow<Int> = _audioDelayMs.asStateFlow()
+
+    fun setAudioDelayMs(ms: Int) {
+        prefs.edit().putInt(KEY_AUDIO_DELAY_MS, ms).apply()
+        _audioDelayMs.value = ms
+    }
+
+    var requestedHomeTab: String? = null
+
     companion object {
         private const val KEY_THEME = "theme_mode"
+        private const val KEY_SUBMENU_BUTTONS = "submenu_buttons"
+        private const val KEY_AUDIO_DELAY_MS = "audio_delay_ms"
         private const val KEY_CHANNEL_LAYOUT = "channel_layout"
         private const val KEY_SUBTITLES = "subtitles_enabled"
         private const val KEY_PREVIEW_VIDEO = "guide_preview_video"
