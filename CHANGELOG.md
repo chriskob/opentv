@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.25
+
+- **Two-Tier Player Sub-Menu Hierarchy (OK for History, Down for Action Buttons).**
+  - **Press OK**: Directly brings up the info banner and watched channels history carousel (TV Guide, History, recent channels) with immediate focus, keeping the action row neatly tucked away.
+  - **Press Down**: Smoothly reveals the 14 player sub-menu action buttons underneath and shifts focus directly into the action row.
+  - **Press Up / Back**: Gracefully hides the action buttons row and returns focus back up to the history row.
+
 ## 0.12.24
 
 - **Full Suite of 14 Player Sub-Menu Quick Action Buttons & Settings Customization.**
