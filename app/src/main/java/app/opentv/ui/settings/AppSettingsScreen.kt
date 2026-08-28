@@ -5,8 +5,14 @@
  */
 package app.opentv.ui.settings
 
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,12 +20,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -38,11 +47,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import android.content.Context
-import android.widget.Toast
+import androidx.compose.ui.unit.sp
 import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.core.SleepTimer
@@ -84,16 +96,32 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
+            .background(Color(0xFF10171E))
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 32.dp, vertical = 24.dp),
+            .padding(horizontal = 40.dp, vertical = 28.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.settings_display_title), style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_display_title),
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 26.sp),
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Themes, layouts, playback preferences & data intervals",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.65f),
+                )
+            }
+            SettingsBackButton(onBack)
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
 
         SettingsSection(stringResource(R.string.settings_appearance)) {
             ThemeOption(stringResource(R.string.settings_theme_system), themeMode == AppSettings.ThemeMode.SYSTEM) {
@@ -423,49 +451,108 @@ private fun SleepTimerSection() {
 
 @Composable
 private fun SleepOption(label: String, selected: Boolean, onSelect: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (focused) Color(0xFFF0F4F8)
+                else if (selected) Color(0xFF1E2F3E)
+                else Color.Transparent,
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                else if (selected) Modifier.border(1.dp, Color(0xFF26C6DA).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                else Modifier,
+            )
+            .focusable()
             .selectable(selected = selected, onClick = onSelect)
-            .padding(vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = onSelect)
-        Spacer(Modifier.width(8.dp))
-        Text(label, style = MaterialTheme.typography.titleMedium)
+        RadioButton(
+            selected = selected,
+            onClick = onSelect,
+            colors = androidx.compose.material3.RadioButtonDefaults.colors(
+                selectedColor = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
+                unselectedColor = if (focused) Color(0xFF37474F) else Color(0xFF90A4AE),
+            ),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+            fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (focused) Color(0xFF10171E) else Color.White,
+        )
     }
 }
 
 @Composable
 private fun SettingsSection(title: String, content: @Composable () -> Unit) {
     Text(
-        title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
+        fontWeight = FontWeight.Bold,
+        color = Color(0xFF26C6DA),
+        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
     )
-    Spacer(Modifier.height(8.dp))
-    Card {
+    Spacer(Modifier.height(4.dp))
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF18222C))
+            .border(0.5.dp, Color(0xFF263442), RoundedCornerShape(14.dp))
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+    ) {
         Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) { content() }
     }
 }
 
 @Composable
 private fun ThemeOption(label: String, selected: Boolean, onSelect: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (focused) Color(0xFFF0F4F8)
+                else if (selected) Color(0xFF1E2F3E)
+                else Color.Transparent,
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                else if (selected) Modifier.border(1.dp, Color(0xFF26C6DA).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                else Modifier,
+            )
+            .focusable()
             .selectable(selected = selected, onClick = onSelect)
-            .padding(vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = onSelect)
-        Spacer(Modifier.width(8.dp))
-        Text(label, style = MaterialTheme.typography.titleMedium)
+        RadioButton(
+            selected = selected,
+            onClick = onSelect,
+            colors = androidx.compose.material3.RadioButtonDefaults.colors(
+                selectedColor = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
+                unselectedColor = if (focused) Color(0xFF37474F) else Color(0xFF90A4AE),
+            ),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+            fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (focused) Color(0xFF10171E) else Color.White,
+        )
     }
 }
 
@@ -476,22 +563,47 @@ private fun ToggleRow(
     checked: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
+    var focused by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable { onToggle(!checked) },
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (focused) Color(0xFFF0F4F8)
+                else Color.Transparent,
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                else Modifier,
+            )
+            .focusable()
+            .clickable { onToggle(!checked) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).widthIn(max = 640.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
             Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (focused) Color(0xFF10171E) else Color.White,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                color = if (focused) Color(0xFF37474F) else Color.White.copy(alpha = 0.65f),
             )
         }
         Spacer(Modifier.width(16.dp))
-        Switch(checked = checked, onCheckedChange = onToggle)
+        Switch(
+            checked = checked,
+            onCheckedChange = onToggle,
+            colors = androidx.compose.material3.SwitchDefaults.colors(
+                checkedThumbColor = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
+                checkedTrackColor = if (focused) Color(0xFFB2EBF2) else Color(0xFF004D40),
+            ),
+        )
     }
 }
 
@@ -508,8 +620,21 @@ private fun ContentToggleRow(
     onToggle: (Boolean) -> Unit,
     onRefresh: () -> Unit,
 ) {
+    var focused by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth(),
+        Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (focused) Color(0xFFF0F4F8)
+                else Color.Transparent,
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                else Modifier,
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
@@ -518,11 +643,16 @@ private fun ContentToggleRow(
                 .widthIn(max = 640.dp)
                 .clickable { onToggle(!checked) },
         ) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
             Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (focused) Color(0xFF10171E) else Color.White,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                color = if (focused) Color(0xFF37474F) else Color.White.copy(alpha = 0.65f),
             )
         }
         Spacer(Modifier.width(8.dp))
@@ -530,9 +660,54 @@ private fun ContentToggleRow(
             Icon(
                 Icons.Filled.Refresh,
                 contentDescription = stringResource(R.string.settings_content_refresh),
+                tint = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
             )
         }
         Spacer(Modifier.width(8.dp))
-        Switch(checked = checked, onCheckedChange = onToggle)
+        Switch(
+            checked = checked,
+            onCheckedChange = onToggle,
+            colors = androidx.compose.material3.SwitchDefaults.colors(
+                checkedThumbColor = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
+                checkedTrackColor = if (focused) Color(0xFFB2EBF2) else Color(0xFF004D40),
+            ),
+        )
     }
 }
+
+@Composable
+private fun SettingsBackButton(onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (focused) Color(0xFFF0F4F8)
+                else Color(0xFF1E2833),
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp))
+                else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(10.dp)),
+            )
+            .focusable()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = null,
+            tint = if (focused) Color(0xFF10171E) else Color.White,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = stringResource(R.string.common_done),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = if (focused) Color(0xFF10171E) else Color.White,
+        )
+    }
+}
+

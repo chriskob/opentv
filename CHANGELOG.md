@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.22
+
+- **Complete Modern TV Redesign for Settings Hub & All Settings Subscreens.**
+  - **Categorized 2-Column Settings Grid**: Grouped all preferences into 3 intuitive visual sections ("Playlists & Content", "Playback & Interface", "System & Management") with colorful tinted icon badges, crisp subtitle guidance, and clean chevron affordances.
+  - **Premium Dark Slate TV Styling**: Uniform dark background (`#10171E`), dark slate card containers (`#18222C`), subtle slate borders (`#263442`), and glowing high-contrast focus outlines (`#F0F4F8`, `#26C6DA`).
+  - **Redesigned App, EPG, Recording, Add-ons, Profiles, Sync, Parental & Web Manager Pages**: Consistent action headers, modern toggle rows, radio options, and focusable back/done buttons across every screen.
+
 ## 0.12.21
 
 - **Continuous Guide Looping with Seamless Cursor Focus & Playlist Settings Editing in Providers.**

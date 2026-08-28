@@ -6,6 +6,7 @@
 package app.opentv.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.RadioButtonChecked
@@ -52,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -60,6 +63,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -141,23 +146,33 @@ fun RecordingSettingsScreen(onBack: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
+            .background(Color(0xFF10171E))
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 32.dp, vertical = 24.dp),
+            .padding(horizontal = 40.dp, vertical = 28.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.settings_recording_title), style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = { persist(); onBack() }) { Text(stringResource(R.string.common_done)) }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            stringResource(R.string.recset_desc),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.widthIn(max = 720.dp),
-        )
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_recording_title),
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 26.sp),
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Configure DVR storage, network shares (SMB), padding, and background engine",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.65f),
+                )
+            }
 
-        Spacer(Modifier.height(20.dp))
+            RecordingBackButton(onClick = { persist(); onBack() })
+        }
+
+        Spacer(Modifier.height(24.dp))
         SectionCard(stringResource(R.string.recset_background_title)) {
             BackgroundStatus()
         }
@@ -507,45 +522,113 @@ private fun BackgroundStatus() {
 
 @Composable
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
-    Column(Modifier.widthIn(max = 720.dp)) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.height(8.dp))
+    Text(
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
+        fontWeight = FontWeight.Bold,
+        color = Color(0xFF26C6DA),
+        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+    )
+    Spacer(Modifier.height(4.dp))
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF18222C))
+            .border(0.5.dp, Color(0xFF263442), RoundedCornerShape(14.dp))
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+    ) {
         Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) { content() }
     }
 }
 
 @Composable
 private fun TargetRow(label: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val borderModifier = when {
+        focused -> Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp))
+        selected -> Modifier.border(1.dp, Color(0xFF26C6DA).copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+        else -> Modifier
+    }
     Row(
         Modifier
             .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (focused) Color(0xFFF0F4F8)
+                else if (selected) Color(0xFF1E2F3E)
+                else Color.Transparent,
+            )
+            .then(borderModifier)
+            .focusable()
             .clickable(onClick = onClick)
-            .padding(8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             if (selected) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
             contentDescription = null,
-            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (focused) Color(0xFF00838F) else if (selected) Color(0xFF26C6DA) else Color(0xFF90A4AE),
         )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Medium,
+                color = if (focused) Color(0xFF10171E) else Color.White,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                color = if (focused) Color(0xFF37474F) else Color.White.copy(alpha = 0.65f),
+            )
         }
-        if (selected) Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
+        if (selected) {
+            Icon(
+                Icons.Filled.CheckCircle,
+                null,
+                tint = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecordingBackButton(onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val borderModifier = if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp)) else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(10.dp))
+    Row(
+        Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (focused) Color(0xFFF0F4F8)
+                else Color(0xFF1E2833),
+            )
+            .then(borderModifier)
+            .focusable()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = null,
+            tint = if (focused) Color(0xFF10171E) else Color.White,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = stringResource(R.string.common_done),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = if (focused) Color(0xFF10171E) else Color.White,
+        )
     }
 }
 
