@@ -59,7 +59,7 @@ import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
@@ -69,6 +69,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material.icons.filled.Tv
@@ -688,7 +689,16 @@ fun PlayerScreen(
                     // Immersive shortcuts when hidden:
                     event.key == Key.DirectionLeft -> { if (queue.isNotEmpty()) channelListVisible = true; true }
                     event.key == Key.DirectionRight -> {
-                        if (variants.size > 1) { reveal(); panel = Panel.QUALITY }; true
+                        val targetId = previousId
+                            ?: recentChannels.firstOrNull { it.id != currentId }?.id
+                            ?: recentChannelIds.firstOrNull { it != currentId }
+                        if (targetId != null && targetId != currentId) {
+                            playChannelId(targetId)
+                            reveal()
+                        } else {
+                            reveal()
+                        }
+                        true
                     }
                     else -> { reveal(); true }
                 }
@@ -973,20 +983,35 @@ fun PlayerScreen(
 
                 Spacer(Modifier.height(8.dp))
 
-                // ---- Play / Pause / Rewind / Fast Forward Transport Controls ----
+                // ---- Transport Controls: Record, Rewind, Play/Pause, Fast-Forward, Live ----
+                val isRecording = activeRecordings.any { it.channelId == currentId }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 2.dp),
-                    horizontalArrangement = Arrangement.Center,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Record button (Starts or stops recording)
+                    TransportButton(
+                        icon = if (isRecording) Icons.Filled.Stop else Icons.Filled.FiberManualRecord,
+                        contentDescription = if (isRecording) stringResource(R.string.rec_stop_recording) else stringResource(R.string.player_record),
+                        size = 38.dp,
+                        iconSize = 20.dp,
+                        iconTint = if (isRecording) Color(0xFFE53935) else Color(0xFFEF5350),
+                        onFocusChanged = { if (it) currentFocusedRow = 0 },
+                        onClick = {
+                            toggleRecord()
+                            interaction++
+                        },
+                    )
+
                     // Rewind button (-10s)
                     TransportButton(
                         icon = Icons.Filled.FastRewind,
                         contentDescription = stringResource(R.string.player_rewind),
-                        size = 44.dp,
-                        iconSize = 24.dp,
+                        size = 38.dp,
+                        iconSize = 20.dp,
                         onFocusChanged = { if (it) currentFocusedRow = 0 },
                         onClick = {
                             controller.seekBackward()
@@ -996,14 +1021,12 @@ fun PlayerScreen(
                         },
                     )
 
-                    Spacer(Modifier.width(18.dp))
-
                     // Play / Pause button (Primary center)
                     TransportButton(
                         icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                         contentDescription = if (paused) stringResource(R.string.player_play) else stringResource(R.string.player_pause),
-                        size = 52.dp,
-                        iconSize = 28.dp,
+                        size = 44.dp,
+                        iconSize = 24.dp,
                         isPrimary = true,
                         focusRequester = barFocus,
                         onFocusChanged = { if (it) currentFocusedRow = 0 },
@@ -1015,14 +1038,12 @@ fun PlayerScreen(
                         },
                     )
 
-                    Spacer(Modifier.width(18.dp))
-
                     // Fast Forward button (+10s)
                     TransportButton(
                         icon = Icons.Filled.FastForward,
                         contentDescription = stringResource(R.string.player_forward),
-                        size = 44.dp,
-                        iconSize = 24.dp,
+                        size = 38.dp,
+                        iconSize = 20.dp,
                         onFocusChanged = { if (it) currentFocusedRow = 0 },
                         onClick = {
                             controller.seekForward()
@@ -1033,6 +1054,23 @@ fun PlayerScreen(
                             } else {
                                 controller.player.seekTo(cur + 10_000L)
                             }
+                            interaction++
+                        },
+                    )
+
+                    // Live button (Jumps straight to real-time live edge)
+                    TransportButton(
+                        icon = Icons.Filled.LiveTv,
+                        contentDescription = stringResource(R.string.nav_live_tv),
+                        size = 38.dp,
+                        iconSize = 20.dp,
+                        iconTint = Color(0xFF26C6DA),
+                        onFocusChanged = { if (it) currentFocusedRow = 0 },
+                        onClick = {
+                            controller.player.seekToDefaultPosition()
+                            controller.player.playWhenReady = true
+                            paused = false
+                            Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
                             interaction++
                         },
                     )
@@ -1849,10 +1887,11 @@ private fun LiveTimelineBar(
 private fun TransportButton(
     icon: ImageVector,
     contentDescription: String,
-    size: Dp = 44.dp,
-    iconSize: Dp = 22.dp,
+    size: Dp = 38.dp,
+    iconSize: Dp = 20.dp,
     focusRequester: FocusRequester? = null,
     isPrimary: Boolean = false,
+    iconTint: Color? = null,
     onFocusChanged: (Boolean) -> Unit = {},
     onClick: () -> Unit,
 ) {
@@ -1864,6 +1903,7 @@ private fun TransportButton(
     }
     val icTint = when {
         focused -> Color(0xFF10171E)
+        iconTint != null -> iconTint
         isPrimary -> Color(0xFF26C6DA)
         else -> Color.White
     }

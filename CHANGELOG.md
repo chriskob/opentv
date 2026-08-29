@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.28
+
+- **Full-Screen D-Pad Right Channel Toggle & Enhanced 5-Button Transport Bar.**
+  - **Quick Previous Channel Toggle**: In full-screen playback (OSD hidden), pressing **Right** on the remote immediately jumps to the previously watched channel (quick A/B channel toggling).
+  - **Compact Transport Controls**: Streamlined button dimensions for a cleaner, modern look.
+  - **Integrated Record Button**: Added a direct **Record** button with live recording status indicators to the transport control row.
+  - **Integrated Live Button**: Added a **Live** button to the transport control row to immediately jump to the real-time live playback edge.
+
 ## 0.12.27
 
 - **Fixed Program Reminders & Reliable Auto-Tune Channel Switching.**
