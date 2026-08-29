@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.26
+
+- **Sleek Playback Transport Controls (Play, Pause, Rewind, Fast Forward).**
+  - **Modern Transport Control Bar**: Added beautiful, circular transport controls (Rewind 10s, prominent Play/Pause center toggle, Fast Forward 10s) positioned prominently between the timeline bar and the history carousel upon pressing OK.
+  - **Dynamic State & Focus**: The Play/Pause button dynamically toggles between Play and Pause icons based on stream state and receives initial focus on menu reveal.
+  - **Intuitive D-pad Flow**: Seamless vertical navigation across all 3 tiers (Transport Controls ↕ History Carousel ↕ 14 Action Buttons).
+
 ## 0.12.25
 
 - **Two-Tier Player Sub-Menu Hierarchy (OK for History, Down for Action Buttons).**

@@ -117,6 +117,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -269,10 +270,12 @@ fun PlayerScreen(
     }
     LaunchedEffect(paused) { app.opentv.core.PipState.isPlaying = !paused }
     val barFocus = remember { FocusRequester() }
+    val historyFocus = remember { FocusRequester() }
     val actionButtonsFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
     val rootFocus = remember { FocusRequester() }
     val listFocus = remember { FocusRequester() }
+    var currentFocusedRow by remember { mutableIntStateOf(0) }
 
     val enabledSubMenuButtons by settings.enabledSubMenuButtons.collectAsState()
     val audioDelayMs by settings.audioDelayMs.collectAsState()
@@ -289,6 +292,10 @@ fun PlayerScreen(
 
     DisposableEffect(controller.player) {
         val listener = object : androidx.media3.common.Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                paused = !isPlaying
+            }
+
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
                     videoSizeText = "${videoSize.width}x${videoSize.height}"
@@ -368,6 +375,7 @@ fun PlayerScreen(
         menuOpenedAt = System.currentTimeMillis()
         controlsVisible = true
         showActionButtonsRow = false
+        currentFocusedRow = 0
         interaction++
     }
 
@@ -577,9 +585,10 @@ fun PlayerScreen(
             panel != Panel.NONE -> panel = Panel.NONE
             showActionButtonsRow -> {
                 showActionButtonsRow = false
+                currentFocusedRow = 1
                 scope.launch {
                     delay(16)
-                    runCatching { barFocus.requestFocus() }
+                    runCatching { historyFocus.requestFocus() }
                 }
             }
             channelListVisible -> channelListVisible = false
@@ -633,21 +642,23 @@ fun PlayerScreen(
                     // With the menu/controls visible:
                     controlsVisible -> {
                         interaction++
-                        // Pressing DOWN while on the history buttons reveals the action buttons row
-                        if (event.key == Key.DirectionDown && !showActionButtonsRow && panel == Panel.NONE && !channelListVisible) {
+                        // Pressing DOWN while on the history buttons (row 1) reveals the action buttons row (row 2)
+                        if (event.key == Key.DirectionDown && currentFocusedRow == 1 && !showActionButtonsRow && panel == Panel.NONE && !channelListVisible) {
                             showActionButtonsRow = true
+                            currentFocusedRow = 2
                             scope.launch {
                                 delay(32)
                                 runCatching { actionButtonsFocus.requestFocus() }
                             }
                             return@onPreviewKeyEvent true
                         }
-                        // Pressing UP while on the action buttons row hides the action buttons row and returns to history buttons
-                        if (event.key == Key.DirectionUp && showActionButtonsRow && panel == Panel.NONE && !channelListVisible) {
+                        // Pressing UP while on the action buttons row (row 2) hides the action buttons row and returns to history buttons (row 1)
+                        if (event.key == Key.DirectionUp && showActionButtonsRow && currentFocusedRow == 2 && panel == Panel.NONE && !channelListVisible) {
                             showActionButtonsRow = false
+                            currentFocusedRow = 1
                             scope.launch {
                                 delay(32)
-                                runCatching { barFocus.requestFocus() }
+                                runCatching { historyFocus.requestFocus() }
                             }
                             return@onPreviewKeyEvent true
                         }
@@ -940,7 +951,7 @@ fun PlayerScreen(
                     }
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
 
                 // ---- Cyan Timeline Progress Bar ----
                 val progFraction = currentProg?.progressAt(nowMillis) ?: 0f
@@ -949,7 +960,74 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(8.dp))
+
+                // ---- Play / Pause / Rewind / Fast Forward Transport Controls ----
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Rewind button (-10s)
+                    TransportButton(
+                        icon = Icons.Filled.FastRewind,
+                        contentDescription = stringResource(R.string.player_rewind),
+                        size = 44.dp,
+                        iconSize = 24.dp,
+                        onFocusChanged = { if (it) currentFocusedRow = 0 },
+                        onClick = {
+                            controller.seekBackward()
+                            val cur = controller.player.currentPosition
+                            controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
+                            interaction++
+                        },
+                    )
+
+                    Spacer(Modifier.width(18.dp))
+
+                    // Play / Pause button (Primary center)
+                    TransportButton(
+                        icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        contentDescription = if (paused) stringResource(R.string.player_play) else stringResource(R.string.player_pause),
+                        size = 52.dp,
+                        iconSize = 28.dp,
+                        isPrimary = true,
+                        focusRequester = barFocus,
+                        onFocusChanged = { if (it) currentFocusedRow = 0 },
+                        onClick = {
+                            val targetPlaying = paused
+                            controller.player.playWhenReady = targetPlaying
+                            paused = !targetPlaying
+                            interaction++
+                        },
+                    )
+
+                    Spacer(Modifier.width(18.dp))
+
+                    // Fast Forward button (+10s)
+                    TransportButton(
+                        icon = Icons.Filled.FastForward,
+                        contentDescription = stringResource(R.string.player_forward),
+                        size = 44.dp,
+                        iconSize = 24.dp,
+                        onFocusChanged = { if (it) currentFocusedRow = 0 },
+                        onClick = {
+                            controller.seekForward()
+                            val cur = controller.player.currentPosition
+                            val dur = controller.player.duration
+                            if (dur > 0) {
+                                controller.player.seekTo((cur + 10_000L).coerceAtMost(dur))
+                            } else {
+                                controller.player.seekTo(cur + 10_000L)
+                            }
+                            interaction++
+                        },
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
 
                 // ---- Watched Channels History Carousel ----
                 val quickListState = rememberLazyListState()
@@ -964,7 +1042,8 @@ fun PlayerScreen(
                         QuickActionCard(
                             icon = Icons.Filled.ViewStream,
                             label = stringResource(R.string.player_tv_guide),
-                            focusRequester = if (recentChannels.isEmpty()) barFocus else null,
+                            focusRequester = if (recentChannels.isEmpty()) historyFocus else null,
+                            onFocusChanged = { if (it) currentFocusedRow = 1 },
                             onClick = {
                                 controlsVisible = false
                                 onBack()
@@ -977,6 +1056,7 @@ fun PlayerScreen(
                         QuickActionCard(
                             icon = Icons.Filled.History,
                             label = stringResource(R.string.player_history),
+                            onFocusChanged = { if (it) currentFocusedRow = 1 },
                             onClick = {
                                 val targetId = previousId ?: recentChannels.firstOrNull { it.id != currentId }?.id
                                 if (targetId != null) playChannelId(targetId)
@@ -985,13 +1065,13 @@ fun PlayerScreen(
                     }
 
                     // Cards 3+: Watched Channels History (newest first)
-                    // The first watched channel carries barFocus so opening the sub menu focuses directly on it
                     itemsIndexed(recentChannels, key = { _, ch -> "recent-ch-${ch.id}" }) { idx, ch ->
                         QuickChannelCard(
                             channel = ch,
                             programme = queueProgrammes[ch.id],
                             isCurrent = ch.id == currentId,
-                            focusRequester = if (idx == 0) barFocus else null,
+                            focusRequester = if (idx == 0) historyFocus else null,
+                            onFocusChanged = { if (it) currentFocusedRow = 1 },
                             onClick = { playChannelId(ch.id) },
                         )
                     }
@@ -1002,6 +1082,7 @@ fun PlayerScreen(
                             QuickActionCard(
                                 icon = Icons.Filled.Delete,
                                 label = stringResource(R.string.history_clear),
+                                onFocusChanged = { if (it) currentFocusedRow = 1 },
                                 onClick = {
                                     settings.clearRecentChannels()
                                     Toast.makeText(context, context.getString(R.string.history_cleared), Toast.LENGTH_SHORT).show()
@@ -1037,6 +1118,7 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.Search,
                                                 label = stringResource(R.string.submenu_search),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     controlsVisible = false
                                                     onOpenSearch()
@@ -1048,6 +1130,7 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.Movie,
                                                 label = stringResource(R.string.submenu_movies),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     controlsVisible = false
                                                     onOpenMovies()
@@ -1059,6 +1142,7 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.Tv,
                                                 label = stringResource(R.string.submenu_shows),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     controlsVisible = false
                                                     onOpenShows()
@@ -1073,6 +1157,7 @@ fun PlayerScreen(
                                                 isSelected = recordingThis,
                                                 iconTint = if (recordingThis) Color(0xFFE53935) else null,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = { toggleRecord() },
                                             )
                                         }
@@ -1081,6 +1166,7 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.GridView,
                                                 label = stringResource(R.string.submenu_multiview),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = { showMultiviewDialog = true },
                                             )
                                         }
@@ -1091,6 +1177,7 @@ fun PlayerScreen(
                                                 label = qualLabel,
                                                 isSelected = panel == Panel.QUALITY,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY
                                                     interaction++
@@ -1103,6 +1190,7 @@ fun PlayerScreen(
                                                 label = selectedAudioLabel,
                                                 isSelected = panel == Panel.AUDIO,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO
                                                     interaction++
@@ -1116,6 +1204,7 @@ fun PlayerScreen(
                                                 label = delayLabel,
                                                 isSelected = panel == Panel.AUDIO_DELAY,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.AUDIO_DELAY) Panel.NONE else Panel.AUDIO_DELAY
                                                     interaction++
@@ -1128,6 +1217,7 @@ fun PlayerScreen(
                                                 label = selectedSubtitleLabel,
                                                 isSelected = panel == Panel.SUBTITLES,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES
                                                     interaction++
@@ -1146,6 +1236,7 @@ fun PlayerScreen(
                                                 label = aspectLabel,
                                                 isSelected = panel == Panel.ASPECT,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT
                                                     interaction++
@@ -1158,6 +1249,7 @@ fun PlayerScreen(
                                                 label = stringResource(R.string.submenu_channels_list),
                                                 isSelected = channelListVisible,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     channelListVisible = !channelListVisible
                                                     interaction++
@@ -1172,6 +1264,7 @@ fun PlayerScreen(
                                                 isSelected = isFav,
                                                 iconTint = if (isFav) Color(0xFFFFD54F) else null,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     val ch = currentChannel
                                                     if (ch != null) {
@@ -1194,6 +1287,7 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.SettingsSuggest,
                                                 label = stringResource(R.string.submenu_channel_options),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = { showChannelOptionsDialog = true },
                                             )
                                         }
@@ -1202,6 +1296,7 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.Settings,
                                                 label = stringResource(R.string.submenu_settings),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
+                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     controlsVisible = false
                                                     onOpenSettings()
@@ -1575,6 +1670,7 @@ private fun QuickActionCard(
     icon: ImageVector,
     label: String,
     focusRequester: FocusRequester? = null,
+    onFocusChanged: (Boolean) -> Unit = {},
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1584,7 +1680,10 @@ private fun QuickActionCard(
             .width(108.dp)
             .height(84.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
             .clip(RoundedCornerShape(8.dp))
             .background(
                 if (focused) Color(0xFFF0F4F8)
@@ -1626,6 +1725,7 @@ private fun QuickChannelCard(
     programme: Programme?,
     isCurrent: Boolean,
     focusRequester: FocusRequester? = null,
+    onFocusChanged: (Boolean) -> Unit = {},
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1635,7 +1735,10 @@ private fun QuickChannelCard(
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .width(148.dp)
             .height(84.dp)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
             .clip(RoundedCornerShape(8.dp))
             .background(
                 if (focused) Color(0xFFF0F4F8)
@@ -1732,6 +1835,57 @@ private fun LiveTimelineBar(
 }
 
 @Composable
+private fun TransportButton(
+    icon: ImageVector,
+    contentDescription: String,
+    size: Dp = 44.dp,
+    iconSize: Dp = 22.dp,
+    focusRequester: FocusRequester? = null,
+    isPrimary: Boolean = false,
+    onFocusChanged: (Boolean) -> Unit = {},
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = when {
+        focused -> Color(0xFFFFFFFF)
+        isPrimary -> Color(0xFF1E293B)
+        else -> Color(0xFF18222C)
+    }
+    val icTint = when {
+        focused -> Color(0xFF10171E)
+        isPrimary -> Color(0xFF26C6DA)
+        else -> Color.White
+    }
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
+            .clip(CircleShape)
+            .background(bg)
+            .then(
+                if (focused) Modifier.border(2.5.dp, Color.White, CircleShape)
+                else if (isPrimary) Modifier.border(1.5.dp, Color(0xFF26C6DA), CircleShape)
+                else Modifier.border(1.dp, Color(0xFF263442), CircleShape)
+            )
+            .focusable()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = icTint,
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+
+@Composable
 private fun BarChip(
     icon: ImageVector,
     label: String,
@@ -1775,6 +1929,7 @@ private fun SubMenuButtonCard(
     isSelected: Boolean = false,
     iconTint: Color? = null,
     focusRequester: FocusRequester? = null,
+    onFocusChanged: (Boolean) -> Unit = {},
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1801,7 +1956,10 @@ private fun SubMenuButtonCard(
             .widthIn(min = 68.dp)
             .padding(horizontal = 2.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
             .focusable()
             .clickable(onClick = onClick)
             .padding(vertical = 4.dp),

@@ -117,6 +117,7 @@
     <string name="player_tv_guide">TV guide</string>
     <string name="player_history">History</string>
     <string name="player_rewind">Rewind</string>
+    <string name="player_play">Play</string>
     <string name="player_pause">Pause</string>
     <string name="player_forward">Forward</string>
     <string name="player_subtitles">Subtitles</string>
