@@ -67,6 +67,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsSuggest
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Stop
@@ -983,97 +985,148 @@ fun PlayerScreen(
 
                 Spacer(Modifier.height(8.dp))
 
-                // ---- Transport Controls: Record, Rewind, Play/Pause, Fast-Forward, Live ----
+                // ---- Progress Time (Left), 5 Center Controls, and Live + Record (Right) ----
                 val isRecording = activeRecordings.any { it.channelId == currentId }
-                Row(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 ) {
-                    // Record button (Starts or stops recording)
-                    TransportButton(
-                        icon = if (isRecording) Icons.Filled.Stop else Icons.Filled.FiberManualRecord,
-                        contentDescription = if (isRecording) stringResource(R.string.rec_stop_recording) else stringResource(R.string.player_record),
-                        size = 38.dp,
-                        iconSize = 20.dp,
-                        iconTint = if (isRecording) Color(0xFFE53935) else Color(0xFFEF5350),
-                        onFocusChanged = { if (it) currentFocusedRow = 0 },
-                        onClick = {
-                            toggleRecord()
-                            interaction++
-                        },
-                    )
+                    // Left: Programme progress time (e.g. 24:29 / 1:00:00)
+                    val prog = currentProg
+                    if (prog != null && prog.durationMillis > 0L) {
+                        val elapsed = (nowMillis - prog.startUtcMillis).coerceIn(0L, prog.durationMillis)
+                        val total = prog.durationMillis
+                        Text(
+                            text = "${formatDurationMs(elapsed)} / ${formatDurationMs(total)}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.5.sp),
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 2.dp),
+                        )
+                    }
 
-                    // Rewind button (-10s)
-                    TransportButton(
-                        icon = Icons.Filled.FastRewind,
-                        contentDescription = stringResource(R.string.player_rewind),
-                        size = 38.dp,
-                        iconSize = 20.dp,
-                        onFocusChanged = { if (it) currentFocusedRow = 0 },
-                        onClick = {
-                            controller.seekBackward()
-                            val cur = controller.player.currentPosition
-                            controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
-                            interaction++
-                        },
-                    )
+                    // Center: 5 transport buttons (SkipPrevious, FastRewind, Play/Pause, FastForward, SkipNext)
+                    Row(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Skip Previous (|◀) - Jumps to start of programme
+                        TransportButton(
+                            icon = Icons.Filled.SkipPrevious,
+                            contentDescription = stringResource(R.string.player_rewind),
+                            size = 38.dp,
+                            iconSize = 20.dp,
+                            onFocusChanged = { if (it) currentFocusedRow = 0 },
+                            onClick = {
+                                controller.seekBackward()
+                                interaction++
+                            },
+                        )
 
-                    // Play / Pause button (Primary center)
-                    TransportButton(
-                        icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        contentDescription = if (paused) stringResource(R.string.player_play) else stringResource(R.string.player_pause),
-                        size = 44.dp,
-                        iconSize = 24.dp,
-                        isPrimary = true,
-                        focusRequester = barFocus,
-                        onFocusChanged = { if (it) currentFocusedRow = 0 },
-                        onClick = {
-                            val targetPlaying = paused
-                            controller.player.playWhenReady = targetPlaying
-                            paused = !targetPlaying
-                            interaction++
-                        },
-                    )
+                        // Fast Rewind (◀◀) -10s
+                        TransportButton(
+                            icon = Icons.Filled.FastRewind,
+                            contentDescription = stringResource(R.string.player_rewind),
+                            size = 38.dp,
+                            iconSize = 20.dp,
+                            onFocusChanged = { if (it) currentFocusedRow = 0 },
+                            onClick = {
+                                controller.seekBackward()
+                                val cur = controller.player.currentPosition
+                                controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
+                                interaction++
+                            },
+                        )
 
-                    // Fast Forward button (+10s)
-                    TransportButton(
-                        icon = Icons.Filled.FastForward,
-                        contentDescription = stringResource(R.string.player_forward),
-                        size = 38.dp,
-                        iconSize = 20.dp,
-                        onFocusChanged = { if (it) currentFocusedRow = 0 },
-                        onClick = {
-                            controller.seekForward()
-                            val cur = controller.player.currentPosition
-                            val dur = controller.player.duration
-                            if (dur > 0) {
-                                controller.player.seekTo((cur + 10_000L).coerceAtMost(dur))
-                            } else {
-                                controller.player.seekTo(cur + 10_000L)
-                            }
-                            interaction++
-                        },
-                    )
+                        // Play / Pause (|| / ▶) - Solid white circle with dark icon
+                        TransportButton(
+                            icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                            contentDescription = if (paused) stringResource(R.string.player_play) else stringResource(R.string.player_pause),
+                            size = 46.dp,
+                            iconSize = 24.dp,
+                            isPrimary = true,
+                            focusRequester = barFocus,
+                            onFocusChanged = { if (it) currentFocusedRow = 0 },
+                            onClick = {
+                                val targetPlaying = paused
+                                controller.player.playWhenReady = targetPlaying
+                                paused = !targetPlaying
+                                interaction++
+                            },
+                        )
 
-                    // Live button (Jumps straight to real-time live edge)
-                    TransportButton(
-                        icon = Icons.Filled.LiveTv,
-                        contentDescription = stringResource(R.string.nav_live_tv),
-                        size = 38.dp,
-                        iconSize = 20.dp,
-                        iconTint = Color(0xFF26C6DA),
-                        onFocusChanged = { if (it) currentFocusedRow = 0 },
-                        onClick = {
-                            controller.player.seekToDefaultPosition()
-                            controller.player.playWhenReady = true
-                            paused = false
-                            Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
-                            interaction++
-                        },
-                    )
+                        // Fast Forward (▶▶) +10s
+                        TransportButton(
+                            icon = Icons.Filled.FastForward,
+                            contentDescription = stringResource(R.string.player_forward),
+                            size = 38.dp,
+                            iconSize = 20.dp,
+                            onFocusChanged = { if (it) currentFocusedRow = 0 },
+                            onClick = {
+                                controller.seekForward()
+                                val cur = controller.player.currentPosition
+                                val dur = controller.player.duration
+                                if (dur > 0) {
+                                    controller.player.seekTo((cur + 10_000L).coerceAtMost(dur))
+                                } else {
+                                    controller.player.seekTo(cur + 10_000L)
+                                }
+                                interaction++
+                            },
+                        )
+
+                        // Skip Next (▶|) - Jumps to live edge
+                        TransportButton(
+                            icon = Icons.Filled.SkipNext,
+                            contentDescription = stringResource(R.string.player_forward),
+                            size = 38.dp,
+                            iconSize = 20.dp,
+                            onFocusChanged = { if (it) currentFocusedRow = 0 },
+                            onClick = {
+                                controller.player.seekToDefaultPosition()
+                                controller.player.playWhenReady = true
+                                paused = false
+                                interaction++
+                            },
+                        )
+                    }
+
+                    // Right: [LIVE] badge button + Record circular button
+                    Row(
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // LIVE Badge Button
+                        LiveBadgeButton(
+                            onFocusChanged = { if (it) currentFocusedRow = 0 },
+                            onClick = {
+                                controller.player.seekToDefaultPosition()
+                                controller.player.playWhenReady = true
+                                paused = false
+                                Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
+                                interaction++
+                            },
+                        )
+
+                        // Record Button
+                        TransportButton(
+                            icon = if (isRecording) Icons.Filled.Stop else Icons.Filled.FiberManualRecord,
+                            contentDescription = if (isRecording) stringResource(R.string.rec_stop_recording) else stringResource(R.string.player_record),
+                            size = 38.dp,
+                            iconSize = 20.dp,
+                            iconTint = if (isRecording) Color(0xFFE53935) else Color.White,
+                            onFocusChanged = { if (it) currentFocusedRow = 0 },
+                            onClick = {
+                                toggleRecord()
+                                interaction++
+                            },
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -1883,6 +1936,55 @@ private fun LiveTimelineBar(
     }
 }
 
+private fun formatDurationMs(ms: Long): String {
+    val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0) {
+        String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
+    }
+}
+
+@Composable
+private fun LiveBadgeButton(
+    focusRequester: FocusRequester? = null,
+    onFocusChanged: (Boolean) -> Unit = {},
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val bg = if (focused) Color.White else Color(0xFF101720).copy(alpha = 0.65f)
+    val contentColor = if (focused) Color(0xFF10171E) else Color.White
+    val borderColor = if (focused) Color.White else Color.White.copy(alpha = 0.55f)
+
+    Box(
+        modifier = Modifier
+            .height(28.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
+            .border(1.dp, borderColor, RoundedCornerShape(6.dp))
+            .focusable()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "LIVE",
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+            fontWeight = FontWeight.Bold,
+            color = contentColor,
+            letterSpacing = 0.5.sp,
+        )
+    }
+}
+
 @Composable
 private fun TransportButton(
     icon: ImageVector,
@@ -1897,14 +1999,14 @@ private fun TransportButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val bg = when {
-        focused -> Color(0xFFFFFFFF)
-        isPrimary -> Color(0xFF1E293B)
-        else -> Color(0xFF18222C)
+        focused -> Color.White
+        isPrimary -> Color.White
+        else -> Color(0xFF101720).copy(alpha = 0.65f)
     }
     val icTint = when {
-        focused -> Color(0xFF10171E)
+        focused -> if (iconTint == Color(0xFFE53935)) Color(0xFFE53935) else Color(0xFF10171E)
+        isPrimary -> Color(0xFF10171E)
         iconTint != null -> iconTint
-        isPrimary -> Color(0xFF26C6DA)
         else -> Color.White
     }
 
@@ -1919,9 +2021,9 @@ private fun TransportButton(
             .clip(CircleShape)
             .background(bg)
             .then(
-                if (focused) Modifier.border(2.5.dp, Color.White, CircleShape)
-                else if (isPrimary) Modifier.border(1.5.dp, Color(0xFF26C6DA), CircleShape)
-                else Modifier.border(1.dp, Color(0xFF263442), CircleShape)
+                if (focused) Modifier.border(2.5.dp, if (isPrimary) Color(0xFF26C6DA) else Color.White, CircleShape)
+                else if (isPrimary) Modifier.border(1.dp, Color.White, CircleShape)
+                else Modifier.border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape)
             )
             .focusable()
             .clickable(onClick = onClick),

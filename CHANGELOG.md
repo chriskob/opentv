@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.29
+
+- **TiviMate-Accurate Playback Transport Bar Layout & Styling.**
+  - **Centered 5-Button Cluster**: Styled the 5 transport buttons exactly as shown in the reference photo — Skip Previous (|◀), Fast Rewind (◀◀), solid white circular center Play/Pause toggle, Fast Forward (▶▶), and Skip Next (▶|).
+  - **Right-Aligned [LIVE] & Record**: Positioned the pill-shaped `[LIVE]` badge button alongside the circular `Record` button on the far right.
+  - **Left-Aligned Progress Timer**: Displayed elapsed and total program time (e.g. `24:29 / 1:00:00`) on the far left beneath the timeline.
+
 ## 0.12.28
 
 - **Full-Screen D-Pad Right Channel Toggle & Enhanced 5-Button Transport Bar.**
