@@ -889,7 +889,7 @@ private suspend fun setReminder(
     val id = graph.reminderRepository.insert(
         Reminder(
             channelId = channel.id,
-            channelName = channel.displayName,
+            channelName = channel.shownName,
             logoUrl = channel.logoUrl,
             title = programme.title,
             startUtcMillis = programme.startUtcMillis,
@@ -898,7 +898,11 @@ private suspend fun setReminder(
             createdAtMillis = System.currentTimeMillis(),
         ),
     )
-    ReminderScheduler.set(context, id, programme.startUtcMillis)
+    val triggerTime = programme.startUtcMillis.coerceAtLeast(System.currentTimeMillis() + 1000L)
+    ReminderScheduler.set(context, id, triggerTime)
+    if (!ReminderScheduler.canScheduleExact(context)) {
+        ReminderScheduler.promptExactAlarmPermission(context)
+    }
 }
 
 @Composable

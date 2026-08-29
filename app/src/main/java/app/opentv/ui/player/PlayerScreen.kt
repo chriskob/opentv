@@ -471,6 +471,17 @@ fun PlayerScreen(
         tuneTo(targetVariant)
     }
 
+    val playRequest by app.opentv.core.PlayRequests.channelId.collectAsState()
+    LaunchedEffect(playRequest) {
+        val reqId = playRequest
+        if (reqId != null && reqId > 0L) {
+            app.opentv.core.PlayRequests.consume()
+            if (currentId != reqId) {
+                playChannelId(reqId)
+            }
+        }
+    }
+
     LaunchedEffect(currentId, nowMillis) {
         val id = currentId ?: return@LaunchedEffect
         val channel = graph.catalogRepository.channel(id)

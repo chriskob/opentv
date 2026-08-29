@@ -17,6 +17,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import app.opentv.MainActivity
 import app.opentv.R
+import app.opentv.core.PlayRequests
+import app.opentv.core.ReminderSignal
+import app.opentv.core.ReminderSignals
 import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Reminder
 import kotlinx.coroutines.CoroutineScope
@@ -50,15 +53,26 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 val reminder = repo.byId(id) ?: return@launch
                 val appContext = context.applicationContext
 
-                // P0: For auto-tune reminders, directly start the activity on Android TV.
-                // setFullScreenIntent is silently ignored on many TV devices; launching the
-                // activity directly ensures the channel actually switches.
+                // Broadcast in-app signal so active screens (Player, Guide, Settings) react immediately
+                ReminderSignals.emit(
+                    ReminderSignal(
+                        reminderId = reminder.id,
+                        channelId = reminder.channelId,
+                        channelName = reminder.channelName,
+                        programmeTitle = reminder.title,
+                        autoTune = reminder.autoTune,
+                    ),
+                )
+
                 if (reminder.autoTune) {
-                    val launch = Intent(appContext, MainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        putExtra(MainActivity.EXTRA_PLAY_CHANNEL, reminder.channelId)
+                    PlayRequests.request(reminder.channelId)
+                    runCatching {
+                        val launch = Intent(appContext, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            putExtra(MainActivity.EXTRA_PLAY_CHANNEL, reminder.channelId)
+                        }
+                        appContext.startActivity(launch)
                     }
-                    appContext.startActivity(launch)
                 }
 
                 // Always also post a notification so the user sees what happened.

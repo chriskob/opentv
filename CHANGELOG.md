@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.27
+
+- **Fixed Program Reminders & Reliable Auto-Tune Channel Switching.**
+  - **Rock-Solid Alarm Scheduling**: Reminders now use high-precision `AlarmClockInfo` to guarantee exact-second wakeups across all Android versions, even in deep sleep or Doze mode.
+  - **Seamless Auto-Tune Execution**: When an auto-tune reminder triggers, the app immediately switches to the target channel directly in `PlayerScreen` or navigates to the player without screen tearing or duplicate instances.
+  - **In-App Reminder Alerts**: When a standard reminder fires while the app is active, a TV-friendly dialog prompts with "Tune to Channel" or "Dismiss" options.
+  - **Real-Time Signal Bus**: Added `ReminderSignals` to coordinate reminder firings seamlessly across UI layers.
+
 ## 0.12.26
 
 - **Sleek Playback Transport Controls (Play, Pause, Rewind, Fast Forward).**

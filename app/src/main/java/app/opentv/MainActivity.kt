@@ -33,12 +33,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -327,14 +330,41 @@ private fun OpenTvApp(isTelevision: Boolean) {
         else -> Routes.HOME
     }
 
+    var activeReminderPrompt by remember { mutableStateOf<app.opentv.core.ReminderSignal?>(null) }
+
+    LaunchedEffect(Unit) {
+        app.opentv.core.ReminderSignals.signals.collect { signal ->
+            if (signal.autoTune) {
+                android.widget.Toast.makeText(
+                    bootContext,
+                    "Auto-tuning to ${signal.channelName} for \"${signal.programmeTitle}\"",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+                val currentRoute = navController.currentBackStackEntry?.destination?.route
+                if (currentRoute == null || !currentRoute.startsWith("player/")) {
+                    navController.navigate(Routes.player(signal.channelId)) {
+                        launchSingleTop = true
+                    }
+                }
+            } else {
+                activeReminderPrompt = signal
+            }
+        }
+    }
+
     // A tapped reminder notification asks for a specific channel. Consume it so it fires once and
     // never re-triggers on a later launch.
     val playRequest by app.opentv.core.PlayRequests.channelId.collectAsState()
     LaunchedEffect(playRequest) {
         val id = playRequest
         if (id != null && id != 0L) {
-            app.opentv.core.PlayRequests.consume()
-            navController.navigate(Routes.player(id))
+            val currentRoute = navController.currentBackStackEntry?.destination?.route
+            if (currentRoute == null || !currentRoute.startsWith("player/")) {
+                app.opentv.core.PlayRequests.consume()
+                navController.navigate(Routes.player(id)) {
+                    launchSingleTop = true
+                }
+            }
         }
     }
 
@@ -628,6 +658,48 @@ private fun OpenTvApp(isTelevision: Boolean) {
 
         // "About to switch to a recording" banner — shows 30s before an auto-switch fires.
         RecordingSwitchBanner()
+
+        activeReminderPrompt?.let { rem ->
+            AlertDialog(
+                onDismissRequest = { activeReminderPrompt = null },
+                title = {
+                    Text(
+                        stringResource(R.string.rec_reminder_plain),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                text = {
+                    Text(
+                        "${stringResource(R.string.reminder_starting_now, rem.channelName)}\n\n${rem.programmeTitle}",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val chId = rem.channelId
+                            activeReminderPrompt = null
+                            val currentRoute = navController.currentBackStackEntry?.destination?.route
+                            if (currentRoute != null && currentRoute.startsWith("player/")) {
+                                app.opentv.core.PlayRequests.request(chId)
+                            } else {
+                                navController.navigate(Routes.player(chId)) {
+                                    launchSingleTop = true
+                                }
+                            }
+                        },
+                    ) {
+                        Text(stringResource(R.string.reminder_watch_now), fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { activeReminderPrompt = null }) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                },
+            )
+        }
     }
 }
 
