@@ -148,17 +148,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun triggerFullScreenLive() {
-        val graph = ServiceLocator.get(this)
-        val lastId = graph.settings.lastChannelId
-        if (lastId > 0 && !app.opentv.core.PipState.inPip.value) {
-            app.opentv.core.PlayRequests.request(lastId)
-        } else {
-            lifecycleScope.launch {
-                val fallbackId = runCatching { graph.catalogRepository.firstChannel()?.id }.getOrNull() ?: 0L
-                if (fallbackId > 0 && !app.opentv.core.PipState.inPip.value) {
-                    app.opentv.core.PlayRequests.request(fallbackId)
-                }
-            }
+        if (!app.opentv.core.PipState.inPip.value) {
+            app.opentv.core.PlayRequests.requestFullScreen()
         }
     }
 
@@ -359,7 +350,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
         val id = playRequest
         if (id != null && id != 0L) {
             val currentRoute = navController.currentBackStackEntry?.destination?.route
-            if (currentRoute == null || !currentRoute.startsWith("player/")) {
+            if (currentRoute != Routes.HOME && (currentRoute == null || !currentRoute.startsWith("player/"))) {
                 app.opentv.core.PlayRequests.consume()
                 navController.navigate(Routes.player(id)) {
                     launchSingleTop = true

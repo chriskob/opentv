@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.41
+
+- **Fix Long-Press Back in Guide Switching to Previous Channel.**
+  - **In-Place Full-Screen Expansion**: Fixed `MainActivity.kt`'s long-press Back handler which was incorrectly reading `settings.lastChannelId` and requesting a channel switch to the previous channel ID. Long-pressing Back now signals `PlayRequests.requestFullScreen()` to seamlessly expand the currently focused/playing channel to full screen without changing channels.
+
 ## 0.12.40
 
 - **TV Guide UI & Typography Overhaul Matching Reference Design.**

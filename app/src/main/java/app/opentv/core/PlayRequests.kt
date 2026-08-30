@@ -18,11 +18,22 @@ object PlayRequests {
     private val _channelId = MutableStateFlow<Long?>(null)
     val channelId: StateFlow<Long?> = _channelId.asStateFlow()
 
+    private val _fullScreenRequest = MutableStateFlow<Long?>(null)
+    val fullScreenRequest: StateFlow<Long?> = _fullScreenRequest.asStateFlow()
+
     fun request(id: Long) {
         if (id != 0L) _channelId.value = id
     }
 
+    fun requestFullScreen() {
+        _fullScreenRequest.value = System.currentTimeMillis()
+    }
+
     fun consume() {
         _channelId.value = null
+    }
+
+    fun consumeFullScreen() {
+        _fullScreenRequest.value = null
     }
 }

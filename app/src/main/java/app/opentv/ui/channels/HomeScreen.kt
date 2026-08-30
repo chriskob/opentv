@@ -240,6 +240,28 @@ fun HomeScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var screenResumed by remember { mutableStateOf(true) }
 
+    // Observe fullscreen requests (e.g. from long-pressing Back in guide)
+    val fullScreenReq by app.opentv.core.PlayRequests.fullScreenRequest.collectAsState()
+    LaunchedEffect(fullScreenReq) {
+        if (fullScreenReq != null) {
+            app.opentv.core.PlayRequests.consumeFullScreen()
+            isFullScreen = true
+        }
+    }
+
+    // Observe channel play requests
+    val playRequest by app.opentv.core.PlayRequests.channelId.collectAsState()
+    LaunchedEffect(playRequest, rows) {
+        val reqId = playRequest ?: return@LaunchedEffect
+        val match = rows.firstOrNull { it.primary.id == reqId || it.variants.any { v -> v.id == reqId } }
+        if (match != null) {
+            app.opentv.core.PlayRequests.consume()
+            selectedRow = match
+            highlightedRow = match
+            isFullScreen = true
+        }
+    }
+
     // Keep both valid as the list changes (e.g. switching category): prioritize the currently
     // playing / last tuned channel if returning to the guide or on first load.
     LaunchedEffect(rows, screenResumed) {
