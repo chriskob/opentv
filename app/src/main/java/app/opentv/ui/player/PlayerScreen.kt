@@ -711,16 +711,24 @@ fun PlayerScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                val pv = controller.getSharedPlayerView(ctx)
-                pv.player = controller.player
-                pv.resizeMode = resizeMode
-                pv
+                val targetResizeMode = resizeMode
+                PlayerView(ctx).apply {
+                    player = controller.player
+                    useController = false
+                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    subtitleView?.setUserDefaultStyle()
+                    subtitleView?.setUserDefaultTextSize()
+                    this.resizeMode = targetResizeMode
+                }
             },
             update = { pv ->
                 if (pv.player != controller.player) pv.player = controller.player
                 pv.resizeMode = resizeMode
             },
-            onRelease = { /* Keep player attached for seamless transition to guide preview */ },
+            onRelease = { pv ->
+                pv.player = null
+            },
         )
 
         // The channel number as you type it, top-right, until it resolves.

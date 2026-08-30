@@ -134,17 +134,21 @@ fun GuidePreview(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
-                        val graph = ServiceLocator.get(ctx)
-                        val pv = graph.livePlayer.getSharedPlayerView(ctx)
-                        pv.player = previewPlayer
-                        pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        pv
+                        PlayerView(ctx).apply {
+                            player = previewPlayer
+                            useController = false
+                            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
                     },
                     update = { pv ->
                         if (pv.player != previewPlayer) pv.player = previewPlayer
                         pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     },
-                    onRelease = { /* Keep player attached for seamless transition to full screen */ },
+                    onRelease = { pv ->
+                        pv.player = null
+                    },
                 )
             }
         }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.32
+
+- **Fix Black Screen on Repeated Full-Screen to Guide Transitions.**
+  - **Surface Lifecycle Management**: Fixed issue where reparenting a shared `PlayerView` across Compose screens caused the native video surface to detach while audio continued. Each screen (`GuidePreview` and `PlayerScreen`) now cleanly manages its own `PlayerView` surface attachment and release.
+
 ## 0.12.31
 
 - **Instant Zero-Lag Guide Display & EPG Memory Caching.**
