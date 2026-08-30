@@ -696,13 +696,10 @@ fun PlayerScreen(
                             ?: recentChannelIds.firstOrNull { it != currentId }
                         if (targetId != null && targetId != currentId) {
                             playChannelId(targetId)
-                            reveal()
-                        } else {
-                            reveal()
                         }
                         true
                     }
-                    else -> { reveal(); true }
+                    else -> false
                 }
             }
             .focusRequester(rootFocus)

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.30
+
+- **Silent Full-Screen Previous Channel Switch.**
+  - **Menu-Free Channel Toggle**: Pressing **Right** on the remote in full-screen mode now switches instantly to the previous watched channel without opening the sub-menu or OSD overlay.
+
 ## 0.12.29
 
 - **TiviMate-Accurate Playback Transport Bar Layout & Styling.**
