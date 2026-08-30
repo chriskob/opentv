@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.33
+
+- **Seamless Continuous Playback Between Full-Screen & Guide (Zero Re-tuning).**
+  - **Eliminated Redundant Stream Re-tunes**: Fixed duplicate stream preparation that occurred when navigating between `HomeScreen` (Guide preview) and `PlayerScreen` (full screen). The app now keeps the single existing network stream playing continuously without dropping connections or triggering IPTV provider concurrency limits.
+  - **Smooth Surface Transitions**: Optimized `PlayerView` attachment so ExoPlayer video output transitions seamlessly without clearing the decoder or blacking out.
+
 ## 0.12.32
 
 - **Fix Black Screen on Repeated Full-Screen to Guide Transitions.**

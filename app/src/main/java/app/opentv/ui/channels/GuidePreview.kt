@@ -135,19 +135,18 @@ fun GuidePreview(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         PlayerView(ctx).apply {
-                            player = previewPlayer
                             useController = false
                             setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            player = previewPlayer
                         }
                     },
                     update = { pv ->
-                        if (pv.player != previewPlayer) pv.player = previewPlayer
+                        if (pv.player != previewPlayer) {
+                            pv.player = previewPlayer
+                        }
                         pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    },
-                    onRelease = { pv ->
-                        pv.player = null
                     },
                 )
             }

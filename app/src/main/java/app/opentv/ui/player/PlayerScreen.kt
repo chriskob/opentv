@@ -423,8 +423,8 @@ fun PlayerScreen(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
-                    if (!app.opentv.core.PipState.inPip.value && currentId != null && !paused) {
-                        currentId?.let { playChannelId(it) }
+                    if (!app.opentv.core.PipState.inPip.value && !paused) {
+                        controller.player.playWhenReady = true
                     }
                 }
                 else -> Unit
@@ -713,21 +713,20 @@ fun PlayerScreen(
             factory = { ctx ->
                 val targetResizeMode = resizeMode
                 PlayerView(ctx).apply {
-                    player = controller.player
                     useController = false
                     setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                     setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     subtitleView?.setUserDefaultStyle()
                     subtitleView?.setUserDefaultTextSize()
                     this.resizeMode = targetResizeMode
+                    player = controller.player
                 }
             },
             update = { pv ->
-                if (pv.player != controller.player) pv.player = controller.player
+                if (pv.player != controller.player) {
+                    pv.player = controller.player
+                }
                 pv.resizeMode = resizeMode
-            },
-            onRelease = { pv ->
-                pv.player = null
             },
         )
 

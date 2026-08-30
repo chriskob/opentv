@@ -317,6 +317,10 @@ fun HomeScreen(
         val source = sources.firstOrNull { it.id == channel.sourceId }
             ?: graph.sourceRepository.byId(channel.sourceId)
         val url = graph.catalogRepository.resolvePlaybackUrl(channel, source)
+        if (previewController.currentRequest?.url == url && (previewController.player.playbackState == androidx.media3.common.Player.STATE_READY || previewController.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)) {
+            previewController.player.playWhenReady = true
+            return@LaunchedEffect
+        }
         previewController.play(
             PlayerController.Request(
                 url = url,
