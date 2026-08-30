@@ -418,7 +418,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     hasSources = sourcesUi.sources.isNotEmpty(),
                     isSyncing = sourcesUi.syncing,
                     channelsViewModel = channelsViewModel,
-                    onPlayChannel = { channel -> navController.navigate(Routes.player(channel.id)) },
+                    onPlayChannel = { /* Handled in-place in HomeScreen */ },
                     onOpenMovie = { movie ->
                         navController.navigate(Routes.movieDetail(movie.id))
                     },

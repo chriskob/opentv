@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.39
+
+- **Completely Prevent NavHost Route Navigation on Live Playback.**
+  - **Eliminate Route Navigation**: Fixed `MainActivity.kt`'s `onPlayChannel` callback which was still calling `navController.navigate(Routes.player)` and pushing a redundant `PlayerScreen` route onto the backstack. Playback is now 100% self-contained in `HomeScreen` without any NavHost screen swapping.
+
 ## 0.12.38
 
 - **Transparent Guide Preview Card for Root Video Passthrough.**
