@@ -712,9 +712,7 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 val targetResizeMode = resizeMode
-                PlayerView(ctx).apply {
-                    useController = false
-                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
                     setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     subtitleView?.setUserDefaultStyle()
                     subtitleView?.setUserDefaultTextSize()

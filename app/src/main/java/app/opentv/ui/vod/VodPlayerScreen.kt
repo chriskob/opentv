@@ -309,15 +309,15 @@ fun VodPlayerScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = controller.player
-                    useController = false
+                (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
                     subtitleView?.setUserDefaultStyle()
                     subtitleView?.setUserDefaultTextSize()
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    )
+                    player = controller.player
+                }
+            },
+            update = { pv ->
+                if (pv.player != controller.player) {
+                    pv.player = controller.player
                 }
             },
         )

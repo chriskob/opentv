@@ -134,9 +134,7 @@ fun GuidePreview(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            useController = false
-                            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             player = previewPlayer

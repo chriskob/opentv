@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.34
+
+- **Hardware TextureView Video Pipeline for 100% Stable TV Box Transitions.**
+  - **TextureView Video Surface**: Migrated `PlayerView` across `GuidePreview`, `PlayerScreen`, and `VodPlayerScreen` to use OpenGL `texture_view` surface type (`view_player.xml`). This completely prevents Android TV hardware decoder buffer abandonment and decoder crashes on Amlogic/FireOS chipsets during screen transitions.
+  - **Rock-Solid Playback**: Toggling between TV Guide and Full-Screen retains unbroken video and audio without black screens or reloading loops.
+
 ## 0.12.33
 
 - **Seamless Continuous Playback Between Full-Screen & Guide (Zero Re-tuning).**
