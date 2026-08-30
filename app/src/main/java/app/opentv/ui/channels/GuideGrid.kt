@@ -663,13 +663,10 @@ private fun GuideRow(
                     )
                 }
             } else {
-                // Key on minute bucket so layout and live-now markers update smoothly as time progresses
-                val minuteBucket = nowMillis / 60_000L
-                val blockLayouts = remember(programmes, windowStartMillis, minuteBucket) {
+                val blockLayouts = remember(programmes, windowStartMillis) {
                     val layouts = mutableListOf<BlockLayout>()
                     var cursor = windowStartMillis
                     var debt = 0.dp
-                    val hasNow = programmes.any { nowMillis in it.startUtcMillis until it.endUtcMillis }
                     for ((pIdx, programme) in programmes.withIndex()) {
                         val start = programme.startUtcMillis.coerceAtLeast(windowStartMillis)
                         val gap = widthFor(cursor, start)
@@ -677,20 +674,15 @@ private fun GuideRow(
                         debt -= repaid
                         val spacer = gap - repaid
                         val end = programme.endUtcMillis
-                        val isNow = nowMillis in programme.startUtcMillis until end
                         val trueWidth = widthFor(start, end)
                         val drawnWidth = maxOf(trueWidth, MIN_BLOCK_WIDTH)
                         debt += drawnWidth - trueWidth
-                        val shouldAttachFocus = if (hasNow) isNow else (pIdx == 0)
 
                         layouts.add(
                             BlockLayout(
                                 spacerWidth = spacer,
                                 blockWidth = drawnWidth,
-                                isNow = isNow,
-                                progress = if (isNow) programme.progressAt(nowMillis) else 0f,
                                 programmeIndex = pIdx,
-                                shouldAttachFocus = shouldAttachFocus,
                             )
                         )
                         cursor = end
@@ -700,16 +692,18 @@ private fun GuideRow(
 
                 for (layout in blockLayouts) {
                     if (layout.spacerWidth > 0.dp) Spacer(Modifier.width(layout.spacerWidth))
+                    val prog = programmes[layout.programmeIndex]
+                    val isNow = nowMillis in prog.startUtcMillis until prog.endUtcMillis
                     ProgrammeBlock(
-                        title = programmes[layout.programmeIndex].title,
+                        title = prog.title,
                         width = layout.blockWidth,
-                        isNow = layout.isNow,
-                        progress = layout.progress,
+                        isNow = isNow,
+                        progress = if (isNow) prog.progressAt(nowMillis) else 0f,
                         rowIndex = rowIndex,
                         totalRows = totalRows,
-                        focusRequester = if (layout.shouldAttachFocus) focusRequester else null,
-                        onFocus = { onFocus(programmes[layout.programmeIndex]) },
-                        onClick = { onProgramme(programmes[layout.programmeIndex]) },
+                        focusRequester = if (isNow) focusRequester else null,
+                        onFocus = { onFocus(prog) },
+                        onClick = { onProgramme(prog) },
                         onWrapToBottom = onWrapToBottom,
                         onWrapToTop = onWrapToTop,
                     )
@@ -843,8 +837,5 @@ private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 private data class BlockLayout(
     val spacerWidth: Dp,
     val blockWidth: Dp,
-    val isNow: Boolean,
-    val progress: Float,
     val programmeIndex: Int,
-    val shouldAttachFocus: Boolean,
 )

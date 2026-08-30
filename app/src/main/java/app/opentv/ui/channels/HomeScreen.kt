@@ -263,25 +263,17 @@ fun HomeScreen(
     }
 
     // Keep both valid as the list changes (e.g. switching category): prioritize the currently
-    // playing / last tuned channel if returning to the guide or on first load.
-    LaunchedEffect(rows, screenResumed) {
-        val lastId = settings.lastChannelId
-        val matchByLastId = if (lastId > 0) {
-            rows.firstOrNull { r -> r.primary.id == lastId || r.variants.any { it.id == lastId } }
-        } else null
-
-        if (matchByLastId != null) {
-            highlightedRow = matchByLastId
-            selectedRow = matchByLastId
-            highlightedProgramme = matchByLastId.now
-        } else {
-            if (highlightedRow == null) {
-                highlightedRow = rows.firstOrNull { it.key == highlightedRow?.key } ?: rows.firstOrNull()
-                highlightedProgramme = highlightedRow?.now
-            }
-            if (selectedRow == null) {
-                selectedRow = rows.firstOrNull { it.key == selectedRow?.key } ?: rows.firstOrNull()
-            }
+    // playing / last tuned channel on first load ONLY. Never override an already selected channel!
+    LaunchedEffect(rows) {
+        if (selectedRow == null && rows.isNotEmpty()) {
+            val lastId = settings.lastChannelId
+            val matchByLastId = if (lastId > 0) {
+                rows.firstOrNull { r -> r.primary.id == lastId || r.variants.any { it.id == lastId } }
+            } else null
+            val initial = matchByLastId ?: rows.first()
+            selectedRow = initial
+            highlightedRow = initial
+            highlightedProgramme = initial.now
         }
     }
 
@@ -370,49 +362,19 @@ fun HomeScreen(
         )
     }
 
-    Box(Modifier.fillMaxSize()) {
-        val videoModifier = if (isFullScreen) {
-            Modifier.fillMaxSize()
-        } else {
-            Modifier
-                .padding(start = railWidth + 20.dp, top = 10.dp)
-                .height(144.dp)
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(10.dp))
-        }
-
-        if (previewEnabled) {
-            AndroidView(
-                modifier = videoModifier,
-                factory = { ctx ->
-                    (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        player = previewController.player
-                    }
-                },
-                update = { pv ->
-                    if (pv.player != previewController.player) {
-                        pv.player = previewController.player
-                    }
-                    pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                },
-            )
-        }
-
-        if (isFullScreen) {
-            PlayerScreen(
-                channelId = (selectedRow ?: highlightedRow)?.primary?.id,
-                onBack = { isFullScreen = false },
-                onOpenSearch = onOpenSearch,
-                onOpenMovies = { isFullScreen = false; onOpenMainMenu() },
-                onOpenShows = { isFullScreen = false; onOpenMainMenu() },
-                onOpenRecordings = { isFullScreen = false; onOpenMainMenu() },
-                onOpenSettings = onOpenSettings,
-                renderPlayerView = false,
-            )
-        } else {
-            Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
+    if (isFullScreen) {
+        PlayerScreen(
+            channelId = (selectedRow ?: highlightedRow)?.primary?.id,
+            onBack = { isFullScreen = false },
+            onOpenSearch = onOpenSearch,
+            onOpenMovies = { isFullScreen = false; onOpenMainMenu() },
+            onOpenShows = { isFullScreen = false; onOpenMainMenu() },
+            onOpenRecordings = { isFullScreen = false; onOpenMainMenu() },
+            onOpenSettings = onOpenSettings,
+            renderPlayerView = true,
+        )
+    } else {
+        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
 
         // ---- Category rail -----------------------------------------------------------------
         // Width animates to 0 while focus is in the guide (see onFocusRow) so the grid gets the
@@ -635,7 +597,6 @@ fun HomeScreen(
             }
         }
     }
-}
 }
 
     // The record menu for a programme picked in the grid.

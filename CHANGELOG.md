@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.42
+
+- **Massive Performance Restoration, Elimination of Channel Jumping, and Smooth Scrolling.**
+  - **Eliminated Channel Auto-Jumping**: Fixed `HomeScreen.kt` where `LaunchedEffect(rows)` was constantly resetting `selectedRow = matchByLastId` on background updates, which forced unwanted channel jumps. It now initializes selection strictly once on fresh launch.
+  - **Removed Root Layout Thrashing**: Eliminated the root floating `AndroidView` and its animated padding which was forcing 60 FPS view measurement passes during rail transitions. Video preview is cleanly restored directly inside `GuidePreview`'s 16:9 frame.
+  - **Silky Smooth Guide Scrolling**: Optimized `GuideGrid.kt`'s `blockLayouts` calculation to memoize strictly on programme arrays without reallocating layout objects on every second/minute ticker.
+
 ## 0.12.41
 
 - **Fix Long-Press Back in Guide Switching to Previous Channel.**

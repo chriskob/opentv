@@ -119,10 +119,26 @@ fun GuidePreview(
                 .fillMaxHeight()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(10.dp))
-                .background(if (previewPlayer != null) Color.Transparent else Color.Black),
+                .background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
-            if (row != null && previewPlayer == null) {
+            if (previewPlayer != null) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            player = previewPlayer
+                        }
+                    },
+                    update = { pv ->
+                        if (pv.player != previewPlayer) {
+                            pv.player = previewPlayer
+                        }
+                        pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    },
+                )
+            } else if (row != null) {
                 AsyncImage(
                     model = row.primary.logoUrl,
                     contentDescription = null,
