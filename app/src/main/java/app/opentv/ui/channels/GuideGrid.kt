@@ -185,8 +185,8 @@ fun GuideGrid(
                         .padding(start = CHANNEL_COLUMN)
                         .horizontalScroll(scroll, enabled = false)
                         .offset(x = nowOffset - 1.dp)
-                        .width(2.dp)
-                        .background(Color(0xFFFF3D00).copy(alpha = 0.8f)),
+                        .width(1.5.dp)
+                        .background(Color(0xFF26C6DA).copy(alpha = 0.7f)),
                 )
             }
         }
@@ -363,10 +363,10 @@ private fun ChannelListRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     row.primary.shownName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = if (isLive || focused) FontWeight.SemiBold else FontWeight.Normal,
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, lineHeight = 18.sp),
+                    fontWeight = if (isLive || focused) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (focused) Color(0xFF10171E) else if (isLive) Color(0xFF26C6DA) else Color.White,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
@@ -429,9 +429,9 @@ private fun TimeHeader(
         ) {
             Text(
                 text = currentDateTimeFmt.format(Date(nowMillis)),
-                style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.5.sp),
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp),
                 color = Color(0xFF26C6DA),
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Normal,
                 maxLines = 1,
             )
         }
@@ -454,9 +454,9 @@ private fun TimeHeader(
                     ) {
                         Text(
                             slotTimeFmt.format(Date(slotStart)),
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                            color = Color(0xFFB0BEC5),
-                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                            color = Color(0xFFCFD8DC),
+                            fontWeight = FontWeight.Normal,
                         )
                     }
                 }
@@ -471,7 +471,7 @@ private fun TimeHeader(
                         .width(3.dp)
                         .height(28.dp)
                         .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
-                        .background(Color(0xFFFF3D00)),
+                        .background(Color(0xFF26C6DA)),
                 )
             }
         }
@@ -569,10 +569,10 @@ private fun GuideRow(
             Column(Modifier.weight(1f)) {
                 Text(
                     row.primary.shownName,
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.5.sp),
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, lineHeight = 18.sp),
                     fontWeight = if (focused || isSelected) FontWeight.Bold else FontWeight.Medium,
                     color = if (focused) Color(0xFF10171E) else if (isSelected) Color(0xFF26C6DA) else Color.White,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -798,18 +798,18 @@ private fun ProgrammeBlock(
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 16.sp),
-            fontWeight = if (focused || isNow) FontWeight.Bold else FontWeight.Medium,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+            fontWeight = if (focused) FontWeight.Bold else if (isNow) FontWeight.Medium else FontWeight.Normal,
             color = when {
                 focused -> Color(0xFF10171E) // Dark charcoal text on white focus background
                 isNow -> Color.White
                 else -> Color(0xFFE2E8F0)
             },
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(horizontal = 6.dp, vertical = 2.dp),
+                .padding(horizontal = 8.dp, vertical = 2.dp),
         )
 
         // Live progress line
@@ -835,8 +835,8 @@ private fun widthFor(fromMillis: Long, toMillis: Long): Dp {
 private const val MINUTE_DP = 7.0f
 private const val HOURS_IN_WINDOW = 24
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
-private val CHANNEL_COLUMN = 230.dp
-private val ROW_HEIGHT = 58.dp
+private val CHANNEL_COLUMN = 240.dp
+private val ROW_HEIGHT = 60.dp
 private val MIN_BLOCK_WIDTH = 95.dp
 private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.40
+
+- **TV Guide UI & Typography Overhaul Matching Reference Design.**
+  - **Clean, Non-Bold Timeline**: Refined the top timeline header with clean, legible non-bold typography and cyan time markers.
+  - **Two-Line Channel Name Cells**: Channel name cells now support up to 2 wrapped lines with ample breathing room.
+  - **Single-Line Programme Guide Grid**: Programme blocks in the scrolling grid strictly render as single lines for maximum readability and clean grid alignment.
+  - **Refined Preview Header**: Aligned title, inline progress bar, duration, metadata tags, and synopsis to match the premium TiviMate layout.
+
 ## 0.12.39
 
 - **Completely Prevent NavHost Route Navigation on Live Playback.**

@@ -137,22 +137,39 @@ fun GuidePreview(
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val displayProg = programme ?: row?.now
 
-            // Line 1: Large Bold Programme Title (allows 2 lines so full titles never cut off)
-            val titleText = displayProg?.title ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
-            Text(
-                text = titleText,
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Line 1: Large Bold Programme Title + Star Icon on far right
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                val titleText = displayProg?.title ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
+                Text(
+                    text = titleText,
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (row != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                        contentDescription = null,
+                        tint = if (row.primary.favourite) Color(0xFFFFD54F) else Color(0xFF90A4AE),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
 
-            // Line 2: Time range, duration, Category/Source, and Favorite Star
+            // Line 2: Time range, inline progress bar, duration, Category/Source
             if (displayProg != null) {
                 val startStr = timeFmt.format(Date(displayProg.startUtcMillis))
                 val endStr = timeFmt.format(Date(displayProg.endUtcMillis))
                 val durationMins = (displayProg.durationMillis / 60_000L).coerceAtLeast(1)
+                val isLiveShow = nowMillis in displayProg.startUtcMillis until displayProg.endUtcMillis
 
                 Row(
                     Modifier.fillMaxWidth(),
@@ -161,52 +178,52 @@ fun GuidePreview(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "$startStr – $endStr  —  $durationMins min",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium,
+                            text = "$startStr – $endStr",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                            color = Color(0xFFCFD8DC),
+                            fontWeight = FontWeight.Normal,
+                        )
+                        if (isLiveShow) {
+                            Spacer(Modifier.width(10.dp))
+                            val progress = displayProg.progressAt(nowMillis)
+                            Box(
+                                Modifier
+                                    .width(44.dp)
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color(0xFF455A64)),
+                            ) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth(progress.coerceIn(0f, 1f))
+                                        .height(3.dp)
+                                        .background(Color.White),
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
+                        } else {
+                            Text(
+                                text = "  —  ",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                                color = Color(0xFF78909C),
+                            )
+                        }
+                        Text(
+                            text = "$durationMins min",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                            color = Color(0xFFCFD8DC),
+                            fontWeight = FontWeight.Normal,
                         )
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val categoryTag = row?.primary?.qualityLabel?.ifBlank { row.primary.categoryId.orEmpty() }?.takeIf { it.isNotBlank() }
-                        if (categoryTag != null) {
-                            Text(
-                                text = categoryTag.uppercase(Locale.getDefault()),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        if (row != null) {
-                            Icon(
-                                imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                                contentDescription = null,
-                                tint = if (row.primary.favourite) Color(0xFFFFD54F) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
-                    }
-                }
-
-                // Progress indicator line (if currently playing show)
-                val isLiveShow = nowMillis in displayProg.startUtcMillis until displayProg.endUtcMillis
-                if (isLiveShow) {
-                    val progress = displayProg.progressAt(nowMillis)
-                    Box(
-                        Modifier
-                            .fillMaxWidth(0.5f)
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth(progress.coerceIn(0f, 1f))
-                                .height(3.dp)
-                                .background(MaterialTheme.colorScheme.primary),
+                    val categoryTag = row?.primary?.qualityLabel?.ifBlank { row.primary.categoryId.orEmpty() }?.takeIf { it.isNotBlank() }
+                    if (categoryTag != null) {
+                        Text(
+                            text = categoryTag,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                            color = Color(0xFF90A4AE),
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 1,
                         )
                     }
                 }
@@ -217,7 +234,7 @@ fun GuidePreview(
                     Text(
                         text = synopsis,
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 18.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
+                        color = Color(0xFFB0BEC5),
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -226,7 +243,7 @@ fun GuidePreview(
                 Text(
                     text = row.primary.shownName,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color(0xFF90A4AE),
                 )
             }
         }
