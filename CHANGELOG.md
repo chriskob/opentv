@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.38
+
+- **Transparent Guide Preview Card for Root Video Passthrough.**
+  - **Video Visibility in Guide**: Ensured the 16:9 preview frame in `GuidePreview` renders with a transparent background when live preview is active, allowing the root video stream to show through unobstructed instead of being obscured by the static logo card.
+
 ## 0.12.37
 
 - **Unified Single-Surface Video Pipeline (Zero View Creation/Destruction).**

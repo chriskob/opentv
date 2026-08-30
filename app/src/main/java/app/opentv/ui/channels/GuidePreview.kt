@@ -119,18 +119,16 @@ fun GuidePreview(
                 .fillMaxHeight()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color.Black),
+                .background(if (previewPlayer != null) Color.Transparent else Color.Black),
             contentAlignment = Alignment.Center,
         ) {
-            if (row != null) {
+            if (row != null && previewPlayer == null) {
                 AsyncImage(
                     model = row.primary.logoUrl,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(0.55f),
                 )
             }
-
-
         }
 
         Spacer(Modifier.width(16.dp))
