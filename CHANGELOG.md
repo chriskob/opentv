@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.35
+
+- **Eliminate Concurrent Player View Surface Contention.**
+  - **Single Active Player View Guard**: Fixed issue where `HomeScreen`'s `GuidePreview` kept its `PlayerView` active in the background when navigating to full screen, causing both views to simultaneously fight over ExoPlayer's surface during transitions. `HomeScreen` now immediately unbinds `previewPlayer` before opening full-screen TV, preventing rapid multi-surface generation swaps that disrupted the hardware video decoder.
+
 ## 0.12.34
 
 - **Hardware TextureView Video Pipeline for 100% Stable TV Box Transitions.**
