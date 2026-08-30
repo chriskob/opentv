@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.37
+
+- **Unified Single-Surface Video Pipeline (Zero View Creation/Destruction).**
+  - **Single Persistent PlayerView**: Replaced all fragmented `PlayerView` instances across `GuidePreview` and `PlayerScreen` with a single persistent `PlayerView` hosted at the root of `HomeScreen`.
+  - **Fluid Corner-to-Fullscreen Expansion**: When opening full-screen TV or returning to the TV Guide, the single `PlayerView` expands and contracts its bounds without ever unmounting, re-binding, or swapping surfaces. Eliminates all picture freezing and buffer queue drops.
+
 ## 0.12.36
 
 - **Seamless TiviMate-Style Guide to Full-Screen Architecture.**

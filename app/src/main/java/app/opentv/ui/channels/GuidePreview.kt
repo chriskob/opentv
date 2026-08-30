@@ -130,24 +130,7 @@ fun GuidePreview(
                 )
             }
 
-            if (previewPlayer != null && row != null) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            player = previewPlayer
-                        }
-                    },
-                    update = { pv ->
-                        if (pv.player != previewPlayer) {
-                            pv.player = previewPlayer
-                        }
-                        pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    },
-                )
-            }
+
         }
 
         Spacer(Modifier.width(16.dp))
