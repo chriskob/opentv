@@ -239,6 +239,8 @@ fun MainScreen(
                     onRefresh = onRefresh,
                     onPlayCatchup = onPlayCatchup,
                     onOpenMainMenu = { liveNavRailVisible = true },
+                    onOpenSearch = onOpenSearch,
+                    onOpenSettings = onOpenSettings,
                 )
                 Tab.MOVIES -> MoviesScreen(
                     onOpenMovie = onOpenMovie,

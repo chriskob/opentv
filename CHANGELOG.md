@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.36
+
+- **Seamless TiviMate-Style Guide to Full-Screen Architecture.**
+  - **In-Place Full-Screen Expansion**: Embedded full-screen playback directly within `HomeScreen`, eliminating destructive NavHost backstack transitions and view destruction.
+  - **Zero-Lag Smooth Toggle**: Navigating from the TV Guide to Full-Screen TV (and pressing Back to return) now seamlessly toggles in place with continuous audio and video, never triggering decoder rebuilds or reload loops.
+
 ## 0.12.35
 
 - **Eliminate Concurrent Player View Surface Contention.**

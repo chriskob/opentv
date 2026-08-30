@@ -122,11 +122,14 @@ fun HomeScreen(
     onRefresh: () -> Unit,
     onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit = { _, _, _, _ -> },
     onOpenMainMenu: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: ChannelsViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
+    var isFullScreen by remember { mutableStateOf(false) }
     val previewEnabled by settings.guidePreviewVideo.collectAsState()
     val channelLayout by settings.channelLayout.collectAsState()
 
@@ -197,22 +200,26 @@ fun HomeScreen(
     }
 
     // ---- Back button navigation flow ---------------------------------------------------------
+    BackHandler(enabled = isFullScreen) {
+        isFullScreen = false
+    }
+
     // 1. If channel menu / recording dialog / background prompt is open, close it.
     // 2. If browsing the guide grid (!railExpanded), Back opens the Category/Channel List rail.
     // 3. If in the Category/Channel List rail (railExpanded), Back opens the Main Menu sidebar.
-    BackHandler(enabled = channelMenu != null || recordTarget != null || showBackgroundPrompt || pendingLiveChannel != null) {
+    BackHandler(enabled = !isFullScreen && (channelMenu != null || recordTarget != null || showBackgroundPrompt || pendingLiveChannel != null)) {
         channelMenu = null
         recordTarget = null
         showBackgroundPrompt = false
         pendingLiveChannel = null
     }
 
-    BackHandler(enabled = channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && !railExpanded) {
+    BackHandler(enabled = !isFullScreen && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && !railExpanded) {
         railExpanded = true
         pendingRailFocus = true
     }
 
-    BackHandler(enabled = channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && railExpanded) {
+    BackHandler(enabled = !isFullScreen && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && railExpanded) {
         railExpanded = false
         onOpenMainMenu()
     }
@@ -283,11 +290,15 @@ fun HomeScreen(
     // cuts the recording and can get a single-connection account banned. So every jump to full-screen
     // live is funnelled through [requestLive]: with a recording active it asks first.
     fun startLive(channel: Channel) {
-        screenResumed = false
         PlaybackQueue.items = rows.map {
             PlaybackQueue.Item(it.primary.id, it.primary.shownName, it.primary.logoUrl, it.primary.number)
         }
-        onPlayChannel(channel)
+        val match = rows.firstOrNull { it.primary.id == channel.id || it.variants.any { v -> v.id == channel.id } }
+        if (match != null) {
+            selectedRow = match
+            highlightedRow = match
+        }
+        isFullScreen = true
     }
     fun requestLive(channel: Channel) {
         if (activeRecordings.isNotEmpty()) pendingLiveChannel = channel else startLive(channel)
@@ -333,7 +344,19 @@ fun HomeScreen(
         )
     }
 
-    Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
+    if (isFullScreen) {
+        PlayerScreen(
+            channelId = (selectedRow ?: highlightedRow)?.primary?.id,
+            onBack = { isFullScreen = false },
+            onOpenSearch = onOpenSearch,
+            onOpenMovies = { isFullScreen = false; onOpenMainMenu() },
+            onOpenShows = { isFullScreen = false; onOpenMainMenu() },
+            onOpenRecordings = { isFullScreen = false; onOpenMainMenu() },
+            onOpenSettings = onOpenSettings,
+            renderPlayerView = true,
+        )
+    } else {
+        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
 
         // ---- Category rail -----------------------------------------------------------------
         // Width animates to 0 while focus is in the guide (see onFocusRow) so the grid gets the
@@ -556,6 +579,7 @@ fun HomeScreen(
             }
         }
     }
+}
 
     // The record menu for a programme picked in the grid.
     recordTarget?.let { (targetRow, programme) ->

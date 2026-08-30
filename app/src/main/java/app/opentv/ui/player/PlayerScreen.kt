@@ -178,6 +178,7 @@ fun PlayerScreen(
     onOpenShows: () -> Unit = {},
     onOpenRecordings: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    renderPlayerView: Boolean = true,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -636,7 +637,7 @@ fun PlayerScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(if (renderPlayerView) Color.Black else Color.Transparent)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val digit = keyToDigit(event.key)
@@ -708,25 +709,27 @@ fun PlayerScreen(
                 detectTapGestures { if (controlsVisible) controlsVisible = false else reveal() }
             },
     ) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                val targetResizeMode = resizeMode
-                (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    subtitleView?.setUserDefaultStyle()
-                    subtitleView?.setUserDefaultTextSize()
-                    this.resizeMode = targetResizeMode
-                    player = controller.player
-                }
-            },
-            update = { pv ->
-                if (pv.player != controller.player) {
-                    pv.player = controller.player
-                }
-                pv.resizeMode = resizeMode
-            },
-        )
+        if (renderPlayerView) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    val targetResizeMode = resizeMode
+                    (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        subtitleView?.setUserDefaultStyle()
+                        subtitleView?.setUserDefaultTextSize()
+                        this.resizeMode = targetResizeMode
+                        player = controller.player
+                    }
+                },
+                update = { pv ->
+                    if (pv.player != controller.player) {
+                        pv.player = controller.player
+                    }
+                    pv.resizeMode = resizeMode
+                },
+            )
+        }
 
         // The channel number as you type it, top-right, until it resolves.
         if (numberEntry.isNotEmpty() && !inPip) {
