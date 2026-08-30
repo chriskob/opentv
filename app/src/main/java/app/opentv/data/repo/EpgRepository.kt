@@ -23,8 +23,13 @@ import java.io.InputStream
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -64,6 +69,22 @@ class EpgRepository(
     private val api: XtreamApi,
     private val http: OkHttpClient,
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var windowCache: Pair<LongRange, Map<String, List<Programme>>>? = null
+
+    init {
+        // Eagerly pre-warm the active 6-hour guide window in memory on cold startup
+        scope.launch {
+            val now = System.currentTimeMillis()
+            val start = now - (now % (30 * 60 * 1000L))
+            val lookahead = 6 * 60 * 60 * 1000L
+            runCatching {
+                loadWindow(start, start + lookahead)
+            }
+        }
+    }
 
     data class SyncSummary(
         val feedsSucceeded: Int,
@@ -77,8 +98,39 @@ class EpgRepository(
 
     fun observeFeeds(): Flow<List<EpgFeed>> = feedDao.observeAll()
 
-    fun observeWindow(fromUtcMillis: Long, toUtcMillis: Long): Flow<List<Programme>> =
+    fun getCachedWindow(fromUtcMillis: Long, toUtcMillis: Long): Map<String, List<Programme>>? {
+        val current = windowCache
+        if (current != null && fromUtcMillis >= current.first.first && toUtcMillis <= current.first.last) {
+            return current.second
+        }
+        return null
+    }
+
+    suspend fun loadWindow(fromUtcMillis: Long, toUtcMillis: Long): Map<String, List<Programme>> =
+        withContext(Dispatchers.IO) {
+            val list = programmeDao.window(fromUtcMillis, toUtcMillis)
+            val map = list.groupBy { it.epgChannelId }.mapValues { (_, progs) ->
+                progs.sortedBy { it.startUtcMillis }
+            }
+            windowCache = (fromUtcMillis..toUtcMillis) to map
+            map
+        }
+
+    fun observeWindow(fromUtcMillis: Long, toUtcMillis: Long): Flow<Map<String, List<Programme>>> =
         programmeDao.observeWindow(fromUtcMillis, toUtcMillis)
+            .map { programmes ->
+                val map = programmes.groupBy { it.epgChannelId }.mapValues { (_, progs) ->
+                    progs.sortedBy { it.startUtcMillis }
+                }
+                windowCache = (fromUtcMillis..toUtcMillis) to map
+                map
+            }
+            .onStart {
+                val cached = windowCache
+                if (cached != null && fromUtcMillis >= cached.first.first && toUtcMillis <= cached.first.last) {
+                    emit(cached.second)
+                }
+            }
 
     fun observeNow(nowUtcMillis: Long): Flow<List<Programme>> =
         programmeDao.observeNow(nowUtcMillis)
@@ -183,6 +235,9 @@ class EpgRepository(
             }
 
             val (matched, total) = runMatcher()
+            val start = nowUtcMillis - (nowUtcMillis % (30 * 60 * 1000L))
+            val lookahead = 6 * 60 * 60 * 1000L
+            runCatching { loadWindow(start, start + lookahead) }
             SyncSummary(succeeded, failed, written, matched, total)
         }
 

@@ -421,10 +421,18 @@ interface ProgrammeDao {
         SELECT * FROM programmes
         WHERE endUtcMillis > :fromUtcMillis
           AND startUtcMillis < :toUtcMillis
-        ORDER BY epgChannelId, startUtcMillis
         """
     )
     fun observeWindow(fromUtcMillis: Long, toUtcMillis: Long): Flow<List<Programme>>
+
+    @Query(
+        """
+        SELECT * FROM programmes
+        WHERE endUtcMillis > :fromUtcMillis
+          AND startUtcMillis < :toUtcMillis
+        """
+    )
+    suspend fun window(fromUtcMillis: Long, toUtcMillis: Long): List<Programme>
 
     /** What is on right now, for the channel list's "now playing" line. */
     @Query(

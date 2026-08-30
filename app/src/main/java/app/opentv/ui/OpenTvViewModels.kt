@@ -48,14 +48,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -370,16 +371,20 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private val programmeIndex: StateFlow<Map<String, List<Programme>>> =
-        // windowStartMillis is a StateFlow, which already conflates equal values — an explicit
-        // distinctUntilChanged() on it is a no-op (and a build error under our warnings-as-errors).
         windowStartMillis
             .flatMapLatest { windowStart ->
                 graph.epgRepository
                     .observeWindow(windowStart, windowStart + GUIDE_LOOKAHEAD_MILLIS)
-                    .map { programmes -> programmes.groupBy { it.epgChannelId } }
             }
             .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                graph.epgRepository.getCachedWindow(
+                    System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS },
+                    System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS } + GUIDE_LOOKAHEAD_MILLIS,
+                ) ?: emptyMap(),
+            )
 
     /** Guards the start-up loading bar so it shows once, on the first build, not on every tap. */
     @Volatile
@@ -389,9 +394,15 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     val rows: StateFlow<List<Row>> =
         combine(selectedCategory, favouritesOnly, query, categoryGroups, hiddenCategoryIds) {
                 category, favs, q, groups, hidden ->
+            // If the user had a saved category, but categoryGroups hasn't loaded yet from DB,
+            // don't prematurely fall back to loading ALL 40,000 channels!
+            if (category != null && groups.isEmpty()) {
+                return@combine null
+            }
             val ids = category?.let { key -> groups.firstOrNull { it.key == key }?.ids }
             RowsKey(ids, favs, q, hidden)
         }
+            .filterNotNull()
             .combine(selectedSource) { key, source -> key to source }
             .flatMapLatest { (key, source) ->
                 val channelFlow = when {
@@ -425,7 +436,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             // enough to freeze the UI for a big provider — a category tap that took minutes. Run the
             // whole pipeline off the main thread so the list just appears when it's ready.
             .flowOn(Dispatchers.Default)
-            .onEach { if (!guideBuilt) { guideBuilt = true; StatusBus.set(null) } }
+            .onEach { if (!guideBuilt && it.isNotEmpty()) { guideBuilt = true; StatusBus.set(null) } }
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private fun buildRows(

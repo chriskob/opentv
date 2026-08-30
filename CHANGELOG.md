@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.31
+
+- **Instant Zero-Lag Guide Display & EPG Memory Caching.**
+  - **In-Memory EPG Window Cache**: Added persistent in-memory EPG window caching with eager background pre-warming in `EpgRepository`. Guide rows now populate instantly on Frame 1 without showing temporary "No information" placeholders.
+  - **Prevent Startup Full-Catalogue Scan**: Fixed race condition where cold launch previously fell back to querying all 40,000 channels across the entire database while waiting for category groups to initialize.
+  - **Optimized Programme Queries**: Streamlined SQLite programme window queries by removing redundant temporary table sorting, leveraging existing compound indices for instant retrieval.
+
 ## 0.12.30
 
 - **Silent Full-Screen Previous Channel Switch.**
