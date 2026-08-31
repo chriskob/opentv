@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.43
+
+- **Fix Channel Switching in Guide & Sub Menu.**
+  - **Player Tuning Unification**: Fixed `PlayerScreen.kt` and `HomeScreen.kt` where dual competing `LaunchedEffect`s on `livePlayer` were colliding and canceling channel switch requests.
+  - **Instant Tuning on Selection**: Selecting any channel in the TV Guide or Sub Menu now immediately tunes playback to the chosen channel and syncs state bidirectionally across Guide and Full-Screen modes.
+
 ## 0.12.42
 
 - **Massive Performance Restoration, Elimination of Channel Jumping, and Smooth Scrolling.**

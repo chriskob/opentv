@@ -412,10 +412,12 @@ fun PlayerScreen(
         // Remember where we came from so "Last channel" can bounce straight back. Quality switches
         // go through tuneTo directly, so they never count as a channel change here.
         currentId?.let { if (it != id) previousId = it }
+        currentId = id
         scope.launch {
             val channel = graph.catalogRepository.channel(id) ?: return@launch
             variants = graph.catalogRepository.variants(channel)
-            tuneTo(variants.firstOrNull { it.id == channel.id } ?: channel)
+            val target = variants.firstOrNull { it.id == channel.id } ?: channel
+            tuneTo(target)
         }
     }
 
@@ -461,18 +463,7 @@ fun PlayerScreen(
 
     LaunchedEffect(channelId) {
         val id = channelId ?: return@LaunchedEffect
-        val channel = graph.catalogRepository.channel(id) ?: return@LaunchedEffect
-        variants = graph.catalogRepository.variants(channel)
-        val targetVariant = variants.firstOrNull { it.id == channel.id } ?: channel
-        val source = graph.sourceRepository.byId(targetVariant.sourceId)
-        val url = graph.catalogRepository.resolvePlaybackUrl(targetVariant, source)
-        if (controller.currentRequest?.url == url && (controller.player.playbackState == androidx.media3.common.Player.STATE_READY || controller.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)) {
-            currentId = targetVariant.id
-            currentChannel = targetVariant
-            currentSource = source
-            return@LaunchedEffect
-        }
-        tuneTo(targetVariant)
+        playChannelId(id)
     }
 
     val playRequest by app.opentv.core.PlayRequests.channelId.collectAsState()

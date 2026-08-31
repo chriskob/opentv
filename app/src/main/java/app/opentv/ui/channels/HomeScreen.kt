@@ -205,6 +205,13 @@ fun HomeScreen(
 
     // ---- Back button navigation flow ---------------------------------------------------------
     BackHandler(enabled = isFullScreen) {
+        val lastId = settings.lastChannelId
+        val match = rows.firstOrNull { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }
+        if (match != null) {
+            selectedRow = match
+            highlightedRow = match
+            highlightedProgramme = match.now
+        }
         isFullScreen = false
     }
 
@@ -315,7 +322,9 @@ fun HomeScreen(
         if (match != null) {
             selectedRow = match
             highlightedRow = match
+            highlightedProgramme = match.now
         }
+        settings.lastChannelId = channel.id
         isFullScreen = true
     }
     fun requestLive(channel: Channel) {
@@ -338,9 +347,9 @@ fun HomeScreen(
     // other channels so you can view guide info, but the preview keeps playing the current channel
     // until a new channel is explicitly selected.
     val recordingActive = activeRecordings.isNotEmpty()
-    LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed, recordingActive) {
+    LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed, recordingActive, isFullScreen) {
         val row = selectedRow ?: return@LaunchedEffect
-        if (!previewEnabled || !screenResumed || recordingActive) {
+        if (isFullScreen || !previewEnabled || !screenResumed || recordingActive) {
             return@LaunchedEffect
         }
         val channel = row.primary
@@ -365,7 +374,16 @@ fun HomeScreen(
     if (isFullScreen) {
         PlayerScreen(
             channelId = (selectedRow ?: highlightedRow)?.primary?.id,
-            onBack = { isFullScreen = false },
+            onBack = {
+                val lastId = settings.lastChannelId
+                val match = rows.firstOrNull { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }
+                if (match != null) {
+                    selectedRow = match
+                    highlightedRow = match
+                    highlightedProgramme = match.now
+                }
+                isFullScreen = false
+            },
             onOpenSearch = onOpenSearch,
             onOpenMovies = { isFullScreen = false; onOpenMainMenu() },
             onOpenShows = { isFullScreen = false; onOpenMainMenu() },
