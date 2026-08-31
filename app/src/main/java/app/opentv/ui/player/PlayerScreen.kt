@@ -108,6 +108,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
@@ -671,17 +672,39 @@ fun PlayerScreen(
                         false
                     }
                     // When in full-screen (controls hidden):
-                    event.key == Key.ChannelUp -> { zapBy(-1); reveal(); true }
-                    event.key == Key.ChannelDown -> { zapBy(1); reveal(); true }
-                    event.key == Key.DirectionUp -> { zapBy(-1); reveal(); true }
-                    event.key == Key.DirectionDown -> { reveal(); true }
-                    // Center/Enter/OK button on remote: reveals the history bottom menu without pausing playback.
-                    event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter -> {
+                    // Dedicated Channel Up / Page Up (ONN 4k box remote) or D-Pad Up:
+                    event.key == Key.ChannelUp ||
+                    event.key == Key.PageUp ||
+                    event.nativeKeyEvent.keyCode == 166 || // KEYCODE_CHANNEL_UP
+                    event.nativeKeyEvent.keyCode == 92 ||  // KEYCODE_PAGE_UP
+                    event.key == Key.DirectionUp
+                    -> { zapBy(-1); reveal(); true }
+
+                    // Dedicated Channel Down / Page Down (ONN 4k box remote) or D-Pad Down:
+                    event.key == Key.ChannelDown ||
+                    event.key == Key.PageDown ||
+                    event.nativeKeyEvent.keyCode == 167 || // KEYCODE_CHANNEL_DOWN
+                    event.nativeKeyEvent.keyCode == 93 ||  // KEYCODE_PAGE_DOWN
+                    event.key == Key.DirectionDown
+                    -> { zapBy(1); reveal(); true }
+
+                    // Center/Enter/OK/Info button on remote: reveals the OSD menu without pausing playback.
+                    event.key == Key.DirectionCenter ||
+                    event.key == Key.Enter ||
+                    event.key == Key.NumPadEnter ||
+                    event.key == Key.Info ||
+                    event.nativeKeyEvent.keyCode == 165 // KEYCODE_INFO
+                    -> {
                         reveal()
                         true
                     }
-                    // Immersive shortcuts when hidden:
-                    event.key == Key.DirectionLeft -> { if (queue.isNotEmpty()) channelListVisible = true; true }
+
+                    // Immersive shortcuts & Guide key when hidden:
+                    event.key == Key.DirectionLeft ||
+                    event.key == Key.Guide ||
+                    event.nativeKeyEvent.keyCode == 172 // KEYCODE_GUIDE
+                    -> { if (queue.isNotEmpty()) channelListVisible = true; true }
+
                     event.key == Key.DirectionRight -> {
                         val targetId = previousId
                             ?: recentChannels.firstOrNull { it.id != currentId }?.id
