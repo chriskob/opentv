@@ -244,7 +244,7 @@ fun HomeScreen(
         }
     }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var screenResumed by remember { mutableStateOf(true) }
 
     // Observe fullscreen requests (e.g. from long-pressing Back in guide)

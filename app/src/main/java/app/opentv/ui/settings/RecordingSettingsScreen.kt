@@ -445,7 +445,7 @@ private fun StepButton(icon: androidx.compose.ui.graphics.vector.ImageVector, en
 @Composable
 private fun BackgroundStatus() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var allowed by remember { mutableStateOf(context.isIgnoringBatteryOptimizations()) }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->

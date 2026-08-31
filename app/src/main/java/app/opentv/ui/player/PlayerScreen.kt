@@ -53,7 +53,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FiberManualRecord
-import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.History
@@ -77,7 +78,6 @@ import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewStream
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -1306,7 +1306,7 @@ fun PlayerScreen(
                                         }
                                         AppSettings.SubMenuButton.AUDIO -> {
                                             SubMenuButtonCard(
-                                                icon = Icons.Filled.VolumeUp,
+                                                icon = Icons.AutoMirrored.Filled.VolumeUp,
                                                 label = selectedAudioLabel,
                                                 isSelected = panel == Panel.AUDIO,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
@@ -1365,7 +1365,7 @@ fun PlayerScreen(
                                         }
                                         AppSettings.SubMenuButton.CHANNELS_LIST -> {
                                             SubMenuButtonCard(
-                                                icon = Icons.Filled.FormatListBulleted,
+                                                icon = Icons.AutoMirrored.Filled.FormatListBulleted,
                                                 label = stringResource(R.string.submenu_channels_list),
                                                 isSelected = channelListVisible,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,

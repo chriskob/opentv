@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -116,7 +116,7 @@ private fun KeyCap(
         contentAlignment = Alignment.Center,
     ) {
         if (icon) {
-            Icon(Icons.Filled.Backspace, contentDescription = label, tint = fg)
+            Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = label, tint = fg)
         } else {
             Text(label, style = MaterialTheme.typography.titleMedium, color = fg, fontWeight = FontWeight.SemiBold)
         }
