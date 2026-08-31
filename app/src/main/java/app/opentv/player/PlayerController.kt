@@ -46,6 +46,12 @@ import okhttp3.OkHttpClient
  * OpenTV keeps exactly one player for the lifetime of the screen and only ever swaps its
  * media item. Requests are debounced, and an in-flight switch is cancelled the moment a newer
  * one arrives, so holding channel-up costs one actual tune — the one the user stopped on.
+ *
+ * ## Lifecycle-aware error recovery
+ *
+ * The error listener auto-restarts on a transient failure (provider drops connection when
+ * another device starts streaming). It checks [stopped] before retrying — so a stream that
+ * fails while the user already backed out to the guide never "comes back" as phantom audio.
  */
 @OptIn(UnstableApi::class)
 class PlayerController(
@@ -117,6 +123,15 @@ class PlayerController(
     private var current: Request? = null
     val currentRequest: Request? get() = current
     private var consecutiveFailures = 0
+
+    /**
+     * Set true by [stop] and [release]. Once stopped, the error-listener auto-restart is
+     * suppressed — this is what prevents "phantom audio" after the user backs out of the
+     * player or exits the app. Without this guard, a stream that drops mid-playback would
+     * re-spawn playback ~1.5s later even though the user already navigated away.
+     */
+    @Volatile
+    private var stopped = false
 
     /**
      * Held so the User-Agent can be swapped per source before each tune.
@@ -235,6 +250,11 @@ class PlayerController(
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    // Do NOT auto-retry if the controller has been explicitly stopped —
+                    // this is the critical guard against background audio after the user
+                    // has already navigated away or exited the app.
+                    if (stopped) return
+
                     consecutiveFailures++
                     val request = current
                     _state.value = State.Error(
@@ -247,14 +267,14 @@ class PlayerController(
                     if (consecutiveFailures < MAX_AUTO_RESTARTS && request != null) {
                         scope.launch {
                             delay(AUTO_RESTART_DELAY_MILLIS)
-                            if (current == request) play(request, debounce = false)
+                            // Re-check stopped flag after the delay — the user may have
+                            // navigated away during the 1.5s wait.
+                            if (!stopped && current == request) play(request, debounce = false)
                         }
                     }
                 }
             })
         }
-
-
 
     /**
      * Switches playback.
@@ -272,6 +292,7 @@ class PlayerController(
         // reaches the player, so we never stack prepares.
         switchJob?.cancel()
         current = request
+        stopped = false
 
         switchJob = scope.launch {
             if (debounce) delay(switchDebounceMillis)
@@ -367,7 +388,10 @@ class PlayerController(
         return 0
     }
 
+    /** Stops playback, clears media items, and sets the lifecycle guard so error auto-retry
+     * does not resurrect playback. Call this when the user backs out of the player. */
     fun stop() {
+        stopped = true
         switchJob?.cancel()
         current = null
         player.stop()
@@ -375,7 +399,13 @@ class PlayerController(
         _state.value = State.Idle
     }
 
+    /**
+     * Full teardown: releases the ExoPlayer, freeing the native codec and audio pipeline.
+     * After this call the player is dead; a new [PlayerController] must be created. Called
+     * only when the Activity is finishing (isFinishing == true), not during normal navigation.
+     */
     fun release() {
+        stopped = true
         switchJob?.cancel()
         player.release()
     }

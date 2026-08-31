@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.44
+
+- **Fix Codec Leak on Teardown, Eliminate Phantom Audio, and Optimize Guide Rendering.**
+  - **Clean ServiceLocator & Codec Lifecycle**: Added explicit `ServiceLocator.clear()` and `releaseLivePlayer()` on `MainActivity.onDestroy()` to prevent Fire OS audio decoder persistence across process recycles.
+  - **Eliminate Phantom Background Audio**: Guarded `PlayerController`'s error-restart loop with a volatile `stopped` flag to avoid resuming streams after navigating away.
+  - **Optimized Guide Rendering**: Constrained Coil logo decodes to display dimensions (30–32dp) and memoized timeline layout calculation with a content hash key.
+
 ## 0.12.43
 
 - **Fix Channel Switching in Guide & Sub Menu.**

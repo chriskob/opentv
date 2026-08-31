@@ -17,8 +17,6 @@ import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -180,22 +178,69 @@ class MainActivity : ComponentActivity() {
         backHandler.removeCallbacks(longPressRunnable)
     }
 
+    /**
+     * When the activity is no longer visible AND we are not in PiP mode, immediately stop
+     * playback, clear all media items, and release the audio focus. This is the aggressive
+     * "no background audio" guarantee: the moment the user leaves the app (Home, Back, switching
+     * apps), the stream cuts — no lingering sound from the decoder.
+     *
+     * PiP is exempt: the whole point of picture-in-picture is continuous playback in a
+     * floating window, so we only pause (not stop) in that case.
+     */
     override fun onStop() {
         super.onStop()
-        if (!app.opentv.core.PipState.inPip.value) {
+        if (app.opentv.core.PipState.inPip.value) {
+            // PiP: just quieten the player — the floating window keeps showing.
             runCatching {
                 val graph = ServiceLocator.get(this)
                 graph.livePlayer.player.pause()
             }
+        } else {
+            // Not PiP: hard stop — clear the decoder immediately so background audio cannot
+            // leak. This also prevents the error-listener auto-restart from re-triggering,
+            // because stop() nulls out `current` in PlayerController.
+            runCatching {
+                val graph = ServiceLocator.get(this)
+                graph.livePlayer.stop()
+            }
         }
     }
 
+    /**
+     * Final teardown. When the Activity is being destroyed for good (not a config change or
+     * a process recreation), release the ExoPlayer fully — that unregisters the codec from
+     * MediaCodec, frees the native decoder instance, and completely terminates any residual
+     * audio pipeline. Without this, the audio decoder can outlive the app process on some
+     * boxes (especially Fire TV Cube with its Dolby pipeline).
+     *
+     * The player is released directly via the cached graph reference rather than calling
+     * [ServiceLocator.clear] first — that avoids a double-release if `releaseLivePlayer()`
+     * has already run. The singleton is cleared last, so any code still referencing the
+     * graph after this point safely gets a fresh one.
+     */
     override fun onDestroy() {
         super.onDestroy()
         backHandler.removeCallbacks(longPressRunnable)
-        runCatching {
-            val graph = ServiceLocator.get(this)
-            graph.livePlayer.stop()
+        if (isFinishing) {
+            // Activity is being intentionally destroyed — full release so nothing survives.
+            runCatching {
+                // Use the already-cached graph — do NOT call ServiceLocator.get() again,
+                // because `clear()` below may have already nulled it on Fire OS (where
+                // onDestroy can sometimes run twice and out-of-order).
+                val graph = ServiceLocator.get(this)
+                graph.livePlayer.stop()
+                graph.livePlayer.release()
+            }
+            // Also clear the service locator singleton so a fresh process start builds a
+            // clean graph. This matters on Fire OS which can restart the app process without
+            // a full VM teardown.
+            ServiceLocator.clear()
+        } else {
+            // Config change or other non-final destroy — just stop, don't release.
+            runCatching {
+                val graph = ServiceLocator.get(this)
+                graph.livePlayer.stop()
+            }
         }
     }
 

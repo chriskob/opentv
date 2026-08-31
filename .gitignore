@@ -13,6 +13,9 @@ captures/
 !debug.keystore
 
 .claude/
+.agents/
+AGENTS.md
+agent_*
 
 # Kotlin compiler transient logs
 .kotlin/

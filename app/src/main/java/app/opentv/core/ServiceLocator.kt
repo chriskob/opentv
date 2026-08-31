@@ -40,6 +40,19 @@ object ServiceLocator {
             instance ?: Graph(context.applicationContext).also { instance = it }
         }
 
+    /**
+     * Clears the singleton so the next [get] builds a fresh [Graph].
+     *
+     * Called from [MainActivity.onDestroy] when the Activity is finishing (not a config
+     * change). This ensures a process restart on Fire OS — which sometimes re-uses the VM
+     * without calling Application.onCreate again — starts with clean singletons.
+     */
+    fun clear() {
+        synchronized(this) {
+            instance = null
+        }
+    }
+
     class Graph(context: Context) {
         private val appContext = context.applicationContext
 
@@ -137,10 +150,12 @@ object ServiceLocator {
         }
 
         /**
-         * Shared Live TV player instance across full screen and the guide preview pane.
-         * Keeps the stream playing uninterrupted with zero buffering when backing out to the guide.
+         * Backing lazy for [livePlayer]. Kept as an explicit [lazy] field so teardown can ask
+         * `isInitialized()` — the `by lazy` keyword form has no reflection-free way to do that
+         * (unlike `lateinit var`). This matters at process exit: we want to release the player
+         * *if it exists* without constructing it purely for the sake of destroying it.
          */
-        val livePlayer: PlayerController by lazy {
+        private val livePlayerDelegate: Lazy<PlayerController> = lazy {
             PlayerController(
                 context = appContext,
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
@@ -148,6 +163,29 @@ object ServiceLocator {
                 subtitlesEnabled = true,
                 dvr = false,
             )
+        }
+
+        /**
+         * Shared Live TV player instance across full screen and the guide preview pane.
+         * Keeps the stream playing uninterrupted with zero buffering when backing out to the guide.
+         */
+        val livePlayer: PlayerController by livePlayerDelegate
+
+        /**
+         * Releases the shared Live TV player if it was ever created.
+         *
+         * Must be called before [ServiceLocator.clear] when the Activity is finishing, so the
+         * native decoder is freed before the process VM shuts down. Without this, Fire OS
+         * devices — especially the Cube with its Dolby pipeline — can keep the audio decoder
+         * alive past process death.
+         *
+         * Idempotent: [PlayerController.release] is safe to call multiple times. If the lazy
+         * was never touched (no playback this session), nothing is constructed or released.
+         */
+        fun releaseLivePlayer() {
+            if (livePlayerDelegate.isInitialized()) {
+                runCatching { livePlayer.release() }
+            }
         }
     }
 }
