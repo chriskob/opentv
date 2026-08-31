@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.45
+
+- **TV Remote Key Navigation State Machine, Dedicated Channel Rockers, and Non-Destructive Video Architecture.**
+  - **Dedicated Remote Channel Buttons**: Added native hardware support for `KEYCODE_CHANNEL_UP`/`DOWN` (166/167), `PAGE_UP`/`DOWN` (92/93), `GUIDE`/`TV`, and `INFO` on the Walmart ONN 4K streaming box remote, Google TV G10/G20 reference remotes, and Smart TV remotes.
+  - **Instant D-Pad Quick-Zap**: Realigned full-screen `DPAD_UP` and `DPAD_DOWN` to execute instant channel switching (-1 / +1) with an automatic OSD info banner.
+  - **Non-Destructive Video Viewport Scaling**: Added `NonDestructivePlayerHost` and `TvMiniPlayerState` enabling single-surface 16:9 layout animations without decoder teardowns or audio interruptions.
+  - **10-Foot TV Safe Padding**: Standardized 5% TV overscan margins (`58dp` horizontal, `32dp` vertical) preventing display edge clipping across all Android TV & Fire TV panels.
+
 ## 0.12.44
 
 - **Fix Codec Leak on Teardown, Eliminate Phantom Audio, and Optimize Guide Rendering.**
