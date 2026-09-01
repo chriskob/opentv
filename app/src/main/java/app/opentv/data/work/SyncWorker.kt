@@ -59,7 +59,14 @@ class SyncWorker(
         if (settings.epgSyncWithPlaylist.value) {
             // Guides sync as one pass across every enabled feed — provider guides, built-in
             // free sources and user URLs merge into a single guide, then the matcher runs.
-            val summary = graph.epgRepository.syncAll(now)
+            val epgIntervalMillis = TimeUnit.HOURS.toMillis(
+                settings.epgRefreshHours.value.toLong().coerceAtLeast(1),
+            )
+            val summary = graph.epgRepository.syncAll(
+                nowUtcMillis = now,
+                force = false,
+                refreshIntervalMillis = epgIntervalMillis,
+            )
             if (summary.feedsFailed > 0) anyFailed = true
             Log.i(
                 TAG,
