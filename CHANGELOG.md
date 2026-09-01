@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.47
+
+- **EPG Refresh Interval & Background Sync Worker Fix.**
+  - **Honor User Refresh Interval in WorkManager**: Fixed `SyncWorker.kt` where `syncAll` previously defaulted to a hardcoded 6-hour interval instead of the user's configured `epgRefreshHours` (e.g. 12 hours).
+  - **EPG Caching & Arithmetic Unit Test Suite**: Added `EpgCachingLogicTest` covering multi-day interval evaluations, 6-hour lookahead boundaries, live timeline tracking, and 24-hour retention pruning.
+
 ## 0.12.46
 
 - **Low-Level Android TV Performance Refactoring Across 5 Critical Bottlenecks.**
