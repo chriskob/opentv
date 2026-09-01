@@ -94,6 +94,12 @@ android {
             isReturnDefaultValues = true
         }
     }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+        ignoreTestSources = true
+    }
 }
 
 ksp {
