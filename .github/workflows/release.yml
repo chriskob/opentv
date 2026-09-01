@@ -45,7 +45,13 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           mkdir -p build_logs
-          ./gradlew assembleRelease --stacktrace --info > build_logs/assemble.log 2>&1 || (cat build_logs/assemble.log | tail -n 150 ; exit 1)
+          ./gradlew assembleRelease --stacktrace --info > build_logs/assemble.log 2>&1 || {
+            echo "### Build Failure Log" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 80 build_logs/assemble.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
       - name: Upload build log
         if: always()
