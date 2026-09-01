@@ -43,7 +43,16 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --stacktrace
+        run: |
+          set +e
+          OUTPUT=$(./gradlew assembleRelease --stacktrace 2>&1)
+          STATUS=$?
+          if [ $STATUS -ne 0 ]; then
+            echo "$OUTPUT" | tail -n 50
+            MSG=$(echo "$OUTPUT" | tail -n 20 | tr '\n' ' ')
+            echo "::error title=GradleBuildFailure::$MSG"
+            exit $STATUS
+          fi
 
       # A stable asset name matters: the install page and the /apk short link both look for
       # a file ending in .apk, and a predictable name keeps direct links working.
