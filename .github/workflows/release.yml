@@ -43,7 +43,16 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --stacktrace
+        run: |
+          mkdir -p build_logs
+          ./gradlew assembleRelease --stacktrace --info > build_logs/assemble.log 2>&1 || (cat build_logs/assemble.log | tail -n 150 ; exit 1)
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build_logs/
 
       # A stable asset name matters: the install page and the /apk short link both look for
       # a file ending in .apk, and a predictable name keeps direct links working.
