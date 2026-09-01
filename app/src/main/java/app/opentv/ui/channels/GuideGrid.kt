@@ -139,19 +139,19 @@ fun GuideGrid(
     val initialFocusRequester = remember { FocusRequester() }
     val coroutineScope = rememberCoroutineScope()
 
+    var hasInitialFocused by remember { mutableStateOf(false) }
+
     LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
 
-    LaunchedEffect(selectedKey) {
-        val key = selectedKey ?: return@LaunchedEffect
-        val index = rows.indexOfFirst { it.key == key }
-        if (index >= 0) {
+    LaunchedEffect(rows) {
+        if (!hasInitialFocused && rows.isNotEmpty()) {
+            val key = selectedKey ?: rows.first().key
+            val index = rows.indexOfFirst { it.key == key }.coerceAtLeast(0)
             val target = (index - 2).coerceAtLeast(0)
             listState.scrollToItem(target)
-            // Single frame wait: 32ms = one ~30fps frame + safety margin for TV hardware.
-            // On a slow Fire TV box, 16ms may not be enough for the newly scrolled-into-view
-            // item to be composed and laid out; 32ms is reliably past that frame boundary.
             delay(32)
             runCatching { initialFocusRequester.requestFocus() }
+            hasInitialFocused = true
         }
     }
 
@@ -246,15 +246,17 @@ fun ChannelList(
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val initialFocusRequester = remember { FocusRequester() }
     val coroutineScope = rememberCoroutineScope()
+    var hasInitialFocused by remember { mutableStateOf(false) }
 
-    LaunchedEffect(selectedKey) {
-        val key = selectedKey ?: return@LaunchedEffect
-        val index = rows.indexOfFirst { it.key == key }
-        if (index >= 0) {
+    LaunchedEffect(rows) {
+        if (!hasInitialFocused && rows.isNotEmpty()) {
+            val key = selectedKey ?: rows.first().key
+            val index = rows.indexOfFirst { it.key == key }.coerceAtLeast(0)
             val target = (index - 2).coerceAtLeast(0)
             listState.scrollToItem(target)
             delay(32)
             runCatching { initialFocusRequester.requestFocus() }
+            hasInitialFocused = true
         }
     }
 
@@ -542,6 +544,7 @@ private fun GuideRow(
         // dpad press, so consolidating to one per row is a measurable win on low-end boxes.
         Row(
             Modifier
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                 .width(CHANNEL_COLUMN)
                 .fillMaxSize()
                 .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))

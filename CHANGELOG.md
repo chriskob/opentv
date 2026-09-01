@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.48
+
+- **Fix Focus Requester Tree Attachment & Eliminate D-Pad Recomposition Loop in Guide Grid.**
+  - **Attach Focus Requester to Channel Column**: Attached `focusRequester` modifier to `GuideRow`'s focusable channel column, preventing `IllegalStateException: ActiveParent must have a focusedChild` crash during d-pad navigation.
+  - **Eliminate Focus Loop on Key Navigation**: Decoupled `initialFocusRequester` from per-keypress `selectedKey` state changes in `GuideGrid` and `ChannelList` so continuous hardware dpad scrolling does not trigger `scrollToItem` / `requestFocus` thrashing.
+
 ## 0.12.47
 
 - **EPG Refresh Interval & Background Sync Worker Fix.**
