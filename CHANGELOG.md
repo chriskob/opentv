@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.46
+
+- **Low-Level Android TV Performance Refactoring Across 5 Critical Bottlenecks.**
+  - **Surface & Layer Hierarchy**: Eliminated software composition and clipping passes over native `SurfaceView` overlay planes, making Compose backgrounds transparent to allow zero-copy hardware punch-through.
+  - **Garbage Collector & Data Stream**: Pre-sized data collections in `buildRows`, enabled `@Immutable` stability across `Channel` and `Programme`, and added `contentType` to `LazyColumn` for optimal slot table reuse.
+  - **D-Pad Focus & Zero-Relayout Passes**: Locked text font weights to constants during focus changes (preventing text measurement passes) and converted focus state modifications to GPU `graphicsLayer` draw-phase properties.
+  - **Image Pipeline**: Configured Coil with `allowHardware(true)` for zero-copy GPU texture uploads and `allowRgb565(true)` memory reduction.
+  - **ExoPlayer LoadControl**: Bounded Media3 buffer allocators to 16MB (live) and 8MB (preview) with time-prioritized thresholds to prevent memory exhaustion on 1GB/1.5GB RAM TV devices.
+
 ## 0.12.45
 
 - **TV Remote Key Navigation State Machine, Dedicated Channel Rockers, and Non-Destructive Video Architecture.**

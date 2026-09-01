@@ -38,7 +38,7 @@ class OpenTvApp : Application(), ImageLoaderFactory {
         ImageLoader.Builder(this)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
+                    .maxSizePercent(0.20)
                     .build()
             }
             .diskCache {
@@ -48,6 +48,7 @@ class OpenTvApp : Application(), ImageLoaderFactory {
                     .build()
             }
             .crossfade(false)
+            .allowHardware(true)
             .allowRgb565(true)
             .build()
 

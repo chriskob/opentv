@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
@@ -163,7 +164,11 @@ fun GuideGrid(
                 contentPadding = PaddingValues(bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
+                itemsIndexed(
+                    items = rows,
+                    key = { _, row -> row.key },
+                    contentType = { _, _ -> "guide_row" },
+                ) { index, row ->
                     val isHighlighted = row.key == selectedKey
                     val isPlaying = row.key == playingKey
                     GuideRow(
@@ -603,7 +608,7 @@ private fun GuideRow(
                 Text(
                     row.primary.shownName,
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, lineHeight = 18.sp),
-                    fontWeight = if (focused || isSelected) FontWeight.Bold else FontWeight.Medium,
+                    fontWeight = FontWeight.Medium,
                     color = if (focused) Color(0xFF10171E) else if (isSelected) Color(0xFF26C6DA) else Color.White,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -815,7 +820,7 @@ private fun ProgrammeBlock(
         Text(
             text = title,
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-            fontWeight = if (focused) FontWeight.Bold else if (isNow) FontWeight.Medium else FontWeight.Normal,
+            fontWeight = FontWeight.Normal,
             color = when {
                 focused -> Color(0xFF10171E) // Dark charcoal text on white focus background
                 isNow -> Color.White
@@ -828,13 +833,15 @@ private fun ProgrammeBlock(
                 .padding(horizontal = 8.dp, vertical = 2.dp),
         )
 
-        // Live progress line
-        if (isNow && progress > 0f && !focused) {
+        // Live progress line - rendered unconditionally with graphicsLayer alpha
+        // to avoid inserting/removing nodes from the tree during focus transitions
+        if (isNow) {
             Box(
                 Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth(progress.coerceIn(0f, 1f))
                     .height(2.5.dp)
+                    .graphicsLayer { alpha = if (!focused && progress > 0f) 1f else 0f }
                     .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp))
                     .background(Color(0xFF26C6DA)),
             )

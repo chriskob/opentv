@@ -107,6 +107,7 @@ data class Category(
         Index(value = ["favourite"]),
     ],
 )
+@androidx.compose.runtime.Immutable
 data class Channel(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val sourceId: Long,
@@ -234,6 +235,7 @@ data class EpgChannelAlias(
         Index(value = ["epgChannelId", "endUtcMillis", "startUtcMillis"]),
     ],
 )
+@androidx.compose.runtime.Immutable
 data class Programme(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     /** The [EpgFeed] this came from. */

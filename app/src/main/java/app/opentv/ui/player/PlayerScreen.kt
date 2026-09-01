@@ -628,7 +628,7 @@ fun PlayerScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(if (renderPlayerView) Color.Black else Color.Transparent)
+            .background(Color.Transparent)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val digit = keyToDigit(event.key)

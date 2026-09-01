@@ -118,8 +118,10 @@ fun GuidePreview(
             Modifier
                 .fillMaxHeight()
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color.Black),
+                .then(
+                    if (previewPlayer == null) Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF161F27))
+                    else Modifier.background(Color.Black)
+                ),
             contentAlignment = Alignment.Center,
         ) {
             if (previewPlayer != null) {

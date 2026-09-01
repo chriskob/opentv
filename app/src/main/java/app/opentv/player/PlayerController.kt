@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import kotlinx.coroutines.CoroutineScope
@@ -205,6 +206,9 @@ class PlayerController(
         .setTrackSelector(trackSelector)
         .setLoadControl(
             DefaultLoadControl.Builder()
+                .setAllocator(DefaultAllocator(true, 64 * 1024))
+                .setTargetBufferBytes(if (preview) PREVIEW_TARGET_BUFFER_BYTES else TARGET_BUFFER_BYTES)
+                .setPrioritizeTimeOverSizeThresholds(true)
                 .setBufferDurationsMs(
                     if (preview) PREVIEW_MIN_BUFFER_MILLIS else MIN_BUFFER_MILLIS,
                     when {
@@ -424,13 +428,18 @@ class PlayerController(
         const val MAX_AUTO_RESTARTS = 3
         const val AUTO_RESTART_DELAY_MILLIS = 1_500L
 
+        /** Memory caps for low-RAM TV hardware (1GB/1.5GB RAM). */
+        const val TARGET_BUFFER_BYTES = 16 * 1024 * 1024
+        const val PREVIEW_TARGET_BUFFER_BYTES = 8 * 1024 * 1024
+
         /**
          * Fast initial start buffer for IPTV live streams (matching TiviMate tuning).
          * 1.0s buffer threshold starts playback immediately on first chunk arrival,
-         * while retaining a healthy 10s-30s buffer ceiling to ride out network jitter.
+         * while retaining a healthy 8s-20s buffer ceiling to ride out network jitter without
+         * ballooning memory usage.
          */
-        const val MIN_BUFFER_MILLIS = 10_000
-        const val MAX_BUFFER_MILLIS = 30_000
+        const val MIN_BUFFER_MILLIS = 8_000
+        const val MAX_BUFFER_MILLIS = 20_000
         const val BUFFER_FOR_PLAYBACK_MILLIS = 1_000
         const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 2_000
 
@@ -455,7 +464,7 @@ class PlayerController(
         // every channel in passing. Kept within DefaultLoadControl's constraints: min >= both
         // playback thresholds, max >= min.
         const val PREVIEW_MIN_BUFFER_MILLIS = 5_000
-        const val PREVIEW_MAX_BUFFER_MILLIS = 15_000
+        const val PREVIEW_MAX_BUFFER_MILLIS = 12_000
         const val PREVIEW_BUFFER_FOR_PLAYBACK_MILLIS = 1_000
         const val PREVIEW_BUFFER_AFTER_REBUFFER_MILLIS = 1_500
         // P1: Reduced from 700ms to 350ms so the preview pane tunes faster after pressing OK on a

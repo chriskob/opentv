@@ -445,10 +445,6 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         now: Long,
     ): List<Row> {
         if (channels.isEmpty()) return emptyList()
-        // The programme→channel grouping is done once upstream (see [programmeIndex]) and passed
-        // in ready-made, rather than regrouping the whole EPG on every category tap. Grouping is
-        // kept out of SQL because the programme query cannot take a channel-id list without
-        // hitting SQLite's bound-variable cap, and quality-variant folding is pure list work.
         val groups = LinkedHashMap<Any, MutableList<Channel>>(channels.size)
         for (channel in channels) {
             val key: Any = if (channel.groupKey.isEmpty()) channel.id else channel.groupKey
@@ -456,18 +452,14 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val hasEpg = byEpgChannel.isNotEmpty()
-        return groups.values.map { group ->
+        val result = ArrayList<Row>(groups.size)
+        for (group in groups.values) {
             if (group.size > 1) {
                 group.sortByDescending { it.qualityRank }
             }
-            // Only genuinely different qualities are switchable; identical-quality dupes
-            // (same stream in two categories) collapse to one, so no false "2 qualities".
             val variants = distinctByQuality(group)
             val primary = variants.first()
 
-            // Walk every variant's guide-id candidates (override -> provider -> matched)
-            // and use the first that actually has programmes. An id that never lights up
-            // must not shadow a sibling variant whose id does.
             var list: List<Programme> = emptyList()
             if (hasEpg) {
                 for (variant in variants) {
@@ -482,14 +474,17 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            Row(
-                primary = primary,
-                variants = variants,
-                now = if (list.isEmpty()) null else list.firstOrNull { it.isLiveAt(now) },
-                next = if (list.isEmpty()) null else list.firstOrNull { it.startUtcMillis > now },
-                programmes = list,
+            result.add(
+                Row(
+                    primary = primary,
+                    variants = variants,
+                    now = if (list.isEmpty()) null else list.firstOrNull { it.isLiveAt(now) },
+                    next = if (list.isEmpty()) null else list.firstOrNull { it.startUtcMillis > now },
+                    programmes = list,
+                )
             )
         }
+        return result
     }
 
 
