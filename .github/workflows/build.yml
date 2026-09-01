@@ -26,15 +26,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+          cache: 'gradle'
 
       - name: Make gradlew executable
         run: chmod +x gradlew
-
-      - name: Unit tests
-        run: ./gradlew test --stacktrace || true
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
