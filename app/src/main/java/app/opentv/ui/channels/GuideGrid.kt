@@ -536,12 +536,12 @@ private fun ChannelListRow(
                 modifier = Modifier.width(28.dp),
             )
         }
-        // Explicit size ensures Coil decodes at the display resolution (26dp), not full source.
+        // Channel Logo — enlarged for high legibility across the room
         AsyncImage(
             model = row.primary.logoUrl,
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.size(26.dp).clip(RoundedCornerShape(3.dp)),
+            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(4.dp)),
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
@@ -750,12 +750,12 @@ private fun GuideRow(
                 )
             }
 
-            // Channel Logo — explicit size hints Coil to decode at display resolution
+            // Channel Logo — enlarged for high legibility across the room
             AsyncImage(
                 model = row.primary.logoUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.size(26.dp).clip(RoundedCornerShape(2.dp)),
+                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(4.dp)),
             )
 
             Spacer(Modifier.width(8.dp))

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.65
+
+- **Enlarged Channel Logos in TV Guide**:
+  - Increased channel logo size from 26dp to 36dp (~40% larger, nearly double surface area) with smoothed 4dp rounded corners for high visibility and crisp recognition across the living room.
+
 ## 0.12.64
 
 - **TiviMate-Grade Centered Vertical Scrolling & Complete 2-Line Splitting**:
