@@ -56,7 +56,11 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
@@ -427,9 +431,25 @@ fun HomeScreen(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .onPreviewKeyEvent {
+            .onPreviewKeyEvent { e ->
                 lastInteractionTime = System.currentTimeMillis()
-                false
+                if (e.type == KeyEventType.KeyDown && !isFullScreen) {
+                    when (e.key) {
+                        Key.MediaRewind, Key.PageUp, Key.ChannelUp -> {
+                            if (guideDayOffset > -7) {
+                                viewModel.nudgeGuideDay(-1)
+                                true
+                            } else false
+                        }
+                        Key.MediaFastForward, Key.PageDown, Key.ChannelDown -> {
+                            if (guideDayOffset < 6) {
+                                viewModel.nudgeGuideDay(1)
+                                true
+                            } else false
+                        }
+                        else -> false
+                    }
+                } else false
             }
     ) {
         // ---- TiviMate-Grade Persistent Hardware Video Surface ----
@@ -732,6 +752,8 @@ fun HomeScreen(
                             highlightedProgramme = first?.now
                         },
                         nowMillis = nowMillis,
+                        onPrevDay = { viewModel.nudgeGuideDay(-1) },
+                        onNextDay = { viewModel.nudgeGuideDay(1) },
                         modifier = Modifier.weight(1f),
                     )
                 }

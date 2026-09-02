@@ -332,12 +332,10 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
     val windowStartMillis: StateFlow<Long> =
         combine(nowTick.map { it - it % HALF_HOUR_MILLIS }, _guideDayOffset) { base, day ->
-            // Today tracks the current half-hour so live is always on screen; a past or future day starts
-            // at that day's local midnight, so the whole day's schedule is browsable.
-            if (day == 0) base else startOfLocalDay(base) + day * DAY_MILLIS
+            startOfLocalDay(base) + day * DAY_MILLIS
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
-            System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS },
+            System.currentTimeMillis().let { startOfLocalDay(it) },
         )
 
     private fun startOfLocalDay(millis: Long): Long {
@@ -393,8 +391,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
                     val epgIds = visible.mapNotNull { it.epgChannelId?.ifBlank { null } }.distinct()
                     val byEpgChannel = if (epgIds.isEmpty()) emptyMap() else {
-                        val lookahead = if (_guideDayOffset.value == 0) GUIDE_LOOKAHEAD_MILLIS else DAY_MILLIS
-                        graph.epgRepository.windowForChannels(epgIds, windowStart, windowStart + lookahead)
+                        graph.epgRepository.windowForChannels(epgIds, windowStart, windowStart + DAY_MILLIS)
                     }
                     buildRows(visible, byEpgChannel, now)
                 }

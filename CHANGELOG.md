@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.67
+
+- **Past Hours & Interactive Day Navigator in Guide**:
+  - Anchored `windowStartMillis` to local midnight across all days (including Today) with 24-hour EPG lookahead, making all programmes from earlier today visible on the timeline.
+  - Automatically initialized horizontal scroll to current time on Today so live programming is immediate, while enabling full D-pad LEFT scrolling into past hours.
+  - Added interactive Day Navigator buttons (`◀` and `▶`) in `TimeHeader` directly above channels.
+  - Added remote key shortcuts (`MediaRewind` / `PageUp` / `ChannelUp` for Previous Day, `MediaFastForward` / `PageDown` / `ChannelDown` for Next Day).
+
 ## 0.12.66
 
 - **Full Catch-Up / Archive TV Support (Xtream & M3U)**:

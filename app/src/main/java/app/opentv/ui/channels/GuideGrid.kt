@@ -29,6 +29,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
@@ -164,6 +166,8 @@ fun GuideGrid(
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
     dayOffset: Int = 0,
+    onPrevDay: () -> Unit = {},
+    onNextDay: () -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier,
 ) {
@@ -182,10 +186,19 @@ fun GuideGrid(
     var wrapTargetKey by remember { mutableStateOf<Any?>(null) }
     var activeFocusedIndex by remember { mutableStateOf<Int?>(null) }
     val coroutineScope = rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current
 
     var hasInitialFocused by remember { mutableStateOf(false) }
 
-    LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
+    LaunchedEffect(dayOffset, windowStartMillis) {
+        if (dayOffset == 0 && nowMillis >= windowStartMillis) {
+            val nowOffsetDp = widthFor(windowStartMillis, nowMillis)
+            val scrollPx = with(density) { (nowOffsetDp - 150.dp).coerceAtLeast(0.dp).roundToPx() }
+            scroll.scrollTo(scrollPx)
+        } else {
+            scroll.scrollTo(0)
+        }
+    }
 
     LaunchedEffect(focusTargetKey, rows.isNotEmpty()) {
         if (rows.isNotEmpty()) {
@@ -255,7 +268,7 @@ fun GuideGrid(
     }
 
     Column(modifier.fillMaxSize()) {
-        TimeHeader(windowStartMillis, nowMillis, scroll, dayOffset)
+        TimeHeader(windowStartMillis, nowMillis, scroll, dayOffset, onPrevDay, onNextDay)
         Spacer(Modifier.height(2.dp))
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -585,6 +598,8 @@ private fun TimeHeader(
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     dayOffset: Int = 0,
+    onPrevDay: () -> Unit = {},
+    onNextDay: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
@@ -605,20 +620,65 @@ private fun TimeHeader(
             .background(Color(0xFF141C24)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Top-left current date/time label (Cyan, matching TiviMate)
-        Box(
+        // Top-left Day Navigator (< Date/Time >)
+        Row(
             Modifier
                 .width(CHANNEL_COLUMN)
-                .padding(start = 12.dp),
-            contentAlignment = Alignment.CenterStart,
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
+            var prevFocused by remember { mutableStateOf(false) }
+            Box(
+                Modifier
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(if (prevFocused) Color(0xFF00ACC1) else Color.Transparent)
+                    .onFocusChanged { prevFocused = it.isFocused }
+                    .focusable(enabled = dayOffset > -7)
+                    .clickable(enabled = dayOffset > -7, onClick = onPrevDay),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowLeft,
+                    contentDescription = "Previous Day",
+                    tint = if (dayOffset > -7) (if (prevFocused) Color.White else Color(0xFF80DEEA)) else Color(0xFF37474F),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+
+            val dayText = when (dayOffset) {
+                -1 -> "Yesterday"
+                0 -> currentDateTimeFmt.format(Date(nowMillis))
+                1 -> "Tomorrow"
+                else -> SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(Date(windowStartMillis))
+            }
             Text(
-                text = currentDateTimeFmt.format(Date(nowMillis)),
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                color = Color(0xFF26C6DA),
-                fontWeight = FontWeight.Normal,
+                text = dayText,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+                color = if (dayOffset != 0) Color(0xFFFFD54F) else Color(0xFF26C6DA),
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
+
+            var nextFocused by remember { mutableStateOf(false) }
+            Box(
+                Modifier
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(if (nextFocused) Color(0xFF00ACC1) else Color.Transparent)
+                    .onFocusChanged { nextFocused = it.isFocused }
+                    .focusable(enabled = dayOffset < 6)
+                    .clickable(enabled = dayOffset < 6, onClick = onNextDay),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowRight,
+                    contentDescription = "Next Day",
+                    tint = if (dayOffset < 6) (if (nextFocused) Color.White else Color(0xFF80DEEA)) else Color(0xFF37474F),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
 
         // Timeline slots with Live Current Time Indicator Marker
