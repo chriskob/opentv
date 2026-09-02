@@ -143,8 +143,9 @@ fun GuideGrid(
 
     LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
 
-    LaunchedEffect(selectedKey, rows) {
-        if (rows.isNotEmpty()) {
+    LaunchedEffect(rows.isNotEmpty()) {
+        if (rows.isNotEmpty() && !hasInitialFocused) {
+            hasInitialFocused = true
             val key = selectedKey ?: rows.first().key
             val index = rows.indexOfFirst { it.key == key }.coerceAtLeast(0)
             val target = (index - 2).coerceAtLeast(0)
@@ -247,8 +248,9 @@ fun ChannelList(
     val coroutineScope = rememberCoroutineScope()
     var hasInitialFocused by remember { mutableStateOf(false) }
 
-    LaunchedEffect(selectedKey, rows) {
-        if (rows.isNotEmpty()) {
+    LaunchedEffect(rows.isNotEmpty()) {
+        if (rows.isNotEmpty() && !hasInitialFocused) {
+            hasInitialFocused = true
             val key = selectedKey ?: rows.first().key
             val index = rows.indexOfFirst { it.key == key }.coerceAtLeast(0)
             val target = (index - 2).coerceAtLeast(0)

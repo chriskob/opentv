@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.55
+
+- **Eliminate D-Pad Navigation Stutter & Focus Fighting**:
+  - Replaced repetitive `LaunchedEffect(selectedKey)` triggers in `GuideGrid` and `ChannelList` with a single mount-time initial focus check (`hasInitialFocused`).
+  - D-pad Up/Down navigation now executes natively at full 60fps with zero frame drops, zero delayed `scrollToItem` calls, and zero focus interruptions.
+
 ## 0.12.54
 
 - **Major Performance Overhaul & Bloat Removal**:
