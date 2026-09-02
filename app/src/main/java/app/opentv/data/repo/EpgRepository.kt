@@ -135,6 +135,9 @@ class EpgRepository(
     fun observeNow(nowUtcMillis: Long): Flow<List<Programme>> =
         programmeDao.observeNow(nowUtcMillis)
 
+    suspend fun nowForChannels(channelIds: Collection<String>, nowUtcMillis: Long): List<Programme> =
+        if (channelIds.isEmpty()) emptyList() else programmeDao.nowForChannels(channelIds, nowUtcMillis)
+
     suspend fun upcoming(epgChannelId: String, nowUtcMillis: Long, limit: Int = 12): List<Programme> =
         programmeDao.upcoming(epgChannelId, nowUtcMillis, limit)
 

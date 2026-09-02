@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.50
+
+- **Eliminate 10-15s Database Freeze on Channel Change & Menu Interaction.**
+  - **Indexed `nowForChannels` Query**: Replaced unbounded full-table scan query `observeNow` with indexed `nowForChannels` restricted strictly to active recent channel IDs. Eliminates ~865,000 object allocations and 11-15 second JVM garbage collector freezes on channel change.
+  - **Off-Main-Thread Channel Resolution**: Consolidated channel lookup, variant selection, source resolution, and stream URL creation into a unified parallel `Dispatchers.IO` block.
+  - **Immediate Channel Tuning Pipeline**: Replaced multi-stage nested coroutine launches with an atomic tune flow, eliminating intermediate thread-dispatch stalls.
+
 ## 0.12.49
 
 - **Restore Hardware SurfaceView & Eliminate Video Freezes, Black Screens, and Channel Switching Delays.**

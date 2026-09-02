@@ -390,9 +390,11 @@ fun PlayerScreen(
         settings.lastChannelId = channel.id
         settings.recordChannelWatched(channel.id)
         scope.launch {
-            val source = graph.sourceRepository.byId(channel.sourceId)
-            // Xtream/M3U carry a ready URL; a Stalker channel's URL is minted here from its cmd.
-            val url = graph.catalogRepository.resolvePlaybackUrl(channel, source)
+            val (source, url) = withContext(Dispatchers.IO) {
+                val src = graph.sourceRepository.byId(channel.sourceId)
+                val resolvedUrl = graph.catalogRepository.resolvePlaybackUrl(channel, src)
+                src to resolvedUrl
+            }
             controller.play(
                 PlayerController.Request(
                     url = url,
@@ -416,10 +418,29 @@ fun PlayerScreen(
         currentId?.let { if (it != id) previousId = it }
         currentId = id
         scope.launch {
-            val channel = graph.catalogRepository.channel(id) ?: return@launch
-            variants = graph.catalogRepository.variants(channel)
-            val target = variants.firstOrNull { it.id == channel.id } ?: channel
-            tuneTo(target)
+            val (target, source, url) = withContext(Dispatchers.IO) {
+                val ch = graph.catalogRepository.channel(id) ?: return@withContext null
+                val vars = graph.catalogRepository.variants(ch)
+                val tgt = vars.firstOrNull { it.id == ch.id } ?: ch
+                val src = graph.sourceRepository.byId(tgt.sourceId)
+                val resolvedUrl = graph.catalogRepository.resolvePlaybackUrl(tgt, src)
+                Triple(tgt, src, resolvedUrl)
+            } ?: return@launch
+
+            currentChannel = target
+            paused = false
+            settings.lastChannelId = target.id
+            settings.recordChannelWatched(target.id)
+
+            controller.play(
+                PlayerController.Request(
+                    url = url,
+                    title = target.shownName,
+                    userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
+                    isLive = true,
+                ),
+                debounce = false,
+            )
         }
     }
 
@@ -481,27 +502,27 @@ fun PlayerScreen(
 
     LaunchedEffect(currentId, nowMillis) {
         val id = currentId ?: return@LaunchedEffect
-        val channel = graph.catalogRepository.channel(id)
-        currentChannel = channel
-        if (channel != null) {
-            currentSource = graph.sourceRepository.byId(channel.sourceId)
-            val catId = channel.categoryId
-            if (catId != null) {
-                val catNames = graph.database.categories().namesFor(setOf(catId))
-                currentCategoryName = catNames.firstOrNull()?.name
-            } else {
-                currentCategoryName = null
+        withContext(Dispatchers.IO) {
+            val channel = graph.catalogRepository.channel(id)
+            val source = channel?.let { graph.sourceRepository.byId(it.sourceId) }
+            val catName = channel?.categoryId?.let { catId ->
+                graph.database.categories().namesFor(setOf(catId)).firstOrNull()?.name
             }
-            val epgId = channel.epgChannelId
-            if (epgId != null) {
-                val up = graph.epgRepository.upcoming(epgId, nowMillis, limit = 4)
-                currentProg = up.firstOrNull { nowMillis in it.startUtcMillis until it.endUtcMillis } ?: up.firstOrNull()
-                nextProg = if (currentProg != null) {
-                    up.firstOrNull { it.startUtcMillis >= (currentProg?.endUtcMillis ?: 0L) }
+            val (cProg, nProg) = if (channel?.epgChannelId != null) {
+                val up = graph.epgRepository.upcoming(channel.epgChannelId!!, nowMillis, limit = 4)
+                val curr = up.firstOrNull { nowMillis in it.startUtcMillis until it.endUtcMillis } ?: up.firstOrNull()
+                val next = if (curr != null) {
+                    up.firstOrNull { it.startUtcMillis >= curr.endUtcMillis }
                 } else up.getOrNull(1)
-            } else {
-                currentProg = null
-                nextProg = null
+                curr to next
+            } else null to null
+
+            withContext(Dispatchers.Main) {
+                currentChannel = channel
+                currentSource = source
+                currentCategoryName = catName
+                currentProg = cProg
+                nextProg = nProg
             }
         }
     }
@@ -519,7 +540,8 @@ fun PlayerScreen(
     LaunchedEffect(recentChannels, nowMillis) {
         if (recentChannels.isEmpty()) return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            val nowProgs = graph.epgRepository.observeNow(nowMillis).firstOrNull() ?: emptyList()
+            val epgIds = recentChannels.mapNotNull { it.epgChannelId }.toSet()
+            val nowProgs = graph.epgRepository.nowForChannels(epgIds, nowMillis)
             val progByEpg = nowProgs.associateBy { it.epgChannelId }
             val map = mutableMapOf<Long, Programme>()
             for (ch in recentChannels) {
