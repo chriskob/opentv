@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.64
+
+- **TiviMate-Grade Centered Vertical Scrolling & Complete 2-Line Splitting**:
+  - Implemented automatic centered scrolling across the guide grid and channel list: the active channel stays in the vertical center of the guide while channels smoothly scroll beneath it.
+  - Split 2+ word channel titles (e.g. `FOX WEATHER`, `CW CHICAGO`, `WCIU CHICAGO`) onto 2 lines, matching 3+ word callsign stations.
+  - Added vertical centering to channel name text containers so both 1-line and 2-line names align cleanly with logos.
+
 ## 0.12.63
 
 - **Pixel-Perfect 6-Row Geometry & Large Preview Player**:

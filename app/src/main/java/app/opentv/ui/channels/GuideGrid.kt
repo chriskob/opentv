@@ -100,9 +100,9 @@ internal fun formatChannelNameForDisplay(name: String): String {
         return "${callSignMatch.groupValues[1]}\n($call)"
     }
 
-    // If channel has 3+ words (e.g. "PBS 11 CHICAGO WTTW"), split the last word onto line 2
+    // If channel has 2+ words (e.g. "FOX WEATHER", "CW CHICAGO"), split onto 2 lines
     val words = trimmed.split(Regex("""\s+"""))
-    if (words.size >= 3) {
+    if (words.size >= 2) {
         val line1 = words.dropLast(1).joinToString(" ")
         val line2 = words.last()
         return "$line1\n$line2"
@@ -180,6 +180,7 @@ fun GuideGrid(
     val initialFocusRequester = remember { FocusRequester() }
     val wrapFocusRequester = remember { FocusRequester() }
     var wrapTargetKey by remember { mutableStateOf<Any?>(null) }
+    var activeFocusedIndex by remember { mutableStateOf<Int?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
     var hasInitialFocused by remember { mutableStateOf(false) }
@@ -194,17 +195,32 @@ fun GuideGrid(
                     hasInitialFocused = true
                     val k = targetKey ?: rows.first().key
                     val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
-                    val target = if (index < 6) 0 else (index - 2).coerceAtLeast(0)
+                    activeFocusedIndex = index
+                    val target = when {
+                        rows.size <= 6 -> 0
+                        index <= 2 -> 0
+                        index >= rows.size - 3 -> rows.size - 6
+                        else -> index - 2
+                    }
                     listState.scrollToItem(target, 0)
                     delay(30)
                     runCatching { initialFocusRequester.requestFocus() }
-                    if (index < 6) {
-                        delay(25)
-                        if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset != 0) {
-                            listState.scrollToItem(0, 0)
-                        }
-                    }
                 }
+            }
+        }
+    }
+
+    LaunchedEffect(activeFocusedIndex) {
+        val idx = activeFocusedIndex ?: return@LaunchedEffect
+        if (rows.isNotEmpty()) {
+            val targetVisible = when {
+                rows.size <= 6 -> 0
+                idx <= 2 -> 0
+                idx >= rows.size - 3 -> rows.size - 6
+                else -> idx - 2
+            }
+            if (listState.firstVisibleItemIndex != targetVisible || listState.firstVisibleItemScrollOffset != 0) {
+                listState.animateScrollToItem(targetVisible, 0)
             }
         }
     }
@@ -213,9 +229,11 @@ fun GuideGrid(
         if (rows.isNotEmpty()) {
             val last = rows.last()
             wrapTargetKey = last.key
+            activeFocusedIndex = rows.size - 1
             onFocusRow(last, last.now)
             coroutineScope.launch {
-                listState.scrollToItem((rows.size - 1).coerceAtLeast(0), 0)
+                val targetVisible = (rows.size - 6).coerceAtLeast(0)
+                listState.scrollToItem(targetVisible, 0)
                 delay(30)
                 runCatching { wrapFocusRequester.requestFocus() }
             }
@@ -226,6 +244,7 @@ fun GuideGrid(
         if (rows.isNotEmpty()) {
             val first = rows.first()
             wrapTargetKey = first.key
+            activeFocusedIndex = 0
             onFocusRow(first, first.now)
             coroutineScope.launch {
                 listState.scrollToItem(0, 0)
@@ -267,7 +286,10 @@ fun GuideGrid(
                         focusRequester = rowRequester,
                         onSelect = { onSelectRow(row) },
                         onLongSelect = { onLongSelectRow(row) },
-                        onFocus = { prog -> onFocusRow(row, prog) },
+                        onFocus = { prog ->
+                            activeFocusedIndex = index
+                            onFocusRow(row, prog)
+                        },
                         onProgramme = { programme -> onProgramme(row, programme) },
                         onToggleFavourite = { onToggleFavourite(row) },
                         onExitLeft = onExitLeftFromChannel,
@@ -325,6 +347,7 @@ fun ChannelList(
     val initialFocusRequester = remember { FocusRequester() }
     val wrapFocusRequester = remember { FocusRequester() }
     var wrapTargetKey by remember { mutableStateOf<Any?>(null) }
+    var activeFocusedIndex by remember { mutableStateOf<Int?>(null) }
     val coroutineScope = rememberCoroutineScope()
     var hasInitialFocused by remember { mutableStateOf(false) }
 
@@ -336,17 +359,32 @@ fun ChannelList(
                     hasInitialFocused = true
                     val k = targetKey ?: rows.first().key
                     val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
-                    val target = if (index < 6) 0 else (index - 2).coerceAtLeast(0)
+                    activeFocusedIndex = index
+                    val target = when {
+                        rows.size <= 6 -> 0
+                        index <= 2 -> 0
+                        index >= rows.size - 3 -> rows.size - 6
+                        else -> index - 2
+                    }
                     listState.scrollToItem(target, 0)
                     delay(30)
                     runCatching { initialFocusRequester.requestFocus() }
-                    if (index < 6) {
-                        delay(25)
-                        if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset != 0) {
-                            listState.scrollToItem(0, 0)
-                        }
-                    }
                 }
+            }
+        }
+    }
+
+    LaunchedEffect(activeFocusedIndex) {
+        val idx = activeFocusedIndex ?: return@LaunchedEffect
+        if (rows.isNotEmpty()) {
+            val targetVisible = when {
+                rows.size <= 6 -> 0
+                idx <= 2 -> 0
+                idx >= rows.size - 3 -> rows.size - 6
+                else -> idx - 2
+            }
+            if (listState.firstVisibleItemIndex != targetVisible || listState.firstVisibleItemScrollOffset != 0) {
+                listState.animateScrollToItem(targetVisible, 0)
             }
         }
     }
@@ -355,9 +393,11 @@ fun ChannelList(
         if (rows.isNotEmpty()) {
             val last = rows.last()
             wrapTargetKey = last.key
+            activeFocusedIndex = rows.size - 1
             onFocusRow(last, last.now)
             coroutineScope.launch {
-                listState.scrollToItem((rows.size - 1).coerceAtLeast(0), 0)
+                val targetVisible = (rows.size - 6).coerceAtLeast(0)
+                listState.scrollToItem(targetVisible, 0)
                 delay(30)
                 runCatching { wrapFocusRequester.requestFocus() }
             }
@@ -368,6 +408,7 @@ fun ChannelList(
         if (rows.isNotEmpty()) {
             val first = rows.first()
             wrapTargetKey = first.key
+            activeFocusedIndex = 0
             onFocusRow(first, first.now)
             coroutineScope.launch {
                 listState.scrollToItem(0, 0)
@@ -399,7 +440,10 @@ fun ChannelList(
                 focusRequester = rowRequester,
                 onSelect = { onSelectRow(row) },
                 onLongSelect = { onLongSelectRow(row) },
-                onFocus = { prog -> onFocusRow(row, prog) },
+                onFocus = { prog ->
+                    activeFocusedIndex = index
+                    onFocusRow(row, prog)
+                },
                 onToggleFavourite = { onToggleFavourite(row) },
                 onExitLeft = onExitLeftFromChannel,
                 onWrapToBottom = handleWrapToBottom,
@@ -500,7 +544,7 @@ private fun ChannelListRow(
             modifier = Modifier.size(26.dp).clip(RoundedCornerShape(3.dp)),
         )
         Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     formatChannelNameForDisplay(row.primary.shownName),
@@ -717,7 +761,7 @@ private fun GuideRow(
             Spacer(Modifier.width(8.dp))
 
             // Channel Name & Icons
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                 Text(
                     formatChannelNameForDisplay(row.primary.shownName),
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
