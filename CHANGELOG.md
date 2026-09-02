@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.62
+
+- **Guide Viewport Alignment, Continuous Looping, & 1-Minute Idle Auto-Fullscreen**:
+  - Pinned initial guide scroll to offset 0 with top padding so Channel 1 is 100% visible and never partially hidden behind the time header.
+  - Implemented continuous looping navigation across the guide grid and channel list (Up on row 0 wraps to bottom, Down on last row wraps to top).
+  - Added 1-minute idle timer in TV guide to automatically return to full-screen video when inactive.
+
 ## 0.12.61
 
 - **Consistent 2-Line Channel Names & Bulletproof Startup Focus**:

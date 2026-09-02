@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
@@ -412,7 +413,25 @@ fun HomeScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    // Auto-return to full screen after 1 minute of inactivity in the TV guide
+    LaunchedEffect(isFullScreen, channelMenu, recordTarget, showBackgroundPrompt, pendingLiveChannel, lastInteractionTime) {
+        if (!isFullScreen && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
+            delay(60_000L)
+            isFullScreen = true
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .onPreviewKeyEvent {
+                lastInteractionTime = System.currentTimeMillis()
+                false
+            }
+    ) {
         // ---- TiviMate-Grade Persistent Hardware Video Surface ----
         // Created once and stays alive throughout Live TV. Smoothly positions into preview card in guide, fills screen in fullscreen.
         Box(playerModifier) {
@@ -624,6 +643,7 @@ fun HomeScreen(
                 // from the leftmost element reopens the rail (consumed only when it was hidden).
                 val onFocusChannel: (ChannelsViewModel.Row, Programme?) -> Unit = remember {
                     { r: ChannelsViewModel.Row, prog: Programme? ->
+                        lastInteractionTime = System.currentTimeMillis()
                         highlightedRow = r
                         highlightedProgramme = prog ?: r.now
                         railExpanded = false

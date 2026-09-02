@@ -169,13 +169,17 @@ fun GuideGrid(
 ) {
     val scroll = rememberScrollState()
     val focusTargetKey = playingKey ?: selectedKey ?: rows.firstOrNull()?.key
-    val targetIndex = remember(focusTargetKey, rows) {
-        if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
+    val initialFirstVisible = remember(focusTargetKey, rows) {
+        val idx = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
+        if (idx < 6) 0 else (idx - 2).coerceAtLeast(0)
     }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState(
-        initialFirstVisibleItemIndex = (targetIndex - 2).coerceAtLeast(0)
+        initialFirstVisibleItemIndex = initialFirstVisible,
+        initialFirstVisibleItemScrollOffset = 0,
     )
     val initialFocusRequester = remember { FocusRequester() }
+    val wrapFocusRequester = remember { FocusRequester() }
+    var wrapTargetKey by remember { mutableStateOf<Any?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
     var hasInitialFocused by remember { mutableStateOf(false) }
@@ -190,22 +194,55 @@ fun GuideGrid(
                     hasInitialFocused = true
                     val k = targetKey ?: rows.first().key
                     val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
-                    val target = (index - 2).coerceAtLeast(0)
-                    listState.scrollToItem(target)
-                    delay(40)
+                    val target = if (index < 6) 0 else (index - 2).coerceAtLeast(0)
+                    listState.scrollToItem(target, 0)
+                    delay(30)
                     runCatching { initialFocusRequester.requestFocus() }
+                    if (index < 6) {
+                        delay(25)
+                        if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset != 0) {
+                            listState.scrollToItem(0, 0)
+                        }
+                    }
                 }
+            }
+        }
+    }
+
+    val handleWrapToBottom = {
+        if (rows.isNotEmpty()) {
+            val last = rows.last()
+            wrapTargetKey = last.key
+            onFocusRow(last, last.now)
+            coroutineScope.launch {
+                listState.scrollToItem((rows.size - 1).coerceAtLeast(0), 0)
+                delay(30)
+                runCatching { wrapFocusRequester.requestFocus() }
+            }
+        }
+    }
+
+    val handleWrapToTop = {
+        if (rows.isNotEmpty()) {
+            val first = rows.first()
+            wrapTargetKey = first.key
+            onFocusRow(first, first.now)
+            coroutineScope.launch {
+                listState.scrollToItem(0, 0)
+                delay(30)
+                runCatching { wrapFocusRequester.requestFocus() }
             }
         }
     }
 
     Column(modifier.fillMaxSize()) {
         TimeHeader(windowStartMillis, nowMillis, scroll, dayOffset)
+        Spacer(Modifier.height(4.dp))
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
                 state = listState,
-                contentPadding = PaddingValues(bottom = 8.dp),
+                contentPadding = PaddingValues(top = 2.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 itemsIndexed(
@@ -213,8 +250,12 @@ fun GuideGrid(
                     key = { _, row -> row.key },
                     contentType = { _, _ -> "guide_row" },
                 ) { index, row ->
-                    val isTarget = row.key == focusTargetKey
                     val isPlaying = row.key == playingKey
+                    val rowRequester = when (row.key) {
+                        wrapTargetKey -> wrapFocusRequester
+                        focusTargetKey -> initialFocusRequester
+                        else -> null
+                    }
                     GuideRow(
                         row = row,
                         rowIndex = index,
@@ -223,30 +264,15 @@ fun GuideGrid(
                         nowMillis = nowMillis,
                         scroll = scroll,
                         isSelected = isPlaying,
-                        focusRequester = if (isTarget) initialFocusRequester else null,
+                        focusRequester = rowRequester,
                         onSelect = { onSelectRow(row) },
                         onLongSelect = { onLongSelectRow(row) },
                         onFocus = { prog -> onFocusRow(row, prog) },
                         onProgramme = { programme -> onProgramme(row, programme) },
                         onToggleFavourite = { onToggleFavourite(row) },
                         onExitLeft = onExitLeftFromChannel,
-                        onWrapToBottom = {
-                            onWrapToBottom()
-                            coroutineScope.launch {
-                                val last = (rows.size - 1).coerceAtLeast(0)
-                                listState.scrollToItem(last)
-                                delay(32)
-                                runCatching { initialFocusRequester.requestFocus() }
-                            }
-                        },
-                        onWrapToTop = {
-                            onWrapToTop()
-                            coroutineScope.launch {
-                                listState.scrollToItem(0)
-                                delay(32)
-                                runCatching { initialFocusRequester.requestFocus() }
-                            }
-                        },
+                        onWrapToBottom = handleWrapToBottom,
+                        onWrapToTop = handleWrapToTop,
                     )
                 }
             }
@@ -288,13 +314,17 @@ fun ChannelList(
     modifier: Modifier = Modifier,
 ) {
     val focusTargetKey = playingKey ?: selectedKey ?: rows.firstOrNull()?.key
-    val targetIndex = remember(focusTargetKey, rows) {
-        if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
+    val initialFirstVisible = remember(focusTargetKey, rows) {
+        val idx = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
+        if (idx < 6) 0 else (idx - 2).coerceAtLeast(0)
     }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState(
-        initialFirstVisibleItemIndex = (targetIndex - 2).coerceAtLeast(0)
+        initialFirstVisibleItemIndex = initialFirstVisible,
+        initialFirstVisibleItemScrollOffset = 0,
     )
     val initialFocusRequester = remember { FocusRequester() }
+    val wrapFocusRequester = remember { FocusRequester() }
+    var wrapTargetKey by remember { mutableStateOf<Any?>(null) }
     val coroutineScope = rememberCoroutineScope()
     var hasInitialFocused by remember { mutableStateOf(false) }
 
@@ -306,11 +336,43 @@ fun ChannelList(
                     hasInitialFocused = true
                     val k = targetKey ?: rows.first().key
                     val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
-                    val target = (index - 2).coerceAtLeast(0)
-                    listState.scrollToItem(target)
-                    delay(40)
+                    val target = if (index < 6) 0 else (index - 2).coerceAtLeast(0)
+                    listState.scrollToItem(target, 0)
+                    delay(30)
                     runCatching { initialFocusRequester.requestFocus() }
+                    if (index < 6) {
+                        delay(25)
+                        if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset != 0) {
+                            listState.scrollToItem(0, 0)
+                        }
+                    }
                 }
+            }
+        }
+    }
+
+    val handleWrapToBottom = {
+        if (rows.isNotEmpty()) {
+            val last = rows.last()
+            wrapTargetKey = last.key
+            onFocusRow(last, last.now)
+            coroutineScope.launch {
+                listState.scrollToItem((rows.size - 1).coerceAtLeast(0), 0)
+                delay(30)
+                runCatching { wrapFocusRequester.requestFocus() }
+            }
+        }
+    }
+
+    val handleWrapToTop = {
+        if (rows.isNotEmpty()) {
+            val first = rows.first()
+            wrapTargetKey = first.key
+            onFocusRow(first, first.now)
+            coroutineScope.launch {
+                listState.scrollToItem(0, 0)
+                delay(30)
+                runCatching { wrapFocusRequester.requestFocus() }
             }
         }
     }
@@ -322,37 +384,26 @@ fun ChannelList(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
-            val isTarget = row.key == focusTargetKey
             val isPlaying = row.key == playingKey
+            val rowRequester = when (row.key) {
+                wrapTargetKey -> wrapFocusRequester
+                focusTargetKey -> initialFocusRequester
+                else -> null
+            }
             ChannelListRow(
                 row = row,
                 rowIndex = index,
                 totalRows = rows.size,
                 nowMillis = nowMillis,
                 isSelected = isPlaying,
-                focusRequester = if (isTarget) initialFocusRequester else null,
+                focusRequester = rowRequester,
                 onSelect = { onSelectRow(row) },
                 onLongSelect = { onLongSelectRow(row) },
                 onFocus = { prog -> onFocusRow(row, prog) },
                 onToggleFavourite = { onToggleFavourite(row) },
                 onExitLeft = onExitLeftFromChannel,
-                onWrapToBottom = {
-                    onWrapToBottom()
-                    coroutineScope.launch {
-                        val last = (rows.size - 1).coerceAtLeast(0)
-                        listState.scrollToItem(last)
-                        delay(32)
-                        runCatching { initialFocusRequester.requestFocus() }
-                    }
-                },
-                onWrapToTop = {
-                    onWrapToTop()
-                    coroutineScope.launch {
-                        listState.scrollToItem(0)
-                        delay(32)
-                        runCatching { initialFocusRequester.requestFocus() }
-                    }
-                },
+                onWrapToBottom = handleWrapToBottom,
+                onWrapToTop = handleWrapToTop,
             )
         }
     }
@@ -590,13 +641,28 @@ private fun GuideRow(
 ) {
     var focused by remember { mutableStateOf(false) }
 
-    Row(Modifier.fillMaxWidth().height(ROW_HEIGHT)) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(ROW_HEIGHT)
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown) {
+                    when {
+                        e.key == Key.DirectionUp && rowIndex == 0 -> {
+                            onWrapToBottom()
+                            true
+                        }
+                        e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
+                            onWrapToTop()
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
+    ) {
 
         // ---- Channel column (Fixed left, TiviMate style with rounded corners) ----
-        // This is the ONLY place per-row up/down wrap-around is handled. Programme blocks
-        // do NOT carry their own onPreviewKeyEvent — that would duplicate the check across
-        // every block in the row (20+ handlers). Compose focus walks all handlers on each
-        // dpad press, so consolidating to one per row is a measurable win on low-end boxes.
         Row(
             Modifier
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
@@ -614,19 +680,8 @@ private fun GuideRow(
                     else Modifier,
                 )
                 .onPreviewKeyEvent { e ->
-                    if (e.type == KeyEventType.KeyDown) {
-                        when {
-                            e.key == Key.DirectionLeft -> onExitLeft()
-                            e.key == Key.DirectionUp && rowIndex == 0 -> {
-                                onWrapToBottom()
-                                true
-                            }
-                            e.key == Key.DirectionDown && rowIndex == totalRows - 1 -> {
-                                onWrapToTop()
-                                true
-                            }
-                            else -> false
-                        }
+                    if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) {
+                        onExitLeft()
                     } else false
                 }
                 .onFocusChanged {
