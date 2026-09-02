@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.52
+
+- **TiviMate Architecture: Single Permanent Root Hardware Video Surface.**
+  - **Permanent Root SurfaceView**: Eliminated competing `PlayerView` instances between `GuidePreview` and `PlayerScreen`. OpenTV now hosts exactly one persistent hardware `SurfaceView` at the root of `HomeScreen`. It is never destroyed, rebound, or detached when moving between the TV Guide and Fullscreen.
+  - **TiviMate-Style Guide Overlay**: The TV Guide and Category Rail now render as sleek, translucent overlays floating above the continuously running video. Exiting the guide to full screen simply dismisses the overlay with zero interruption to video or audio.
+  - **Zero-Stall MediaCodec Decoding**: Because the native hardware surface is never destroyed, MediaCodec and AudioTrack sessions remain active continuously without dropping buffers or encountering illegal state crashes.
+
 ## 0.12.51
 
 - **Seamless In-Place Fullscreen Transition & Chunked SQLite Pruning.**

@@ -113,41 +113,20 @@ fun GuidePreview(
             .height(154.dp)
             .padding(start = 8.dp, end = 12.dp, top = 4.dp, bottom = 6.dp),
     ) {
-        // ---- 16:9 Video preview / Logo card (clean, matching TiviMate) ----
+        // ---- 16:9 Logo / Channel card (clean, matching TiviMate) ----
         Box(
             Modifier
                 .fillMaxHeight()
                 .aspectRatio(16f / 9f)
-                .then(
-                    if (previewPlayer == null) Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF161F27))
-                    else Modifier.background(Color.Black)
-                ),
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF161F27)),
             contentAlignment = Alignment.Center,
         ) {
-            if (previewPlayer != null) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            player = previewPlayer
-                        }
-                    },
-                    update = { pv ->
-                        if (pv.player != previewPlayer) {
-                            pv.player = previewPlayer
-                        }
-                        pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    },
-                    onRelease = { pv ->
-                        pv.player = null
-                    },
-                )
-            } else if (row != null) {
+            if (row != null) {
                 AsyncImage(
                     model = row.primary.logoUrl,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize(0.55f),
+                    modifier = Modifier.fillMaxSize(0.65f),
                 )
             }
         }

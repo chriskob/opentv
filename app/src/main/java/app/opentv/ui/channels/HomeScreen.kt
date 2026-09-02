@@ -379,28 +379,60 @@ fun HomeScreen(
         )
     }
 
-    if (isFullScreen) {
-        PlayerScreen(
-            channelId = (selectedRow ?: highlightedRow)?.primary?.id,
-            onBack = {
-                val lastId = settings.lastChannelId
-                val match = rows.firstOrNull { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }
-                if (match != null) {
-                    selectedRow = match
-                    highlightedRow = match
-                    highlightedProgramme = match.now
+    LaunchedEffect(isFullScreen, previewSound) {
+        previewController.player.volume = if (isFullScreen || previewSound) 1f else 0f
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        // ---- TiviMate-Grade Persistent Hardware Video Surface ----
+        // Created once and stays alive throughout Live TV. Never destroyed across Guide <-> Fullscreen navigation.
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
+                    useController = false
+                    resizeMode = settings.playerResizeMode.value
+                    player = previewController.player
                 }
-                isFullScreen = false
             },
-            onOpenSearch = onOpenSearch,
-            onOpenMovies = { isFullScreen = false; onOpenMainMenu() },
-            onOpenShows = { isFullScreen = false; onOpenMainMenu() },
-            onOpenRecordings = { isFullScreen = false; onOpenMainMenu() },
-            onOpenSettings = onOpenSettings,
-            renderPlayerView = true,
+            update = { pv ->
+                if (pv.player != previewController.player) {
+                    pv.player = previewController.player
+                }
+                pv.resizeMode = settings.playerResizeMode.value
+            },
+            onRelease = { pv ->
+                pv.player = null
+            },
         )
-    } else {
-        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
+
+        if (isFullScreen) {
+            PlayerScreen(
+                channelId = (selectedRow ?: highlightedRow)?.primary?.id,
+                onBack = {
+                    val lastId = settings.lastChannelId
+                    val match = rows.firstOrNull { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }
+                    if (match != null) {
+                        selectedRow = match
+                        highlightedRow = match
+                        highlightedProgramme = match.now
+                    }
+                    isFullScreen = false
+                },
+                onOpenSearch = onOpenSearch,
+                onOpenMovies = { isFullScreen = false; onOpenMainMenu() },
+                onOpenShows = { isFullScreen = false; onOpenMainMenu() },
+                onOpenRecordings = { isFullScreen = false; onOpenMainMenu() },
+                onOpenSettings = onOpenSettings,
+                renderPlayerView = false,
+            )
+        } else {
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color(0xEB0D1319))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
 
         // ---- Category rail -----------------------------------------------------------------
         // Width animates to 0 while focus is in the guide (see onFocusRow) so the grid gets the
@@ -937,6 +969,7 @@ fun HomeScreen(
                 }
             }
         }
+    }
     }
 
     if (showBackgroundPrompt) {
