@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.56
+
+- **Cache SurfaceView Layout to Prevent WindowManager Freezes**:
+  - Wrapped `playerModifier` in `remember(isFullScreen, previewBounds)` to prevent triggering heavy native `WindowManager.relayout()` passes during D-pad navigation.
+  - Guarded `onPreviewBoundsChanged` to avoid unnecessary recompositions while browsing the guide.
+
 ## 0.12.55
 
 - **Eliminate D-Pad Navigation Stutter & Focus Fighting**:

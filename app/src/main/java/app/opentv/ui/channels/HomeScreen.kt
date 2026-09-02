@@ -387,20 +387,22 @@ fun HomeScreen(
     var previewBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     val density = androidx.compose.ui.platform.LocalDensity.current
 
-    val playerModifier = if (isFullScreen || previewBounds.isEmpty) {
-        Modifier.fillMaxSize()
-    } else {
-        with(density) {
-            Modifier
-                .offset(
-                    x = previewBounds.left.toDp(),
-                    y = previewBounds.top.toDp(),
-                )
-                .size(
-                    width = previewBounds.width.toDp(),
-                    height = previewBounds.height.toDp(),
-                )
-                .clip(RoundedCornerShape(10.dp))
+    val playerModifier = remember(isFullScreen, previewBounds) {
+        if (isFullScreen || previewBounds.isEmpty) {
+            Modifier.fillMaxSize()
+        } else {
+            with(density) {
+                Modifier
+                    .offset(
+                        x = previewBounds.left.toDp(),
+                        y = previewBounds.top.toDp(),
+                    )
+                    .size(
+                        width = previewBounds.width.toDp(),
+                        height = previewBounds.height.toDp(),
+                    )
+                    .clip(RoundedCornerShape(10.dp))
+            }
         }
     }
 
@@ -597,7 +599,11 @@ fun HomeScreen(
                     canGoPrevDay = guideDayOffset > 0,
                     onPrevDay = { viewModel.nudgeGuideDay(-1) },
                     onNextDay = { viewModel.nudgeGuideDay(1) },
-                    onPreviewBoundsChanged = { rect -> previewBounds = rect },
+                    onPreviewBoundsChanged = { rect ->
+                        if (rect.width > 0 && rect.height > 0 && previewBounds != rect) {
+                            previewBounds = rect
+                        }
+                    },
                 )
                 // Shared by both layouts: focus follows the highlight and collapses the rail; LEFT
                 // from the leftmost element reopens the rail (consumed only when it was hidden).
