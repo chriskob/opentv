@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.59
+
+- **Tighten Guide Row Height & Proportions to Match TiviMate**:
+  - Reduced `ROW_HEIGHT` from 60dp to 46dp, displaying 7+ full channel rows simultaneously under the preview card.
+  - Scaled channel logos to 26dp and typography to 13.5sp for clean, high-density TV guide rendering.
+  - Streamlined `GuidePreview` height to 138dp to maximize vertical grid space.
+
 ## 0.12.58
 
 - **Always Land Focus on Currently Playing Channel When Opening Guide**:
