@@ -401,7 +401,7 @@ private fun ChannelListRow(
             model = row.primary.logoUrl,
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.size(26.dp).clip(RoundedCornerShape(3.dp)),
+            modifier = Modifier.size(28.dp).clip(RoundedCornerShape(3.dp)),
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
@@ -411,7 +411,7 @@ private fun ChannelListRow(
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp, lineHeight = 16.sp),
                     fontWeight = if (isLive || focused) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (focused) Color(0xFF10171E) else if (isLive) Color(0xFF26C6DA) else Color.White,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
@@ -611,7 +611,7 @@ private fun GuideRow(
                 model = row.primary.logoUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.size(26.dp).clip(RoundedCornerShape(2.dp)),
+                modifier = Modifier.size(28.dp).clip(RoundedCornerShape(2.dp)),
             )
 
             Spacer(Modifier.width(8.dp))
@@ -872,7 +872,7 @@ private const val MINUTE_DP = 7.0f
 private const val HOURS_IN_WINDOW = 24
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
 private val CHANNEL_COLUMN = 240.dp
-private val ROW_HEIGHT = 46.dp
+private val ROW_HEIGHT = 54.dp
 private val MIN_BLOCK_WIDTH = 95.dp
 private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 

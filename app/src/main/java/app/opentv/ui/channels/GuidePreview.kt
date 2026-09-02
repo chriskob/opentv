@@ -113,7 +113,7 @@ fun GuidePreview(
     Row(
         modifier
             .fillMaxWidth()
-            .height(138.dp)
+            .height(172.dp)
             .padding(start = 8.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
     ) {
         // ---- 16:9 Video preview / Logo card (clean, matching TiviMate) ----

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.60
+
+- **Large Preview Player & 6 Full Channel Rows**:
+  - Expanded `GuidePreview` to 172dp height, enlarging the 16:9 video preview card by ~25%.
+  - Set `ROW_HEIGHT = 54dp` to cleanly fit exactly 6 full channel rows in the guide grid.
+  - Channel names comfortably display across 2 lines (`maxLines = 2`).
+  - Programme blocks strictly use 1 line (`maxLines = 1`).
+
 ## 0.12.59
 
 - **Tighten Guide Row Height & Proportions to Match TiviMate**:
