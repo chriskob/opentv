@@ -450,6 +450,14 @@ fun HomeScreen(
                 onOpenRecordings = { isFullScreen = false; onOpenMainMenu() },
                 onOpenSettings = onOpenSettings,
                 renderPlayerView = false,
+                onChannelChange = { newId ->
+                    val match = rows.firstOrNull { it.primary.id == newId || it.variants.any { v -> v.id == newId } }
+                    if (match != null) {
+                        selectedRow = match
+                        highlightedRow = match
+                        highlightedProgramme = match.now
+                    }
+                },
             )
         } else {
             Row(

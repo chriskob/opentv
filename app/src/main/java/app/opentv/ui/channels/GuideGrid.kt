@@ -135,7 +135,13 @@ fun GuideGrid(
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val focusTargetKey = playingKey ?: selectedKey ?: rows.firstOrNull()?.key
+    val targetIndex = remember(focusTargetKey, rows) {
+        if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
+    }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState(
+        initialFirstVisibleItemIndex = (targetIndex - 2).coerceAtLeast(0)
+    )
     val initialFocusRequester = remember { FocusRequester() }
     val coroutineScope = rememberCoroutineScope()
 
@@ -143,11 +149,10 @@ fun GuideGrid(
 
     LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
 
-    LaunchedEffect(rows.isNotEmpty()) {
+    LaunchedEffect(focusTargetKey, rows.isNotEmpty()) {
         if (rows.isNotEmpty() && !hasInitialFocused) {
             hasInitialFocused = true
-            val key = selectedKey ?: rows.first().key
-            val index = rows.indexOfFirst { it.key == key }.coerceAtLeast(0)
+            val index = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
             val target = (index - 2).coerceAtLeast(0)
             listState.scrollToItem(target)
             delay(50)
@@ -169,7 +174,7 @@ fun GuideGrid(
                     key = { _, row -> row.key },
                     contentType = { _, _ -> "guide_row" },
                 ) { index, row ->
-                    val isHighlighted = row.key == selectedKey
+                    val isTarget = row.key == focusTargetKey
                     val isPlaying = row.key == playingKey
                     GuideRow(
                         row = row,
@@ -179,7 +184,7 @@ fun GuideGrid(
                         nowMillis = nowMillis,
                         scroll = scroll,
                         isSelected = isPlaying,
-                        focusRequester = if (isHighlighted) initialFocusRequester else null,
+                        focusRequester = if (isTarget) initialFocusRequester else null,
                         onSelect = { onSelectRow(row) },
                         onLongSelect = { onLongSelectRow(row) },
                         onFocus = { prog -> onFocusRow(row, prog) },
@@ -243,16 +248,21 @@ fun ChannelList(
     nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier,
 ) {
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val focusTargetKey = playingKey ?: selectedKey ?: rows.firstOrNull()?.key
+    val targetIndex = remember(focusTargetKey, rows) {
+        if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
+    }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState(
+        initialFirstVisibleItemIndex = (targetIndex - 2).coerceAtLeast(0)
+    )
     val initialFocusRequester = remember { FocusRequester() }
     val coroutineScope = rememberCoroutineScope()
     var hasInitialFocused by remember { mutableStateOf(false) }
 
-    LaunchedEffect(rows.isNotEmpty()) {
+    LaunchedEffect(focusTargetKey, rows.isNotEmpty()) {
         if (rows.isNotEmpty() && !hasInitialFocused) {
             hasInitialFocused = true
-            val key = selectedKey ?: rows.first().key
-            val index = rows.indexOfFirst { it.key == key }.coerceAtLeast(0)
+            val index = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
             val target = (index - 2).coerceAtLeast(0)
             listState.scrollToItem(target)
             delay(50)
@@ -267,7 +277,7 @@ fun ChannelList(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
-            val isHighlighted = row.key == selectedKey
+            val isTarget = row.key == focusTargetKey
             val isPlaying = row.key == playingKey
             ChannelListRow(
                 row = row,
@@ -275,7 +285,7 @@ fun ChannelList(
                 totalRows = rows.size,
                 nowMillis = nowMillis,
                 isSelected = isPlaying,
-                focusRequester = if (isHighlighted) initialFocusRequester else null,
+                focusRequester = if (isTarget) initialFocusRequester else null,
                 onSelect = { onSelectRow(row) },
                 onLongSelect = { onLongSelectRow(row) },
                 onFocus = { prog -> onFocusRow(row, prog) },

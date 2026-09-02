@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.58
+
+- **Always Land Focus on Currently Playing Channel When Opening Guide**:
+  - Added `onChannelChange` callback from `PlayerScreen` to synchronize channel switches back to `HomeScreen` in real time.
+  - Initialized `LazyColumn` in `GuideGrid` and `ChannelList` directly at `initialFirstVisibleItemIndex` of the playing channel so it renders into view on the first frame.
+  - Prioritized `playingKey` over `selectedKey` for `focusTargetKey` and attached `initialFocusRequester` strictly to the currently playing channel row.
+
 ## 0.12.57
 
 - **Permanent Screensaver Prevention During Live TV**:

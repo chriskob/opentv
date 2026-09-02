@@ -179,6 +179,7 @@ fun PlayerScreen(
     onOpenRecordings: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     renderPlayerView: Boolean = true,
+    onChannelChange: ((Long) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -439,6 +440,7 @@ fun PlayerScreen(
             paused = false
             settings.lastChannelId = target.id
             settings.recordChannelWatched(target.id)
+            onChannelChange?.invoke(target.id)
 
             controller.play(
                 PlayerController.Request(
