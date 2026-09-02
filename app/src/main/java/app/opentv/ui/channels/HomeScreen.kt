@@ -270,18 +270,26 @@ fun HomeScreen(
         }
     }
 
-    // Keep both valid as the list changes (e.g. switching category): prioritize the currently
-    // playing / last tuned channel on first load ONLY. Never override an already selected channel!
-    LaunchedEffect(rows) {
-        if (selectedRow == null && rows.isNotEmpty()) {
+    // Synchronously compute initial active row so the first composition frame already has the
+    // playing / last tuned channel key ready for GuideGrid without waiting for an async effect.
+    val initialRow = remember(rows) {
+        if (rows.isEmpty()) null
+        else {
             val lastId = settings.lastChannelId
             val matchByLastId = if (lastId > 0) {
                 rows.firstOrNull { r -> r.primary.id == lastId || r.variants.any { it.id == lastId } }
             } else null
-            val initial = matchByLastId ?: rows.first()
-            selectedRow = initial
-            highlightedRow = initial
-            highlightedProgramme = initial.now
+            matchByLastId ?: rows.first()
+        }
+    }
+    val activeSelectedRow = selectedRow ?: initialRow
+    val activeHighlightedRow = highlightedRow ?: initialRow
+
+    LaunchedEffect(initialRow) {
+        if (selectedRow == null && initialRow != null) {
+            selectedRow = initialRow
+            highlightedRow = initialRow
+            highlightedProgramme = initialRow.now
         }
     }
 
@@ -635,8 +643,8 @@ fun HomeScreen(
                 if (channelLayout == AppSettings.ChannelLayout.LIST) {
                     ChannelList(
                         rows = rows,
-                        selectedKey = highlightedRow?.key,
-                        playingKey = selectedRow?.key,
+                        selectedKey = activeHighlightedRow?.key,
+                        playingKey = activeSelectedRow?.key,
                         onSelectRow = { row -> requestLive(row.primary) },
                         onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
@@ -660,8 +668,8 @@ fun HomeScreen(
                         rows = rows,
                         windowStartMillis = windowStart,
                         dayOffset = guideDayOffset,
-                        selectedKey = highlightedRow?.key,
-                        playingKey = selectedRow?.key,
+                        selectedKey = activeHighlightedRow?.key,
+                        playingKey = activeSelectedRow?.key,
                         onSelectRow = { row -> requestLive(row.primary) },
                         onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,

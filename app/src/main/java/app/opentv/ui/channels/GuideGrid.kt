@@ -79,6 +79,39 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 
 /**
+ * Formats a channel's shownName across two distinct lines (matching TiviMate):
+ * Line 1: Network / Main Station name (e.g., "CBS 2 CHICAGO")
+ * Line 2: Station callsign / sub-brand in parentheses (e.g., "(WBBM)")
+ */
+internal fun formatChannelNameForDisplay(name: String): String {
+    val trimmed = name.trim()
+    if (trimmed.contains('\n')) return trimmed
+
+    // Check if name contains a callsign or secondary label in parentheses/brackets e.g. "CBS 2 CHICAGO (WBBM)"
+    val parenMatch = Regex("""^(.*?)\s*([(\[][A-Za-z0-9-]+[)\]])$""").matchEntire(trimmed)
+    if (parenMatch != null && parenMatch.groupValues[1].isNotBlank()) {
+        return "${parenMatch.groupValues[1]}\n${parenMatch.groupValues[2]}"
+    }
+
+    // Check if name ends with a 2-5 letter station callsign or quality/stream tag e.g. "CBS 2 CHICAGO WBBM" -> "CBS 2 CHICAGO\n(WBBM)"
+    val callSignMatch = Regex("""^(.*?)\s+([A-Z0-9]{2,5}(?:-[A-Z0-9]+)?)$""").matchEntire(trimmed)
+    if (callSignMatch != null && callSignMatch.groupValues[1].isNotBlank()) {
+        val call = callSignMatch.groupValues[2]
+        return "${callSignMatch.groupValues[1]}\n($call)"
+    }
+
+    // If channel has 3+ words (e.g. "PBS 11 CHICAGO WTTW"), split the last word onto line 2
+    val words = trimmed.split(Regex("""\s+"""))
+    if (words.size >= 3) {
+        val line1 = words.dropLast(1).joinToString(" ")
+        val line2 = words.last()
+        return "$line1\n$line2"
+    }
+
+    return trimmed
+}
+
+/**
  * The programme guide: channels down the left, a scrolling time-line to the right, with
  * each programme drawn as a block whose width is its duration. This is the "grid" a TV guide
  * is supposed to be — you can see what is on now, what is next, and read across the evening.
@@ -150,13 +183,19 @@ fun GuideGrid(
     LaunchedEffect(dayOffset) { scroll.scrollTo(0) }
 
     LaunchedEffect(focusTargetKey, rows.isNotEmpty()) {
-        if (rows.isNotEmpty() && !hasInitialFocused) {
-            hasInitialFocused = true
-            val index = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
-            val target = (index - 2).coerceAtLeast(0)
-            listState.scrollToItem(target)
-            delay(50)
-            runCatching { initialFocusRequester.requestFocus() }
+        if (rows.isNotEmpty()) {
+            val targetKey = playingKey ?: selectedKey
+            if (targetKey != null || rows.size <= 1) {
+                if (!hasInitialFocused) {
+                    hasInitialFocused = true
+                    val k = targetKey ?: rows.first().key
+                    val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
+                    val target = (index - 2).coerceAtLeast(0)
+                    listState.scrollToItem(target)
+                    delay(40)
+                    runCatching { initialFocusRequester.requestFocus() }
+                }
+            }
         }
     }
 
@@ -260,13 +299,19 @@ fun ChannelList(
     var hasInitialFocused by remember { mutableStateOf(false) }
 
     LaunchedEffect(focusTargetKey, rows.isNotEmpty()) {
-        if (rows.isNotEmpty() && !hasInitialFocused) {
-            hasInitialFocused = true
-            val index = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
-            val target = (index - 2).coerceAtLeast(0)
-            listState.scrollToItem(target)
-            delay(50)
-            runCatching { initialFocusRequester.requestFocus() }
+        if (rows.isNotEmpty()) {
+            val targetKey = playingKey ?: selectedKey
+            if (targetKey != null || rows.size <= 1) {
+                if (!hasInitialFocused) {
+                    hasInitialFocused = true
+                    val k = targetKey ?: rows.first().key
+                    val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
+                    val target = (index - 2).coerceAtLeast(0)
+                    listState.scrollToItem(target)
+                    delay(40)
+                    runCatching { initialFocusRequester.requestFocus() }
+                }
+            }
         }
     }
 
@@ -407,7 +452,7 @@ private fun ChannelListRow(
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    row.primary.shownName,
+                    formatChannelNameForDisplay(row.primary.shownName),
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp, lineHeight = 16.sp),
                     fontWeight = if (isLive || focused) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (focused) Color(0xFF10171E) else if (isLive) Color(0xFF26C6DA) else Color.White,
@@ -619,7 +664,7 @@ private fun GuideRow(
             // Channel Name & Icons
             Column(Modifier.weight(1f)) {
                 Text(
-                    row.primary.shownName,
+                    formatChannelNameForDisplay(row.primary.shownName),
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp, lineHeight = 16.sp),
                     fontWeight = FontWeight.Medium,
                     color = if (focused) Color(0xFF10171E) else if (isSelected) Color(0xFF26C6DA) else Color.White,

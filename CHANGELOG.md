@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.61
+
+- **Consistent 2-Line Channel Names & Bulletproof Startup Focus**:
+  - Added `formatChannelNameForDisplay` to reliably format channel names across 2 lines with callsigns/sub-brands (e.g. `(WBBM)`, `(WLS)`, `(WMAQ)`) on line 2, matching TiviMate.
+  - Pre-computed `initialRow` synchronously on first composition frame in `HomeScreen` so `playingKey` is immediately valid on cold boot without waiting for async effects.
+  - Guarded `hasInitialFocused` in `GuideGrid` and `ChannelList` so initial focus never locks onto row 0 before the active playing channel is known.
+
 ## 0.12.60
 
 - **Large Preview Player & 6 Full Channel Rows**:
