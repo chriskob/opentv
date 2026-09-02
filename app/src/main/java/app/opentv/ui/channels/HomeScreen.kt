@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -383,28 +384,50 @@ fun HomeScreen(
         previewController.player.volume = if (isFullScreen || previewSound) 1f else 0f
     }
 
+    var previewBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+
+    val playerModifier = if (isFullScreen || previewBounds.isEmpty) {
+        Modifier.fillMaxSize()
+    } else {
+        with(density) {
+            Modifier
+                .offset(
+                    x = previewBounds.left.toDp(),
+                    y = previewBounds.top.toDp(),
+                )
+                .size(
+                    width = previewBounds.width.toDp(),
+                    height = previewBounds.height.toDp(),
+                )
+                .clip(RoundedCornerShape(10.dp))
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         // ---- TiviMate-Grade Persistent Hardware Video Surface ----
-        // Created once and stays alive throughout Live TV. Never destroyed across Guide <-> Fullscreen navigation.
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
-                    useController = false
-                    resizeMode = settings.playerResizeMode.value
-                    player = previewController.player
-                }
-            },
-            update = { pv ->
-                if (pv.player != previewController.player) {
-                    pv.player = previewController.player
-                }
-                pv.resizeMode = settings.playerResizeMode.value
-            },
-            onRelease = { pv ->
-                pv.player = null
-            },
-        )
+        // Created once and stays alive throughout Live TV. Smoothly positions into preview card in guide, fills screen in fullscreen.
+        Box(playerModifier) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
+                        useController = false
+                        resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        player = previewController.player
+                    }
+                },
+                update = { pv ->
+                    if (pv.player != previewController.player) {
+                        pv.player = previewController.player
+                    }
+                    pv.resizeMode = if (isFullScreen) settings.playerResizeMode.value else androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                },
+                onRelease = { pv ->
+                    pv.player = null
+                },
+            )
+        }
 
         if (isFullScreen) {
             PlayerScreen(
@@ -417,6 +440,7 @@ fun HomeScreen(
                         highlightedRow = match
                         highlightedProgramme = match.now
                     }
+                    railExpanded = false
                     isFullScreen = false
                 },
                 onOpenSearch = onOpenSearch,
@@ -430,7 +454,6 @@ fun HomeScreen(
             Row(
                 Modifier
                     .fillMaxSize()
-                    .background(Color(0xEB0D1319))
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
 
@@ -574,6 +597,7 @@ fun HomeScreen(
                     canGoPrevDay = guideDayOffset > 0,
                     onPrevDay = { viewModel.nudgeGuideDay(-1) },
                     onNextDay = { viewModel.nudgeGuideDay(1) },
+                    onPreviewBoundsChanged = { rect -> previewBounds = rect },
                 )
                 // Shared by both layouts: focus follows the highlight and collapses the rail; LEFT
                 // from the leftmost element reopens the rail (consumed only when it was hidden).

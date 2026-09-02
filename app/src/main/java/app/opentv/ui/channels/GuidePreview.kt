@@ -43,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +101,7 @@ fun GuidePreview(
     onPrevDay: () -> Unit = {},
     onNextDay: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onPreviewBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
@@ -113,16 +116,19 @@ fun GuidePreview(
             .height(154.dp)
             .padding(start = 8.dp, end = 12.dp, top = 4.dp, bottom = 6.dp),
     ) {
-        // ---- 16:9 Logo / Channel card (clean, matching TiviMate) ----
+        // ---- 16:9 Video preview / Logo card (clean, matching TiviMate) ----
         Box(
             Modifier
                 .fillMaxHeight()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF161F27)),
+                .onGloballyPositioned { coords ->
+                    onPreviewBoundsChanged?.invoke(coords.boundsInRoot())
+                }
+                .background(Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
-            if (row != null) {
+            if (row != null && previewPlayer == null) {
                 AsyncImage(
                     model = row.primary.logoUrl,
                     contentDescription = null,

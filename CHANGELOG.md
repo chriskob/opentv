@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.53
+
+- **TiviMate Small-Screen Video Preview & Auto-Focus Current Playing Channel**:
+  - **Dynamic In-Preview Sizing**: The persistent root video surface dynamically positions and sizes itself to fit precisely inside the 16:9 preview card in the TV Guide, and seamlessly expands to full screen when exiting the guide.
+  - **Auto-Focus Current Playing Channel**: Replaced stale one-time initial focus guards with active `selectedKey` triggers in `GuideGrid` and `ChannelList`. Opening or returning to the TV Guide automatically scrolls to and highlights the currently playing channel.
+
 ## 0.12.52
 
 - **TiviMate Architecture: Single Permanent Root Hardware Video Surface.**
