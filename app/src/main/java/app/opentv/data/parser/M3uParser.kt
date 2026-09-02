@@ -85,6 +85,14 @@ object M3uParser {
                         // first and drop later duplicates rather than letting them collide on
                         // the unique index and abort the whole import.
                         if (seenStreamIds.add(streamId)) {
+                            val catchupAttr = attributes["catchup"] ?: attributes["catchup-type"]
+                            val catchupDaysAttr = attributes["catchup-days"]?.toIntOrNull()
+                                ?: attributes["timeshift"]?.toIntOrNull()
+                                ?: attributes["tvg-shift"]?.toIntOrNull()
+                                ?: if (!catchupAttr.isNullOrBlank()) 7 else 0
+                            val catchupSource = attributes["catchup-source"]?.takeIf { it.isNotBlank() }
+                            val hasCatchup = !catchupAttr.isNullOrBlank() || catchupDaysAttr > 0 || catchupSource != null
+
                             channels += Channel(
                                 sourceId = sourceId,
                                 streamId = streamId,
@@ -93,8 +101,11 @@ object M3uParser {
                                 logoUrl = (attributes["tvg-logo"] ?: attributes["logo"])
                                     ?.takeIf { it.isNotBlank() },
                                 epgChannelId = attributes["tvg-id"]?.takeIf { it.isNotBlank() },
+                                tvArchive = hasCatchup,
+                                tvArchiveDays = if (hasCatchup) catchupDaysAttr.coerceAtLeast(1) else 0,
                                 number = pendingNumber,
                                 streamUrl = line,
+                                cmd = catchupSource,
                                 sortIndex = index++,
                             )
                         }

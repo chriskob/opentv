@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.66
+
+- **Full Catch-Up / Archive TV Support (Xtream & M3U)**:
+  - Added M3U playlist parsing for IPTV catch-up attributes: `catchup`, `catchup-days`, `timeshift`, and `catchup-source` templates.
+  - Implemented `CatchupResolver` to handle both Xtream timeshift URLs and M3U URL template placeholder substitution (`{utc}`, `${start}`, `${duration}`, etc.).
+  - Expanded guide day navigation to allow browsing up to 7 days into the past (Yesterday, -2 days, etc.) with 7-day EPG data retention.
+  - Added 1-click playback for past programmes on archive-enabled channels directly into the seekable player with pause/rewind/fast-forward.
+
 ## 0.12.65
 
 - **Enlarged Channel Logos in TV Guide**:

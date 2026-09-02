@@ -323,19 +323,18 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private val _guideDayOffset = MutableStateFlow(0)
     val guideDayOffset: StateFlow<Int> = _guideDayOffset.asStateFlow()
 
-    /** Page the guide a day forward/back (clamped to today…+[GUIDE_MAX_DAYS]), or jump back to now. */
+    /** Page the guide a day forward/back (clamped to -[GUIDE_MAX_PAST_DAYS]…+[GUIDE_MAX_DAYS]), or jump back to now. */
     fun nudgeGuideDay(delta: Int) {
-        _guideDayOffset.value = (_guideDayOffset.value + delta).coerceIn(0, GUIDE_MAX_DAYS)
+        _guideDayOffset.value = (_guideDayOffset.value + delta).coerceIn(-GUIDE_MAX_PAST_DAYS, GUIDE_MAX_DAYS)
     }
 
     fun guideToNow() { _guideDayOffset.value = 0 }
 
     val windowStartMillis: StateFlow<Long> =
         combine(nowTick.map { it - it % HALF_HOUR_MILLIS }, _guideDayOffset) { base, day ->
-            // Today tracks the current half-hour so live is always on screen; a future day starts
-            // at that day's local midnight, so the whole day's schedule is browsable and drifts
-            // with real time only on the "today" page.
-            if (day <= 0) base else startOfLocalDay(base) + day * DAY_MILLIS
+            // Today tracks the current half-hour so live is always on screen; a past or future day starts
+            // at that day's local midnight, so the whole day's schedule is browsable.
+            if (day == 0) base else startOfLocalDay(base) + day * DAY_MILLIS
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
             System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS },
@@ -394,7 +393,8 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
                     val epgIds = visible.mapNotNull { it.epgChannelId?.ifBlank { null } }.distinct()
                     val byEpgChannel = if (epgIds.isEmpty()) emptyMap() else {
-                        graph.epgRepository.windowForChannels(epgIds, windowStart, windowStart + GUIDE_LOOKAHEAD_MILLIS)
+                        val lookahead = if (_guideDayOffset.value == 0) GUIDE_LOOKAHEAD_MILLIS else DAY_MILLIS
+                        graph.epgRepository.windowForChannels(epgIds, windowStart, windowStart + lookahead)
                     }
                     buildRows(visible, byEpgChannel, now)
                 }
@@ -625,6 +625,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         const val GUIDE_LOOKAHEAD_MILLIS = 6 * 60 * 60 * 1000L  // 6 hours of fast-loading timeline
         const val DAY_MILLIS = 24 * 60 * 60 * 1000L
+        const val GUIDE_MAX_PAST_DAYS = 7 // browse up to a week into the past for catch-up TV
         const val GUIDE_MAX_DAYS = 6  // browse up to a week out, matching typical XMLTV depth
         const val HALF_HOUR_MILLIS = 30 * 60 * 1000L
     }

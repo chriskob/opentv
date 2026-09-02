@@ -437,8 +437,8 @@ class EpgRepository(
         /** Writes per transaction. Large enough to be fast, small enough not to hold WAL open. */
         const val BATCH_SIZE = 500
 
-        /** Keep finished programmes for a day so "what was on" still works. */
-        val RETENTION_PAST_MILLIS: Long = TimeUnit.DAYS.toMillis(1)
+        /** Keep finished programmes for 7 days to support catch-up / archive TV browsing. */
+        val RETENTION_PAST_MILLIS: Long = TimeUnit.DAYS.toMillis(7)
 
         /** Feeds publish rolling windows; refreshing more often than this is rude. */
         val REFRESH_INTERVAL_MILLIS: Long = TimeUnit.HOURS.toMillis(6)

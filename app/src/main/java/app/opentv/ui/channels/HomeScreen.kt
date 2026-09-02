@@ -611,6 +611,7 @@ fun HomeScreen(
                 }
 
                 val dayLabel = when (guideDayOffset) {
+                    -1 -> "Yesterday"
                     0 -> stringResource(R.string.guide_today)
                     1 -> stringResource(R.string.guide_tomorrow)
                     else -> remember(windowStart) {
@@ -630,7 +631,7 @@ fun HomeScreen(
                     } == true,
                     onRecord = { recordSelected() },
                     dayLabel = dayLabel,
-                    canGoPrevDay = guideDayOffset > 0,
+                    canGoPrevDay = guideDayOffset > -7,
                     onPrevDay = { viewModel.nudgeGuideDay(-1) },
                     onNextDay = { viewModel.nudgeGuideDay(1) },
                     onPreviewBoundsChanged = { rect ->
@@ -695,8 +696,25 @@ fun HomeScreen(
                         onFocusRow = onFocusChannel,
                         onProgramme = { row, programme ->
                             val liveNow = nowMillis in programme.startUtcMillis until programme.endUtcMillis
+                            val isPast = programme.endUtcMillis <= nowMillis
                             if (liveNow) {
                                 requestLive(row.primary)
+                            } else if (isPast && row.primary.tvArchive) {
+                                recordScope.launch {
+                                    val source = graph.sourceRepository.byId(row.primary.sourceId)
+                                    val url = if (source != null) app.opentv.core.CatchupResolver.resolve(source, row.primary, programme) else null
+                                    if (url != null) {
+                                        Toast.makeText(context, "Playing catch-up: ${programme.title}", Toast.LENGTH_SHORT).show()
+                                        onPlayCatchup(
+                                            "catchup:${row.primary.id}:${programme.startUtcMillis}",
+                                            url,
+                                            "${row.primary.shownName} — ${programme.title}",
+                                            source?.userAgent ?: "OpenTV",
+                                        )
+                                    } else {
+                                        recordTarget = row to programme
+                                    }
+                                }
                             } else {
                                 recordTarget = row to programme
                             }
@@ -820,16 +838,15 @@ fun HomeScreen(
                     isPast && channel.tvArchive -> RecordActionRow(stringResource(R.string.guide_watch_from_start), primary = true) {
                         recordScope.launch {
                             val source = graph.sourceRepository.byId(channel.sourceId)
-                            if (source == null) {
+                            val url = if (source != null) app.opentv.core.CatchupResolver.resolve(source, channel, programme) else null
+                            if (url == null) {
                                 Toast.makeText(context, context.getString(R.string.guide_catchup_link_failed), Toast.LENGTH_SHORT).show()
                             } else {
-                                val mins = (programme.durationMillis / 60000).toInt().coerceAtLeast(1)
-                                val url = graph.xtreamApi.catchupUrl(source, channel.streamId, programme.startUtcMillis, mins)
                                 onPlayCatchup(
                                     "catchup:${channel.id}:${programme.startUtcMillis}",
                                     url,
                                     "${channel.shownName} — ${programme.title}",
-                                    source.userAgent,
+                                    source?.userAgent ?: "OpenTV",
                                 )
                             }
                         }
