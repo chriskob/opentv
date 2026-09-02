@@ -385,6 +385,7 @@ fun PlayerScreen(
 
     fun tuneTo(channel: Channel) {
         currentId = channel.id
+        currentChannel = channel
         paused = false
         settings.lastChannelId = channel.id
         settings.recordChannelWatched(channel.id)
@@ -409,8 +410,9 @@ fun PlayerScreen(
         if (currentId == id && (controller.player.playbackState == androidx.media3.common.Player.STATE_READY || controller.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)) {
             return
         }
-        // Remember where we came from so "Last channel" can bounce straight back. Quality switches
-        // go through tuneTo directly, so they never count as a channel change here.
+        // Cut old channel immediately so it never lingers on screen
+        controller.player.stop()
+        controller.player.clearMediaItems()
         currentId?.let { if (it != id) previousId = it }
         currentId = id
         scope.launch {
@@ -740,6 +742,9 @@ fun PlayerScreen(
                         pv.player = controller.player
                     }
                     pv.resizeMode = resizeMode
+                },
+                onRelease = { pv ->
+                    pv.player = null
                 },
             )
         }

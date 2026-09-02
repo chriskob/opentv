@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.49
+
+- **Restore Hardware SurfaceView & Eliminate Video Freezes, Black Screens, and Channel Switching Delays.**
+  - **Hardware SurfaceView**: Replaced `TextureView` with hardware `surface_view` across all PlayerViews (`view_player.xml`). Eliminates GPU composition bottleneck on Android TV & Fire OS, ending video freezes and black screens when scrolling or pressing remote buttons.
+  - **Clean Surface Lifecycle with onRelease**: Added `onRelease` callbacks to safely detach `PlayerView` instances across `PlayerScreen`, `GuidePreview`, and `VodPlayerScreen`, preventing surface contention without resorting to TextureView.
+  - **Instant Channel Switching**: Removed forced 10-second `LIVE_TARGET_OFFSET_MILLIS` buffer delay in ExoPlayer and tuned playback buffer threshold to 500ms for sub-second channel tuning.
+  - **Zero Lingering Stream on Switch**: Immediately stops old stream and clears media items upon tuning from the guide or history menu so the previous channel does not keep playing for 5-10 seconds before changing.
+  - **Codebase Cleanliness**: Removed dead/unused experimental TV layout files.
+
 ## 0.12.48
 
 - **Fix Focus Requester Tree Attachment & Eliminate D-Pad Recomposition Loop in Guide Grid.**

@@ -298,31 +298,22 @@ class PlayerController(
         current = request
         stopped = false
 
+        // Immediately stop old stream and show buffering for the new channel
+        _state.value = State.Buffering(request.title)
+        player.stop()
+        player.clearMediaItems()
+
         switchJob = scope.launch {
             if (debounce) delay(switchDebounceMillis)
 
             consecutiveFailures = 0
             httpFactory.setDefaultRequestProperties(mapOf("User-Agent" to request.userAgent))
-            _state.value = State.Buffering(request.title)
 
             val mediaItem = MediaItem.Builder()
                 .setUri(request.url)
-                .apply {
-                    // Only meaningful for live streams; setting it on VOD skews seeking.
-                    if (request.isLive) {
-                        setLiveConfiguration(
-                            MediaItem.LiveConfiguration.Builder()
-                                .setTargetOffsetMs(LIVE_TARGET_OFFSET_MILLIS)
-                                .build(),
-                        )
-                    }
-                }
                 .build()
 
             with(player) {
-                // stop() rather than release(): keeps the codec and the surface alive.
-                stop()
-                clearMediaItems()
                 setMediaItem(mediaItem)
                 if (!request.isLive && request.startPositionMillis > 0) {
                     seekTo(request.startPositionMillis)
@@ -434,14 +425,14 @@ class PlayerController(
 
         /**
          * Fast initial start buffer for IPTV live streams (matching TiviMate tuning).
-         * 1.0s buffer threshold starts playback immediately on first chunk arrival,
-         * while retaining a healthy 8s-20s buffer ceiling to ride out network jitter without
+         * 500ms buffer threshold starts playback immediately on first chunk arrival,
+         * while retaining a healthy 4s-15s buffer ceiling to ride out network jitter without
          * ballooning memory usage.
          */
-        const val MIN_BUFFER_MILLIS = 8_000
-        const val MAX_BUFFER_MILLIS = 20_000
-        const val BUFFER_FOR_PLAYBACK_MILLIS = 1_000
-        const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 2_000
+        const val MIN_BUFFER_MILLIS = 4_000
+        const val MAX_BUFFER_MILLIS = 15_000
+        const val BUFFER_FOR_PLAYBACK_MILLIS = 500
+        const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS = 1_000
 
         // DVR mode (pause & rewind live TV): keep a couple of minutes behind the live edge to seek
         // into, and let the forward buffer grow to match so a pause of up to a couple of minutes

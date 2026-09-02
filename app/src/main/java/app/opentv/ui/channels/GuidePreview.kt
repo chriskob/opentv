@@ -139,6 +139,9 @@ fun GuidePreview(
                         }
                         pv.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     },
+                    onRelease = { pv ->
+                        pv.player = null
+                    },
                 )
             } else if (row != null) {
                 AsyncImage(

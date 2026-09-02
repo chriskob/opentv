@@ -325,6 +325,8 @@ fun HomeScreen(
             highlightedProgramme = match.now
         }
         settings.lastChannelId = channel.id
+        previewController.player.stop()
+        previewController.player.clearMediaItems()
         isFullScreen = true
     }
     fun requestLive(channel: Channel) {

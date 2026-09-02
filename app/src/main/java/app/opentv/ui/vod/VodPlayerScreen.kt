@@ -320,6 +320,9 @@ fun VodPlayerScreen(
                     pv.player = controller.player
                 }
             },
+            onRelease = { pv ->
+                pv.player = null
+            },
         )
 
         when (val current = state) {
