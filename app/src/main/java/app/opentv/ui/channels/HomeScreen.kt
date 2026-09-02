@@ -324,9 +324,15 @@ fun HomeScreen(
             highlightedRow = match
             highlightedProgramme = match.now
         }
+        val isAlreadyPlayingThisChannel = (settings.lastChannelId == channel.id) &&
+            (previewController.player.playbackState == androidx.media3.common.Player.STATE_READY ||
+             previewController.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+
         settings.lastChannelId = channel.id
-        previewController.player.stop()
-        previewController.player.clearMediaItems()
+        if (!isAlreadyPlayingThisChannel) {
+            previewController.player.stop()
+            previewController.player.clearMediaItems()
+        }
         isFullScreen = true
     }
     fun requestLive(channel: Channel) {

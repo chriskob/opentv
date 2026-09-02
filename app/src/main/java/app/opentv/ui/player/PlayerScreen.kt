@@ -212,7 +212,7 @@ fun PlayerScreen(
 
     val queue = remember { PlaybackQueue.items }
     var variants by remember { mutableStateOf<List<Channel>>(emptyList()) }
-    var currentId by remember { mutableStateOf<Long?>(null) }
+    var currentId by remember { mutableStateOf(channelId) }
     // The channel we were on before this one — powers the "Last channel" recall in the list.
     var previousId by remember { mutableStateOf<Long?>(null) }
     // Digits typed on the remote accumulate here, then jump to that channel number after a beat.
@@ -409,7 +409,13 @@ fun PlayerScreen(
 
     fun playChannelId(id: Long) {
         controlsVisible = false
-        if (currentId == id && (controller.player.playbackState == androidx.media3.common.Player.STATE_READY || controller.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)) {
+        val isAlreadyPlaying = (currentId == id || settings.lastChannelId == id) &&
+            controller.player.currentMediaItem != null &&
+            (controller.player.playbackState == androidx.media3.common.Player.STATE_READY ||
+             controller.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+
+        if (isAlreadyPlaying) {
+            currentId = id
             return
         }
         // Cut old channel immediately so it never lingers on screen

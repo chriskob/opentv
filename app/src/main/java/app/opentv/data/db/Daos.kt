@@ -470,9 +470,26 @@ interface ProgrammeDao {
     @Upsert
     suspend fun upsertAll(programmes: List<Programme>)
 
-    /** Housekeeping: drop anything that finished before the retention cut-off. */
-    @Query("DELETE FROM programmes WHERE endUtcMillis < :beforeUtcMillis")
-    suspend fun deleteEndedBefore(beforeUtcMillis: Long)
+    /** Housekeeping: drop anything that finished before the retention cut-off in batches to avoid locking SQLite. */
+    @Query(
+        """
+        DELETE FROM programmes
+        WHERE id IN (
+            SELECT id FROM programmes
+            WHERE endUtcMillis < :beforeUtcMillis
+            LIMIT :limit
+        )
+        """
+    )
+    suspend fun deleteEndedBeforeBatch(beforeUtcMillis: Long, limit: Int = 2000): Int
+
+    suspend fun deleteEndedBefore(beforeUtcMillis: Long) {
+        while (true) {
+            val count = deleteEndedBeforeBatch(beforeUtcMillis, 2000)
+            if (count < 2000) break
+            kotlinx.coroutines.delay(25)
+        }
+    }
 
     @Query("DELETE FROM programmes WHERE feedId = :feedId")
     suspend fun deleteForFeed(feedId: Long)

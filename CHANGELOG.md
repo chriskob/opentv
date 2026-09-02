@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.51
+
+- **Seamless In-Place Fullscreen Transition & Chunked SQLite Pruning.**
+  - **Zero-Stall Guide Exit**: When long-pressing Back or selecting the currently playing channel to exit the guide, OpenTV now seamlessly expands the existing player surface without stopping playback or reloading from the network. Eliminates the black screen and reload delay.
+  - **Chunked SQLite Background Pruning**: Batched EPG programme deletion (`deleteEndedBefore`) into 2,000-row chunks with coroutine yields, preventing the 150-second SQLite connection pool write lock that froze the database and delayed channel starts.
+
 ## 0.12.50
 
 - **Eliminate 10-15s Database Freeze on Channel Change & Menu Interaction.**
