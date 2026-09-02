@@ -98,13 +98,6 @@ fun SettingsHubScreen(
             subtitle = stringResource(R.string.settings_channels_subtitle),
             onClick = onOpenChannels,
         ),
-        HubCardItem(
-            icon = Icons.Filled.Extension,
-            iconTint = Color(0xFFAB47BC),
-            title = stringResource(R.string.settings_addons_title),
-            subtitle = stringResource(R.string.settings_addons_subtitle),
-            onClick = onOpenAddons,
-        ),
     )
 
     val playbackSection = listOf(
@@ -114,13 +107,6 @@ fun SettingsHubScreen(
             title = stringResource(R.string.settings_display_title),
             subtitle = stringResource(R.string.settings_display_subtitle),
             onClick = onOpenDisplay,
-        ),
-        HubCardItem(
-            icon = Icons.Filled.PhoneAndroid,
-            iconTint = Color(0xFF42A5F5),
-            title = stringResource(R.string.settings_webmanager_title),
-            subtitle = stringResource(R.string.settings_webmanager_subtitle),
-            onClick = onOpenWebManager,
         ),
     )
 
@@ -138,13 +124,6 @@ fun SettingsHubScreen(
             title = stringResource(R.string.settings_parental_title),
             subtitle = stringResource(R.string.settings_parental_subtitle),
             onClick = onOpenParental,
-        ),
-        HubCardItem(
-            icon = Icons.Filled.Sync,
-            iconTint = Color(0xFF26A69A),
-            title = stringResource(R.string.settings_sync_title),
-            subtitle = stringResource(R.string.settings_sync_subtitle),
-            onClick = onOpenSync,
         ),
         HubCardItem(
             icon = Icons.Filled.Info,

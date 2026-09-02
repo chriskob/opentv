@@ -454,6 +454,21 @@ interface ProgrammeDao {
     @Query(
         """
         SELECT * FROM programmes
+        WHERE epgChannelId IN (:channelIds)
+          AND endUtcMillis > :fromUtcMillis
+          AND startUtcMillis < :toUtcMillis
+        ORDER BY startUtcMillis ASC
+        """
+    )
+    suspend fun windowForChannels(
+        channelIds: Collection<String>,
+        fromUtcMillis: Long,
+        toUtcMillis: Long,
+    ): List<Programme>
+
+    @Query(
+        """
+        SELECT * FROM programmes
         WHERE epgChannelId = :channelId AND endUtcMillis > :nowUtcMillis
         ORDER BY startUtcMillis LIMIT :limit
         """

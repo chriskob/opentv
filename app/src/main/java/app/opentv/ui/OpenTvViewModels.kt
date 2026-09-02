@@ -358,34 +358,6 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         val hiddenIds: Set<String>,
     )
 
-    /**
-     * The whole guide window's programmes, grouped by their EPG channel id once — the single
-     * expensive step. Grouping the entire catalogue's programmes (hundreds of thousands of rows
-     * on a big provider) is what made every category tap slow, because it used to run inside the
-     * per-category flow and rebuild from scratch each time. Built here once, shared across every
-     * category switch, so a tap only has to regroup that category's channels — quick.
-     *
-     * Keyed on the half-hour bucket (not the raw minute tick) so it holds steady while you flick
-     * between categories and refreshes at most twice an hour; the underlying Room flow also
-     * re-emits on its own when an EPG sync lands new programmes.
-     */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private val programmeIndex: StateFlow<Map<String, List<Programme>>> =
-        windowStartMillis
-            .flatMapLatest { windowStart ->
-                graph.epgRepository
-                    .observeWindow(windowStart, windowStart + GUIDE_LOOKAHEAD_MILLIS)
-            }
-            .flowOn(Dispatchers.Default)
-            .stateIn(
-                viewModelScope,
-                SharingStarted.Eagerly,
-                graph.epgRepository.getCachedWindow(
-                    System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS },
-                    System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS } + GUIDE_LOOKAHEAD_MILLIS,
-                ) ?: emptyMap(),
-            )
-
     /** Guards the start-up loading bar so it shows once, on the first build, not on every tap. */
     @Volatile
     private var guideBuilt = false
@@ -411,24 +383,19 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                     key.categoryIds != null -> graph.catalogRepository.observeChannelsIn(key.categoryIds)
                     else -> graph.catalogRepository.observeChannels(source)
                 }
-                // Combine the (per-category) channel list with the shared, already-grouped
-                // programme index. Switching category rebuilds only the channel→row grouping;
-                // the heavy programme grouping happened once and is reused, so a tap is quick.
-                // Deliberately NOT combined with the minute tick: building "All channels" (20k
-                // rows) can take longer than 60s, and a tick landing mid-build would cancel and
-                // restart it via flatMapLatest so it would never finish. "Now" is captured per
-                // build instead; the guide's live progress bars advance off the screen's clock.
-                combine(channelFlow, programmeIndex) { channels, byEpgChannel ->
+                // TiviMate Optimization: Query programmes ONLY for the active channels in this view.
+                // Never query or group 500,000 programmes for the entire universe, which exhausts 2GB RAM.
+                combine(channelFlow, windowStartMillis) { rawChannels, windowStart ->
                     val now = System.currentTimeMillis()
-                    // Scope to the chosen provider. The "All" branch already fetched only this source
-                    // in SQL, so this is a no-op there; for favourites/search/category (which don't
-                    // take a sourceId) it's what actually keeps a second playlist separate.
-                    val scoped = if (source == null) channels else channels.filter { it.sourceId == source }
-                    // Adult/hidden channels drop out everywhere they could otherwise leak —
-                    // All, search and favourites — until the session is unlocked.
+                    val scoped = if (source == null) rawChannels else rawChannels.filter { it.sourceId == source }
                     val visible =
                         if (key.hiddenIds.isEmpty()) scoped
                         else scoped.filter { it.categoryId !in key.hiddenIds }
+
+                    val epgIds = visible.mapNotNull { it.epgChannelId?.ifBlank { null } }.distinct()
+                    val byEpgChannel = if (epgIds.isEmpty()) emptyMap() else {
+                        graph.epgRepository.windowForChannels(epgIds, windowStart, windowStart + GUIDE_LOOKAHEAD_MILLIS)
+                    }
                     buildRows(visible, byEpgChannel, now)
                 }
             }

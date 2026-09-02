@@ -90,18 +90,10 @@ class OpenTvApp : Application(), ImageLoaderFactory {
             }
         }
 
-        // Free, server-less "cloud" sync through the user's own NAS, if they've opted in. Writes
-        // this device's bundle to the shared folder and merges in every other device's — favourites,
-        // watch history and NAS recordings. Fire-and-forget and fully guarded: a blank or unreachable
-        // NAS returns a result rather than throwing, so a bad launch never costs the user anything.
-        if (graph.settings.nasAutoSync.value) {
-            appScope.launch { runCatching { app.opentv.sync.NasSync(graph).sync() } }
-        }
-
         appScope.launch {
-            // Defer startup background tasks so the live UI and DB can render immediately
-            // on cold start without I/O contention or immediate table invalidation.
-            kotlinx.coroutines.delay(10000)
+            // Defer startup background maintenance so the live UI and DB render immediately
+            // on cold start with zero I/O contention or CPU throttling.
+            kotlinx.coroutines.delay(30000)
             val prefs = getSharedPreferences("opentv", MODE_PRIVATE)
             val seen = prefs.getInt("normalizer_version", 0)
             if (seen < CatalogRepository.NORMALIZER_VERSION) {

@@ -305,6 +305,15 @@ abstract class OpenTvDatabase : RoomDatabase() {
                  * every schema change ships a Migration and this line is deleted.
                  */
                 .fallbackToDestructiveMigration()
+                .addCallback(object : RoomDatabase.Callback() {
+                    override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        super.onOpen(db)
+                        runCatching {
+                            db.execSQL("PRAGMA wal_autocheckpoint=1000;")
+                            db.query("PRAGMA wal_checkpoint(TRUNCATE);").close()
+                        }
+                    }
+                })
                 .build()
     }
 }
