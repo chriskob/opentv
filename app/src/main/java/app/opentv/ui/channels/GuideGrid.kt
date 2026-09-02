@@ -237,12 +237,12 @@ fun GuideGrid(
 
     Column(modifier.fillMaxSize()) {
         TimeHeader(windowStartMillis, nowMillis, scroll, dayOffset)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
                 state = listState,
-                contentPadding = PaddingValues(top = 2.dp, bottom = 8.dp),
+                contentPadding = PaddingValues(top = 2.dp, bottom = 2.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 itemsIndexed(
@@ -380,7 +380,7 @@ fun ChannelList(
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 4.dp),
+        contentPadding = PaddingValues(top = 2.dp, bottom = 2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
@@ -497,14 +497,14 @@ private fun ChannelListRow(
             model = row.primary.logoUrl,
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.size(28.dp).clip(RoundedCornerShape(3.dp)),
+            modifier = Modifier.size(26.dp).clip(RoundedCornerShape(3.dp)),
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     formatChannelNameForDisplay(row.primary.shownName),
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp, lineHeight = 16.sp),
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
                     fontWeight = if (isLive || focused) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (focused) Color(0xFF10171E) else if (isLive) Color(0xFF26C6DA) else Color.White,
                     maxLines = 2,
@@ -556,7 +556,7 @@ private fun TimeHeader(
     Row(
         Modifier
             .fillMaxWidth()
-            .height(28.dp)
+            .height(26.dp)
             .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
             .background(Color(0xFF141C24)),
         verticalAlignment = Alignment.CenterVertically,
@@ -570,7 +570,7 @@ private fun TimeHeader(
         ) {
             Text(
                 text = currentDateTimeFmt.format(Date(nowMillis)),
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp),
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                 color = Color(0xFF26C6DA),
                 fontWeight = FontWeight.Normal,
                 maxLines = 1,
@@ -589,13 +589,13 @@ private fun TimeHeader(
                     Box(
                         Modifier
                             .width(HALF_HOUR_WIDTH)
-                            .height(28.dp)
+                            .height(26.dp)
                             .padding(start = 6.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
                         Text(
                             slotTimeFmt.format(Date(slotStart)),
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
                             color = Color(0xFFCFD8DC),
                             fontWeight = FontWeight.Normal,
                         )
@@ -711,7 +711,7 @@ private fun GuideRow(
                 model = row.primary.logoUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.size(28.dp).clip(RoundedCornerShape(2.dp)),
+                modifier = Modifier.size(26.dp).clip(RoundedCornerShape(2.dp)),
             )
 
             Spacer(Modifier.width(8.dp))
@@ -720,7 +720,7 @@ private fun GuideRow(
             Column(Modifier.weight(1f)) {
                 Text(
                     formatChannelNameForDisplay(row.primary.shownName),
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp, lineHeight = 16.sp),
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
                     fontWeight = FontWeight.Medium,
                     color = if (focused) Color(0xFF10171E) else if (isSelected) Color(0xFF26C6DA) else Color.White,
                     maxLines = 2,
@@ -972,7 +972,7 @@ private const val MINUTE_DP = 7.0f
 private const val HOURS_IN_WINDOW = 24
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
 private val CHANNEL_COLUMN = 240.dp
-private val ROW_HEIGHT = 54.dp
+private val ROW_HEIGHT = 52.dp
 private val MIN_BLOCK_WIDTH = 95.dp
 private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 

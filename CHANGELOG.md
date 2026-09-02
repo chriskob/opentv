@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.63
+
+- **Pixel-Perfect 6-Row Geometry & Large Preview Player**:
+  - Calibrated exact vertical geometry for 1080p TV display (540dp total height):
+    - Enlarged live preview player to 186dp height.
+    - Time header calibrated to 26dp with 2dp spacing.
+    - Channel row height set to 52dp with 2dp spacing and 2dp padding (312dp + 10dp + 4dp = 326dp).
+    - Total: 186dp + 28dp + 326dp = exactly 540dp.
+  - Zero clipping on top row (Channel 1 100% visible) and zero sliver/overflow of the 7th row at the bottom.
+
 ## 0.12.62
 
 - **Guide Viewport Alignment, Continuous Looping, & 1-Minute Idle Auto-Fullscreen**:
