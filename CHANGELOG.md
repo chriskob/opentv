@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.57
+
+- **Permanent Screensaver Prevention During Live TV**:
+  - Added `android:keepScreenOn="true"` to `view_player.xml` and `keepScreenOn = true` to `PlayerView` in `HomeScreen`.
+  - Maintained `FLAG_KEEP_SCREEN_ON` on the Activity window throughout `HomeScreen` lifecycle.
+  - Prevented overlay mode in `PlayerScreen` from clearing the window keep-screen-on flag during navigation.
+
 ## 0.12.56
 
 - **Cache SurfaceView Layout to Prevent WindowManager Freezes**:

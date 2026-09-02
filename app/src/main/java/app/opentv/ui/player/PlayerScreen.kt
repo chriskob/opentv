@@ -205,8 +205,10 @@ fun PlayerScreen(
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         view.keepScreenOn = true
         onDispose {
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            view.keepScreenOn = false
+            if (renderPlayerView) {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                view.keepScreenOn = false
+            }
         }
     }
 

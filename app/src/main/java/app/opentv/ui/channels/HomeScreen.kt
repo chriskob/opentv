@@ -340,14 +340,12 @@ fun HomeScreen(
         if (activeRecordings.isNotEmpty()) pendingLiveChannel = channel else startLive(channel)
     }
 
-    // Hold the screen awake while the guide's live preview is playing — otherwise the box's
-    // screensaver fires while you're browsing with a channel running in the preview pane.
-    DisposableEffect(previewEnabled, screenResumed) {
+    // Hold the screen awake while Live TV is playing (either fullscreen or in preview) —
+    // ensures the Android TV / Fire OS screensaver never interrupts live broadcast viewing.
+    DisposableEffect(screenResumed) {
         val window = context.findActivity()?.window
-        if (previewEnabled && screenResumed) {
+        if (screenResumed) {
             window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
@@ -415,6 +413,7 @@ fun HomeScreen(
                 factory = { ctx ->
                     (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
                         useController = false
+                        keepScreenOn = true
                         resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                         player = previewController.player
                     }
