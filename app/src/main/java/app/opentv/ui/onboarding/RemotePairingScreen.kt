@@ -91,9 +91,13 @@ fun RemotePairingScreen(
     var showConfigDialog by remember { mutableStateOf(false) }
     var inputServerUrl by remember { mutableStateOf(savedServerUrl.ifBlank { AppSettings.DEFAULT_REMOTE_PAIRING_URL }) }
 
-    val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
-    val client = remember { RemotePairingClient(scope) }
+    val client = remember { RemotePairingClient() }
     val state by client.state.collectAsState()
+
+    // Whenever current sources arrive or change, notify the client
+    LaunchedEffect(currentSources) {
+        client.updateSources(currentSources)
+    }
 
     fun restartClient() {
         client.stop()
@@ -102,13 +106,12 @@ fun RemotePairingScreen(
         }
     }
 
-    DisposableEffect(savedServerUrl, currentSources) {
+    DisposableEffect(savedServerUrl) {
         if (savedServerUrl.isNotBlank()) {
             client.start(savedServerUrl, currentSources)
         }
         onDispose {
             client.stop()
-            scope.cancel()
         }
     }
 

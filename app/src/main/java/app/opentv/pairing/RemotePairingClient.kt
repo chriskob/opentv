@@ -72,7 +72,6 @@ data class ProvisionedSource(
  * and waits on a WebSocket for real-time multi-playlist provisioning with Xtream channel filtering.
  */
 class RemotePairingClient(
-    private val scope: CoroutineScope,
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -100,9 +99,44 @@ class RemotePairingClient(
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
+    private var activeCall: Call? = null
     private var activeWebSocket: WebSocket? = null
     @Volatile private var running = false
     private var currentSources: List<Source> = emptyList()
+
+    /**
+     * Updates the current playlist sources and sends device_info if connected.
+     */
+    fun updateSources(sources: List<Source>) {
+        this.currentSources = sources
+        sendDeviceInfoIfOpen()
+    }
+
+    private fun sendDeviceInfoIfOpen() {
+        val ws = activeWebSocket ?: return
+        if (currentSources.isEmpty()) return
+        try {
+            val devInfo = JSONObject()
+            devInfo.put("type", "device_info")
+            val arr = org.json.JSONArray()
+            for (s in currentSources) {
+                val sObj = JSONObject()
+                sObj.put("id", s.id)
+                sObj.put("name", s.name)
+                sObj.put("kind", s.kind.name.lowercase())
+                sObj.put("url", s.url)
+                sObj.put("username", s.username ?: "")
+                sObj.put("password", s.password ?: "")
+                sObj.put("epgUrl", s.epgUrl ?: "")
+                arr.put(sObj)
+            }
+            devInfo.put("sources", arr)
+            ws.send(devInfo.toString())
+            Log.d(TAG, "Sent device_info with ${currentSources.size} source(s)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send device_info", e)
+        }
+    }
 
     /**
      * Start the remote pairing handshake with the given server base URL.
@@ -128,24 +162,22 @@ class RemotePairingClient(
             .header("Accept", "application/json")
             .build()
 
-        okHttpClient.newCall(request).enqueue(object : Callback {
+        val call = okHttpClient.newCall(request)
+        activeCall = call
+        call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 if (!running) return
                 Log.w(TAG, "Failed to reach remote pairing server", e)
-                scope.launch(Dispatchers.Main) {
-                    _state.value = State.Failed(
-                        "Cannot connect to pairing server at $cleanUrl.\nCheck that your container is running on your NAS."
-                    )
-                }
+                _state.value = State.Failed(
+                    "Cannot connect to pairing server at $cleanUrl.\nCheck that your container is running on your NAS."
+                )
             }
 
             override fun onResponse(call: Call, response: Response) {
                 if (!running) return
                 response.use { res ->
                     if (!res.isSuccessful) {
-                        scope.launch(Dispatchers.Main) {
-                            _state.value = State.Failed("Pairing server returned error HTTP ${res.code}")
-                        }
+                        _state.value = State.Failed("Pairing server returned error HTTP ${res.code}")
                         return
                     }
 
@@ -169,16 +201,12 @@ class RemotePairingClient(
                             webSocketUrl = wsUrl,
                         )
 
-                        scope.launch(Dispatchers.Main) {
-                            _state.value = State.Listening(session)
-                        }
+                        _state.value = State.Listening(session)
 
                         connectWebSocket(wsUrl)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error parsing pairing init response", e)
-                        scope.launch(Dispatchers.Main) {
-                            _state.value = State.Failed("Failed to parse server response.")
-                        }
+                        _state.value = State.Failed("Failed to parse server response.")
                     }
                 }
             }
@@ -325,9 +353,7 @@ class RemotePairingClient(
                             parsedSources.add(source)
                         }
 
-                        scope.launch(Dispatchers.Main) {
-                            _state.value = State.Received(parsedSources)
-                        }
+                        _state.value = State.Received(parsedSources)
 
                         webSocket.close(1000, "Received configuration")
                         stop()
@@ -344,10 +370,8 @@ class RemotePairingClient(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (!running) return
                 Log.w(TAG, "WebSocket error", t)
-                scope.launch(Dispatchers.Main) {
-                    if (_state.value is State.Listening) {
-                        _state.value = State.Failed("Lost connection to pairing server: ${t.localizedMessage}")
-                    }
+                if (_state.value is State.Listening) {
+                    _state.value = State.Failed("Lost connection to pairing server: ${t.localizedMessage}")
                 }
             }
         })
@@ -355,6 +379,10 @@ class RemotePairingClient(
 
     fun stop() {
         running = false
+        try {
+            activeCall?.cancel()
+        } catch (_: Exception) {}
+        activeCall = null
         try {
             activeWebSocket?.close(1000, "Closing client")
         } catch (_: Exception) {}
