@@ -6,6 +6,7 @@
 package app.opentv.core
 
 import android.content.Context
+import app.opentv.BuildConfig
 import app.opentv.data.model.StremioAddon
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -222,6 +223,19 @@ class AppSettings private constructor(context: Context) {
     fun setLivePauseEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_LIVE_PAUSE, enabled).apply()
         _livePauseEnabled.value = enabled
+    }
+
+    // ---- Remote Pairing Service -------------------------------------------------------------
+
+    private val _remotePairingServerUrl = MutableStateFlow(
+        prefs.getString(KEY_REMOTE_PAIRING_URL, null)?.takeIf { it.isNotBlank() && !it.contains("192.168.") } ?: DEFAULT_REMOTE_PAIRING_URL
+    )
+    val remotePairingServerUrl: StateFlow<String> = _remotePairingServerUrl.asStateFlow()
+
+    fun setRemotePairingServerUrl(url: String) {
+        val clean = url.trim().trimEnd('/')
+        prefs.edit().putString(KEY_REMOTE_PAIRING_URL, clean).apply()
+        _remotePairingServerUrl.value = clean.ifBlank { DEFAULT_REMOTE_PAIRING_URL }
     }
 
     // ---- Content types -----------------------------------------------------------------------
@@ -590,6 +604,12 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_PLAYLIST_REFRESH_HOURS = "playlist_refresh_hours"
         private const val KEY_EPG_REFRESH_HOURS = "epg_refresh_hours"
         private const val KEY_EPG_SYNC_WITH_PLAYLIST = "epg_sync_with_playlist"
+        private const val KEY_REMOTE_PAIRING_URL = "remote_pairing_server_url"
+
+        /**
+         * Default URL for remote pairing service (configured via local.properties or BuildConfig).
+         */
+        val DEFAULT_REMOTE_PAIRING_URL: String = BuildConfig.DEFAULT_REMOTE_PAIRING_URL
 
         @Volatile private var instance: AppSettings? = null
 

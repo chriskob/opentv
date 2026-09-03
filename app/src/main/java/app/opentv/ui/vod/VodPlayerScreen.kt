@@ -17,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -53,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,11 +75,17 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.Tracks
@@ -154,6 +163,7 @@ fun VodPlayerScreen(
 
     var controlsVisible by remember { mutableStateOf(true) }
     var interaction by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val timelineFocus = remember { FocusRequester() }
     val barFocus = remember { FocusRequester() }
     val rootFocus = remember { FocusRequester() }
 
@@ -215,6 +225,10 @@ fun VodPlayerScreen(
     }
 
     LaunchedEffect(mediaKey) {
+        // Ensure background Live TV player is completely stopped while catch-up/VOD plays
+        graph.livePlayer.player.pause()
+        graph.livePlayer.player.stop()
+
         val resumeFrom = graph.playbackPositions.get(settings.activeProfileId.value, mediaKey)
             ?.takeIf { !it.isFinished }?.positionMillis ?: 0L
         controller.play(
@@ -295,8 +309,52 @@ fun VodPlayerScreen(
             .onPreviewKeyEvent { event ->
                 when {
                     event.key == Key.Back || event.key == Key.Escape -> false
-                    event.type == KeyEventType.KeyDown && !controlsVisible -> { reveal(); true }
-                    event.type == KeyEventType.KeyDown -> { interaction++; false }
+                    event.type == KeyEventType.KeyDown && !controlsVisible -> {
+                        when (event.key) {
+                            Key.MediaRewind, Key.DirectionLeft -> {
+                                seekRelative(-10_000L)
+                                positionMs = controller.player.currentPosition
+                                reveal()
+                                true
+                            }
+                            Key.MediaFastForward, Key.DirectionRight -> {
+                                seekRelative(10_000L)
+                                positionMs = controller.player.currentPosition
+                                reveal()
+                                true
+                            }
+                            Key.MediaPlayPause -> {
+                                paused = !paused
+                                controller.player.playWhenReady = !paused
+                                reveal()
+                                true
+                            }
+                            else -> { reveal(); true }
+                        }
+                    }
+                    event.type == KeyEventType.KeyDown -> {
+                        when (event.key) {
+                            Key.MediaRewind -> {
+                                seekRelative(-10_000L)
+                                positionMs = controller.player.currentPosition
+                                interaction++
+                                true
+                            }
+                            Key.MediaFastForward -> {
+                                seekRelative(10_000L)
+                                positionMs = controller.player.currentPosition
+                                interaction++
+                                true
+                            }
+                            Key.MediaPlayPause -> {
+                                paused = !paused
+                                controller.player.playWhenReady = !paused
+                                interaction++
+                                true
+                            }
+                            else -> { interaction++; false }
+                        }
+                    }
                     else -> false
                 }
             }
@@ -378,76 +436,184 @@ fun VodPlayerScreen(
                     Spacer(Modifier.height(16.dp))
                 }
 
-                if (growingRec) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.FiberManualRecord,
-                            contentDescription = null,
-                            tint = Color(0xFFE53935),
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            stringResource(R.string.rec_watching_live_badge),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Color(0xFFE53935),
-                        )
+                // Badge + Title (TiviMate style)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val isCatchup = mediaKey.startsWith("catchup:")
+                    val badgeText = when {
+                        growingRec -> stringResource(R.string.rec_watching_live_badge)
+                        isCatchup -> "CATCH-UP"
+                        else -> "VOD"
                     }
-                    Spacer(Modifier.height(4.dp))
-                }
-                Text(title, style = MaterialTheme.typography.headlineSmall, color = Color.White)
-                Spacer(Modifier.height(8.dp))
-
-                // Seek bar with times either side. Left/right on the remote scrubs.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(formatDuration(if (scrubbing) scrubValue.toLong() else positionMs), color = Color.White)
-                    Spacer(Modifier.width(12.dp))
-                    Slider(
-                        value = if (scrubbing) scrubValue else positionMs.toFloat(),
-                        valueRange = 0f..(durationMs.takeIf { it > 0 }?.toFloat() ?: 1f),
-                        onValueChange = { scrubbing = true; scrubValue = it; interaction++ },
-                        onValueChangeFinished = {
-                            controller.player.seekTo(scrubValue.toLong())
-                            positionMs = scrubValue.toLong()
-                            scrubbing = false
-                            interaction++
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(formatDuration(durationMs), color = Color.White)
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    VodChip(Icons.Filled.FastRewind, stringResource(R.string.player_rewind)) {
-                        if (growingRec) seekRelative(-15_000) else controller.seekBackward(); interaction++
+                    val badgeColor = if (growingRec) Color(0xFFE53935) else Color(0xFF26C6DA)
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(badgeColor.copy(alpha = 0.2f))
+                            .border(1.dp, badgeColor, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                            color = badgeColor,
+                        )
                     }
                     Spacer(Modifier.width(10.dp))
-                    VodChip(
-                        icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        label = if (paused) stringResource(R.string.common_play) else stringResource(R.string.player_pause),
-                        focusRequester = barFocus,
-                    ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Interactive Timeline Seekbar (Focusable, D-pad 10s intervals)
+                InteractiveVodTimeline(
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    bufferedMs = controller.player.bufferedPosition.coerceAtLeast(0L),
+                    focusRequester = timelineFocus,
+                    onSeekRelative = { delta ->
+                        seekRelative(delta)
+                        positionMs = controller.player.currentPosition
+                        interaction++
+                    },
+                    onSeekTo = { targetMs ->
+                        controller.player.seekTo(targetMs)
+                        positionMs = targetMs
+                        interaction++
+                    },
+                    onNavigateDown = {
+                        barFocus.requestFocus()
+                    },
+                    onTogglePlayPause = {
                         paused = !paused
                         controller.player.playWhenReady = !paused
                         interaction++
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                // Timestamp labels: Elapsed / Total (-Remaining)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = formatDuration(positionMs),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                    val remaining = (durationMs - positionMs).coerceAtLeast(0L)
+                    val durationText = if (durationMs > 0L) {
+                        "${formatDuration(durationMs)}   (-${formatDuration(remaining)})"
+                    } else {
+                        formatDuration(durationMs)
                     }
-                    Spacer(Modifier.width(10.dp))
-                    VodChip(Icons.Filled.FastForward, stringResource(R.string.player_forward)) {
-                        if (growingRec) seekRelative(15_000) else controller.seekForward(); interaction++
-                    }
-                    Spacer(Modifier.width(20.dp))
-                    VodChip(Icons.Filled.ClosedCaption, stringResource(R.string.player_subtitles)) {
-                        vodPanel = if (vodPanel == VodPanel.SUBTITLES) VodPanel.NONE else VodPanel.SUBTITLES
-                        interaction++
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    VodChip(Icons.Filled.Audiotrack, stringResource(R.string.player_audio)) {
-                        vodPanel = if (vodPanel == VodPanel.AUDIO) VodPanel.NONE else VodPanel.AUDIO
-                        interaction++
-                    }
+                    Text(
+                        text = durationText,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // CENTERED TRANSPORT CONTROLS (TiviMate Clone)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onPreviewKeyEvent { e ->
+                            if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionUp) {
+                                timelineFocus.requestFocus()
+                                true
+                            } else false
+                        },
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Rewind 10s
+                    TransportButton(
+                        icon = Icons.Filled.FastRewind,
+                        contentDescription = "Rewind 10s",
+                        size = 38.dp,
+                        iconSize = 20.dp,
+                        onClick = {
+                            seekRelative(-10_000L)
+                            positionMs = controller.player.currentPosition
+                            interaction++
+                        },
+                    )
+
+                    Spacer(Modifier.width(14.dp))
+
+                    // Center Play/Pause (Primary button)
+                    TransportButton(
+                        icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        contentDescription = if (paused) stringResource(R.string.common_play) else stringResource(R.string.player_pause),
+                        size = 46.dp,
+                        iconSize = 24.dp,
+                        isPrimary = true,
+                        focusRequester = barFocus,
+                        onClick = {
+                            paused = !paused
+                            controller.player.playWhenReady = !paused
+                            interaction++
+                        },
+                    )
+
+                    Spacer(Modifier.width(14.dp))
+
+                    // Fast Forward 10s
+                    TransportButton(
+                        icon = Icons.Filled.FastForward,
+                        contentDescription = "Forward 10s",
+                        size = 38.dp,
+                        iconSize = 20.dp,
+                        onClick = {
+                            seekRelative(10_000L)
+                            positionMs = controller.player.currentPosition
+                            interaction++
+                        },
+                    )
+
+                    Spacer(Modifier.width(28.dp))
+
+                    // Subtitles (CC)
+                    TransportButton(
+                        icon = Icons.Filled.ClosedCaption,
+                        contentDescription = stringResource(R.string.player_subtitles),
+                        size = 36.dp,
+                        iconSize = 18.dp,
+                        iconTint = if (vodPanel == VodPanel.SUBTITLES) Color(0xFF26C6DA) else null,
+                        onClick = {
+                            vodPanel = if (vodPanel == VodPanel.SUBTITLES) VodPanel.NONE else VodPanel.SUBTITLES
+                            interaction++
+                        },
+                    )
+
+                    Spacer(Modifier.width(12.dp))
+
+                    // Audio Tracks
+                    TransportButton(
+                        icon = Icons.Filled.Audiotrack,
+                        contentDescription = stringResource(R.string.player_audio),
+                        size = 36.dp,
+                        iconSize = 18.dp,
+                        iconTint = if (vodPanel == VodPanel.AUDIO) Color(0xFF26C6DA) else null,
+                        onClick = {
+                            vodPanel = if (vodPanel == VodPanel.AUDIO) VodPanel.NONE else VodPanel.AUDIO
+                            interaction++
+                        },
+                    )
                 }
             }
         }
@@ -455,32 +621,166 @@ fun VodPlayerScreen(
 }
 
 @Composable
-private fun VodChip(
+private fun InteractiveVodTimeline(
+    positionMs: Long,
+    durationMs: Long,
+    bufferedMs: Long,
+    focusRequester: FocusRequester,
+    onSeekRelative: (Long) -> Unit,
+    onSeekTo: (Long) -> Unit,
+    onNavigateDown: () -> Unit,
+    onTogglePlayPause: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    var widthPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val widthDp = remember(widthPx) { with(density) { widthPx.toDp() } }
+    val progress = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+    val bufferedProgress = if (durationMs > 0L) (bufferedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .focusRequester(focusRequester)
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown) {
+                    when (e.key) {
+                        Key.DirectionLeft, Key.MediaRewind -> {
+                            onSeekRelative(-10_000L)
+                            true
+                        }
+                        Key.DirectionRight, Key.MediaFastForward -> {
+                            onSeekRelative(10_000L)
+                            true
+                        }
+                        Key.DirectionDown -> {
+                            onNavigateDown()
+                            true
+                        }
+                        Key.Enter, Key.DirectionCenter -> {
+                            onTogglePlayPause()
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
+            .pointerInput(durationMs) {
+                detectTapGestures { offset ->
+                    if (size.width > 0 && durationMs > 0L) {
+                        val fraction = (offset.x / size.width).coerceIn(0f, 1f)
+                        onSeekTo((fraction * durationMs).toLong())
+                    }
+                }
+            }
+            .onSizeChanged { widthPx = it.width },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        val trackHeight = if (isFocused) 6.dp else 4.dp
+
+        // Background track
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(trackHeight)
+                .clip(RoundedCornerShape(3.dp))
+                .background(Color.White.copy(alpha = 0.2f)),
+        )
+
+        // Buffered track
+        if (bufferedProgress > 0f) {
+            Box(
+                Modifier
+                    .fillMaxWidth(bufferedProgress)
+                    .height(trackHeight)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.White.copy(alpha = 0.35f)),
+            )
+        }
+
+        // Played track (Cyan, TiviMate style)
+        Box(
+            Modifier
+                .fillMaxWidth(progress)
+                .height(trackHeight)
+                .clip(RoundedCornerShape(3.dp))
+                .background(Color(0xFF26C6DA)),
+        )
+
+        // Cursor / Thumb
+        if (widthDp.value > 0f) {
+            val thumbSize = if (isFocused) 16.dp else 10.dp
+            val travel = (widthDp.value - thumbSize.value).coerceAtLeast(0f)
+            val dotOffset = (travel * progress).dp
+            Box(
+                Modifier
+                    .padding(start = dotOffset)
+                    .size(thumbSize)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .then(
+                        if (isFocused) Modifier.border(2.5.dp, Color(0xFF26C6DA), CircleShape)
+                        else Modifier
+                    ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TransportButton(
     icon: ImageVector,
-    label: String,
+    contentDescription: String,
+    size: Dp = 38.dp,
+    iconSize: Dp = 20.dp,
     focusRequester: FocusRequester? = null,
+    isPrimary: Boolean = false,
+    iconTint: Color? = null,
+    onFocusChanged: (Boolean) -> Unit = {},
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val container = if (focused) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.14f)
-    val content = if (focused) MaterialTheme.colorScheme.onPrimary else Color.White
-    Row(
+    val bg = when {
+        focused -> Color.White
+        isPrimary -> Color.White
+        else -> Color(0xFF101720).copy(alpha = 0.65f)
+    }
+    val icTint = when {
+        focused -> Color(0xFF10171E)
+        isPrimary -> Color(0xFF10171E)
+        iconTint != null -> iconTint
+        else -> Color.White
+    }
+
+    Box(
         modifier = Modifier
+            .size(size)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(12.dp))
-            .background(container)
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
+            .clip(CircleShape)
+            .background(bg)
             .then(
-                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                else Modifier,
+                if (focused) Modifier.border(2.5.dp, if (isPrimary) Color(0xFF26C6DA) else Color.White, CircleShape)
+                else if (isPrimary) Modifier.border(1.dp, Color.White, CircleShape)
+                else Modifier.border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape)
             )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .focusable()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = content)
-        Spacer(Modifier.width(6.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge, color = content)
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = icTint,
+            modifier = Modifier.size(iconSize),
+        )
     }
 }
 

@@ -6,17 +6,28 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+import java.util.Properties
+
 android {
     namespace = "app.opentv"
     compileSdk = 35
+
+    val localProps = Properties().apply {
+        val f = rootProject.file("local.properties")
+        if (f.exists()) {
+            f.inputStream().use { load(it) }
+        }
+    }
+    val defaultPairingUrl = localProps.getProperty("opentv.remote.pairing.url") ?: "https://pair.example.com"
 
     defaultConfig {
         applicationId = "app.opentv"
         minSdk = 23
         targetSdk = 35
-        versionCode = 89
-        versionName = "0.12.68"
+        versionCode = 95
+        versionName = "0.12.74"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "DEFAULT_REMOTE_PAIRING_URL", "\"$defaultPairingUrl\"")
     }
 
     signingConfigs {

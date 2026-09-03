@@ -12,6 +12,7 @@ import app.opentv.data.model.SourceKind
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 object CatchupResolver {
@@ -63,7 +64,8 @@ object CatchupResolver {
         val endUtcSec = endUtcMillis / 1000L
         val nowSec = System.currentTimeMillis() / 1000L
         val offsetSec = (nowSec - startUtcSec).coerceAtLeast(0L)
-        val stamp = SimpleDateFormat("yyyy-MM-dd:HH-mm", Locale.US).format(Date(startUtcMillis))
+        val utcTz = TimeZone.getTimeZone("UTC")
+        val stamp = SimpleDateFormat("yyyy-MM-dd:HH-mm", Locale.US).apply { timeZone = utcTz }.format(Date(startUtcMillis))
 
         // 1. Native Xtream Codes source
         if (source.kind == SourceKind.XTREAM) {
@@ -78,7 +80,7 @@ object CatchupResolver {
         val template = channel.cmd?.takeIf { it.isNotBlank() }
         if (template != null) {
             val stampXtream = stamp
-            val stampFlussonic = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).format(Date(startUtcMillis))
+            val stampFlussonic = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply { timeZone = utcTz }.format(Date(startUtcMillis))
 
             var url = template
                 .replace("{utc}", startUtcSec.toString())

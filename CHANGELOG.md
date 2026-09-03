@@ -1,6 +1,26 @@
 # Changelog
 
-## 0.12.68
+## 0.12.71
+
+- **SQLite 999-Variable Cap Crash Fix (Fire OS & Large Playlists)**:
+  - Fixed a crash on startup/playback on Fire OS and devices with large playlists where querying EPG programmes for > 999 channels caused `SQLiteException: too many SQL variables`.
+  - Safely chunked channel queries in `EpgRepository.windowForChannels` and `nowForChannels` into batches of 500, staying well within SQLite's native variable limits.
+
+- **12-Hour Time Format Throughout App**:
+  - Replaced all 24-hour time formatting across the entire app (`GuideGrid`, `GuidePreview`, `HomeScreen`, `PlayerScreen`, `SearchScreen`, and `RecordingsScreen`) with standard 12-hour format (`h:mm a`, e.g. `8:30 PM`).
+- **Guide Current Time Alignment Restored**:
+  - Re-anchored the guide's default window to the current half-hour with `scroll` at 0, ensuring current shows and channels line up at the left edge as before.
+  - Removed top-left `<` and `>` arrow buttons to restore the clean, high-contrast cyan date/time header.
+- **Long-Press Back D-Pad to Go Back in Time**:
+  - Long-pressing D-pad LEFT or remote Back (450ms) smoothly steps the guide backward in time in 2-hour increments (`-2h`, `-4h`, etc.), displaying past shows for catch-up playback.
+  - Short-pressing Back while browsing past hours returns immediately to Live (Now).
+  - Long-pressing D-pad RIGHT steps forward in time toward Live.
+
+- **TiviMate-Grade Catch-Up Player & Background Audio Fix**:
+  - **Silenced Background Live TV Stream**: Explicitly stopped and paused the live TV player (`graph.livePlayer`) upon launching catch-up and VOD playback, eliminating dual/overlapping audio streams.
+  - **Centered Player Controls**: Replaced oversized pill chips with sleek, centered, circular transport controls (38dp/46dp) cloning TiviMate's TV interface layout.
+  - **Interactive D-Pad Timeline**: Converted the seekbar into a focusable timeline navigable via remote D-pad. Pressing D-pad UP from buttons moves focus to the timeline; pressing D-pad LEFT/RIGHT scrubs in precise 10-second intervals with immediate feedback. Pressing D-pad DOWN returns focus to the center Play/Pause button.
+  - **Remote Key Shortcuts**: Supported remote `MediaRewind` (`<<`) and `MediaFastForward` (`>>`) keys anywhere during playback for instant 10-second jumping.
 
 - **Direct 1-Click Catch-Up & Dialog Fixes**:
   - Automatically attempt catch-up resolution for any past programme without relying solely on the database playlist flag (`tvArchive`), auto-detecting Xtream panels and M3U credentials.

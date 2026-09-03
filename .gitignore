@@ -17,5 +17,10 @@ captures/
 AGENTS.md
 agent_*
 
-# Kotlin compiler transient logs
+# Environment secrets & Node dependencies
+.env
+*.env
+.env.*
+node_modules/
+
 .kotlin/

@@ -1,0 +1,33 @@
+services:
+  opentv-pairing:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: opentv-pairing-service:latest
+    container_name: opentv-pairing-service
+    restart: unless-stopped
+    ports:
+      - "${PAIRING_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - SESSION_TTL_SECONDS=600
+      - TRUST_PROXY=1
+    volumes:
+      # Mount public web directory from the Synology NAS storage
+      # All web files, playlists, and assets can be edited directly on your NAS
+      - ./public:/app/public
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: opentv-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}

@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsSuggest
@@ -99,6 +100,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -131,6 +133,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.opentv.R
 import app.opentv.core.AppSettings
+import app.opentv.core.CatchupResolver
 import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
@@ -168,6 +171,13 @@ import kotlinx.coroutines.withContext
  * are selected explicitly — that is the fix for "captions on but nothing shows", which happens
  * when the renderer is merely enabled and left to guess a language.
  */
+enum class OsdTier {
+    SHORTCUTS, // Tier 0 (Down from History)
+    HISTORY,   // Tier 1 (Default on OK)
+    CONTROLS,  // Tier 2 (Up from History)
+    TIMELINE,  // Tier 3 (Up from Controls)
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
@@ -178,6 +188,7 @@ fun PlayerScreen(
     onOpenShows: () -> Unit = {},
     onOpenRecordings: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onPlayCatchup: ((mediaKey: String, url: String, title: String, ua: String) -> Unit)? = null,
     renderPlayerView: Boolean = true,
     onChannelChange: ((Long) -> Unit)? = null,
 ) {
@@ -226,7 +237,7 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf(Panel.NONE) }
     var channelListVisible by remember { mutableStateOf(false) }
-    var showActionButtonsRow by remember { mutableStateOf(false) }
+    var osdTier by remember { mutableStateOf(OsdTier.HISTORY) }
     var interaction by remember { mutableIntStateOf(0) }
     // Offered once per session the first time the user records here while OpenTV isn't exempt from
     // battery optimisation, so the capture survives the screen sleeping. Never blocks recording.
@@ -242,15 +253,8 @@ fun PlayerScreen(
     var recentChannels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
-    val headerDateTimeFmt = remember(is24) {
-        if (is24) SimpleDateFormat("EEE, MMM d, HH:mm", Locale.getDefault())
-        else SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault())
-    }
-    val timeFmt = remember(is24) {
-        if (is24) SimpleDateFormat("HH:mm", Locale.getDefault())
-        else SimpleDateFormat("hh:mm a", Locale.getDefault())
-    }
+    val headerDateTimeFmt = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
+    val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -278,11 +282,11 @@ fun PlayerScreen(
     LaunchedEffect(paused) { app.opentv.core.PipState.isPlaying = !paused }
     val barFocus = remember { FocusRequester() }
     val historyFocus = remember { FocusRequester() }
+    val timelineFocus = remember { FocusRequester() }
     val actionButtonsFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
     val rootFocus = remember { FocusRequester() }
     val listFocus = remember { FocusRequester() }
-    var currentFocusedRow by remember { mutableIntStateOf(0) }
 
     val enabledSubMenuButtons by settings.enabledSubMenuButtons.collectAsState()
     val audioDelayMs by settings.audioDelayMs.collectAsState()
@@ -381,9 +385,35 @@ fun PlayerScreen(
     fun reveal() {
         menuOpenedAt = System.currentTimeMillis()
         controlsVisible = true
-        showActionButtonsRow = false
-        currentFocusedRow = 0
+        panel = Panel.NONE
+        osdTier = OsdTier.HISTORY
         interaction++
+    }
+
+    fun watchFromStart() {
+        val ch = currentChannel ?: return
+        val prog = currentProg
+        scope.launch {
+            val source = withContext(Dispatchers.IO) { graph.sourceRepository.byId(ch.sourceId) }
+            val catchupUrl = if (source != null && prog != null) {
+                withContext(Dispatchers.IO) { CatchupResolver.resolve(source, ch, prog) }
+            } else null
+
+            if (catchupUrl != null && onPlayCatchup != null) {
+                Toast.makeText(context, "Catch-up: Playing from start", Toast.LENGTH_SHORT).show()
+                onPlayCatchup.invoke(
+                    "catchup:${ch.id}:${prog?.startUtcMillis ?: 0L}",
+                    catchupUrl,
+                    "${ch.shownName} — ${prog?.title ?: ""}",
+                    source?.userAgent ?: "OpenTV",
+                )
+            } else {
+                controller.player.seekTo(0L)
+                controller.player.playWhenReady = true
+                paused = false
+                Toast.makeText(context, "Playing from start", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     fun tuneTo(channel: Channel) {
@@ -588,9 +618,9 @@ fun PlayerScreen(
         if (subtitlesDefault && hasText && !textChosen) controller.setSubtitlesEnabled(true)
     }
 
-    // Auto-hide the bar after a few seconds — but never while paused or with a picker open.
-    LaunchedEffect(controlsVisible, interaction, state, paused, panel, showActionButtonsRow) {
-        if (controlsVisible && !paused && panel == Panel.NONE && !showActionButtonsRow &&
+    // Auto-hide the bar after a few seconds — but never while paused or with a picker open or scrubbing timeline.
+    LaunchedEffect(controlsVisible, interaction, state, paused, panel, osdTier) {
+        if (controlsVisible && !paused && panel == Panel.NONE && osdTier != OsdTier.TIMELINE &&
             state is PlayerController.State.Playing
         ) {
             delay(CONTROLS_TIMEOUT_MILLIS)
@@ -598,15 +628,17 @@ fun PlayerScreen(
         }
     }
 
-    // Focus: a picker's first row when one is open, otherwise the action row if revealed, otherwise the history bar.
-    LaunchedEffect(controlsVisible, panel, showActionButtonsRow) {
+    // Focus: requests appropriate focus based on panel or osdTier
+    LaunchedEffect(controlsVisible, panel, osdTier) {
         if (controlsVisible) {
             delay(16)
             runCatching {
                 when {
                     panel != Panel.NONE -> panelFocus.requestFocus()
-                    showActionButtonsRow -> actionButtonsFocus.requestFocus()
-                    else -> barFocus.requestFocus()
+                    osdTier == OsdTier.TIMELINE -> timelineFocus.requestFocus()
+                    osdTier == OsdTier.CONTROLS -> barFocus.requestFocus()
+                    osdTier == OsdTier.SHORTCUTS -> actionButtonsFocus.requestFocus()
+                    else -> historyFocus.requestFocus()
                 }
             }
         } else {
@@ -614,28 +646,31 @@ fun PlayerScreen(
         }
     }
 
-    // Pressing the Back button:
-    // 1. Closes picker panel
-    // 2. Or closes the action buttons row and returns focus to the history row
-    // 3. Or closes the channel list
-    // 4. Or closes controls
-    // 5. Or returns to the TV Guide
+    // Pressing the Back button steps through tiers or closes OSD
     BackHandler {
         when {
             panel != Panel.NONE -> panel = Panel.NONE
-            showActionButtonsRow -> {
-                showActionButtonsRow = false
-                currentFocusedRow = 1
-                scope.launch {
-                    delay(16)
-                    runCatching { historyFocus.requestFocus() }
+            channelListVisible -> channelListVisible = false
+            controlsVisible -> {
+                when (osdTier) {
+                    OsdTier.TIMELINE -> {
+                        osdTier = OsdTier.CONTROLS
+                        scope.launch { delay(16); runCatching { barFocus.requestFocus() } }
+                    }
+                    OsdTier.CONTROLS -> {
+                        osdTier = OsdTier.HISTORY
+                        scope.launch { delay(16); runCatching { historyFocus.requestFocus() } }
+                    }
+                    OsdTier.SHORTCUTS -> {
+                        osdTier = OsdTier.HISTORY
+                        scope.launch { delay(16); runCatching { historyFocus.requestFocus() } }
+                    }
+                    OsdTier.HISTORY -> {
+                        controlsVisible = false
+                    }
                 }
             }
-            channelListVisible -> channelListVisible = false
-            controlsVisible -> controlsVisible = false
-            else -> {
-                onBack()
-            }
+            else -> onBack()
         }
     }
 
@@ -682,27 +717,76 @@ fun PlayerScreen(
                     // With the menu/controls visible:
                     controlsVisible -> {
                         interaction++
-                        // Pressing DOWN while on the history buttons (row 1) reveals the action buttons row (row 2)
-                        if (event.key == Key.DirectionDown && currentFocusedRow == 1 && !showActionButtonsRow && panel == Panel.NONE && !channelListVisible) {
-                            showActionButtonsRow = true
-                            currentFocusedRow = 2
-                            scope.launch {
-                                delay(32)
-                                runCatching { actionButtonsFocus.requestFocus() }
+                        when (osdTier) {
+                            OsdTier.TIMELINE -> {
+                                when (event.key) {
+                                    Key.DirectionDown -> {
+                                        osdTier = OsdTier.CONTROLS
+                                        scope.launch { delay(16); runCatching { barFocus.requestFocus() } }
+                                        true
+                                    }
+                                    Key.DirectionLeft -> {
+                                        val cur = controller.player.currentPosition
+                                        controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
+                                        true
+                                    }
+                                    Key.DirectionRight -> {
+                                        val cur = controller.player.currentPosition
+                                        val dur = controller.player.duration
+                                        val newPos = if (dur > 0) (cur + 10_000L).coerceAtMost(dur) else cur + 10_000L
+                                        controller.player.seekTo(newPos)
+                                        true
+                                    }
+                                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                                        val targetPlaying = paused
+                                        controller.player.playWhenReady = targetPlaying
+                                        paused = !targetPlaying
+                                        true
+                                    }
+                                    else -> false
+                                }
                             }
-                            return@onPreviewKeyEvent true
-                        }
-                        // Pressing UP while on the action buttons row (row 2) hides the action buttons row and returns to history buttons (row 1)
-                        if (event.key == Key.DirectionUp && showActionButtonsRow && currentFocusedRow == 2 && panel == Panel.NONE && !channelListVisible) {
-                            showActionButtonsRow = false
-                            currentFocusedRow = 1
-                            scope.launch {
-                                delay(32)
-                                runCatching { historyFocus.requestFocus() }
+                            OsdTier.CONTROLS -> {
+                                when (event.key) {
+                                    Key.DirectionUp -> {
+                                        osdTier = OsdTier.TIMELINE
+                                        scope.launch { delay(16); runCatching { timelineFocus.requestFocus() } }
+                                        true
+                                    }
+                                    Key.DirectionDown -> {
+                                        osdTier = OsdTier.HISTORY
+                                        scope.launch { delay(16); runCatching { historyFocus.requestFocus() } }
+                                        true
+                                    }
+                                    else -> false
+                                }
                             }
-                            return@onPreviewKeyEvent true
+                            OsdTier.HISTORY -> {
+                                when (event.key) {
+                                    Key.DirectionUp -> {
+                                        osdTier = OsdTier.CONTROLS
+                                        scope.launch { delay(16); runCatching { barFocus.requestFocus() } }
+                                        true
+                                    }
+                                    Key.DirectionDown -> {
+                                        osdTier = OsdTier.SHORTCUTS
+                                        scope.launch { delay(16); runCatching { actionButtonsFocus.requestFocus() } }
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            }
+                            OsdTier.SHORTCUTS -> {
+                                when (event.key) {
+                                    Key.DirectionUp -> {
+                                        osdTier = OsdTier.HISTORY
+                                        scope.launch { delay(16); runCatching { historyFocus.requestFocus() } }
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            }
                         }
-                        false
                     }
                     // When in full-screen (controls hidden):
                     // Dedicated Channel Up / Page Up (ONN 4k box remote) or D-Pad Up:
@@ -1031,29 +1115,59 @@ fun PlayerScreen(
 
                 Spacer(Modifier.height(10.dp))
 
-                // ---- Cyan Timeline Progress Bar ----
+                // ---- Yellow / Gold Timeline Progress Bar (TiviMate Style) ----
                 val progFraction = currentProg?.progressAt(nowMillis) ?: 0f
                 LiveTimelineBar(
                     progress = progFraction,
+                    isFocused = osdTier == OsdTier.TIMELINE,
+                    focusRequester = timelineFocus,
+                    onSeekBackward = {
+                        val cur = controller.player.currentPosition
+                        controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
+                        interaction++
+                    },
+                    onSeekForward = {
+                        val cur = controller.player.currentPosition
+                        val dur = controller.player.duration
+                        val newPos = if (dur > 0) (cur + 10_000L).coerceAtMost(dur) else cur + 10_000L
+                        controller.player.seekTo(newPos)
+                        interaction++
+                    },
+                    onCommitSeek = {
+                        val targetPlaying = paused
+                        controller.player.playWhenReady = targetPlaying
+                        paused = !targetPlaying
+                        interaction++
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                Spacer(Modifier.height(8.dp))
-
-                // ---- Progress Time (Left), 5 Center Controls, and Live + Record (Right) ----
-                val isRecording = activeRecordings.any { it.channelId == currentId }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                // ---- Player Buttons Row (Tier 2 / Tier 3: Up from History) ----
+                AnimatedVisibility(
+                    visible = osdTier == OsdTier.CONTROLS || osdTier == OsdTier.TIMELINE,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically(),
                 ) {
-                    // Left: Programme progress time (e.g. 24:29 / 1:00:00)
-                    val prog = currentProg
-                    if (prog != null && prog.durationMillis > 0L) {
-                        val elapsed = (nowMillis - prog.startUtcMillis).coerceIn(0L, prog.durationMillis)
-                        val total = prog.durationMillis
+                    val isRecording = activeRecordings.any { it.channelId == currentId }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        // Left: Programme progress time (e.g. 23:07 / 1:00:00)
+                        val prog = currentProg
+                        val durationMs = if (prog != null && prog.durationMillis > 0L) {
+                            prog.durationMillis
+                        } else {
+                            controller.player.duration.coerceAtLeast(0L)
+                        }
+                        val elapsedMs = if (prog != null && prog.durationMillis > 0L) {
+                            (nowMillis - prog.startUtcMillis).coerceIn(0L, durationMs)
+                        } else {
+                            controller.player.currentPosition.coerceAtLeast(0L)
+                        }
                         Text(
-                            text = "${formatDurationMs(elapsed)} / ${formatDurationMs(total)}",
+                            text = "${formatDurationMs(elapsedMs)} / ${formatDurationMs(durationMs)}",
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.5.sp),
                             color = Color.White.copy(alpha = 0.85f),
                             fontWeight = FontWeight.Medium,
@@ -1061,197 +1175,218 @@ fun PlayerScreen(
                                 .align(Alignment.CenterStart)
                                 .padding(start = 2.dp),
                         )
-                    }
 
-                    // Center: 5 transport buttons (SkipPrevious, FastRewind, Play/Pause, FastForward, SkipNext)
-                    Row(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Skip Previous (|◀) - Jumps to start of programme
-                        TransportButton(
-                            icon = Icons.Filled.SkipPrevious,
-                            contentDescription = stringResource(R.string.player_rewind),
-                            size = 38.dp,
-                            iconSize = 20.dp,
-                            onFocusChanged = { if (it) currentFocusedRow = 0 },
-                            onClick = {
-                                controller.seekBackward()
-                                interaction++
-                            },
-                        )
-
-                        // Fast Rewind (◀◀) -10s
-                        TransportButton(
-                            icon = Icons.Filled.FastRewind,
-                            contentDescription = stringResource(R.string.player_rewind),
-                            size = 38.dp,
-                            iconSize = 20.dp,
-                            onFocusChanged = { if (it) currentFocusedRow = 0 },
-                            onClick = {
-                                controller.seekBackward()
-                                val cur = controller.player.currentPosition
-                                controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
-                                interaction++
-                            },
-                        )
-
-                        // Play / Pause (|| / ▶) - Solid white circle with dark icon
-                        TransportButton(
-                            icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                            contentDescription = if (paused) stringResource(R.string.player_play) else stringResource(R.string.player_pause),
-                            size = 46.dp,
-                            iconSize = 24.dp,
-                            isPrimary = true,
-                            focusRequester = barFocus,
-                            onFocusChanged = { if (it) currentFocusedRow = 0 },
-                            onClick = {
-                                val targetPlaying = paused
-                                controller.player.playWhenReady = targetPlaying
-                                paused = !targetPlaying
-                                interaction++
-                            },
-                        )
-
-                        // Fast Forward (▶▶) +10s
-                        TransportButton(
-                            icon = Icons.Filled.FastForward,
-                            contentDescription = stringResource(R.string.player_forward),
-                            size = 38.dp,
-                            iconSize = 20.dp,
-                            onFocusChanged = { if (it) currentFocusedRow = 0 },
-                            onClick = {
-                                controller.seekForward()
-                                val cur = controller.player.currentPosition
-                                val dur = controller.player.duration
-                                if (dur > 0) {
-                                    controller.player.seekTo((cur + 10_000L).coerceAtMost(dur))
-                                } else {
-                                    controller.player.seekTo(cur + 10_000L)
-                                }
-                                interaction++
-                            },
-                        )
-
-                        // Skip Next (▶|) - Jumps to live edge
-                        TransportButton(
-                            icon = Icons.Filled.SkipNext,
-                            contentDescription = stringResource(R.string.player_forward),
-                            size = 38.dp,
-                            iconSize = 20.dp,
-                            onFocusChanged = { if (it) currentFocusedRow = 0 },
-                            onClick = {
-                                controller.player.seekToDefaultPosition()
-                                controller.player.playWhenReady = true
-                                paused = false
-                                interaction++
-                            },
-                        )
-                    }
-
-                    // Right: [LIVE] badge button + Record circular button
-                    Row(
-                        modifier = Modifier.align(Alignment.CenterEnd),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // LIVE Badge Button
-                        LiveBadgeButton(
-                            onFocusChanged = { if (it) currentFocusedRow = 0 },
-                            onClick = {
-                                controller.player.seekToDefaultPosition()
-                                controller.player.playWhenReady = true
-                                paused = false
-                                Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
-                                interaction++
-                            },
-                        )
-
-                        // Record Button
-                        TransportButton(
-                            icon = if (isRecording) Icons.Filled.Stop else Icons.Filled.FiberManualRecord,
-                            contentDescription = if (isRecording) stringResource(R.string.rec_stop_recording) else stringResource(R.string.player_record),
-                            size = 38.dp,
-                            iconSize = 20.dp,
-                            iconTint = if (isRecording) Color(0xFFE53935) else Color.White,
-                            onFocusChanged = { if (it) currentFocusedRow = 0 },
-                            onClick = {
-                                toggleRecord()
-                                interaction++
-                            },
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                // ---- Watched Channels History Carousel ----
-                val quickListState = rememberLazyListState()
-                LazyRow(
-                    state = quickListState,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = if (showActionButtonsRow) 6.dp else 2.dp),
-                ) {
-                    // Card 1: TV guide
-                    item(key = "quick-guide") {
-                        QuickActionCard(
-                            icon = Icons.Filled.ViewStream,
-                            label = stringResource(R.string.player_tv_guide),
-                            focusRequester = if (recentChannels.isEmpty()) historyFocus else null,
-                            onFocusChanged = { if (it) currentFocusedRow = 1 },
-                            onClick = {
-                                controlsVisible = false
-                                onBack()
-                            },
-                        )
-                    }
-
-                    // Card 2: History (Last channel)
-                    item(key = "quick-history") {
-                        QuickActionCard(
-                            icon = Icons.Filled.History,
-                            label = stringResource(R.string.player_history),
-                            onFocusChanged = { if (it) currentFocusedRow = 1 },
-                            onClick = {
-                                val targetId = previousId ?: recentChannels.firstOrNull { it.id != currentId }?.id
-                                if (targetId != null) playChannelId(targetId)
-                            },
-                        )
-                    }
-
-                    // Cards 3+: Watched Channels History (newest first)
-                    itemsIndexed(recentChannels, key = { _, ch -> "recent-ch-${ch.id}" }) { idx, ch ->
-                        QuickChannelCard(
-                            channel = ch,
-                            programme = queueProgrammes[ch.id],
-                            isCurrent = ch.id == currentId,
-                            focusRequester = if (idx == 0) historyFocus else null,
-                            onFocusChanged = { if (it) currentFocusedRow = 1 },
-                            onClick = { playChannelId(ch.id) },
-                        )
-                    }
-
-                    // Card End: Clear History Button
-                    if (recentChannels.isNotEmpty()) {
-                        item(key = "quick-clear-history") {
-                            QuickActionCard(
-                                icon = Icons.Filled.Delete,
-                                label = stringResource(R.string.history_clear),
-                                onFocusChanged = { if (it) currentFocusedRow = 1 },
+                        // Center: 5 transport buttons
+                        Row(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // Skip Previous (|◀) - Jump to start
+                            TransportButton(
+                                icon = Icons.Filled.SkipPrevious,
+                                contentDescription = stringResource(R.string.player_rewind),
+                                size = 38.dp,
+                                iconSize = 20.dp,
                                 onClick = {
-                                    settings.clearRecentChannels()
-                                    Toast.makeText(context, context.getString(R.string.history_cleared), Toast.LENGTH_SHORT).show()
+                                    controller.player.seekTo(0L)
+                                    interaction++
+                                },
+                            )
+
+                            // Fast Rewind (◀◀) - 10s
+                            TransportButton(
+                                icon = Icons.Filled.FastRewind,
+                                contentDescription = stringResource(R.string.player_rewind),
+                                size = 38.dp,
+                                iconSize = 20.dp,
+                                onClick = {
+                                    val cur = controller.player.currentPosition
+                                    controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
+                                    interaction++
+                                },
+                            )
+
+                            // Play / Pause (|| / ▶) - 46dp solid white circle with dark icon (focused by default in Tier 2)
+                            TransportButton(
+                                icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                contentDescription = if (paused) stringResource(R.string.player_play) else stringResource(R.string.player_pause),
+                                size = 46.dp,
+                                iconSize = 24.dp,
+                                isPrimary = true,
+                                focusRequester = barFocus,
+                                onClick = {
+                                    val targetPlaying = paused
+                                    controller.player.playWhenReady = targetPlaying
+                                    paused = !targetPlaying
+                                    interaction++
+                                },
+                            )
+
+                            // Fast Forward (▶▶) + 10s
+                            TransportButton(
+                                icon = Icons.Filled.FastForward,
+                                contentDescription = stringResource(R.string.player_forward),
+                                size = 38.dp,
+                                iconSize = 20.dp,
+                                onClick = {
+                                    val cur = controller.player.currentPosition
+                                    val dur = controller.player.duration
+                                    if (dur > 0) {
+                                        controller.player.seekTo((cur + 10_000L).coerceAtMost(dur))
+                                    } else {
+                                        controller.player.seekTo(cur + 10_000L)
+                                    }
+                                    interaction++
+                                },
+                            )
+
+                            // Skip Next (▶|) - Jump to live edge
+                            TransportButton(
+                                icon = Icons.Filled.SkipNext,
+                                contentDescription = stringResource(R.string.player_forward),
+                                size = 38.dp,
+                                iconSize = 20.dp,
+                                onClick = {
+                                    controller.player.seekToDefaultPosition()
+                                    controller.player.playWhenReady = true
+                                    paused = false
+                                    interaction++
+                                },
+                            )
+                        }
+
+                        // Right: ↺ Watch from start + [LIVE] + ● Record
+                        Row(
+                            modifier = Modifier.align(Alignment.CenterEnd),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // Watch from start button (↺)
+                            TransportButton(
+                                icon = Icons.Filled.Replay,
+                                contentDescription = "Watch from start",
+                                size = 38.dp,
+                                iconSize = 20.dp,
+                                onClick = {
+                                    watchFromStart()
+                                    interaction++
+                                },
+                            )
+
+                            // LIVE Badge Button
+                            LiveBadgeButton(
+                                onClick = {
+                                    controller.player.seekToDefaultPosition()
+                                    controller.player.playWhenReady = true
+                                    paused = false
+                                    Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
+                                    interaction++
+                                },
+                            )
+
+                            // Record Button
+                            TransportButton(
+                                icon = if (isRecording) Icons.Filled.Stop else Icons.Filled.FiberManualRecord,
+                                contentDescription = if (isRecording) stringResource(R.string.rec_stop_recording) else stringResource(R.string.player_record),
+                                size = 38.dp,
+                                iconSize = 20.dp,
+                                iconTint = if (isRecording) Color(0xFFE53935) else Color.White,
+                                onClick = {
+                                    toggleRecord()
+                                    interaction++
                                 },
                             )
                         }
                     }
                 }
 
-                // ---- Downward Reveal for Action Buttons ----
+                // ---- Watched Channels History Carousel (Tier 1: Default on OK) ----
                 AnimatedVisibility(
-                    visible = showActionButtonsRow,
+                    visible = osdTier != OsdTier.SHORTCUTS,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                ) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .alpha(if (osdTier == OsdTier.HISTORY) 1f else 0.42f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Spacer(Modifier.height(if (osdTier == OsdTier.HISTORY) 8.dp else 4.dp))
+                        val quickListState = rememberLazyListState()
+                        LazyRow(
+                            state = quickListState,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        ) {
+                            // Card 1: TV guide
+                            item(key = "quick-guide") {
+                                QuickActionCard(
+                                    icon = Icons.Filled.ViewStream,
+                                    label = stringResource(R.string.player_tv_guide),
+                                    focusRequester = historyFocus,
+                                    onClick = {
+                                        controlsVisible = false
+                                        onBack()
+                                    },
+                                )
+                            }
+
+                            // Card 2: History (Last channel)
+                            item(key = "quick-history") {
+                                QuickActionCard(
+                                    icon = Icons.Filled.History,
+                                    label = stringResource(R.string.player_history),
+                                    onClick = {
+                                        val targetId = previousId ?: recentChannels.firstOrNull { it.id != currentId }?.id
+                                        if (targetId != null) playChannelId(targetId)
+                                    },
+                                )
+                            }
+
+                            // Cards 3+: Watched Channels History (newest first)
+                            itemsIndexed(recentChannels, key = { _, ch -> "recent-ch-${ch.id}" }) { _, ch ->
+                                QuickChannelCard(
+                                    channel = ch,
+                                    programme = queueProgrammes[ch.id],
+                                    isCurrent = ch.id == currentId,
+                                    onClick = { playChannelId(ch.id) },
+                                )
+                            }
+
+                            // Card End: Clear History Button
+                            if (recentChannels.isNotEmpty()) {
+                                item(key = "quick-clear-history") {
+                                    QuickActionCard(
+                                        icon = Icons.Filled.Delete,
+                                        label = stringResource(R.string.history_clear),
+                                        onClick = {
+                                            settings.clearRecentChannels()
+                                            Toast.makeText(context, context.getString(R.string.history_cleared), Toast.LENGTH_SHORT).show()
+                                        },
+                                    )
+                                }
+                            }
+                        }
+
+                        // Subtle down chevron indicator (v) when in Tier 1
+                        if (osdTier == OsdTier.HISTORY) {
+                            Spacer(Modifier.height(2.dp))
+                            Icon(
+                                imageVector = Icons.Filled.KeyboardArrowDown,
+                                contentDescription = "Shortcuts below",
+                                tint = Color.White.copy(alpha = 0.5f),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                }
+
+                // ---- Shortcuts Row (Tier 0: Down from History) ----
+                AnimatedVisibility(
+                    visible = osdTier == OsdTier.SHORTCUTS,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically(),
                 ) {
@@ -1275,7 +1410,6 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.Search,
                                                 label = stringResource(R.string.submenu_search),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     controlsVisible = false
                                                     onOpenSearch()
@@ -1287,7 +1421,6 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.Movie,
                                                 label = stringResource(R.string.submenu_movies),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     controlsVisible = false
                                                     onOpenMovies()
@@ -1299,7 +1432,6 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.Tv,
                                                 label = stringResource(R.string.submenu_shows),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     controlsVisible = false
                                                     onOpenShows()
@@ -1314,7 +1446,6 @@ fun PlayerScreen(
                                                 isSelected = recordingThis,
                                                 iconTint = if (recordingThis) Color(0xFFE53935) else null,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = { toggleRecord() },
                                             )
                                         }
@@ -1323,7 +1454,6 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.GridView,
                                                 label = stringResource(R.string.submenu_multiview),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = { showMultiviewDialog = true },
                                             )
                                         }
@@ -1334,7 +1464,6 @@ fun PlayerScreen(
                                                 label = qualLabel,
                                                 isSelected = panel == Panel.QUALITY,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY
                                                     interaction++
@@ -1347,7 +1476,6 @@ fun PlayerScreen(
                                                 label = selectedAudioLabel,
                                                 isSelected = panel == Panel.AUDIO,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO
                                                     interaction++
@@ -1361,7 +1489,6 @@ fun PlayerScreen(
                                                 label = delayLabel,
                                                 isSelected = panel == Panel.AUDIO_DELAY,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.AUDIO_DELAY) Panel.NONE else Panel.AUDIO_DELAY
                                                     interaction++
@@ -1374,7 +1501,6 @@ fun PlayerScreen(
                                                 label = selectedSubtitleLabel,
                                                 isSelected = panel == Panel.SUBTITLES,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES
                                                     interaction++
@@ -1393,7 +1519,6 @@ fun PlayerScreen(
                                                 label = aspectLabel,
                                                 isSelected = panel == Panel.ASPECT,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT
                                                     interaction++
@@ -1406,7 +1531,6 @@ fun PlayerScreen(
                                                 label = stringResource(R.string.submenu_channels_list),
                                                 isSelected = channelListVisible,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     channelListVisible = !channelListVisible
                                                     interaction++
@@ -1421,7 +1545,6 @@ fun PlayerScreen(
                                                 isSelected = isFav,
                                                 iconTint = if (isFav) Color(0xFFFFD54F) else null,
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     val ch = currentChannel
                                                     if (ch != null) {
@@ -1444,7 +1567,6 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.SettingsSuggest,
                                                 label = stringResource(R.string.submenu_channel_options),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = { showChannelOptionsDialog = true },
                                             )
                                         }
@@ -1453,13 +1575,13 @@ fun PlayerScreen(
                                                 icon = Icons.Filled.Settings,
                                                 label = stringResource(R.string.submenu_settings),
                                                 focusRequester = if (attachFocus) actionButtonsFocus else null,
-                                                onFocusChanged = { if (it) currentFocusedRow = 2 },
                                                 onClick = {
                                                     controlsVisible = false
                                                     onOpenSettings()
                                                 },
                                             )
                                         }
+                                        else -> Unit
                                     }
                                 }
                             }
@@ -1835,7 +1957,7 @@ private fun QuickActionCard(
     Box(
         modifier = Modifier
             .width(108.dp)
-            .height(84.dp)
+            .height(76.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged {
                 focused = it.isFocused
@@ -1843,12 +1965,12 @@ private fun QuickActionCard(
             }
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
-                else Color(0xFF1E2833).copy(alpha = 0.88f),
+                if (focused) Color(0xFF0288D1)
+                else Color(0xFF0A3755).copy(alpha = 0.85f),
             )
             .then(
                 if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                else Modifier.border(0.5.dp, Color(0xFF2C3E50), RoundedCornerShape(8.dp)),
+                else Modifier.border(0.5.dp, Color(0xFF1E3A4B), RoundedCornerShape(8.dp)),
             )
             .focusable()
             .clickable(onClick = onClick),
@@ -1861,15 +1983,15 @@ private fun QuickActionCard(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (focused) Color(0xFF10171E) else Color.White,
-                modifier = Modifier.size(28.dp),
+                tint = Color.White,
+                modifier = Modifier.size(26.dp),
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(5.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
                 fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
-                color = if (focused) Color(0xFF10171E) else Color.White,
+                color = Color.White,
                 maxLines = 1,
             )
         }
@@ -1890,26 +2012,26 @@ private fun QuickChannelCard(
     Box(
         modifier = Modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .width(148.dp)
-            .height(84.dp)
+            .width(136.dp)
+            .height(76.dp)
             .onFocusChanged {
                 focused = it.isFocused
                 onFocusChanged(it.isFocused)
             }
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
-                else if (isCurrent) Color(0xFF1A2F3E).copy(alpha = 0.95f)
-                else Color(0xFF1E2833).copy(alpha = 0.88f),
+                if (focused) Color(0xFF0288D1)
+                else if (isCurrent) Color(0xFF0A3755)
+                else Color(0xFF0D253A).copy(alpha = 0.90f),
             )
             .then(
                 if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
                 else if (isCurrent) Modifier.border(1.5.dp, Color(0xFF26C6DA), RoundedCornerShape(8.dp))
-                else Modifier.border(0.5.dp, Color(0xFF2C3E50), RoundedCornerShape(8.dp)),
+                else Modifier.border(0.5.dp, Color(0xFF1E3A4B), RoundedCornerShape(8.dp)),
             )
             .focusable()
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -1920,23 +2042,23 @@ private fun QuickChannelCard(
                 model = channel.logoUrl,
                 contentDescription = null,
                 modifier = Modifier
-                    .size(34.dp)
+                    .size(28.dp)
                     .clip(RoundedCornerShape(3.dp)),
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(3.dp))
             Text(
                 text = channel.shownName,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (focused || isCurrent) FontWeight.Bold else FontWeight.Medium,
-                color = if (focused) Color(0xFF10171E) else if (isCurrent) Color(0xFF26C6DA) else Color.White,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
             )
             Text(
                 text = programme?.title ?: "",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (focused) Color(0xFF37474F) else Color.White.copy(alpha = 0.65f),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                color = if (focused) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.65f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
@@ -1948,6 +2070,11 @@ private fun QuickChannelCard(
 @Composable
 private fun LiveTimelineBar(
     progress: Float,
+    isFocused: Boolean = false,
+    focusRequester: FocusRequester? = null,
+    onSeekBackward: () -> Unit = {},
+    onSeekForward: () -> Unit = {},
+    onCommitSeek: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var widthPx by remember { mutableIntStateOf(0) }
@@ -1958,34 +2085,59 @@ private fun LiveTimelineBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(14.dp)
+            .height(20.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionLeft -> {
+                        onSeekBackward()
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        onSeekForward()
+                        true
+                    }
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        onCommitSeek()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .then(if (isFocused) Modifier.focusable() else Modifier)
             .onSizeChanged { widthPx = it.width },
         contentAlignment = Alignment.CenterStart,
     ) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(3.dp)
+                .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(alpha = 0.25f)),
+                .background(Color.White.copy(alpha = 0.28f)),
         )
 
         Box(
             Modifier
                 .fillMaxWidth(safeProgress)
-                .height(3.dp)
+                .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color(0xFF26C6DA)),
+                .background(Color(0xFFFFD54F)),
         )
 
         if (widthDp > 0.dp) {
-            val dotOffset = (widthDp - 10.dp) * safeProgress
+            val pipSize = if (isFocused) 18.dp else 10.dp
+            val dotOffset = ((widthDp - pipSize) * safeProgress).coerceAtLeast(0.dp)
             Box(
                 Modifier
-                    .padding(start = dotOffset.coerceAtLeast(0.dp))
-                    .size(10.dp)
+                    .padding(start = dotOffset)
+                    .size(pipSize)
                     .clip(CircleShape)
-                    .background(Color.White),
+                    .background(Color.White)
+                    .then(
+                        if (isFocused) Modifier.border(2.5.dp, Color(0xFF00E5FF), CircleShape)
+                        else Modifier
+                    ),
             )
         }
     }

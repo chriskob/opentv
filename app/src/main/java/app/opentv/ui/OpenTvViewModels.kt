@@ -31,6 +31,8 @@ import app.opentv.data.repo.PersonTitle
 import app.opentv.data.repo.distinctByQuality
 import app.opentv.R
 import app.opentv.pairing.ManagerServer
+import app.opentv.pairing.ProvisionedSource
+import app.opentv.pairing.XtreamFilterOptions
 import app.opentv.sync.NasSync
 import app.opentv.sync.SyncBundle
 import app.opentv.sync.SyncClient
@@ -164,6 +166,120 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 // Book any new series-link airings the fresh guide just revealed.
                 runCatching { graph.recordingEngine.rescanSeriesRules() }
             }.onFailure { Log.w("OpenTV", "Background VOD/guide load failed", it) }
+        }
+    }
+
+    /**
+     * Saves multiple provisioned playlists in batch, applies Xtream filter options (including/excluding channels),
+     * and performs catalogue and EPG synchronization.
+     */
+    fun saveAndSyncBatch(provisionedList: List<ProvisionedSource>, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(syncing = true, syncMessage = "Saving ${provisionedList.size} playlist(s)…")
+            val now = System.currentTimeMillis()
+
+            // Remove any existing sources that were deleted in the remote portal
+            val existingSources = graph.sourceRepository.enabled()
+            val retainedIds = provisionedList.mapNotNull { it.id }.filter { it != 0L }.toSet()
+            for (old in existingSources) {
+                if (old.id !in retainedIds) {
+                    Log.i("OpenTV", "Deleting removed source #${old.id} (${old.name})")
+                    graph.catalogRepository.deleteSource(old.id)
+                }
+            }
+
+            var totalChannels = 0
+            var anySuccess = false
+
+            for (item in provisionedList) {
+                val draft = item.toSource()
+                val id = graph.sourceRepository.save(draft)
+                val saved = graph.sourceRepository.byId(id) ?: continue
+
+                _ui.value = _ui.value.copy(syncMessage = "Loading channels for ${saved.name}…")
+                when (val syncResult = graph.catalogRepository.syncLive(saved, now)) {
+                    is CatalogRepository.SyncResult.Success -> {
+                        anySuccess = true
+                        totalChannels += syncResult.channelCount
+
+                        // Apply Xtream filter options if present
+                        item.filterOptions?.let { opts ->
+                            applyChannelFilters(saved.id, opts)
+                        }
+                    }
+                    is CatalogRepository.SyncResult.Failed -> {
+                        Log.w("OpenTV", "Sync failed for ${saved.name}: ${syncResult.reason}")
+                    }
+                }
+            }
+
+            _ui.value = _ui.value.copy(
+                syncing = false,
+                syncMessage = if (anySuccess) "Loaded $totalChannels channels across ${provisionedList.size} playlist(s)." else "Failed to load playlists."
+            )
+
+            // Trigger background EPG sync
+            runCatching {
+                StatusBus.during("Building the TV guide…") {
+                    graph.epgRepository.syncAll(now)
+                }
+                runCatching { graph.recordingEngine.rescanSeriesRules() }
+            }.onFailure { Log.w("OpenTV", "Background guide load failed", it) }
+
+            onDone(anySuccess)
+        }
+    }
+
+    private suspend fun applyChannelFilters(sourceId: Long, opts: XtreamFilterOptions) = withContext(Dispatchers.IO) {
+        if (opts.includeVod) {
+            graph.settings.setMoviesEnabled(true)
+        }
+        if (opts.includeSeries) {
+            graph.settings.setSeriesEnabled(true)
+        }
+
+        val channelDao = graph.database.channels()
+        val channels = channelDao.forSource(sourceId)
+
+        for (chan in channels) {
+            var shouldHide = false
+
+            // If live channels disabled for this source
+            if (!opts.includeLive) {
+                shouldHide = true
+            }
+
+            // Exclude by category ID
+            if (opts.excludeCategories.isNotEmpty() && chan.categoryId != null && chan.categoryId in opts.excludeCategories) {
+                shouldHide = true
+            }
+
+            // Include only specified categories
+            if (opts.includeCategories.isNotEmpty() && (chan.categoryId == null || chan.categoryId !in opts.includeCategories)) {
+                shouldHide = true
+            }
+
+            // Exclude keywords in name or display name (e.g. Adult, XXX, 24/7, PPV)
+            if (opts.excludeKeywords.isNotEmpty()) {
+                val lowerName = chan.name.lowercase()
+                val lowerDisplay = chan.displayName.lowercase()
+                if (opts.excludeKeywords.any { k -> lowerName.contains(k.lowercase()) || lowerDisplay.contains(k.lowercase()) }) {
+                    shouldHide = true
+                }
+            }
+
+            // Include keywords in name or display name
+            if (opts.includeKeywords.isNotEmpty()) {
+                val lowerName = chan.name.lowercase()
+                val lowerDisplay = chan.displayName.lowercase()
+                if (!opts.includeKeywords.any { k -> lowerName.contains(k.lowercase()) || lowerDisplay.contains(k.lowercase()) }) {
+                    shouldHide = true
+                }
+            }
+
+            if (shouldHide && !chan.hidden) {
+                channelDao.setHidden(chan.id, true)
+            }
         }
     }
 
@@ -319,34 +435,31 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
      * The guide's left edge: the current half-hour, rounded down. Programme block positions
      * are measured from here. Recomputed on each tick so the grid drifts with real time.
      */
-    /** Which day the guide is browsing: 0 = today, 1 = tomorrow… so it pages forward like Sky Q. */
-    private val _guideDayOffset = MutableStateFlow(0)
-    val guideDayOffset: StateFlow<Int> = _guideDayOffset.asStateFlow()
+    /** How many hours into the past the guide is browsing (0 = live now). */
+    private val _guideHourOffset = MutableStateFlow(0)
+    val guideHourOffset: StateFlow<Int> = _guideHourOffset.asStateFlow()
 
-    /** Page the guide a day forward/back (clamped to -[GUIDE_MAX_PAST_DAYS]…+[GUIDE_MAX_DAYS]), or jump back to now. */
-    fun nudgeGuideDay(delta: Int) {
-        _guideDayOffset.value = (_guideDayOffset.value + delta).coerceIn(-GUIDE_MAX_PAST_DAYS, GUIDE_MAX_DAYS)
+    /** Nudge the guide backward or forward by hours (clamped to -168h [7 days past] .. 0 [live now]). */
+    fun nudgeGuideHours(deltaHours: Int) {
+        _guideHourOffset.value = (_guideHourOffset.value + deltaHours).coerceIn(-168, 0)
     }
 
-    fun guideToNow() { _guideDayOffset.value = 0 }
+    /** Page the guide a day forward/back or jump to now. */
+    fun nudgeGuideDay(deltaDays: Int) {
+        nudgeGuideHours(deltaDays * 24)
+    }
+
+    fun guideToNow() {
+        _guideHourOffset.value = 0
+    }
 
     val windowStartMillis: StateFlow<Long> =
-        combine(nowTick.map { it - it % HALF_HOUR_MILLIS }, _guideDayOffset) { base, day ->
-            startOfLocalDay(base) + day * DAY_MILLIS
+        combine(nowTick.map { it - it % HALF_HOUR_MILLIS }, _guideHourOffset) { base, hourOffset ->
+            base + hourOffset * 3600_000L
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
-            System.currentTimeMillis().let { startOfLocalDay(it) },
+            System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS },
         )
-
-    private fun startOfLocalDay(millis: Long): Long {
-        val cal = java.util.Calendar.getInstance()
-        cal.timeInMillis = millis
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-        cal.set(java.util.Calendar.MINUTE, 0)
-        cal.set(java.util.Calendar.SECOND, 0)
-        cal.set(java.util.Calendar.MILLISECOND, 0)
-        return cal.timeInMillis
-    }
 
     private data class RowsKey(
         val categoryIds: List<String>?,

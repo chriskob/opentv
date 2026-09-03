@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OpenTV — Channel Manager</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .manager-container {
+      max-width: 760px;
+    }
+    .chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+    .chip { padding:9px 14px; font-size:.9rem; border-radius:999px; cursor:pointer;
+            background:var(--bg-surface-elevated); border:1px solid var(--border-color); color:var(--text-muted); }
+    .chip.on { background:#3a447a; border-color:var(--accent); color:var(--text-main); }
+    .list { display:flex; flex-direction:column; gap:8px; }
+    .cat { display:flex; align-items:center; gap:12px; padding:15px 16px; cursor:pointer;
+           background:var(--bg-input); border:1px solid var(--border-color); border-radius:12px; }
+    .cat:hover { background:var(--bg-surface-elevated); }
+    .cat .label { flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .cat .count { color:var(--text-muted); font-size:.85rem; }
+    .row { display:flex; align-items:center; gap:11px; padding:10px 12px;
+           background:var(--bg-input); border:1px solid var(--border-color); border-radius:12px; }
+    .logo { width:44px; height:44px; border-radius:8px; background:#000; object-fit:contain; flex:none; }
+    .rowmeta { flex:1; min-width:0; }
+    .name { font-weight:600; cursor:text; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ctrls { display:flex; align-items:center; gap:6px; flex:none; }
+    .btn { width:40px; height:40px; display:flex; align-items:center; justify-content:center;
+           font-size:18px; border-radius:9px; cursor:pointer; user-select:none;
+           background:var(--bg-surface-elevated); border:1px solid var(--border-color); color:var(--text-muted); }
+    .btn.star.on { color:#ffd166; border-color:#ffd166; }
+    .btn.eye.on { color:var(--accent); border-color:var(--accent); }
+    details.rec { background:var(--bg-input); border:1px solid var(--border-color); border-radius:12px; margin-bottom:16px; }
+    details.rec summary { padding:14px 16px; font-weight:600; cursor:pointer; list-style:none; }
+    details.rec .body { padding:0 16px 16px; }
+  </style>
+</head>
+<body>
+
+  <div class="nav-bar">
+    <a href="/" class="nav-link">Remote Setup</a>
+    <a href="/manager.html" class="nav-link active">Channel Manager</a>
+    <a href="/playlists/" class="nav-link">Hosted Playlists</a>
+  </div>
+
+  <div class="container manager-container">
+    <div class="header">
+      <div class="logo-badge">
+        <svg viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>
+        OPENTV WEB MANAGER
+      </div>
+      <h1>Manage TV Channels</h1>
+      <p class="subtitle">Connect to your TV running OpenTV to manage channels and recordings</p>
+    </div>
+
+    <!-- Connection Box -->
+    <div class="form-group" id="connGroup">
+      <label for="tvAddress">TV IP Address &amp; Token</label>
+      <div style="display: flex; gap: 8px;">
+        <input 
+          type="text" 
+          id="tvAddress" 
+          class="input-field" 
+          placeholder="192.168.1.50:41234/?t=token"
+          inputmode="url"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
+        >
+        <button type="button" id="btnConnect" class="btn-submit" style="width: auto; min-width: 100px; margin: 0; padding: 0 18px;">Connect</button>
+      </div>
+      <p style="font-size: 12px; color: var(--text-hint); margin-top: 6px;">
+        Open <strong>Settings &rarr; Channels from your phone/laptop</strong> on your TV to view your TV's address and token.
+      </p>
+    </div>
+
+    <!-- Details: NAS Recording Guide -->
+    <details class="rec" id="recCard">
+      <summary>Recording to Synology NAS (SMB Guide)</summary>
+      <div class="body">
+        <p style="font-size: 13.5px; color: var(--text-muted); margin-bottom: 12px;">
+          Configure OpenTV to write live TV recordings directly to a shared folder on your Synology NAS:
+        </p>
+        <ul style="font-size: 13px; color: var(--text-muted); margin-left: 20px; line-height: 1.8;">
+          <li>Create a shared folder in DSM Control Panel (e.g. <code>/recordings</code>).</li>
+          <li>Ensure DSM <strong>File Services &rarr; SMB</strong> is enabled.</li>
+          <li>In OpenTV Settings &rarr; Recording &rarr; Storage Target: Select <strong>Network Drive (NAS / SMB)</strong>.</li>
+          <li>Enter your Synology NAS IP and SMB credentials.</li>
+        </ul>
+      </div>
+    </details>
+
+    <div id="status"></div>
+  </div>
+
+  <div class="footer">
+    Hosted on Synology NAS &bull; OpenTV Web Manager
+  </div>
+
+  <script>
+    document.getElementById('btnConnect').addEventListener('click', () => {
+      let addr = document.getElementById('tvAddress').value.trim();
+      if (!addr) {
+        alert('Please enter your TV address from the Web Manager screen.');
+        return;
+      }
+      if (!addr.startsWith('http://') && !addr.startsWith('https://')) {
+        addr = 'http://' + addr;
+      }
+      window.location.href = addr;
+    });
+  </script>
+</body>
+</html>

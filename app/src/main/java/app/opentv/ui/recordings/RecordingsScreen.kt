@@ -277,7 +277,7 @@ private fun ReminderRow(reminder: Reminder, onCancel: () -> Unit) {
 }
 
 private fun formatWhen(utcMillis: Long): String =
-    java.text.SimpleDateFormat("EEE d MMM, HH:mm", java.util.Locale.getDefault())
+    java.text.SimpleDateFormat("EEE d MMM, h:mm a", java.util.Locale.getDefault())
         .format(java.util.Date(utcMillis))
 
 @Composable

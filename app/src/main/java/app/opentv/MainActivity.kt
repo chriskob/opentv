@@ -499,6 +499,8 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     },
                     onPlayCatchup = { key, url, title, ua ->
                         // Catch-up is a seekable archive stream — plays through the VOD player.
+                        ServiceLocator.get(bootContext).livePlayer.player.pause()
+                        ServiceLocator.get(bootContext).livePlayer.player.stop()
                         navController.navigate(Routes.vodPlayer(key, url, title, ua))
                     },
                     activeProfileName = activeProfileName,
@@ -621,6 +623,19 @@ private fun OpenTvApp(isTelevision: Boolean) {
                         }
                     },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
+                    onPlayCatchup = { mediaKey, streamUrl, title, userAgent ->
+                        val lp = ServiceLocator.get(bootContext).livePlayer
+                        lp.player.pause()
+                        lp.player.stop()
+                        navController.navigate(
+                            Routes.vodPlayer(
+                                key = mediaKey,
+                                url = streamUrl,
+                                title = title,
+                                ua = userAgent,
+                            )
+                        )
+                    },
                 )
             }
 

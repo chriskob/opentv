@@ -106,8 +106,8 @@ import androidx.activity.compose.BackHandler
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -150,8 +150,8 @@ fun HomeScreen(
     val sources by viewModel.sources.collectAsState()
     val selectedSource by viewModel.selectedSource.collectAsState()
     val windowStart by viewModel.windowStartMillis.collectAsState()
-    // How many days ahead the guide is scrolled (0 = live now). Drives the ‹ Today › nav.
-    val guideDayOffset by viewModel.guideDayOffset.collectAsState()
+    // How many hours into the past the guide is scrolled (0 = live now).
+    val guideHourOffset by viewModel.guideHourOffset.collectAsState()
     // Tri-state: null = still checking the catalogue, true = channels on disk, false = confirmed
     // empty. Drives the choice between the loading spinner and a recoverable error below.
     val channelsPresent by viewModel.channelsPresent.collectAsState()
@@ -418,6 +418,9 @@ fun HomeScreen(
     }
 
     var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    var backDpadLongHandled by remember { mutableStateOf(false) }
+    var rightDpadLongHandled by remember { mutableStateOf(false) }
+    var longPressJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     // Auto-return to full screen after 1 minute of inactivity in the TV guide
     LaunchedEffect(isFullScreen, channelMenu, recordTarget, showBackgroundPrompt, pendingLiveChannel, lastInteractionTime) {
@@ -433,22 +436,58 @@ fun HomeScreen(
             .background(Color.Black)
             .onPreviewKeyEvent { e ->
                 lastInteractionTime = System.currentTimeMillis()
-                if (e.type == KeyEventType.KeyDown && !isFullScreen) {
-                    when (e.key) {
-                        Key.MediaRewind, Key.PageUp, Key.ChannelUp -> {
-                            if (guideDayOffset > -7) {
-                                viewModel.nudgeGuideDay(-1)
-                                true
-                            } else false
+                if (!isFullScreen) {
+                    val inGuideGrid = channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && !railExpanded
+                    if (e.type == KeyEventType.KeyDown) {
+                        when (e.key) {
+                            Key.Back, Key.Escape -> {
+                                if (inGuideGrid) {
+                                    if (longPressJob == null && !backDpadLongHandled) {
+                                        longPressJob = recordScope.launch {
+                                            delay(500L)
+                                            backDpadLongHandled = true
+                                            viewModel.nudgeGuideHours(-2)
+                                            Toast.makeText(context, "Guide: -2h earlier", Toast.LENGTH_SHORT).show()
+                                            while (isActive && viewModel.guideHourOffset.value > -168) {
+                                                delay(1200L)
+                                                viewModel.nudgeGuideHours(-2)
+                                            }
+                                        }
+                                    }
+                                    backDpadLongHandled
+                                } else false
+                            }
+                            Key.MediaRewind, Key.PageUp, Key.ChannelUp -> {
+                                if (guideHourOffset > -168) {
+                                    viewModel.nudgeGuideHours(-2)
+                                    true
+                                } else false
+                            }
+                            Key.MediaFastForward, Key.PageDown, Key.ChannelDown -> {
+                                if (guideHourOffset < 0) {
+                                    viewModel.nudgeGuideHours(2)
+                                    true
+                                } else false
+                            }
+                            else -> false
                         }
-                        Key.MediaFastForward, Key.PageDown, Key.ChannelDown -> {
-                            if (guideDayOffset < 6) {
-                                viewModel.nudgeGuideDay(1)
-                                true
-                            } else false
+                    } else if (e.type == KeyEventType.KeyUp) {
+                        when (e.key) {
+                            Key.Back, Key.Escape -> {
+                                longPressJob?.cancel()
+                                longPressJob = null
+                                if (backDpadLongHandled) {
+                                    backDpadLongHandled = false
+                                    true
+                                } else if (inGuideGrid && guideHourOffset < 0) {
+                                    viewModel.guideToNow()
+                                    Toast.makeText(context, "Guide: Live (Now)", Toast.LENGTH_SHORT).show()
+                                    true
+                                } else false
+                            }
+                            else -> false
                         }
-                        else -> false
-                    }
+                    } else false
                 } else false
             }
     ) {
@@ -630,13 +669,13 @@ fun HomeScreen(
                     }
                 }
 
-                val dayLabel = when (guideDayOffset) {
-                    -1 -> "Yesterday"
-                    0 -> stringResource(R.string.guide_today)
-                    1 -> stringResource(R.string.guide_tomorrow)
-                    else -> remember(windowStart) {
-                        SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date(windowStart))
+                val dayLabel = when {
+                    guideHourOffset == 0 -> stringResource(R.string.guide_today)
+                    guideHourOffset <= -24 -> {
+                        val days = (-guideHourOffset) / 24
+                        if (days == 1) "Yesterday" else "${days}d ago"
                     }
+                    else -> "${-guideHourOffset}h ago"
                 }
                 GuidePreview(
                     row = highlightedRow,
@@ -651,9 +690,9 @@ fun HomeScreen(
                     } == true,
                     onRecord = { recordSelected() },
                     dayLabel = dayLabel,
-                    canGoPrevDay = guideDayOffset > -7,
-                    onPrevDay = { viewModel.nudgeGuideDay(-1) },
-                    onNextDay = { viewModel.nudgeGuideDay(1) },
+                    canGoPrevDay = guideHourOffset > -168,
+                    onPrevDay = { viewModel.nudgeGuideHours(-2) },
+                    onNextDay = { viewModel.nudgeGuideHours(2) },
                     onPreviewBoundsChanged = { rect ->
                         if (rect.width > 0 && rect.height > 0 && previewBounds != rect) {
                             previewBounds = rect
@@ -708,7 +747,7 @@ fun HomeScreen(
                     GuideGrid(
                         rows = rows,
                         windowStartMillis = windowStart,
-                        dayOffset = guideDayOffset,
+                        dayOffset = guideHourOffset / 24,
                         selectedKey = activeHighlightedRow?.key,
                         playingKey = activeSelectedRow?.key,
                         onSelectRow = { row -> requestLive(row.primary) },
@@ -724,6 +763,8 @@ fun HomeScreen(
                                     val source = graph.sourceRepository.byId(row.primary.sourceId)
                                     val url = if (source != null) app.opentv.core.CatchupResolver.resolve(source, row.primary, programme) else null
                                     if (url != null) {
+                                        previewController.player.pause()
+                                        previewController.player.stop()
                                         Toast.makeText(context, "Playing catch-up: ${programme.title}", Toast.LENGTH_SHORT).show()
                                         onPlayCatchup(
                                             "catchup:${row.primary.id}:${programme.startUtcMillis}",
@@ -752,8 +793,6 @@ fun HomeScreen(
                             highlightedProgramme = first?.now
                         },
                         nowMillis = nowMillis,
-                        onPrevDay = { viewModel.nudgeGuideDay(-1) },
-                        onNextDay = { viewModel.nudgeGuideDay(1) },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -864,6 +903,8 @@ fun HomeScreen(
                             if (url == null) {
                                 Toast.makeText(context, context.getString(R.string.guide_catchup_link_failed), Toast.LENGTH_SHORT).show()
                             } else {
+                                previewController.player.pause()
+                                previewController.player.stop()
                                 onPlayCatchup(
                                     "catchup:${channel.id}:${programme.startUtcMillis}",
                                     url,
@@ -1404,6 +1445,6 @@ private fun EmptyState(onAddSource: () -> Unit) {
 }
 
 /** UTC in the database, device zone on screen. Converted here and nowhere else. */
-private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
 
 private fun formatTime(utcMillis: Long): String = timeFormat.format(Date(utcMillis))

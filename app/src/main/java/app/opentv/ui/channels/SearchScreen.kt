@@ -243,5 +243,5 @@ private fun SearchResultRow(row: ChannelsViewModel.Row, onClick: () -> Unit) {
     }
 }
 
-private val searchTimeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+private val searchTimeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
 private fun searchTime(utcMillis: Long): String = searchTimeFormat.format(Date(utcMillis))

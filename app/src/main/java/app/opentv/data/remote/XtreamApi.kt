@@ -301,8 +301,9 @@ class XtreamApi(
      * zone, matching how the guide shows programme times.
      */
     fun catchupUrl(source: Source, streamId: String, startUtcMillis: Long, durationMinutes: Int): String {
-        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd:HH-mm", java.util.Locale.US)
-            .format(java.util.Date(startUtcMillis))
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd:HH-mm", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }.format(java.util.Date(startUtcMillis))
         val minutes = durationMinutes.coerceAtLeast(1)
         return "${source.url}/timeshift/${source.username}/${source.password}/$minutes/$stamp/$streamId.ts"
     }

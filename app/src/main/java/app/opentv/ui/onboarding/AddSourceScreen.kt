@@ -74,6 +74,15 @@ fun AddSourceScreen(
     // server address and password with a d-pad is the worst moment in every app of this kind.
     val isTelevision = remember(context) { isRunningOnTelevision(context) }
     var usePhone by remember { mutableStateOf(isTelevision) }
+    var useRemote by remember { mutableStateOf(false) }
+
+    if (useRemote) {
+        RemotePairingScreen(
+            onReceived = { sources -> viewModel.saveAndSyncBatch(sources) { onFinished() } },
+            onCancel = { useRemote = false },
+        )
+        return
+    }
 
     if (usePhone) {
         PhonePairingScreen(
@@ -82,6 +91,7 @@ fun AddSourceScreen(
             // than stranding the user on an endless "Got it — connecting…" spinner.
             onReceived = { draft -> viewModel.saveAndSync(draft) { onFinished() } },
             onCancel = { usePhone = false },
+            onSwitchToRemote = { usePhone = false; useRemote = true },
         )
         return
     }
@@ -305,8 +315,13 @@ fun AddSourceScreen(
             // isTelevision note above. On a phone it would just show a QR to nowhere.
             if (isTelevision) {
                 Spacer(Modifier.height(20.dp))
-                OutlinedButton(onClick = { usePhone = true }) {
-                    Text(stringResource(R.string.onboarding_use_phone))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = { usePhone = true }) {
+                        Text(stringResource(R.string.onboarding_use_phone))
+                    }
+                    OutlinedButton(onClick = { useRemote = true }) {
+                        Text("Remote Setup (NAS)")
+                    }
                 }
             }
 

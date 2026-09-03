@@ -136,7 +136,11 @@ class EpgRepository(
         programmeDao.observeNow(nowUtcMillis)
 
     suspend fun nowForChannels(channelIds: Collection<String>, nowUtcMillis: Long): List<Programme> =
-        if (channelIds.isEmpty()) emptyList() else programmeDao.nowForChannels(channelIds, nowUtcMillis)
+        if (channelIds.isEmpty()) emptyList() else {
+            channelIds.chunked(500).flatMap { chunk ->
+                programmeDao.nowForChannels(chunk, nowUtcMillis)
+            }
+        }
 
     suspend fun windowForChannels(
         channelIds: Collection<String>,
@@ -144,7 +148,9 @@ class EpgRepository(
         toUtcMillis: Long,
     ): Map<String, List<Programme>> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         if (channelIds.isEmpty()) return@withContext emptyMap()
-        val list = programmeDao.windowForChannels(channelIds, fromUtcMillis, toUtcMillis)
+        val list = channelIds.chunked(500).flatMap { chunk ->
+            programmeDao.windowForChannels(chunk, fromUtcMillis, toUtcMillis)
+        }
         list.groupBy { it.epgChannelId }
     }
 

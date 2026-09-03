@@ -27,10 +27,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
@@ -166,8 +166,6 @@ fun GuideGrid(
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
     dayOffset: Int = 0,
-    onPrevDay: () -> Unit = {},
-    onNextDay: () -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier,
 ) {
@@ -185,18 +183,15 @@ fun GuideGrid(
     val wrapFocusRequester = remember { FocusRequester() }
     var wrapTargetKey by remember { mutableStateOf<Any?>(null) }
     var activeFocusedIndex by remember { mutableStateOf<Int?>(null) }
+    var activeFocusedKey by remember { mutableStateOf<Any?>(playingKey ?: selectedKey ?: rows.firstOrNull()?.key) }
     val coroutineScope = rememberCoroutineScope()
     val density = androidx.compose.ui.platform.LocalDensity.current
 
     var hasInitialFocused by remember { mutableStateOf(false) }
 
-    LaunchedEffect(dayOffset, windowStartMillis) {
-        if (dayOffset == 0 && nowMillis >= windowStartMillis) {
-            val nowOffsetDp = widthFor(windowStartMillis, nowMillis)
-            val scrollPx = with(density) { (nowOffsetDp - 150.dp).coerceAtLeast(0.dp).roundToPx() }
-            scroll.scrollTo(scrollPx)
-        } else {
-            scroll.scrollTo(0)
+    LaunchedEffect(windowStartMillis) {
+        if (scroll.value != 0) {
+            scroll.animateScrollTo(0)
         }
     }
 
@@ -267,62 +262,80 @@ fun GuideGrid(
         }
     }
 
-    Column(modifier.fillMaxSize()) {
-        TimeHeader(windowStartMillis, nowMillis, scroll, dayOffset, onPrevDay, onNextDay)
-        Spacer(Modifier.height(2.dp))
+    Box(modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            TimeHeader(windowStartMillis, nowMillis, scroll)
+            Spacer(Modifier.height(2.dp))
 
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            LazyColumn(
-                state = listState,
-                contentPadding = PaddingValues(top = 2.dp, bottom = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                itemsIndexed(
-                    items = rows,
-                    key = { _, row -> row.key },
-                    contentType = { _, _ -> "guide_row" },
-                ) { index, row ->
-                    val isPlaying = row.key == playingKey
-                    val rowRequester = when (row.key) {
-                        wrapTargetKey -> wrapFocusRequester
-                        focusTargetKey -> initialFocusRequester
-                        else -> null
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(top = 2.dp, bottom = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    itemsIndexed(
+                        items = rows,
+                        key = { _, row -> row.key },
+                        contentType = { _, _ -> "guide_row" },
+                    ) { index, row ->
+                        val isPlaying = row.key == playingKey
+                        val isHighlighted = row.key == (activeFocusedKey ?: playingKey ?: selectedKey)
+                        val rowRequester = when (row.key) {
+                            wrapTargetKey -> wrapFocusRequester
+                            focusTargetKey -> initialFocusRequester
+                            else -> null
+                        }
+                        GuideRow(
+                            row = row,
+                            rowIndex = index,
+                            totalRows = rows.size,
+                            windowStartMillis = windowStartMillis,
+                            nowMillis = nowMillis,
+                            scroll = scroll,
+                            isSelected = isPlaying,
+                            isRowHighlighted = isHighlighted,
+                            focusRequester = rowRequester,
+                            onSelect = { onSelectRow(row) },
+                            onLongSelect = { onLongSelectRow(row) },
+                            onFocus = { prog ->
+                                activeFocusedIndex = index
+                                activeFocusedKey = row.key
+                                onFocusRow(row, prog)
+                            },
+                            onProgramme = { programme -> onProgramme(row, programme) },
+                            onToggleFavourite = { onToggleFavourite(row) },
+                            onExitLeft = onExitLeftFromChannel,
+                            onWrapToBottom = handleWrapToBottom,
+                            onWrapToTop = handleWrapToTop,
+                        )
                     }
-                    GuideRow(
-                        row = row,
-                        rowIndex = index,
-                        totalRows = rows.size,
-                        windowStartMillis = windowStartMillis,
-                        nowMillis = nowMillis,
-                        scroll = scroll,
-                        isSelected = isPlaying,
-                        focusRequester = rowRequester,
-                        onSelect = { onSelectRow(row) },
-                        onLongSelect = { onLongSelectRow(row) },
-                        onFocus = { prog ->
-                            activeFocusedIndex = index
-                            onFocusRow(row, prog)
-                        },
-                        onProgramme = { programme -> onProgramme(row, programme) },
-                        onToggleFavourite = { onToggleFavourite(row) },
-                        onExitLeft = onExitLeftFromChannel,
-                        onWrapToBottom = handleWrapToBottom,
-                        onWrapToTop = handleWrapToTop,
-                    )
                 }
             }
+        }
 
-            // Live Current Time Indicator Line running through all rows in the guide
-            if (dayOffset == 0 && nowMillis >= windowStartMillis) {
-                val nowOffset = widthFor(windowStartMillis, nowMillis)
+        // Live Current Time Indicator Line & Pip running from TimeHeader down through all rows
+        if (nowMillis in windowStartMillis until (windowStartMillis + HOURS_IN_WINDOW * 3600_000L)) {
+            val scrollOffsetDp = with(density) { scroll.value.toDp() }
+            val nowOffsetDp = widthFor(windowStartMillis, nowMillis)
+            val lineXDp = CHANNEL_COLUMN + nowOffsetDp - scrollOffsetDp
+            if (lineXDp >= CHANNEL_COLUMN) {
+                // Continuous vertical line running from header divider down through all rows
                 Box(
                     Modifier
                         .fillMaxHeight()
-                        .padding(start = CHANNEL_COLUMN)
-                        .horizontalScroll(scroll, enabled = false)
-                        .offset(x = nowOffset - 1.dp)
+                        .padding(top = 26.dp)
+                        .offset(x = lineXDp - 0.75.dp)
                         .width(1.5.dp)
-                        .background(Color(0xFF26C6DA).copy(alpha = 0.7f)),
+                        .background(Color(0xFFFFF59D).copy(alpha = 0.85f))
+                )
+                // Small glowing circular dot / pip on the timeline header divider
+                Box(
+                    Modifier
+                        .padding(top = 22.dp)
+                        .offset(x = lineXDp - 3.5.dp)
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFFF59D))
                 )
             }
         }
@@ -488,12 +501,7 @@ private fun ChannelListRow(
 ) {
     var focused by remember { mutableStateOf(false) }
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
-    val clockFmt = remember(is24) {
-        if (is24) SimpleDateFormat("HH:mm", Locale.getDefault())
-        else SimpleDateFormat("hh:mm a", Locale.getDefault())
-    }
+    val clockFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     val isLive = isSelected
 
@@ -597,20 +605,9 @@ private fun TimeHeader(
     windowStartMillis: Long,
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
-    dayOffset: Int = 0,
-    onPrevDay: () -> Unit = {},
-    onNextDay: () -> Unit = {},
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
-    val currentDateTimeFmt = remember(is24) {
-        if (is24) SimpleDateFormat("EEE, MMM d, HH:mm", Locale.getDefault())
-        else SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault())
-    }
-    val slotTimeFmt = remember(is24) {
-        if (is24) SimpleDateFormat("HH:mm", Locale.getDefault())
-        else SimpleDateFormat("hh:mm a", Locale.getDefault())
-    }
+    val currentDateTimeFmt = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
+    val slotTimeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     Row(
         Modifier
@@ -620,65 +617,32 @@ private fun TimeHeader(
             .background(Color(0xFF141C24)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Top-left Day Navigator (< Date/Time >)
-        Row(
+        // Top-left current date/time label (Cyan matching TiviMate, or Amber when browsing past hours/catch-up)
+        val isPast = windowStartMillis < (nowMillis - 30 * 60 * 1000L)
+        val headerText = if (isPast) {
+            val diffHours = ((nowMillis - windowStartMillis) / 3600_000L).coerceAtLeast(1L)
+            val dayPrefix = if (diffHours >= 24) {
+                val days = diffHours / 24
+                if (days == 1L) "Yesterday, " else "${days}d ago, "
+            } else ""
+            "$dayPrefix${slotTimeFmt.format(Date(windowStartMillis))} (-${diffHours}h)"
+        } else {
+            currentDateTimeFmt.format(Date(nowMillis))
+        }
+
+        Box(
             Modifier
                 .width(CHANNEL_COLUMN)
-                .padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(start = 12.dp),
+            contentAlignment = Alignment.CenterStart,
         ) {
-            var prevFocused by remember { mutableStateOf(false) }
-            Box(
-                Modifier
-                    .size(24.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(if (prevFocused) Color(0xFF00ACC1) else Color.Transparent)
-                    .onFocusChanged { prevFocused = it.isFocused }
-                    .focusable(enabled = dayOffset > -7)
-                    .clickable(enabled = dayOffset > -7, onClick = onPrevDay),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowLeft,
-                    contentDescription = "Previous Day",
-                    tint = if (dayOffset > -7) (if (prevFocused) Color.White else Color(0xFF80DEEA)) else Color(0xFF37474F),
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-
-            val dayText = when (dayOffset) {
-                -1 -> "Yesterday"
-                0 -> currentDateTimeFmt.format(Date(nowMillis))
-                1 -> "Tomorrow"
-                else -> SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(Date(windowStartMillis))
-            }
             Text(
-                text = dayText,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
-                color = if (dayOffset != 0) Color(0xFFFFD54F) else Color(0xFF26C6DA),
+                text = headerText,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                color = if (isPast) Color(0xFFFFD54F) else Color(0xFF26C6DA),
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
-
-            var nextFocused by remember { mutableStateOf(false) }
-            Box(
-                Modifier
-                    .size(24.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(if (nextFocused) Color(0xFF00ACC1) else Color.Transparent)
-                    .onFocusChanged { nextFocused = it.isFocused }
-                    .focusable(enabled = dayOffset < 6)
-                    .clickable(enabled = dayOffset < 6, onClick = onNextDay),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowRight,
-                    contentDescription = "Next Day",
-                    tint = if (dayOffset < 6) (if (nextFocused) Color.White else Color(0xFF80DEEA)) else Color(0xFF37474F),
-                    modifier = Modifier.size(18.dp),
-                )
-            }
         }
 
         // Timeline slots with Live Current Time Indicator Marker
@@ -706,19 +670,6 @@ private fun TimeHeader(
                     }
                 }
             }
-
-            // Live Current Time Indicator marker in Header
-            if (dayOffset == 0 && nowMillis >= windowStartMillis) {
-                val nowOffset = widthFor(windowStartMillis, nowMillis)
-                Box(
-                    Modifier
-                        .offset(x = nowOffset - 1.5.dp)
-                        .width(3.dp)
-                        .height(28.dp)
-                        .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
-                        .background(Color(0xFF26C6DA)),
-                )
-            }
         }
     }
 }
@@ -733,6 +684,7 @@ private fun GuideRow(
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     isSelected: Boolean,
+    isRowHighlighted: Boolean = false,
     focusRequester: FocusRequester? = null,
     onSelect: () -> Unit,
     onLongSelect: () -> Unit = {},
@@ -743,8 +695,6 @@ private fun GuideRow(
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
 ) {
-    var focused by remember { mutableStateOf(false) }
-
     Row(
         Modifier
             .fillMaxWidth()
@@ -766,56 +716,31 @@ private fun GuideRow(
             }
     ) {
 
-        // ---- Channel column (Fixed left, TiviMate style with rounded corners) ----
+        // ---- Channel column (Fixed left header, NOT focusable, no white cursor highlight) ----
         Row(
             Modifier
-                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                 .width(CHANNEL_COLUMN)
-                .fillMaxSize()
-                .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
-                .background(
-                    if (focused) Color(0xFFF0F4F8)
-                    else if (isSelected) Color(0xFF1A2B38)
-                    else Color(0xFF161F27),
-                )
-                .then(
-                    if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
-                    else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA), RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
-                    else Modifier,
-                )
-                .onPreviewKeyEvent { e ->
-                    if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) {
-                        onExitLeft()
-                    } else false
-                }
-                .onFocusChanged {
-                    focused = it.isFocused
-                    if (it.isFocused) onFocus(row.now)
-                }
-                .combinedClickable(
-                    onClick = onSelect,
-                    onLongClick = onLongSelect,
-                )
-                .padding(horizontal = 10.dp),
+                .fillMaxHeight()
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Channel Number
             row.primary.number?.let { num ->
                 Text(
                     "$num",
-                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp),
-                    color = if (focused) Color(0xFF37474F) else Color(0xFF90A4AE),
+                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.5.sp),
+                    color = if (isRowHighlighted) Color.White else Color(0xFF90A4AE),
                     maxLines = 1,
                     modifier = Modifier.width(28.dp),
                 )
             }
 
-            // Channel Logo — enlarged for high legibility across the room
+            // Channel Logo
             AsyncImage(
                 model = row.primary.logoUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(4.dp)),
+                modifier = Modifier.size(34.dp).clip(RoundedCornerShape(4.dp)),
             )
 
             Spacer(Modifier.width(8.dp))
@@ -825,20 +750,35 @@ private fun GuideRow(
                 Text(
                     formatChannelNameForDisplay(row.primary.shownName),
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
-                    fontWeight = FontWeight.Medium,
-                    color = if (focused) Color(0xFF10171E) else if (isSelected) Color(0xFF26C6DA) else Color.White,
+                    fontWeight = if (isRowHighlighted) FontWeight.Bold else FontWeight.Medium,
+                    color = when {
+                        isRowHighlighted -> Color(0xFFFFD54F) // Vibrant TiviMate Gold/Yellow for active row!
+                        isSelected -> Color(0xFF26C6DA)       // Cyan for currently playing channel
+                        else -> Color.White                   // White for other channels
+                    },
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
 
-            // Catchup Icon if available
-            if (row.primary.tvArchive) {
+            // Live Play Triangle indicator
+            if (isRowHighlighted || isSelected) {
                 Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Playing",
+                    tint = if (isRowHighlighted) Color(0xFFFFD54F) else Color(0xFF26C6DA),
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+
+            // Catchup Icon if available (circular replay icon ↺)
+            if (row.primary.tvArchive) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Filled.History,
                     contentDescription = "Catchup",
-                    tint = if (focused) Color(0xFF00838F) else Color(0xFF00ACC1),
+                    tint = if (isRowHighlighted) Color(0xFFFFD54F).copy(alpha = 0.9f) else Color(0xFF90A4AE),
                     modifier = Modifier.size(14.dp),
                 )
             }
@@ -850,18 +790,7 @@ private fun GuideRow(
                     imageVector = Icons.Filled.Star,
                     contentDescription = "Favorite",
                     tint = Color(0xFFFFD54F),
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-
-            // Live Play Triangle indicator
-            if (isSelected) {
-                Spacer(Modifier.width(6.dp))
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Playing",
-                    tint = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(15.dp),
                 )
             }
         }
@@ -880,16 +809,22 @@ private fun GuideRow(
                         .fillMaxSize()
                         .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
                         .background(
-                            if (emptyFocused) Color(0xFFF0F4F8)
-                            else Color(0xFF1A232C),
+                            if (emptyFocused) Color(0xFFFFFFFF)
+                            else if (isRowHighlighted) Color(0xFF0288D1).copy(alpha = 0.65f)
+                            else Color(0xFF0A4472).copy(alpha = 0.60f),
                         )
                         .then(
                             if (emptyFocused) Modifier.border(2.dp, Color.White, RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
-                            else Modifier.border(0.5.dp, Color(0xFF141C24), RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp)),
+                            else Modifier.border(0.5.dp, Color(0xFF1565C0).copy(alpha = 0.35f), RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp)),
                         )
                         .onFocusChanged {
                             emptyFocused = it.isFocused
                             if (it.isFocused) onFocus(null)
+                        }
+                        .onPreviewKeyEvent { e ->
+                            if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) {
+                                onExitLeft()
+                            } else false
                         }
                         .focusable()
                         .clickable(onClick = onSelect)
@@ -898,8 +833,8 @@ private fun GuideRow(
                 ) {
                     Text(
                         stringResource(R.string.guide_no_info),
-                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
-                        color = if (emptyFocused) Color(0xFF10171E) else Color(0xFF78909C),
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 14.sp),
+                        color = if (emptyFocused) Color(0xFF0D253A) else Color(0xFFECEFF1),
                     )
                 }
             } else {
@@ -935,18 +870,32 @@ private fun GuideRow(
                     layouts
                 }
 
-                for (layout in blockLayouts) {
+                // Determine target block index for focus: the live show if present, otherwise the first block
+                val targetBlockIdx = remember(programmes, nowMillis) {
+                    val liveIdx = blockLayouts.indexOfFirst { layout ->
+                        val prog = programmes[layout.programmeIndex]
+                        nowMillis in prog.startUtcMillis until prog.endUtcMillis
+                    }
+                    if (liveIdx >= 0) liveIdx else 0
+                }
+
+                for ((pOrder, layout) in blockLayouts.withIndex()) {
                     if (layout.spacerWidth > 0.dp) Spacer(Modifier.width(layout.spacerWidth))
                     val prog = programmes[layout.programmeIndex]
                     val isNow = nowMillis in prog.startUtcMillis until prog.endUtcMillis
+                    val isFirst = pOrder == 0
+                    val attachRequester = if (focusRequester != null && pOrder == targetBlockIdx) focusRequester else null
+
                     ProgrammeBlock(
                         title = prog.title,
                         width = layout.blockWidth,
                         isNow = isNow,
                         progress = if (isNow) prog.progressAt(nowMillis) else 0f,
-                        focusRequester = if (isNow) focusRequester else null,
+                        isRowHighlighted = isRowHighlighted,
+                        focusRequester = attachRequester,
                         onFocus = { onFocus(prog) },
                         onClick = { onProgramme(prog) },
+                        onExitLeft = if (isFirst) onExitLeft else null,
                     )
                 }
 
@@ -961,6 +910,7 @@ private fun GuideRow(
                             width = remainingWidth,
                             isNow = false,
                             progress = 0f,
+                            isRowHighlighted = isRowHighlighted,
                             onFocus = { onFocus(null) },
                             onClick = onSelect,
                         )
@@ -1003,9 +953,11 @@ private fun ProgrammeBlock(
     width: Dp,
     isNow: Boolean,
     progress: Float,
+    isRowHighlighted: Boolean = false,
     focusRequester: FocusRequester? = null,
     onFocus: () -> Unit = {},
     onClick: () -> Unit,
+    onExitLeft: (() -> Boolean)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
 
@@ -1018,15 +970,21 @@ private fun ProgrammeBlock(
             .clip(GuideCellShape)
             .background(
                 when {
-                    focused -> Color(0xFFF0F4F8) // High-contrast White/Light-grey for active focused cell
-                    isNow -> Color(0xFF26323E)   // Slate for live show
-                    else -> Color(0xFF1E2833)    // Dark slate for upcoming shows
+                    focused -> Color(0xFFFFFFFF) // High-contrast White for active focused cell
+                    isRowHighlighted -> Color(0xFF0288D1).copy(alpha = 0.70f) // Royal blue for active row
+                    else -> Color(0xFF0A4472).copy(alpha = 0.65f) // Deep blue for other rows
                 },
             )
             .then(
                 if (focused) Modifier.border(2.dp, Color.White, GuideCellShape)
-                else Modifier.border(0.5.dp, Color(0xFF141C24), GuideCellShape),
+                else if (isRowHighlighted) Modifier.border(0.5.dp, Color(0xFF039BE5).copy(alpha = 0.5f), GuideCellShape)
+                else Modifier.border(0.5.dp, Color(0xFF1565C0).copy(alpha = 0.35f), GuideCellShape),
             )
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft && onExitLeft != null) {
+                    onExitLeft()
+                } else false
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
@@ -1037,11 +995,10 @@ private fun ProgrammeBlock(
         Text(
             text = title,
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-            fontWeight = FontWeight.Normal,
+            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Normal,
             color = when {
-                focused -> Color(0xFF10171E) // Dark charcoal text on white focus background
-                isNow -> Color.White
-                else -> Color(0xFFE2E8F0)
+                focused -> Color(0xFF0D253A) // Dark navy text on white focus background
+                else -> Color.White
             },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

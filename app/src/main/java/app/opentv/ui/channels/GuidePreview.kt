@@ -103,12 +103,7 @@ fun GuidePreview(
     modifier: Modifier = Modifier,
     onPreviewBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val is24 = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
-    val timeFmt = remember(is24) {
-        if (is24) SimpleDateFormat("HH:mm", Locale.getDefault())
-        else SimpleDateFormat("hh:mm a", Locale.getDefault())
-    }
+    val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     Row(
         modifier
@@ -256,6 +251,6 @@ fun GuidePreview(
     }
 }
 
-private val previewTimeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+private val previewTimeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
 
 private fun formatTime(utcMillis: Long): String = previewTimeFormat.format(Date(utcMillis))

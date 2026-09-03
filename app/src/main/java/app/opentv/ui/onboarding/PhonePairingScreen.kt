@@ -60,6 +60,7 @@ import kotlinx.coroutines.cancel
 fun PhonePairingScreen(
     onReceived: (Source) -> Unit,
     onCancel: () -> Unit,
+    onSwitchToRemote: (() -> Unit)? = null,
 ) {
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
     val server = remember { PairingServer(scope) }
@@ -81,7 +82,7 @@ fun PhonePairingScreen(
 
     Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
         when (val current = state) {
-            is PairingServer.State.Listening -> Listening(current.session, onCancel)
+            is PairingServer.State.Listening -> Listening(current.session, onCancel, onSwitchToRemote)
 
             is PairingServer.State.Failed -> Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -96,6 +97,9 @@ fun PhonePairingScreen(
                 Spacer(Modifier.height(24.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = { server.start() }) { Text(stringResource(R.string.common_try_again)) }
+                    if (onSwitchToRemote != null) {
+                        OutlinedButton(onClick = onSwitchToRemote) { Text("Try Remote Setup (NAS)") }
+                    }
                     OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.pairing_type_here)) }
                 }
             }
@@ -114,7 +118,11 @@ fun PhonePairingScreen(
 }
 
 @Composable
-private fun Listening(session: PairingServer.Session, onCancel: () -> Unit) {
+private fun Listening(
+    session: PairingServer.Session,
+    onCancel: () -> Unit,
+    onSwitchToRemote: (() -> Unit)? = null,
+) {
     // Generated once per session rather than on every recomposition — encoding is not free
     // and the content does not change.
     val qr = remember(session.url) { QrCodes.render(session.url, QR_SIZE_PX) }
@@ -169,7 +177,12 @@ private fun Listening(session: PairingServer.Session, onCancel: () -> Unit) {
             Text(session.shortUrl, style = MaterialTheme.typography.titleLarge)
 
             Spacer(Modifier.height(32.dp))
-            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.pairing_type_on_tv)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.pairing_type_on_tv)) }
+                if (onSwitchToRemote != null) {
+                    OutlinedButton(onClick = onSwitchToRemote) { Text("Use Remote NAS Setup") }
+                }
+            }
         }
     }
 }
