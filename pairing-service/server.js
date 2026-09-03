@@ -8,8 +8,8 @@ const { WebSocketServer, WebSocket } = require('ws');
 const rateLimit = require('express-rate-limit');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
-const SESSION_TTL_SECONDS = parseInt(process.env.SESSION_TTL_SECONDS, 10) || 600; // 10 minutes default
-const HEARTBEAT_INTERVAL_MS = 30000;
+const SESSION_TTL_SECONDS = parseInt(process.env.SESSION_TTL_SECONDS, 10) || 1800; // 30 minutes default
+const HEARTBEAT_INTERVAL_MS = 25000;
 
 // Character set for 6-character ephemeral pairing codes
 // Excludes visually ambiguous characters (0, O, 1, I) for effortless readability across a room
@@ -468,6 +468,7 @@ wss.on('connection', (ws, request, code) => {
 
   ws.on('pong', () => {
     ws.isAlive = true;
+    ws.missedPings = 0;
   });
 
   ws.on('close', (closeCode, reason) => {
@@ -489,7 +490,12 @@ wss.on('connection', (ws, request, code) => {
 const pingInterval = setInterval(() => {
   wss.clients.forEach((ws) => {
     if (ws.isAlive === false) {
-      return ws.terminate();
+      ws.missedPings = (ws.missedPings || 0) + 1;
+      if (ws.missedPings >= 2) {
+        return ws.terminate();
+      }
+    } else {
+      ws.missedPings = 0;
     }
     ws.isAlive = false;
     try {

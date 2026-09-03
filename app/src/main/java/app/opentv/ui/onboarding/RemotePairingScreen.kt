@@ -65,7 +65,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
-import androidx.compose.ui.platform.LocalContext
+import android.app.Activity
+import android.content.ContextWrapper
+import android.view.WindowManager
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.opentv.ui.SourcesViewModel
+import app.opentv.ui.RemoteProvisioningProgress
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import app.opentv.core.AppSettings
 import app.opentv.pairing.ProvisionedSource
 
@@ -76,17 +89,40 @@ import app.opentv.pairing.ProvisionedSource
  * 1. 6-character ephemeral pairing code.
  * 2. QR code directing the phone/browser to the admin portal.
  * 3. Immediate real-time WebSocket receipt of M3U / Xtream credentials.
+ * 4. Step-by-step progress dashboard with live channel processing counters and EPG timeline.
  */
 @Composable
 fun RemotePairingScreen(
-    onReceived: (List<ProvisionedSource>) -> Unit,
+    onReceived: (List<ProvisionedSource>) -> Unit = {},
+    viewModel: SourcesViewModel = viewModel(),
     onCancel: () -> Unit,
+    onFinished: () -> Unit = onCancel,
 ) {
     val context = LocalContext.current
+
+    // Keep the TV screen awake while pairing or syncing so ambient mode / screensaver never kicks in
+    DisposableEffect(Unit) {
+        var ctx = context
+        var act: Activity? = null
+        while (ctx is ContextWrapper) {
+            if (ctx is Activity) {
+                act = ctx
+                break
+            }
+            ctx = ctx.baseContext
+        }
+        act?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            act?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            viewModel.resetProvisioningProgress()
+        }
+    }
+
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
     val savedServerUrl by settings.remotePairingServerUrl.collectAsState()
     val currentSources by graph.sourceRepository.observeAll().collectAsState(initial = emptyList())
+    val syncProgress by viewModel.provisioningProgress.collectAsState()
 
     var showConfigDialog by remember { mutableStateOf(false) }
     var inputServerUrl by remember { mutableStateOf(savedServerUrl.ifBlank { AppSettings.DEFAULT_REMOTE_PAIRING_URL }) }
@@ -116,7 +152,10 @@ fun RemotePairingScreen(
     }
 
     LaunchedEffect(state) {
-        (state as? RemotePairingClient.State.Received)?.let { onReceived(it.sources) }
+        (state as? RemotePairingClient.State.Received)?.let {
+            viewModel.saveAndSyncBatch(it.sources)
+            onReceived(it.sources)
+        }
     }
 
     if (showConfigDialog) {
@@ -145,79 +184,87 @@ fun RemotePairingScreen(
             .padding(32.dp),
         contentAlignment = Alignment.Center
     ) {
-        when (val current = state) {
-            is RemotePairingClient.State.Listening -> Listening(
-                session = current.session,
+        if (syncProgress != null) {
+            ProvisioningProgressDashboard(
+                progress = syncProgress!!,
+                onDone = onFinished,
                 onCancel = onCancel,
-                onChangeServer = { showConfigDialog = true }
             )
+        } else {
+            when (val current = state) {
+                is RemotePairingClient.State.Listening -> Listening(
+                    session = current.session,
+                    onCancel = onCancel,
+                    onChangeServer = { showConfigDialog = true }
+                )
 
-            is RemotePairingClient.State.Connecting -> Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                CircularProgressIndicator(color = Color(0xFF26C6DA))
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "Connecting to Pairing Service...",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = savedServerUrl,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.6f)
-                )
-            }
+                is RemotePairingClient.State.Connecting -> Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(color = Color(0xFF26C6DA))
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "Connecting to Pairing Service...",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = savedServerUrl,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
 
-            is RemotePairingClient.State.Failed -> Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.widthIn(max = 500.dp)
-            ) {
-                Text(
-                    text = "Connection Failed",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFF87171)
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = current.reason,
-                    color = Color.White.copy(alpha = 0.8f),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(Modifier.height(24.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { restartClient() }) {
-                        Text("Try Again")
-                    }
-                    OutlinedButton(onClick = { showConfigDialog = true }) {
-                        Text("Change Server URL")
-                    }
-                    OutlinedButton(onClick = onCancel) {
-                        Text("Back")
+                is RemotePairingClient.State.Failed -> Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.widthIn(max = 500.dp)
+                ) {
+                    Text(
+                        text = "Connection Failed",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFF87171)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = current.reason,
+                        color = Color.White.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { restartClient() }) {
+                            Text("Try Again")
+                        }
+                        OutlinedButton(onClick = { showConfigDialog = true }) {
+                            Text("Change Server URL")
+                        }
+                        OutlinedButton(onClick = onCancel) {
+                            Text("Back")
+                        }
                     }
                 }
-            }
 
-            is RemotePairingClient.State.Received -> Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                CircularProgressIndicator(color = Color(0xFF34D399))
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "Configuration Received! Loading...",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White
-                )
-            }
+                is RemotePairingClient.State.Received -> Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(color = Color(0xFF34D399))
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "Configuration Received! Starting Import...",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                }
 
-            RemotePairingClient.State.Idle -> {
-                if (savedServerUrl.isBlank()) {
-                    Text("No pairing server configured.", color = Color.White)
-                } else {
-                    CircularProgressIndicator(color = Color(0xFF26C6DA))
+                RemotePairingClient.State.Idle -> {
+                    if (savedServerUrl.isBlank()) {
+                        Text("No pairing server configured.", color = Color.White)
+                    } else {
+                        CircularProgressIndicator(color = Color(0xFF26C6DA))
+                    }
                 }
             }
         }
@@ -354,6 +401,291 @@ private fun ServerConfigDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ProvisioningProgressDashboard(
+    progress: RemoteProvisioningProgress,
+    onDone: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val dateFormat = remember { SimpleDateFormat("EEE h:mm a", Locale.getDefault()) }
+    val isComplete = progress.isComplete
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Title & Description Header
+        Text(
+            text = if (isComplete) "Setup & Sync Complete!" else "Setting Up Your TV Experience…",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (isComplete) Color(0xFF34D399) else Color.White,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = if (isComplete)
+                "Playlists, channels, and TV guide timeline have been configured and saved."
+            else
+                "Importing channels, organizing categories, and generating the guide timeline.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.7f),
+        )
+
+        Spacer(Modifier.height(28.dp))
+
+        // Progress Cards Grid
+        Row(
+            Modifier.fillMaxWidth().widthIn(max = 840.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            // Card 1: Playlists & Channels
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF161B22))
+                    .border(
+                        width = 1.dp,
+                        color = if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_CHANNELS) Color(0xFF26C6DA) else Color(0xFF30363D),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .padding(20.dp)
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Dns,
+                            contentDescription = null,
+                            tint = Color(0xFF29B6F6),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "CHANNELS & PLAYLISTS",
+                            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF29B6F6)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_CHANNELS) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Color(0xFF29B6F6)
+                            )
+                        } else if (progress.channelsProcessed > 0) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF34D399),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Text(
+                        text = "%,d".format(progress.channelsProcessed),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Channels Imported",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+
+                    Spacer(Modifier.height(14.dp))
+
+                    if (progress.currentPlaylistName.isNotBlank()) {
+                        Text(
+                            text = "Source: ${progress.currentPlaylistName}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF26C6DA)
+                        )
+                    } else if (progress.totalPlaylists > 0) {
+                        Text(
+                            text = "${progress.totalPlaylists} playlist(s) registered",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+
+            // Card 2: TV Guide & Timeline
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF161B22))
+                    .border(
+                        width = 1.dp,
+                        color = if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_EPG) Color(0xFF66BB6A) else Color(0xFF30363D),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .padding(20.dp)
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.LiveTv,
+                            contentDescription = null,
+                            tint = Color(0xFF66BB6A),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "TV GUIDE & TIMELINE",
+                            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF66BB6A)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_EPG) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Color(0xFF66BB6A)
+                            )
+                        } else if (progress.epgProgrammesProcessed > 0) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF34D399),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Text(
+                        text = "%,d".format(progress.epgProgrammesProcessed),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = if (progress.epgChannelsMatched > 0)
+                            "${progress.epgChannelsMatched} / ${progress.epgChannelsTotal} channels matched"
+                        else
+                            "Programmes Scheduled",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+
+                    Spacer(Modifier.height(14.dp))
+
+                    if (progress.timelineStartMillis > 0 && progress.timelineEndMillis > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Schedule,
+                                contentDescription = null,
+                                tint = Color(0xFFFFA726),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "${dateFormat.format(Date(progress.timelineStartMillis))} → ${dateFormat.format(Date(progress.timelineEndMillis))}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFFFA726),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "Awaiting guide parsing…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Status Message Banner
+        Box(
+            Modifier
+                .widthIn(max = 840.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF1F242C))
+                .border(0.5.dp, Color(0xFF38444D), RoundedCornerShape(10.dp))
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!isComplete) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = Color(0xFF26C6DA)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                }
+                Text(
+                    text = progress.statusMessage.ifBlank { "Processing configuration…" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.9f)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Bottom Action Bar
+        if (isComplete) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Button(
+                    onClick = onDone,
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(
+                        text = "Open TV Guide",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(
+                        text = "Return to Settings",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                }
+            }
+        } else {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = Color(0xFF26C6DA),
+                trackColor = Color(0xFF21262D)
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "Please keep this screen open while OpenTV downloads channels and guide.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.5f)
+            )
+        }
+    }
 }
 
 private const val QR_SIZE_PX = 600

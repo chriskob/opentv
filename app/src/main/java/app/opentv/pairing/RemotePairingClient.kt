@@ -75,7 +75,7 @@ class RemotePairingClient(
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
-        .pingInterval(25, TimeUnit.SECONDS)
+        .pingInterval(10, TimeUnit.SECONDS)
         .build(),
 ) {
 
@@ -103,6 +103,8 @@ class RemotePairingClient(
     private var activeWebSocket: WebSocket? = null
     @Volatile private var running = false
     private var currentSources: List<Source> = emptyList()
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var reconnectRunnable: Runnable? = null
 
     /**
      * Updates the current playlist sources and sends device_info if connected.
@@ -365,20 +367,38 @@ class RemotePairingClient(
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closed: $code / $reason")
+                if (running && _state.value is State.Listening && code != 1000) {
+                    reconnectDelay((_state.value as State.Listening).session)
+                }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (!running) return
-                Log.w(TAG, "WebSocket error", t)
+                Log.w(TAG, "WebSocket error: ${t.localizedMessage}. Attempting auto-reconnect...")
                 if (_state.value is State.Listening) {
-                    _state.value = State.Failed("Lost connection to pairing server: ${t.localizedMessage}")
+                    reconnectDelay((_state.value as State.Listening).session)
                 }
             }
         })
     }
 
+    private fun reconnectDelay(session: Session) {
+        if (!running) return
+        reconnectRunnable?.let { mainHandler.removeCallbacks(it) }
+        reconnectRunnable = Runnable {
+            if (running && _state.value is State.Listening) {
+                Log.i(TAG, "Auto-reconnecting WebSocket for pairing code ${session.code}...")
+                connectWebSocket(session.webSocketUrl)
+            }
+        }.also {
+            mainHandler.postDelayed(it, 2000)
+        }
+    }
+
     fun stop() {
         running = false
+        reconnectRunnable?.let { mainHandler.removeCallbacks(it) }
+        reconnectRunnable = null
         try {
             activeCall?.cancel()
         } catch (_: Exception) {}

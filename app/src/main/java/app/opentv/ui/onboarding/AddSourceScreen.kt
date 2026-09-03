@@ -78,7 +78,8 @@ fun AddSourceScreen(
 
     if (useRemote) {
         RemotePairingScreen(
-            onReceived = { sources -> viewModel.saveAndSyncBatch(sources) { onFinished() } },
+            viewModel = viewModel,
+            onFinished = onFinished,
             onCancel = { useRemote = false },
         )
         return

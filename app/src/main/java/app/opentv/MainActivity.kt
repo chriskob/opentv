@@ -582,9 +582,10 @@ private fun OpenTvApp(isTelevision: Boolean) {
 
             composable(Routes.REMOTE_PAIRING) {
                 RemotePairingScreen(
-                    onReceived = { sources ->
-                        sourcesViewModel.saveAndSyncBatch(sources) {
-                            navController.popBackStack()
+                    viewModel = sourcesViewModel,
+                    onFinished = {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(0)
                         }
                     },
                     onCancel = { navController.popBackStack() },

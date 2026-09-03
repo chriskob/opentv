@@ -72,6 +72,34 @@ import kotlinx.coroutines.sync.withLock
  * a contributor tracking down "where does the channel list come from" finds it in one place.
  */
 
+/**
+ * Real-time progress model for remote batch provisioning and TV guide timeline building.
+ */
+data class RemoteProvisioningProgress(
+    val stage: Stage = Stage.IDLE,
+    val totalPlaylists: Int = 0,
+    val currentPlaylistIndex: Int = 0,
+    val currentPlaylistName: String = "",
+    val channelsProcessed: Int = 0,
+    val epgProgrammesProcessed: Int = 0,
+    val epgChannelsMatched: Int = 0,
+    val epgChannelsTotal: Int = 0,
+    val timelineStartMillis: Long = 0L,
+    val timelineEndMillis: Long = 0L,
+    val statusMessage: String = "",
+    val isComplete: Boolean = false,
+    val error: String? = null,
+) {
+    enum class Stage {
+        IDLE,
+        SAVING_SOURCES,
+        SYNCING_CHANNELS,
+        SYNCING_EPG,
+        COMPLETE,
+        FAILED
+    }
+}
+
 class SourcesViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = ServiceLocator.get(app)
 
@@ -93,6 +121,13 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
+
+    private val _provisioningProgress = MutableStateFlow<RemoteProvisioningProgress?>(null)
+    val provisioningProgress: StateFlow<RemoteProvisioningProgress?> = _provisioningProgress.asStateFlow()
+
+    fun resetProvisioningProgress() {
+        _provisioningProgress.value = null
+    }
 
     init {
         viewModelScope.launch {
@@ -175,8 +210,14 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun saveAndSyncBatch(provisionedList: List<ProvisionedSource>, onDone: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(syncing = true, syncMessage = "Saving ${provisionedList.size} playlist(s)…")
             val now = System.currentTimeMillis()
+            _provisioningProgress.value = RemoteProvisioningProgress(
+                stage = RemoteProvisioningProgress.Stage.SAVING_SOURCES,
+                totalPlaylists = provisionedList.size,
+                currentPlaylistIndex = 0,
+                statusMessage = "Saving configuration for ${provisionedList.size} playlist(s)…",
+            )
+            _ui.value = _ui.value.copy(syncing = true, syncMessage = "Saving ${provisionedList.size} playlist(s)…")
 
             // Remove any existing sources that were deleted in the remote portal
             val existingSources = graph.sourceRepository.enabled()
@@ -191,16 +232,28 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             var totalChannels = 0
             var anySuccess = false
 
-            for (item in provisionedList) {
+            for ((idx, item) in provisionedList.withIndex()) {
                 val draft = item.toSource()
                 val id = graph.sourceRepository.save(draft)
                 val saved = graph.sourceRepository.byId(id) ?: continue
 
+                _provisioningProgress.value = _provisioningProgress.value?.copy(
+                    stage = RemoteProvisioningProgress.Stage.SYNCING_CHANNELS,
+                    currentPlaylistIndex = idx + 1,
+                    currentPlaylistName = saved.name,
+                    statusMessage = "Importing channels from ${saved.name} (${idx + 1}/${provisionedList.size})…"
+                )
                 _ui.value = _ui.value.copy(syncMessage = "Loading channels for ${saved.name}…")
+
                 when (val syncResult = graph.catalogRepository.syncLive(saved, now)) {
                     is CatalogRepository.SyncResult.Success -> {
                         anySuccess = true
                         totalChannels += syncResult.channelCount
+
+                        _provisioningProgress.value = _provisioningProgress.value?.copy(
+                            channelsProcessed = totalChannels,
+                            statusMessage = "Imported ${syncResult.channelCount} channels from ${saved.name} ($totalChannels total)"
+                        )
 
                         // Apply Xtream filter options if present
                         item.filterOptions?.let { opts ->
@@ -209,6 +262,9 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     is CatalogRepository.SyncResult.Failed -> {
                         Log.w("OpenTV", "Sync failed for ${saved.name}: ${syncResult.reason}")
+                        _provisioningProgress.value = _provisioningProgress.value?.copy(
+                            statusMessage = "Failed to load ${saved.name}: ${syncResult.reason}"
+                        )
                     }
                 }
             }
@@ -218,13 +274,37 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 syncMessage = if (anySuccess) "Loaded $totalChannels channels across ${provisionedList.size} playlist(s)." else "Failed to load playlists."
             )
 
-            // Trigger background EPG sync
-            runCatching {
-                StatusBus.during("Building the TV guide…") {
-                    graph.epgRepository.syncAll(now)
-                }
+            // Step 2: Trigger and track TV Guide (EPG) sync and timeline window
+            _provisioningProgress.value = _provisioningProgress.value?.copy(
+                stage = RemoteProvisioningProgress.Stage.SYNCING_EPG,
+                channelsProcessed = totalChannels,
+                statusMessage = "Downloading TV guide feeds and matching programmes…"
+            )
+
+            val timelineStart = now - (now % (30 * 60 * 1000L))
+            val timelineEnd = timelineStart + (72 * 60 * 60 * 1000L)
+
+            val epgResult = runCatching {
+                val summary = graph.epgRepository.syncAll(now, force = true)
                 runCatching { graph.recordingEngine.rescanSeriesRules() }
-            }.onFailure { Log.w("OpenTV", "Background guide load failed", it) }
+                summary
+            }.getOrNull()
+
+            val progCount = epgResult?.programmesWritten ?: 0
+            val matched = epgResult?.channelsMatched ?: 0
+            val chanTotal = epgResult?.channelsTotal ?: totalChannels
+
+            _provisioningProgress.value = _provisioningProgress.value?.copy(
+                stage = RemoteProvisioningProgress.Stage.COMPLETE,
+                channelsProcessed = totalChannels,
+                epgProgrammesProcessed = progCount,
+                epgChannelsMatched = matched,
+                epgChannelsTotal = chanTotal,
+                timelineStartMillis = timelineStart,
+                timelineEndMillis = timelineEnd,
+                statusMessage = "Sync Complete! $totalChannels channels and $progCount guide programmes ready.",
+                isComplete = true
+            )
 
             onDone(anySuccess)
         }
