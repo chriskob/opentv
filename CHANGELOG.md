@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.68
+
+- **Direct 1-Click Catch-Up & Dialog Fixes**:
+  - Automatically attempt catch-up resolution for any past programme without relying solely on the database playlist flag (`tvArchive`), auto-detecting Xtream panels and M3U credentials.
+  - Made "Watch from start (Catch-up)" the default primary action for finished shows in the action sheet, and clearly differentiated "Watch Live Channel".
+  - Broadened Xtream URL regex pattern to match all common IPTV URL layouts (alphanumeric stream IDs, query params, etc.).
+
 ## 0.12.67
 
 - **Past Hours & Interactive Day Navigator in Guide**:

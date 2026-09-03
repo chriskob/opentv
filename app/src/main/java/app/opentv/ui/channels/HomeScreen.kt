@@ -719,7 +719,7 @@ fun HomeScreen(
                             val isPast = programme.endUtcMillis <= nowMillis
                             if (liveNow) {
                                 requestLive(row.primary)
-                            } else if (isPast && row.primary.tvArchive) {
+                            } else if (isPast) {
                                 recordScope.launch {
                                     val source = graph.sourceRepository.byId(row.primary.sourceId)
                                     val url = if (source != null) app.opentv.core.CatchupResolver.resolve(source, row.primary, programme) else null
@@ -856,8 +856,8 @@ fun HomeScreen(
                         promptBackgroundIfNeeded()
                         recordTarget = null
                     }
-                    // A finished programme on a catch-up channel plays back from the archive.
-                    isPast && channel.tvArchive -> RecordActionRow(stringResource(R.string.guide_watch_from_start), primary = true) {
+                    // A finished programme plays back from the archive.
+                    isPast -> RecordActionRow(stringResource(R.string.guide_watch_from_start), primary = true) {
                         recordScope.launch {
                             val source = graph.sourceRepository.byId(channel.sourceId)
                             val url = if (source != null) app.opentv.core.CatchupResolver.resolve(source, channel, programme) else null
@@ -915,15 +915,17 @@ fun HomeScreen(
                         }
                     }
                 }
-                RecordActionRow(stringResource(R.string.rec_record_series)) {
-                    recordScope.launch {
-                        graph.recordingEngine.recordSeries(channel, programme, targetRow.programmes)
+                if (!isPast) {
+                    RecordActionRow(stringResource(R.string.rec_record_series)) {
+                        recordScope.launch {
+                            graph.recordingEngine.recordSeries(channel, programme, targetRow.programmes)
+                        }
+                        Toast.makeText(context, context.getString(R.string.rec_series_recording_set, programme.title), Toast.LENGTH_LONG).show()
+                        promptBackgroundIfNeeded()
+                        recordTarget = null
                     }
-                    Toast.makeText(context, context.getString(R.string.rec_series_recording_set, programme.title), Toast.LENGTH_LONG).show()
-                    promptBackgroundIfNeeded()
-                    recordTarget = null
                 }
-                RecordActionRow(stringResource(R.string.guide_watch_channel)) {
+                RecordActionRow("Watch Live Channel") {
                     recordTarget = null
                     requestLive(channel)
                 }
