@@ -688,6 +688,21 @@
 
     setLoading(true);
 
+    const primary = payloadPlaylists[0] || {};
+    const requestBody = {
+      code,
+      playlists: payloadPlaylists,
+      name: primary.name || 'IPTV Playlist',
+      playlistUrl: primary.kind === 'm3u' ? primary.playlistUrl : null,
+      epgUrl: primary.epgUrl || null,
+      xtreamData: primary.kind === 'xtream' ? {
+        serverUrl: primary.serverUrl,
+        username: primary.username,
+        password: primary.password,
+        options: primary.options
+      } : null
+    };
+
     try {
       const res = await fetch('/api/pair/push', {
         method: 'POST',
@@ -695,10 +710,7 @@
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({
-          code,
-          playlists: payloadPlaylists
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const data = await res.json();
