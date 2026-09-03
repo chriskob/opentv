@@ -157,4 +157,16 @@ class M3uParserTest {
 
         assertThat(categories).containsExactly("Sports", "News", "Movies").inOrder()
     }
+
+    @Test
+    fun `parses playlist with UTF-8 BOM and raw stream URLs`() {
+        val playlist = "\uFEFF#EXTM3U\n#EXTINF:-1 tvg-id=\"short\" group-title=\"Live\",Short URL Channel\nhttp://example.com/stream"
+        val result = M3uParser.parse(playlist, sourceId = 2)
+
+        assertThat(result.channels).hasSize(1)
+        val channel = result.channels.single()
+        assertThat(channel.name).isEqualTo("Short URL Channel")
+        assertThat(channel.streamUrl).isEqualTo("http://example.com/stream")
+    }
 }
+

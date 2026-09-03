@@ -14,9 +14,10 @@ services:
       - SESSION_TTL_SECONDS=1800
       - TRUST_PROXY=1
     volumes:
-      # Mount public web directory from the Synology NAS storage
+      # Mount public web directory and server script from the Synology NAS storage
       # All web files, playlists, and assets can be edited directly on your NAS
       - ./public:/app/public
+      - ./server.js:/app/server.js:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
       interval: 30s

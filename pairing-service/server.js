@@ -281,12 +281,20 @@ app.post('/api/pair/push', pushLimiter, (req, res) => {
           }
         });
       } else if (item.playlistUrl && item.playlistUrl.trim()) {
+        let pUrl = item.playlistUrl.trim();
+        if (!/^https?:\/\//i.test(pUrl)) {
+          pUrl = 'http://' + pUrl;
+        }
+        let pEpg = item.epgUrl ? item.epgUrl.trim() : null;
+        if (pEpg && !/^https?:\/\//i.test(pEpg)) {
+          pEpg = 'http://' + pEpg;
+        }
         normalizedPlaylists.push({
           id: item.id || null,
           name: (item.name && item.name.trim()) || 'M3U Playlist',
           kind: 'm3u',
-          playlistUrl: item.playlistUrl.trim(),
-          epgUrl: item.epgUrl ? item.epgUrl.trim() : null
+          playlistUrl: pUrl,
+          epgUrl: pEpg
         });
       }
     }
@@ -314,11 +322,19 @@ app.post('/api/pair/push', pushLimiter, (req, res) => {
         }
       });
     } else if (hasM3u) {
+      let pUrl = playlistUrl.trim();
+      if (!/^https?:\/\//i.test(pUrl)) {
+        pUrl = 'http://' + pUrl;
+      }
+      let pEpg = epgUrl ? epgUrl.trim() : null;
+      if (pEpg && !/^https?:\/\//i.test(pEpg)) {
+        pEpg = 'http://' + pEpg;
+      }
       normalizedPlaylists.push({
         name: (req.body.name && req.body.name.trim()) || 'M3U Playlist',
         kind: 'm3u',
-        playlistUrl: playlistUrl.trim(),
-        epgUrl: epgUrl ? epgUrl.trim() : null
+        playlistUrl: pUrl,
+        epgUrl: pEpg
       });
     }
   }

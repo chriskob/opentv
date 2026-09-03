@@ -309,7 +309,7 @@ private fun Listening(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Scan the QR code on your phone or open the web portal to enter your M3U or Xtream playlist details.",
+                text = "Scan the QR code on your phone or open the web portal to enter your playlist details (M3U, short URLs, or Xtream).",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color.White.copy(alpha = 0.75f)
             )

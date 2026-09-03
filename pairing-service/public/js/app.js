@@ -52,23 +52,59 @@
     if (deviceStatusBar) deviceStatusBar.style.display = 'none';
   }
 
+  let sessionPollTimer = null;
+
+  function stopSessionPolling() {
+    if (sessionPollTimer) {
+      clearInterval(sessionPollTimer);
+      sessionPollTimer = null;
+    }
+  }
+
   // Check session on the server and pull device playlists if available
-  async function checkSession(code) {
-    if (!code || code.length !== 6 || code === lastCheckedCode) return;
+  async function checkSession(code, isPoll = false) {
+    if (!code || code.length !== 6) {
+      stopSessionPolling();
+      return;
+    }
+    if (!isPoll && code === lastCheckedCode) return;
     lastCheckedCode = code;
 
-    setDeviceStatus(`Connecting to session ${code}...`, false);
+    if (!isPoll) {
+      setDeviceStatus(`Connecting to session ${code}...`, false);
+    }
 
     try {
       const res = await fetch(`/api/pair/session?code=${encodeURIComponent(code)}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        setDeviceStatus(`Code ${code} not found or expired.`, false);
+      
+      // Handle legacy server containers where /api/pair/session is not present and returns index.html
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        stopSessionPolling();
+        if (res.ok) {
+          setDeviceStatus(`Pairing Code ${code} Active (Ready to configure TV)`, true);
+        } else {
+          setDeviceStatus(`Pairing server returned HTTP ${res.status}.`, false);
+        }
         return;
       }
 
+      if (res.status === 404) {
+        stopSessionPolling();
+        setDeviceStatus(`Code ${code} not found or expired. Check code on TV screen.`, false);
+        return;
+      }
+
+      if (!res.ok) {
+        stopSessionPolling();
+        setDeviceStatus(`Server error (HTTP ${res.status}).`, false);
+        return;
+      }
+
+      const data = await res.json();
+
       if (data.connected) {
+        stopSessionPolling();
         const sourcesCount = (data.sources && data.sources.length) || 0;
         if (sourcesCount > 0) {
           setDeviceStatus(`Connected to TV — ${sourcesCount} existing playlist(s) loaded for editing`, true);
@@ -78,10 +114,24 @@
         }
         btnText.textContent = 'Update TV Playlists';
       } else {
-        setDeviceStatus(`Session ${code} found. Waiting for TV to connect...`, false);
+        setDeviceStatus(`Pairing code ${code} found. TV is connecting...`, false);
+        // Start polling if not already polling
+        if (!sessionPollTimer) {
+          sessionPollTimer = setInterval(() => {
+            const currentCode = codeInput.value.trim().toUpperCase();
+            if (currentCode.length === 6) {
+              checkSession(currentCode, true);
+            } else {
+              stopSessionPolling();
+            }
+          }, 2500);
+        }
       }
-    } catch (_) {
-      setDeviceStatus('Could not verify connection to TV.', false);
+    } catch (err) {
+      console.warn('Session check error:', err);
+      // Don't permanently lock lastCheckedCode on network error
+      lastCheckedCode = '';
+      setDeviceStatus('Could not reach TV pairing server. Check server connection.', false);
     }
   }
 
@@ -167,14 +217,14 @@
       <!-- M3U Section -->
       <div id="${cardId}_m3uSection" style="display: ${currentKind === 'm3u' ? 'block' : 'none'};">
         <div class="form-group">
-          <label for="${cardId}_m3uUrl">M3U Playlist URL *</label>
+          <label for="${cardId}_m3uUrl">Playlist URL (M3U, M3U8, or Short Link) *</label>
           <div class="input-action-wrapper">
             <input 
               type="url" 
               id="${cardId}_m3uUrl" 
               class="input-field" 
               value="${initialM3uUrl}" 
-              placeholder="https://example.com/playlist.m3u8" 
+              placeholder="https://.../playlist.m3u8 or short URL (e.g. tinyurl.com/...)" 
               inputmode="url" 
               autocapitalize="none" 
               autocorrect="off" 
@@ -537,10 +587,16 @@
         const name = document.getElementById(`${cardId}_name`).value.trim();
 
         if (currentKind === 'm3u') {
-          const playlistUrl = document.getElementById(`${cardId}_m3uUrl`).value.trim();
-          const epgUrl = document.getElementById(`${cardId}_m3uEpg`).value.trim();
+          let playlistUrl = document.getElementById(`${cardId}_m3uUrl`).value.trim();
+          let epgUrl = document.getElementById(`${cardId}_m3uEpg`).value.trim();
           if (!playlistUrl) {
-            throw new Error(`Playlist #${getCardNumber(cardId)}: Please enter an M3U URL.`);
+            throw new Error(`Playlist #${getCardNumber(cardId)}: Please enter a playlist URL.`);
+          }
+          if (!/^https?:\/\//i.test(playlistUrl)) {
+            playlistUrl = 'http://' + playlistUrl;
+          }
+          if (epgUrl && !/^https?:\/\//i.test(epgUrl)) {
+            epgUrl = 'http://' + epgUrl;
           }
           return {
             id: existingId,
@@ -654,6 +710,7 @@
         checkSession(val);
       }, 300);
     } else {
+      stopSessionPolling();
       hideDeviceStatus();
       lastCheckedCode = '';
     }
@@ -719,6 +776,9 @@
         throw new Error(data.error || 'Server error occurred during push.');
       }
 
+      // Stop polling once submitted
+      stopSessionPolling();
+
       // Show success screen
       setupForm.style.display = 'none';
       btnAddPlaylist.style.display = 'none';
@@ -734,6 +794,7 @@
 
   // Reset button
   resetBtn.addEventListener('click', () => {
+    stopSessionPolling();
     setupForm.reset();
     codeInput.value = '';
     playlistsContainer.innerHTML = '';

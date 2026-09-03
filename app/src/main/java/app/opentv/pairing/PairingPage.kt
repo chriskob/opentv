@@ -84,7 +84,7 @@ object PairingPage {
             document.getElementById('url-label').textContent =
               isM3u ? 'Playlist URL' : 'Server address';
             document.getElementById('url-hint').textContent = isM3u
-              ? 'The full http link to your .m3u or .m3u8 file.'
+              ? 'Full link to your playlist (.m3u, .m3u8, or short URL like bit.ly/tinyurl).'
               : "Paste the whole line from your provider if that's easier.";
             document.getElementById('username').required = !isM3u;
             document.getElementById('password').required = !isM3u;

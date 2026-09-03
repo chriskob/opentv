@@ -69,6 +69,7 @@ object ServiceLocator {
                 .callTimeout(5, TimeUnit.MINUTES)
                 .retryOnConnectionFailure(true)
                 .followRedirects(true)
+                .followSslRedirects(true)
                 .build()
         }
 

@@ -49,7 +49,7 @@ object M3uParser {
         var index = 0
 
         reader.forEachLine { rawLine ->
-            val line = rawLine.trim()
+            val line = rawLine.removePrefix("\uFEFF").trim()
             when {
                 line.isEmpty() -> Unit
 
