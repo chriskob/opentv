@@ -68,6 +68,7 @@ import app.opentv.ui.channels.SearchScreen
 import app.opentv.ui.ChannelsViewModel
 import app.opentv.ui.VodViewModel
 import app.opentv.ui.onboarding.AddSourceScreen
+import app.opentv.ui.onboarding.RemotePairingScreen
 import app.opentv.ui.player.PlayerScreen
 import app.opentv.ui.settings.AboutScreen
 import app.opentv.ui.settings.AppSettingsScreen
@@ -309,6 +310,7 @@ object Routes {
     const val SYNC = "sync"
     const val REC_SETTINGS = "recording-settings"
     const val ABOUT = "about"
+    const val REMOTE_PAIRING = "remote-pairing"
     const val SERIES_DETAIL = "series/{seriesId}"
     const val MOVIE_DETAIL = "movie/{movieId}"
 
@@ -544,6 +546,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onOpenSync = { navController.navigate(Routes.SYNC) },
                     onOpenRecordings = { navController.navigate(Routes.REC_SETTINGS) },
                     onOpenAbout = { navController.navigate(Routes.ABOUT) },
+                    onOpenRemotePairing = { navController.navigate(Routes.REMOTE_PAIRING) },
                     onBack = { navController.popBackStack() },
                 )
             }
@@ -572,7 +575,19 @@ private fun OpenTvApp(isTelevision: Boolean) {
                 ProvidersScreen(
                     viewModel = sourcesViewModel,
                     onAddSource = { navController.navigate(Routes.ADD_SOURCE) },
+                    onOpenRemotePairing = { navController.navigate(Routes.REMOTE_PAIRING) },
                     onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Routes.REMOTE_PAIRING) {
+                RemotePairingScreen(
+                    onReceived = { sources ->
+                        sourcesViewModel.saveAndSyncBatch(sources) {
+                            navController.popBackStack()
+                        }
+                    },
+                    onCancel = { navController.popBackStack() },
                 )
             }
 

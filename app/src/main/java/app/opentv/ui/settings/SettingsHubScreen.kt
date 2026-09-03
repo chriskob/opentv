@@ -74,6 +74,7 @@ fun SettingsHubScreen(
     onOpenSync: () -> Unit,
     onOpenRecordings: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenRemotePairing: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val contentSection = listOf(
@@ -90,6 +91,13 @@ fun SettingsHubScreen(
             title = stringResource(R.string.settings_guide_title),
             subtitle = stringResource(R.string.settings_guide_subtitle),
             onClick = onOpenGuide,
+        ),
+        HubCardItem(
+            icon = Icons.Filled.PhoneAndroid,
+            iconTint = Color(0xFF26C6DA),
+            title = "Remote Support & Pairing",
+            subtitle = "Generate code to edit, add, or troubleshoot playlists remotely",
+            onClick = onOpenRemotePairing,
         ),
         HubCardItem(
             icon = Icons.Filled.GridView,

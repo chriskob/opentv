@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -75,6 +76,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProvidersScreen(
     onAddSource: () -> Unit,
+    onOpenRemotePairing: () -> Unit = {},
     onBack: () -> Unit,
     viewModel: SourcesViewModel = viewModel(),
 ) {
@@ -119,6 +121,14 @@ fun ProvidersScreen(
                     color = Color.White.copy(alpha = 0.65f),
                 )
             }
+
+            ProviderActionButton(
+                label = "Remote Edit / Pair",
+                icon = Icons.Filled.PhoneAndroid,
+                onClick = onOpenRemotePairing,
+            )
+
+            Spacer(Modifier.width(12.dp))
 
             ProviderActionButton(
                 label = stringResource(R.string.providers_add),
