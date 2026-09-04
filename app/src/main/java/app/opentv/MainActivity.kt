@@ -143,15 +143,12 @@ class MainActivity : ComponentActivity() {
     private var isBackLongPress = false
     private val longPressRunnable = Runnable {
         isBackLongPress = true
-        runOnUiThread {
-            if (!isFinishing && !isDestroyed) {
-                android.app.AlertDialog.Builder(this@MainActivity)
-                    .setTitle(R.string.exit_title)
-                    .setMessage(R.string.exit_body)
-                    .setPositiveButton(R.string.exit_confirm) { _, _ -> finish() }
-                    .setNegativeButton(R.string.exit_cancel, null)
-                    .show()
-            }
+        triggerFullScreenLive()
+    }
+
+    private fun triggerFullScreenLive() {
+        if (!app.opentv.core.PipState.inPip.value) {
+            app.opentv.core.PlayRequests.requestFullScreen()
         }
     }
 
