@@ -567,10 +567,10 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
     val windowStartMillis: StateFlow<Long> =
         combine(nowTick.map { it - it % HALF_HOUR_MILLIS }, _guideHourOffset) { base, hourOffset ->
-            base + hourOffset * 3600_000L
+            base + hourOffset * 3600_000L - PAST_MILLIS
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
-            System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS },
+            System.currentTimeMillis().let { it - it % HALF_HOUR_MILLIS - PAST_MILLIS },
         )
 
     private data class RowsKey(
@@ -616,7 +616,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
                     val epgIds = visible.mapNotNull { it.epgChannelId?.ifBlank { null } }.distinct()
                     val byEpgChannel = if (epgIds.isEmpty()) emptyMap() else {
-                        graph.epgRepository.windowForChannels(epgIds, windowStart, windowStart + DAY_MILLIS)
+                        graph.epgRepository.windowForChannels(epgIds, windowStart, windowStart + TOTAL_WINDOW_MILLIS)
                     }
                     buildRows(visible, byEpgChannel, now)
                 }
@@ -850,6 +850,11 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         const val GUIDE_MAX_PAST_DAYS = 7 // browse up to a week into the past for catch-up TV
         const val GUIDE_MAX_DAYS = 6  // browse up to a week out, matching typical XMLTV depth
         const val HALF_HOUR_MILLIS = 30 * 60 * 1000L
+        const val PAST_HOURS = 24
+        const val FUTURE_HOURS = 24
+        const val HOURS_IN_WINDOW = PAST_HOURS + FUTURE_HOURS
+        const val PAST_MILLIS = PAST_HOURS * 3600_000L
+        const val TOTAL_WINDOW_MILLIS = HOURS_IN_WINDOW * 3600_000L
     }
 }
 

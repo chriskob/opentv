@@ -191,6 +191,7 @@ fun HomeScreen(
     // guide (onFocusRow) so the grid gets the whole width. Pressing d-pad LEFT from the guide's
     // leftmost (channel) column slides it back and drops focus on the selected category.
     var railExpanded by remember { mutableStateOf(false) }
+    var backScrollActive by remember { mutableStateOf(false) }
     val railWidth by animateDpAsState(
         targetValue = if (railExpanded) 240.dp else 0.dp,
         label = "railWidth",
@@ -231,8 +232,9 @@ fun HomeScreen(
     }
 
     // 1. If channel menu / recording dialog / background prompt is open, close it.
-    // 2. If browsing the guide grid (!railExpanded), Back opens the Category/Channel List rail.
-    // 3. If in the Category/Channel List rail (railExpanded), Back opens the Main Menu sidebar.
+    // 2. If browsing past catch-up programmes (backScrollActive), Back returns to the live show.
+    // 3. If browsing the guide grid (!railExpanded), Back opens the Category/Channel List rail.
+    // 4. If in the Category/Channel List rail (railExpanded), Back opens the Main Menu sidebar.
     BackHandler(enabled = !isFullScreen && (channelMenu != null || recordTarget != null || showBackgroundPrompt || pendingLiveChannel != null)) {
         channelMenu = null
         recordTarget = null
@@ -240,7 +242,12 @@ fun HomeScreen(
         pendingLiveChannel = null
     }
 
-    BackHandler(enabled = !isFullScreen && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && !railExpanded) {
+    BackHandler(enabled = !isFullScreen && backScrollActive && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
+        backScrollActive = false
+        runCatching { guideFocusRequester.requestFocus() }
+    }
+
+    BackHandler(enabled = !isFullScreen && !backScrollActive && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && !railExpanded) {
         railExpanded = true
         pendingRailFocus = true
     }
@@ -450,13 +457,13 @@ fun HomeScreen(
                     when (e.key) {
                         Key.MediaRewind, Key.PageUp, Key.ChannelUp -> {
                             if (guideHourOffset > -168) {
-                                viewModel.nudgeGuideHours(-2)
+                                viewModel.nudgeGuideDay(-1)
                                 true
                             } else false
                         }
                         Key.MediaFastForward, Key.PageDown, Key.ChannelDown -> {
                             if (guideHourOffset < 0) {
-                                viewModel.nudgeGuideHours(2)
+                                viewModel.nudgeGuideDay(1)
                                 true
                             } else false
                         }
@@ -708,8 +715,8 @@ fun HomeScreen(
                     onRecord = { recordSelected() },
                     dayLabel = dayLabel,
                     canGoPrevDay = guideHourOffset > -168,
-                    onPrevDay = { viewModel.nudgeGuideHours(-2) },
-                    onNextDay = { viewModel.nudgeGuideHours(2) },
+                    onPrevDay = { viewModel.nudgeGuideDay(-1) },
+                    onNextDay = { viewModel.nudgeGuideDay(1) },
                     onPreviewBoundsChanged = { rect ->
                         if (rect.width > 0 && rect.height > 0 && previewBounds != rect) {
                             previewBounds = rect
@@ -728,6 +735,7 @@ fun HomeScreen(
                 }
                 val onExitLeftChannel: () -> Boolean = remember {
                     {
+                        backScrollActive = false
                         if (!railExpanded) {
                             railExpanded = true
                             pendingRailFocus = true
@@ -801,6 +809,8 @@ fun HomeScreen(
                         },
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onExitLeftFromChannel = onExitLeftChannel,
+                        onEnableBackScroll = { backScrollActive = true },
+                        highlightedProgramme = highlightedProgramme,
                         onWrapToBottom = {
                             val last = rows.lastOrNull()
                             highlightedRow = last

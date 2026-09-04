@@ -77,7 +77,9 @@ import java.util.Locale
 
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -164,13 +166,19 @@ fun GuideGrid(
     onProgramme: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onExitLeftFromChannel: () -> Boolean = { false },
+    onEnableBackScroll: () -> Unit = {},
+    highlightedProgramme: Programme? = null,
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
     dayOffset: Int = 0,
     nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier,
 ) {
-    val scroll = rememberScrollState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val initialNowScrollPx = remember {
+        with(density) { (PAST_HOURS * 60 * MINUTE_DP).dp.roundToPx() }
+    }
+    val scroll = rememberScrollState(initial = initialNowScrollPx)
     val focusTargetKey = playingKey ?: selectedKey ?: rows.firstOrNull()?.key
     val initialFirstVisible = remember(focusTargetKey, rows) {
         val idx = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
@@ -186,13 +194,12 @@ fun GuideGrid(
     var activeFocusedIndex by remember { mutableStateOf<Int?>(null) }
     var activeFocusedKey by remember { mutableStateOf<Any?>(playingKey ?: selectedKey ?: rows.firstOrNull()?.key) }
     val coroutineScope = rememberCoroutineScope()
-    val density = androidx.compose.ui.platform.LocalDensity.current
 
     var hasInitialFocused by remember { mutableStateOf(false) }
 
     LaunchedEffect(windowStartMillis) {
-        if (scroll.value != 0) {
-            scroll.animateScrollTo(0)
+        if (scroll.value == 0) {
+            scroll.scrollTo(initialNowScrollPx)
         }
     }
 
@@ -265,7 +272,7 @@ fun GuideGrid(
 
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            TimeHeader(windowStartMillis, nowMillis, scroll)
+            TimeHeader(windowStartMillis, nowMillis, scroll, highlightedProgramme)
             Spacer(Modifier.height(2.dp))
 
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -308,6 +315,7 @@ fun GuideGrid(
                             onProgramme = { programme -> onProgramme(row, programme) },
                             onToggleFavourite = { onToggleFavourite(row) },
                             onExitLeft = onExitLeftFromChannel,
+                            onEnableBackScroll = onEnableBackScroll,
                             onWrapToBottom = handleWrapToBottom,
                             onWrapToTop = handleWrapToTop,
                         )
@@ -611,6 +619,7 @@ private fun TimeHeader(
     windowStartMillis: Long,
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
+    highlightedProgramme: Programme? = null,
 ) {
     val currentDateTimeFmt = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
     val slotTimeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
@@ -623,15 +632,14 @@ private fun TimeHeader(
             .background(Color(0xFF141C24)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Top-left current date/time label (Cyan matching TiviMate, or Amber when browsing past hours/catch-up)
-        val isPast = windowStartMillis < (nowMillis - 30 * 60 * 1000L)
-        val headerText = if (isPast) {
-            val diffHours = ((nowMillis - windowStartMillis) / 3600_000L).coerceAtLeast(1L)
-            val dayPrefix = if (diffHours >= 24) {
-                val days = diffHours / 24
-                if (days == 1L) "Yesterday, " else "${days}d ago, "
+        // Top-left label: Cyan for live/future, or Amber when focused on a past/catch-up programme
+        val isPast = highlightedProgramme != null && highlightedProgramme.endUtcMillis <= nowMillis
+        val headerText = if (isPast && highlightedProgramme != null) {
+            val progDate = Date(highlightedProgramme.startUtcMillis)
+            val dayPrefix = if (nowMillis - highlightedProgramme.startUtcMillis >= 24 * 3600_000L) {
+                SimpleDateFormat("EEE, ", Locale.getDefault()).format(progDate)
             } else ""
-            "$dayPrefix${slotTimeFmt.format(Date(windowStartMillis))} (-${diffHours}h)"
+            "$dayPrefix${slotTimeFmt.format(progDate)} (Catch-up)"
         } else {
             currentDateTimeFmt.format(Date(nowMillis))
         }
@@ -698,6 +706,7 @@ private fun GuideRow(
     onProgramme: (Programme) -> Unit,
     onToggleFavourite: () -> Unit = {},
     onExitLeft: () -> Boolean = { false },
+    onEnableBackScroll: () -> Unit = {},
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
 ) {
@@ -885,12 +894,18 @@ private fun GuideRow(
                     if (liveIdx >= 0) liveIdx else 0
                 }
 
+                val blockFocusRequesters = remember(blockLayouts.size) {
+                    List(blockLayouts.size) { FocusRequester() }
+                }
+
                 for ((pOrder, layout) in blockLayouts.withIndex()) {
                     if (layout.spacerWidth > 0.dp) Spacer(Modifier.width(layout.spacerWidth))
                     val prog = programmes[layout.programmeIndex]
                     val isNow = nowMillis in prog.startUtcMillis until prog.endUtcMillis
                     val isFirst = pOrder == 0
-                    val attachRequester = if (focusRequester != null && pOrder == targetBlockIdx) focusRequester else null
+                    val isLiveTarget = pOrder == targetBlockIdx
+                    val blockRequester = blockFocusRequesters.getOrNull(pOrder)
+                    val attachRequester = if (focusRequester != null && isLiveTarget) focusRequester else blockRequester
 
                     ProgrammeBlock(
                         title = prog.title,
@@ -901,7 +916,13 @@ private fun GuideRow(
                         focusRequester = attachRequester,
                         onFocus = { onFocus(prog) },
                         onClick = { onProgramme(prog) },
-                        onExitLeft = if (isFirst) onExitLeft else null,
+                        onExitLeft = if (isLiveTarget || isFirst) onExitLeft else null,
+                        onEnableBackScroll = if (isLiveTarget && pOrder > 0) {
+                            {
+                                onEnableBackScroll()
+                                runCatching { blockFocusRequesters[pOrder - 1].requestFocus() }
+                            }
+                        } else null,
                     )
                 }
 
@@ -964,8 +985,13 @@ private fun ProgrammeBlock(
     onFocus: () -> Unit = {},
     onClick: () -> Unit,
     onExitLeft: (() -> Boolean)? = null,
+    onEnableBackScroll: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    var dpadLeftJob by remember { mutableStateOf<Job?>(null) }
+    var dpadLeftLongHandled by remember { mutableStateOf(false) }
+    var dpadLeftDownTime by remember { mutableLongStateOf(0L) }
 
     Box(
         Modifier
@@ -987,8 +1013,51 @@ private fun ProgrammeBlock(
                 else Modifier.border(0.5.dp, Color(0xFF1565C0).copy(alpha = 0.35f), GuideCellShape),
             )
             .onPreviewKeyEvent { e ->
-                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft && onExitLeft != null) {
-                    onExitLeft()
+                if (e.key == Key.DirectionLeft) {
+                    if (onEnableBackScroll != null) {
+                        when (e.type) {
+                            KeyEventType.KeyDown -> {
+                                if (e.nativeKeyEvent.repeatCount == 0) {
+                                    dpadLeftDownTime = System.currentTimeMillis()
+                                    dpadLeftLongHandled = false
+                                    dpadLeftJob?.cancel()
+                                    dpadLeftJob = coroutineScope.launch {
+                                        delay(350L)
+                                        dpadLeftLongHandled = true
+                                        onEnableBackScroll()
+                                    }
+                                    true
+                                } else {
+                                    if (!dpadLeftLongHandled) {
+                                        dpadLeftLongHandled = true
+                                        dpadLeftJob?.cancel()
+                                        dpadLeftJob = null
+                                        onEnableBackScroll()
+                                    }
+                                    true
+                                }
+                            }
+                            KeyEventType.KeyUp -> {
+                                dpadLeftJob?.cancel()
+                                dpadLeftJob = null
+                                if (dpadLeftLongHandled) {
+                                    dpadLeftLongHandled = false
+                                    true
+                                } else {
+                                    val elapsed = System.currentTimeMillis() - dpadLeftDownTime
+                                    if (elapsed < 350L && onExitLeft != null) {
+                                        onExitLeft()
+                                    }
+                                    true
+                                }
+                            }
+                            else -> false
+                        }
+                    } else if (onExitLeft != null) {
+                        if (e.type == KeyEventType.KeyDown) {
+                            onExitLeft()
+                        } else false
+                    } else false
                 } else false
             }
             .onFocusChanged {
@@ -1036,7 +1105,9 @@ private fun widthFor(fromMillis: Long, toMillis: Long): Dp {
 }
 
 private const val MINUTE_DP = 7.0f
-private const val HOURS_IN_WINDOW = 24
+private const val PAST_HOURS = 24
+private const val FUTURE_HOURS = 24
+private const val HOURS_IN_WINDOW = PAST_HOURS + FUTURE_HOURS
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
 private val CHANNEL_COLUMN = 240.dp
 private val ROW_HEIGHT = 52.dp
