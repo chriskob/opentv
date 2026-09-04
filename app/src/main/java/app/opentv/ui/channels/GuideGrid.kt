@@ -157,6 +157,7 @@ fun GuideGrid(
     windowStartMillis: Long,
     selectedKey: Any?,
     playingKey: Any? = null,
+    focusRequester: FocusRequester? = null,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
@@ -278,10 +279,12 @@ fun GuideGrid(
                         key = { _, row -> row.key },
                         contentType = { _, _ -> "guide_row" },
                     ) { index, row ->
+                        val currentActiveKey = activeFocusedKey ?: selectedKey ?: playingKey ?: rows.firstOrNull()?.key
                         val isPlaying = row.key == playingKey
-                        val isHighlighted = row.key == (activeFocusedKey ?: playingKey ?: selectedKey)
+                        val isHighlighted = row.key == currentActiveKey
                         val rowRequester = when (row.key) {
                             wrapTargetKey -> wrapFocusRequester
+                            currentActiveKey -> focusRequester ?: (if (row.key == focusTargetKey) initialFocusRequester else null)
                             focusTargetKey -> initialFocusRequester
                             else -> null
                         }
@@ -351,6 +354,7 @@ fun ChannelList(
     rows: List<ChannelsViewModel.Row>,
     selectedKey: Any?,
     playingKey: Any? = null,
+    focusRequester: FocusRequester? = null,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
@@ -451,9 +455,11 @@ fun ChannelList(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
+            val currentActiveKey = activeFocusedIndex?.let { rows.getOrNull(it)?.key } ?: selectedKey ?: playingKey ?: rows.firstOrNull()?.key
             val isPlaying = row.key == playingKey
             val rowRequester = when (row.key) {
                 wrapTargetKey -> wrapFocusRequester
+                currentActiveKey -> focusRequester ?: (if (row.key == focusTargetKey) initialFocusRequester else null)
                 focusTargetKey -> initialFocusRequester
                 else -> null
             }

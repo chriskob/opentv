@@ -196,9 +196,11 @@ fun HomeScreen(
         label = "railWidth",
     )
     val railFocusRequester = remember { FocusRequester() }
+    val guideFocusRequester = remember { FocusRequester() }
     // Set when LEFT reopens the rail; the effect waits for the rail to be laid out again before
     // moving focus onto it — a just-revealed node isn't focusable on the very same frame.
     var pendingRailFocus by remember { mutableStateOf(false) }
+    var pendingGuideFocus by remember { mutableStateOf(false) }
     LaunchedEffect(pendingRailFocus) {
         if (pendingRailFocus) {
             delay(50)
@@ -206,6 +208,13 @@ fun HomeScreen(
             // be composed; a second LEFT press then still reaches the rail by ordinary navigation.
             runCatching { railFocusRequester.requestFocus() }
             pendingRailFocus = false
+        }
+    }
+    LaunchedEffect(pendingGuideFocus) {
+        if (pendingGuideFocus) {
+            delay(30)
+            runCatching { guideFocusRequester.requestFocus() }
+            pendingGuideFocus = false
         }
     }
 
@@ -288,7 +297,11 @@ fun HomeScreen(
         }
     }
     val activeSelectedRow = selectedRow ?: initialRow
-    val activeHighlightedRow = highlightedRow ?: initialRow
+    val activeHighlightedRow = if (highlightedRow != null && rows.any { it.key == highlightedRow?.key }) {
+        highlightedRow
+    } else {
+        initialRow
+    }
 
     LaunchedEffect(initialRow) {
         if (selectedRow == null && initialRow != null) {
@@ -418,9 +431,6 @@ fun HomeScreen(
     }
 
     var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
-    var backDpadLongHandled by remember { mutableStateOf(false) }
-    var rightDpadLongHandled by remember { mutableStateOf(false) }
-    var longPressJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     // Auto-return to full screen after 1 minute of inactivity in the TV guide
     LaunchedEffect(isFullScreen, channelMenu, recordTarget, showBackgroundPrompt, pendingLiveChannel, lastInteractionTime) {
@@ -436,58 +446,22 @@ fun HomeScreen(
             .background(Color.Black)
             .onPreviewKeyEvent { e ->
                 lastInteractionTime = System.currentTimeMillis()
-                if (!isFullScreen) {
-                    val inGuideGrid = channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && !railExpanded
-                    if (e.type == KeyEventType.KeyDown) {
-                        when (e.key) {
-                            Key.Back, Key.Escape -> {
-                                if (inGuideGrid) {
-                                    if (longPressJob == null && !backDpadLongHandled) {
-                                        longPressJob = recordScope.launch {
-                                            delay(500L)
-                                            backDpadLongHandled = true
-                                            viewModel.nudgeGuideHours(-2)
-                                            Toast.makeText(context, "Guide: -2h earlier", Toast.LENGTH_SHORT).show()
-                                            while (isActive && viewModel.guideHourOffset.value > -168) {
-                                                delay(1200L)
-                                                viewModel.nudgeGuideHours(-2)
-                                            }
-                                        }
-                                    }
-                                    backDpadLongHandled
-                                } else false
-                            }
-                            Key.MediaRewind, Key.PageUp, Key.ChannelUp -> {
-                                if (guideHourOffset > -168) {
-                                    viewModel.nudgeGuideHours(-2)
-                                    true
-                                } else false
-                            }
-                            Key.MediaFastForward, Key.PageDown, Key.ChannelDown -> {
-                                if (guideHourOffset < 0) {
-                                    viewModel.nudgeGuideHours(2)
-                                    true
-                                } else false
-                            }
-                            else -> false
+                if (!isFullScreen && e.type == KeyEventType.KeyDown) {
+                    when (e.key) {
+                        Key.MediaRewind, Key.PageUp, Key.ChannelUp -> {
+                            if (guideHourOffset > -168) {
+                                viewModel.nudgeGuideHours(-2)
+                                true
+                            } else false
                         }
-                    } else if (e.type == KeyEventType.KeyUp) {
-                        when (e.key) {
-                            Key.Back, Key.Escape -> {
-                                longPressJob?.cancel()
-                                longPressJob = null
-                                if (backDpadLongHandled) {
-                                    backDpadLongHandled = false
-                                    true
-                                } else if (inGuideGrid && guideHourOffset < 0) {
-                                    viewModel.guideToNow()
-                                    Toast.makeText(context, "Guide: Live (Now)", Toast.LENGTH_SHORT).show()
-                                    true
-                                } else false
-                            }
-                            else -> false
+                        Key.MediaFastForward, Key.PageDown, Key.ChannelDown -> {
+                            if (guideHourOffset < 0) {
+                                viewModel.nudgeGuideHours(2)
+                                true
+                            } else false
                         }
-                    } else false
+                        else -> false
+                    }
                 } else false
             }
     ) {
@@ -561,7 +535,25 @@ fun HomeScreen(
                 .fillMaxHeight()
                 .background(MaterialTheme.colorScheme.surface)
                 .clipToBounds()
-                .padding(vertical = 16.dp),
+                .padding(vertical = 16.dp)
+                .onPreviewKeyEvent { e ->
+                    if (e.type == KeyEventType.KeyDown) {
+                        when (e.key) {
+                            Key.DirectionRight -> {
+                                railExpanded = false
+                                runCatching { guideFocusRequester.requestFocus() }
+                                pendingGuideFocus = true
+                                true
+                            }
+                            Key.DirectionLeft -> {
+                                railExpanded = false
+                                onOpenMainMenu()
+                                true
+                            }
+                            else -> false
+                        }
+                    } else false
+                },
         ) {
             Text(
                 stringResource(R.string.nav_live_tv),
@@ -590,14 +582,24 @@ fun HomeScreen(
                         RailEntry(
                             label = stringResource(R.string.channels_manager_all_sources),
                             selected = selectedSource == null,
-                            onClick = { viewModel.selectSource(null) },
+                            onClick = {
+                                viewModel.selectSource(null)
+                                railExpanded = false
+                                runCatching { guideFocusRequester.requestFocus() }
+                                pendingGuideFocus = true
+                            },
                         )
                     }
                     items(sources, key = { "src-${it.id}" }) { source ->
                         RailEntry(
                             label = source.name,
                             selected = selectedSource == source.id,
-                            onClick = { viewModel.selectSource(source.id) },
+                            onClick = {
+                                viewModel.selectSource(source.id)
+                                railExpanded = false
+                                runCatching { guideFocusRequester.requestFocus() }
+                                pendingGuideFocus = true
+                            },
                         )
                     }
                     item(key = "provider-divider") { Spacer(Modifier.height(10.dp)) }
@@ -608,7 +610,12 @@ fun HomeScreen(
                     RailEntry(
                         label = stringResource(R.string.guide_favourites),
                         selected = favouritesOnly,
-                        onClick = viewModel::selectFavourites,
+                        onClick = {
+                            viewModel.selectFavourites()
+                            railExpanded = false
+                            runCatching { guideFocusRequester.requestFocus() }
+                            pendingGuideFocus = true
+                        },
                         modifier = if (favouritesOnly) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
@@ -617,7 +624,12 @@ fun HomeScreen(
                     RailEntry(
                         label = stringResource(R.string.guide_all_channels),
                         selected = allSelected,
-                        onClick = { viewModel.selectCategory(null) },
+                        onClick = {
+                            viewModel.selectCategory(null)
+                            railExpanded = false
+                            runCatching { guideFocusRequester.requestFocus() }
+                            pendingGuideFocus = true
+                        },
                         modifier = if (allSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
@@ -626,7 +638,12 @@ fun HomeScreen(
                     RailEntry(
                         label = group.label,
                         selected = groupSelected,
-                        onClick = { viewModel.selectCategory(group.key) },
+                        onClick = {
+                            viewModel.selectCategory(group.key)
+                            railExpanded = false
+                            runCatching { guideFocusRequester.requestFocus() }
+                            pendingGuideFocus = true
+                        },
                         modifier = if (groupSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
@@ -725,6 +742,7 @@ fun HomeScreen(
                         rows = rows,
                         selectedKey = activeHighlightedRow?.key,
                         playingKey = activeSelectedRow?.key,
+                        focusRequester = guideFocusRequester,
                         onSelectRow = { row -> requestLive(row.primary) },
                         onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
@@ -750,6 +768,7 @@ fun HomeScreen(
                         dayOffset = guideHourOffset / 24,
                         selectedKey = activeHighlightedRow?.key,
                         playingKey = activeSelectedRow?.key,
+                        focusRequester = guideFocusRequester,
                         onSelectRow = { row -> requestLive(row.primary) },
                         onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
