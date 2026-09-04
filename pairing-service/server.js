@@ -231,7 +231,7 @@ app.post('/api/xtream/categories', async (req, res) => {
  * Supports both multiple playlists (playlists array) and single playlist legacy format.
  */
 app.post('/api/pair/push', pushLimiter, (req, res) => {
-  const { code, playlistUrl, epgUrl, xtreamData, playlists } = req.body;
+  const { code, playlistUrl, epgUrl, xtreamData, playlists, deletedSourceIds } = req.body;
 
   if (!code || typeof code !== 'string') {
     return res.status(400).json({ error: 'Pairing code is required.' });
@@ -347,9 +347,14 @@ app.post('/api/pair/push', pushLimiter, (req, res) => {
 
   // Construct payload with backward compatibility
   const primary = normalizedPlaylists[0];
+  const cleanDeletedIds = Array.isArray(deletedSourceIds)
+    ? deletedSourceIds.map(Number).filter(n => !isNaN(n) && n > 0)
+    : [];
+
   const payload = {
     type: 'provision',
     playlists: normalizedPlaylists,
+    deletedSourceIds: cleanDeletedIds,
     // Legacy fields for backward compatibility
     playlistType: primary.kind,
     playlistUrl: primary.playlistUrl || null,

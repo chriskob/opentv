@@ -90,7 +90,10 @@ class RemotePairingClient(
         data object Idle : State
         data object Connecting : State
         data class Listening(val session: Session) : State
-        data class Received(val sources: List<ProvisionedSource>) : State {
+        data class Received(
+            val sources: List<ProvisionedSource>,
+            val deletedSourceIds: List<Long> = emptyList(),
+        ) : State {
             val draft: Source get() = sources.firstOrNull()?.toSource() ?: Source(name = "Provider", kind = SourceKind.M3U, url = "")
         }
         data class Failed(val reason: String) : State
@@ -355,7 +358,12 @@ class RemotePairingClient(
                             parsedSources.add(source)
                         }
 
-                        _state.value = State.Received(parsedSources)
+                        val delArr = json.optJSONArray("deletedSourceIds")
+                        val deletedIds = if (delArr != null) {
+                            (0 until delArr.length()).map { delArr.getLong(it) }
+                        } else emptyList()
+
+                        _state.value = State.Received(parsedSources, deletedIds)
 
                         webSocket.close(1000, "Received configuration")
                         stop()

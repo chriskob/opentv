@@ -17,6 +17,7 @@
   // State
   let playlistCounter = 0;
   const playlists = []; // Array of card controllers
+  let deletedSourceIds = []; // Explicitly removed source IDs
   let sessionCheckTimeout = null;
   let lastCheckedCode = '';
 
@@ -139,6 +140,7 @@
     playlistsContainer.innerHTML = '';
     playlists.length = 0;
     playlistCounter = 0;
+    deletedSourceIds = [];
 
     sources.forEach(src => {
       createPlaylistCard(src.kind || 'm3u', src);
@@ -575,6 +577,9 @@
         showAlert('At least one playlist is required.');
         return;
       }
+      if (existingId) {
+        deletedSourceIds.push(existingId);
+      }
       card.remove();
       const idx = playlists.findIndex(p => p.cardId === cardId);
       if (idx !== -1) playlists.splice(idx, 1);
@@ -749,6 +754,7 @@
     const requestBody = {
       code,
       playlists: payloadPlaylists,
+      deletedSourceIds: deletedSourceIds,
       name: primary.name || 'IPTV Playlist',
       playlistUrl: primary.kind === 'm3u' ? primary.playlistUrl : null,
       epgUrl: primary.epgUrl || null,
@@ -800,6 +806,7 @@
     playlistsContainer.innerHTML = '';
     playlists.length = 0;
     playlistCounter = 0;
+    deletedSourceIds = [];
     createPlaylistCard('m3u');
     successScreen.style.display = 'none';
     setupForm.style.display = 'block';

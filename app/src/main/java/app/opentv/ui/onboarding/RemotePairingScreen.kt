@@ -153,7 +153,7 @@ fun RemotePairingScreen(
 
     LaunchedEffect(state) {
         (state as? RemotePairingClient.State.Received)?.let {
-            viewModel.saveAndSyncBatch(it.sources)
+            viewModel.saveAndSyncBatch(it.sources, it.deletedSourceIds)
             onReceived(it.sources)
         }
     }

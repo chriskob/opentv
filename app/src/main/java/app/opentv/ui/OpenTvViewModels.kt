@@ -208,7 +208,11 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
      * Saves multiple provisioned playlists in batch, applies Xtream filter options (including/excluding channels),
      * and performs catalogue and EPG synchronization.
      */
-    fun saveAndSyncBatch(provisionedList: List<ProvisionedSource>, onDone: (Boolean) -> Unit = {}) {
+    fun saveAndSyncBatch(
+        provisionedList: List<ProvisionedSource>,
+        deletedSourceIds: List<Long> = emptyList(),
+        onDone: (Boolean) -> Unit = {}
+    ) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             _provisioningProgress.value = RemoteProvisioningProgress(
@@ -219,13 +223,12 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             )
             _ui.value = _ui.value.copy(syncing = true, syncMessage = "Saving ${provisionedList.size} playlist(s)…")
 
-            // Remove any existing sources that were deleted in the remote portal
-            val existingSources = graph.sourceRepository.enabled()
-            val retainedIds = provisionedList.mapNotNull { it.id }.filter { it != 0L }.toSet()
-            for (old in existingSources) {
-                if (old.id !in retainedIds) {
-                    Log.i("OpenTV", "Deleting removed source #${old.id} (${old.name})")
-                    graph.catalogRepository.deleteSource(old.id)
+            // ONLY delete sources that the user explicitly selected to remove in the remote portal.
+            // NEVER delete existing sources automatically!
+            if (deletedSourceIds.isNotEmpty()) {
+                for (delId in deletedSourceIds) {
+                    Log.i("OpenTV", "Explicitly deleting user-removed source #$delId")
+                    graph.catalogRepository.deleteSource(delId)
                 }
             }
 
@@ -233,7 +236,36 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             var anySuccess = false
 
             for ((idx, item) in provisionedList.withIndex()) {
-                val draft = item.toSource()
+                // Find existing source by ID or URL so we update rather than creating duplicates or wiping metadata
+                val existing = if (item.id != null && item.id != 0L) {
+                    graph.sourceRepository.byId(item.id)
+                } else {
+                    graph.sourceRepository.enabled().firstOrNull { 
+                        it.url.trim().equals(item.url.trim(), ignoreCase = true) 
+                    }
+                }
+
+                // Preserve existing EPG URL unless the user explicitly provided a new one!
+                val resolvedEpgUrl = when {
+                    !item.epgUrl.isNullOrBlank() -> item.epgUrl
+                    existing != null && !existing.epgUrl.isNullOrBlank() -> existing.epgUrl
+                    else -> null
+                }
+
+                val draft = Source(
+                    id = existing?.id ?: item.id ?: 0L,
+                    name = item.name.ifBlank { existing?.name ?: "Playlist" },
+                    kind = item.kind,
+                    url = item.url,
+                    username = item.username ?: existing?.username,
+                    password = item.password ?: existing?.password,
+                    macAddress = existing?.macAddress,
+                    epgUrl = resolvedEpgUrl,
+                    userAgent = existing?.userAgent ?: Source.DEFAULT_USER_AGENT,
+                    liveFormat = existing?.liveFormat ?: LiveStreamFormat.HLS,
+                    enabled = true,
+                )
+
                 val id = graph.sourceRepository.save(draft)
                 val saved = graph.sourceRepository.byId(id) ?: continue
 
@@ -285,7 +317,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             val timelineEnd = timelineStart + (72 * 60 * 60 * 1000L)
 
             val epgResult = runCatching {
-                val summary = graph.epgRepository.syncAll(now, force = true)
+                val summary = graph.epgRepository.syncAll(now, force = false)
                 runCatching { graph.recordingEngine.rescanSeriesRules() }
                 summary
             }.getOrNull()
