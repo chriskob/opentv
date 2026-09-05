@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.12.80
+
+- **Cross-Category History Tuning & Guide Synchronization**:
+  - Automatically resolve and switch categories in `ChannelsViewModel` when switching to a channel in another category from the player history/shortcuts carousel.
+  - Seamlessly hand off playback from fullscreen back into the TV guide without reloading or cutting off the playing channel.
+- **ANR Prevention & Main-Thread Safety**:
+  - Direct Room SQLite category resolution on `Dispatchers.IO` preventing full 40,000-channel playlist load.
+  - Offloaded `PlaybackQueue` item generation from the main UI thread.
+- **Sequential 1-Based Channel Numbering**:
+  - Channel numbering sequentially starts at `1` within every category with synchronized in-player number jumps.
+- **Full Guide Program Display & NEW Episode Badges**:
+  - Multi-line wrapping for program titles in guide grid and expanded preview card descriptions.
+  - Dedicated "NEW" episode badges parsed from XMLTV.
+- **Providers TV Settings Redesign**:
+  - Complete TV-friendly visual overhaul of Providers management page matching Guide Settings.
+  - Click-to-activate `TvOutlinedTextField` preventing keyboard popups while scrolling with D-pad.
+
 ## 0.12.71
 
 - **SQLite 999-Variable Cap Crash Fix (Fire OS & Large Playlists)**:
