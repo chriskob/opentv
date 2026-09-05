@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import app.opentv.ui.theme.AppTheme
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -224,7 +225,12 @@ fun PlayerScreen(
         }
     }
 
-    val queue = remember { PlaybackQueue.items }
+    var queue by remember { mutableStateOf(PlaybackQueue.items) }
+    LaunchedEffect(PlaybackQueue.items) {
+        if (PlaybackQueue.items.isNotEmpty()) {
+            queue = PlaybackQueue.items
+        }
+    }
     var variants by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var currentId by remember { mutableStateOf(channelId) }
     // The channel we were on before this one — powers the "Last channel" recall in the list.
@@ -395,18 +401,45 @@ fun PlayerScreen(
         val prog = currentProg
         scope.launch {
             val source = withContext(Dispatchers.IO) { graph.sourceRepository.byId(ch.sourceId) }
-            val catchupUrl = if (source != null && prog != null) {
-                withContext(Dispatchers.IO) { CatchupResolver.resolve(source, ch, prog) }
+            val effectiveProg = prog ?: run {
+                val now = System.currentTimeMillis()
+                val halfHourMs = 30 * 60 * 1000L
+                val start = (now / halfHourMs) * halfHourMs
+                Programme(
+                    id = 0L,
+                    feedId = 0L,
+                    epgChannelId = ch.epgChannelId ?: ch.streamId,
+                    title = ch.shownName,
+                    description = "",
+                    startUtcMillis = start,
+                    endUtcMillis = start + halfHourMs,
+                    category = null,
+                )
+            }
+            val catchupUrl = if (source != null) {
+                withContext(Dispatchers.IO) { CatchupResolver.resolve(source, ch, effectiveProg) }
             } else null
 
             if (catchupUrl != null && onPlayCatchup != null) {
                 Toast.makeText(context, "Catch-up: Playing from start", Toast.LENGTH_SHORT).show()
                 onPlayCatchup.invoke(
-                    "catchup:${ch.id}:${prog?.startUtcMillis ?: 0L}",
+                    "catchup:${ch.id}:${effectiveProg.startUtcMillis}",
                     catchupUrl,
-                    "${ch.shownName} — ${prog?.title ?: ""}",
+                    "${ch.shownName} — ${effectiveProg.title}",
                     source?.userAgent ?: "OpenTV",
                 )
+            } else if (catchupUrl != null) {
+                controller.play(
+                    PlayerController.Request(
+                        url = catchupUrl,
+                        title = "${ch.shownName} — ${effectiveProg.title}",
+                        userAgent = source?.userAgent ?: "OpenTV",
+                        startPositionMillis = 0L,
+                        isLive = false,
+                    ),
+                    debounce = false,
+                )
+                Toast.makeText(context, "Catch-up: Playing from start", Toast.LENGTH_SHORT).show()
             } else {
                 controller.player.seekTo(0L)
                 controller.player.playWhenReady = true
@@ -422,6 +455,7 @@ fun PlayerScreen(
         paused = false
         settings.lastChannelId = channel.id
         settings.recordChannelWatched(channel.id)
+        onChannelChange?.invoke(channel.id)
         scope.launch {
             val (source, url) = withContext(Dispatchers.IO) {
                 val src = graph.sourceRepository.byId(channel.sourceId)
@@ -489,8 +523,17 @@ fun PlayerScreen(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
-                    if (!app.opentv.core.PipState.inPip.value && !paused) {
-                        controller.player.playWhenReady = true
+                    if (!app.opentv.core.PipState.inPip.value) {
+                        val targetId = currentId ?: channelId ?: (if (settings.lastChannelId > 0L) settings.lastChannelId else null)
+                        val isPlayingOrBuffering = controller.player.currentMediaItem != null &&
+                            (controller.player.playbackState == androidx.media3.common.Player.STATE_READY ||
+                             controller.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+
+                        if (targetId != null && targetId > 0L && !isPlayingOrBuffering) {
+                            playChannelId(targetId)
+                        } else if (!paused) {
+                            controller.player.playWhenReady = true
+                        }
                     }
                 }
                 else -> Unit
@@ -548,14 +591,15 @@ fun PlayerScreen(
             val catName = channel?.categoryId?.let { catId ->
                 graph.database.categories().namesFor(setOf(catId)).firstOrNull()?.name
             }
-            val (cProg, nProg) = if (channel?.epgChannelId != null) {
-                val up = graph.epgRepository.upcoming(channel.epgChannelId!!, nowMillis, limit = 4)
-                val curr = up.firstOrNull { nowMillis in it.startUtcMillis until it.endUtcMillis } ?: up.firstOrNull()
-                val next = if (curr != null) {
-                    up.firstOrNull { it.startUtcMillis >= curr.endUtcMillis }
-                } else up.getOrNull(1)
-                curr to next
-            } else null to null
+            val candidates = channel?.epgCandidates.orEmpty()
+            val up = candidates.firstNotNullOfOrNull { epgId ->
+                graph.epgRepository.upcoming(epgId, nowMillis, limit = 4).takeIf { it.isNotEmpty() }
+            }.orEmpty()
+            val curr = up.firstOrNull { nowMillis in it.startUtcMillis until it.endUtcMillis } ?: up.firstOrNull()
+            val next = if (curr != null) {
+                up.firstOrNull { it.startUtcMillis >= curr.endUtcMillis }
+            } else up.getOrNull(1)
+            val (cProg, nProg) = curr to next
 
             withContext(Dispatchers.Main) {
                 currentChannel = channel
@@ -1068,7 +1112,8 @@ fun PlayerScreen(
                                 )
                             }
 
-                            val numStr = currentChannel?.number?.let { "$it " } ?: ""
+                            val chNum = queue.firstOrNull { it.id == currentChannel?.id }?.number ?: currentChannel?.number
+                            val numStr = chNum?.let { "$it " } ?: ""
                             val chName = currentChannel?.shownName ?: channelTitle
                             Text(
                                 text = "$numStr$chName",
@@ -1670,7 +1715,7 @@ fun PlayerScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showMultiviewDialog = false }) {
-                    Text(stringResource(R.string.common_done), color = Color(0xFF26C6DA), fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.common_done), color = AppTheme.primary, fontWeight = FontWeight.Bold)
                 }
             },
             containerColor = Color(0xFF18222C),
@@ -1695,7 +1740,7 @@ fun PlayerScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showChannelOptionsDialog = false }) {
-                    Text(stringResource(R.string.common_done), color = Color(0xFF26C6DA), fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.common_done), color = AppTheme.primary, fontWeight = FontWeight.Bold)
                 }
             },
             containerColor = Color(0xFF18222C),
@@ -2026,7 +2071,7 @@ private fun QuickChannelCard(
             )
             .then(
                 if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                else if (isCurrent) Modifier.border(1.5.dp, Color(0xFF26C6DA), RoundedCornerShape(8.dp))
+                else if (isCurrent) Modifier.border(1.5.dp, AppTheme.primary, RoundedCornerShape(8.dp))
                 else Modifier.border(0.5.dp, Color(0xFF1E3A4B), RoundedCornerShape(8.dp)),
             )
             .focusable()
@@ -2228,7 +2273,7 @@ private fun TransportButton(
             .clip(CircleShape)
             .background(bg)
             .then(
-                if (focused) Modifier.border(2.5.dp, if (isPrimary) Color(0xFF26C6DA) else Color.White, CircleShape)
+                if (focused) Modifier.border(2.5.dp, if (isPrimary) AppTheme.primary else Color.White, CircleShape)
                 else if (isPrimary) Modifier.border(1.dp, Color.White, CircleShape)
                 else Modifier.border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape)
             )
@@ -2301,12 +2346,12 @@ private fun SubMenuButtonCard(
     val icTint = when {
         focused -> Color(0xFF10171E)
         iconTint != null -> iconTint
-        isSelected -> Color(0xFF26C6DA)
+        isSelected -> AppTheme.primary
         else -> Color.White
     }
     val textColor = when {
         focused -> Color.White
-        isSelected -> Color(0xFF26C6DA)
+        isSelected -> AppTheme.primary
         else -> Color.White.copy(alpha = 0.85f)
     }
 
@@ -2331,7 +2376,7 @@ private fun SubMenuButtonCard(
                 .background(bg)
                 .then(
                     if (focused) Modifier.border(2.dp, Color.White, CircleShape)
-                    else if (isSelected) Modifier.border(1.5.dp, Color(0xFF26C6DA), CircleShape)
+                    else if (isSelected) Modifier.border(1.5.dp, AppTheme.primary, CircleShape)
                     else Modifier.border(1.dp, Color(0xFF263442), CircleShape)
                 ),
             contentAlignment = Alignment.Center,

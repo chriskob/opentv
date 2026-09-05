@@ -21,6 +21,9 @@ object PlayRequests {
     private val _fullScreenRequest = MutableStateFlow<Long?>(null)
     val fullScreenRequest: StateFlow<Long?> = _fullScreenRequest.asStateFlow()
 
+    private val _backScrollRequest = MutableStateFlow<Long?>(null)
+    val backScrollRequest: StateFlow<Long?> = _backScrollRequest.asStateFlow()
+
     fun request(id: Long) {
         if (id != 0L) _channelId.value = id
     }
@@ -29,11 +32,19 @@ object PlayRequests {
         _fullScreenRequest.value = System.currentTimeMillis()
     }
 
+    fun requestBackScroll() {
+        _backScrollRequest.value = System.currentTimeMillis()
+    }
+
     fun consume() {
         _channelId.value = null
     }
 
     fun consumeFullScreen() {
         _fullScreenRequest.value = null
+    }
+
+    fun consumeBackScroll() {
+        _backScrollRequest.value = null
     }
 }

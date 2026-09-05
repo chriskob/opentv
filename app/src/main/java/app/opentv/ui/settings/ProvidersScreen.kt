@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.Switch
+import androidx.compose.ui.graphics.Brush
+import app.opentv.ui.theme.AppTheme
+import app.opentv.ui.theme.cardFocusBg
+import app.opentv.ui.theme.dark
+import app.opentv.ui.theme.light
+import app.opentv.ui.theme.primary
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +52,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -96,6 +107,47 @@ fun ProvidersScreen(
         )
     }
 
+    pendingRemove?.let { source ->
+        AlertDialog(
+            onDismissRequest = { pendingRemove = null },
+            containerColor = Color(0xFF161F28),
+            shape = RoundedCornerShape(16.dp),
+            title = {
+                Text(
+                    text = "Delete Playlist",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to delete \"${source.name}\"? Channels and VOD associated with this playlist will be removed from OpenTV.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFFCFD8DC),
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.delete(source)
+                        pendingRemove = null
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFD32F2F),
+                    ),
+                ) {
+                    Text("Yes, Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemove = null }) {
+                    Text(stringResource(R.string.common_cancel), color = Color(0xFFB0BEC5))
+                }
+            },
+        )
+    }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -141,7 +193,7 @@ fun ProvidersScreen(
             ProviderBackButton(onBack)
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
 
         if (ui.sources.isEmpty()) {
             Box(
@@ -157,7 +209,7 @@ fun ProvidersScreen(
                     Icon(
                         imageVector = Icons.Filled.Dns,
                         contentDescription = null,
-                        tint = Color(0xFF26C6DA),
+                        tint = AppTheme.primary,
                         modifier = Modifier.size(48.dp),
                     )
                     Spacer(Modifier.height(12.dp))
@@ -171,58 +223,157 @@ fun ProvidersScreen(
             return@Column
         }
 
+        val enabledSources = remember(ui.sources) { ui.sources.filter { it.enabled } }
+        val disabledSources = remember(ui.sources) { ui.sources.filterNot { it.enabled } }
+
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(bottom = 24.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            items(ui.sources, key = { it.id }) { source ->
-                ProviderRow(
-                    source = source,
-                    confirming = pendingRemove?.id == source.id,
-                    onEdit = { editingSource = source },
-                    onAskRemove = { pendingRemove = source },
-                    onCancelRemove = { pendingRemove = null },
-                    onConfirmRemove = {
-                        viewModel.delete(source)
-                        pendingRemove = null
-                    },
-                    onSetLiveFormat = { viewModel.setLiveFormat(source, it) },
+            // ---- Section 1: Enabled Playlists
+            item(key = "header_enabled") {
+                ProviderSectionHeader(
+                    title = "Enabled Playlists (${enabledSources.size})",
+                    icon = Icons.Filled.CheckCircle,
                 )
+            }
+
+            if (enabledSources.isEmpty()) {
+                item(key = "empty_enabled") {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF18222C))
+                            .border(0.5.dp, Color(0xFF263442), RoundedCornerShape(14.dp))
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                    ) {
+                        Text(
+                            text = "No playlists enabled. Turn on a playlist from the list below or add a new provider.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF8B9BA8),
+                        )
+                    }
+                }
+            } else {
+                items(enabledSources, key = { "enabled_${it.id}" }) { source ->
+                    ProviderRow(
+                        source = source,
+                        onEdit = { editingSource = source },
+                        onToggle = { enabled -> viewModel.setEnabled(source, enabled) },
+                        onDelete = { pendingRemove = source },
+                        onSetLiveFormat = { viewModel.setLiveFormat(source, it) },
+                    )
+                }
+            }
+
+            // ---- Section 2: Disabled Playlists
+            if (disabledSources.isNotEmpty()) {
+                item(key = "header_disabled") {
+                    Spacer(Modifier.height(8.dp))
+                    ProviderSectionHeader(
+                        title = "Disabled Playlists (${disabledSources.size})",
+                        icon = Icons.Filled.Block,
+                    )
+                }
+
+                items(disabledSources, key = { "disabled_${it.id}" }) { source ->
+                    ProviderRow(
+                        source = source,
+                        onEdit = { editingSource = source },
+                        onToggle = { enabled -> viewModel.setEnabled(source, enabled) },
+                        onDelete = { pendingRemove = source },
+                        onSetLiveFormat = { viewModel.setLiveFormat(source, it) },
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
+private fun ProviderSectionHeader(title: String, icon: ImageVector) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(
+            Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = AppTheme.primary,
+                modifier = Modifier.size(15.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = title.uppercase(),
+                style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp, fontSize = 12.sp),
+                fontWeight = FontWeight.Bold,
+                color = AppTheme.primary,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(0.5.dp)
+                .background(Color(0xFF1E2D3C))
+        )
+    }
+}
+
+@Composable
 private fun ProviderRow(
     source: Source,
-    confirming: Boolean,
     onEdit: () -> Unit,
-    onAskRemove: () -> Unit,
-    onCancelRemove: () -> Unit,
-    onConfirmRemove: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit,
     onSetLiveFormat: (LiveStreamFormat) -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
-
-    Box(
+    Column(
         Modifier
             .fillMaxWidth()
-            .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(14.dp))
-            .background(
-                if (focused) Color(0xFFF0F4F8)
-                else Color(0xFF18222C),
-            )
-            .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(14.dp))
-                else Modifier.border(0.5.dp, Color(0xFF263442), RoundedCornerShape(14.dp)),
-            )
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .background(Color(0xFF18222C))
+            .border(0.5.dp, Color(0xFF263442), RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Provider Info & Edit card (primary clickable element)
+            var infoFocused by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged { infoFocused = it.isFocused }
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (infoFocused) AppTheme.cardFocusBg else Color.Transparent)
+                    .then(
+                        if (infoFocused) Modifier.border(2.dp, AppTheme.primary, RoundedCornerShape(10.dp))
+                        else Modifier
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onEdit,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (infoFocused) {
+                    Box(
+                        Modifier
+                            .width(3.dp)
+                            .height(28.dp)
+                            .background(AppTheme.primary, RoundedCornerShape(2.dp))
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+
                 // Kind Badge
                 val kindColor = when (source.kind) {
                     SourceKind.XTREAM -> Color(0xFF29B6F6)
@@ -243,59 +394,126 @@ private fun ProviderRow(
                     )
                 }
 
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(12.dp))
 
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = source.name,
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
                         fontWeight = FontWeight.Bold,
-                        color = if (focused) Color(0xFF10171E) else Color.White,
+                        color = Color.White,
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = hostOf(source.url),
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                        color = if (focused) Color(0xFF37474F) else Color.White.copy(alpha = 0.65f),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                        color = if (infoFocused) Color(0xFFB0BEC5) else Color.White.copy(alpha = 0.65f),
                     )
                 }
 
-                if (confirming) {
-                    Text(
-                        text = stringResource(R.string.providers_remove_confirm),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFFEF5350),
+                Spacer(Modifier.width(8.dp))
+
+                // Visual edit indicator
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (infoFocused) AppTheme.primary.copy(alpha = 0.2f) else Color(0xFF263442).copy(alpha = 0.4f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Edit,
+                        contentDescription = null,
+                        tint = if (infoFocused) AppTheme.primary else Color(0xFF8B9BA8),
+                        modifier = Modifier.size(14.dp),
                     )
-                    Spacer(Modifier.width(10.dp))
-                    TextButton(onClick = onConfirmRemove) {
-                        Text(
-                            text = stringResource(R.string.providers_yes_remove),
-                            color = Color(0xFFEF5350),
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    TextButton(onClick = onCancelRemove) {
-                        Text(stringResource(R.string.common_cancel))
-                    }
-                } else {
-                    OutlinedButton(onClick = onEdit) {
-                        Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Edit")
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    TextButton(onClick = onAskRemove) {
-                        Icon(Icons.Filled.Delete, contentDescription = null, tint = Color(0xFFEF5350), modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.common_remove), color = Color(0xFFEF5350))
-                    }
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "Edit",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+                        color = if (infoFocused) Color.White else Color(0xFF8B9BA8),
+                    )
                 }
             }
 
-            // Stream format picker for Xtream sources
-            if (source.kind == SourceKind.XTREAM) {
-                Spacer(Modifier.height(14.dp))
-                StreamFormatSelector(selected = source.liveFormat, onSelect = onSetLiveFormat)
+            Spacer(Modifier.width(10.dp))
+
+            // Delete action button
+            var deleteFocused by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .onFocusChanged { deleteFocused = it.isFocused }
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (deleteFocused) Color(0xFFD32F2F).copy(alpha = 0.25f)
+                        else Color(0xFF221518).copy(alpha = 0.5f),
+                    )
+                    .then(
+                        if (deleteFocused) Modifier.border(1.5.dp, Color(0xFFEF5350), RoundedCornerShape(8.dp))
+                        else Modifier.border(0.75.dp, Color(0xFF5A2C2C), RoundedCornerShape(8.dp)),
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDelete,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = stringResource(R.string.common_delete),
+                    tint = if (deleteFocused) Color(0xFFFF5252) else Color(0xFFEF5350),
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = stringResource(R.string.common_delete),
+                    color = if (deleteFocused) Color.White else Color(0xFFEF5350),
+                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+                    fontWeight = if (deleteFocused) FontWeight.Bold else FontWeight.SemiBold,
+                )
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            // Toggle switch
+            Switch(
+                checked = source.enabled,
+                onCheckedChange = onToggle,
+                colors = androidx.compose.material3.SwitchDefaults.colors(
+                    checkedThumbColor = AppTheme.primary,
+                    checkedTrackColor = AppTheme.dark.copy(alpha = 0.6f),
+                    uncheckedThumbColor = Color(0xFF90A4AE),
+                    uncheckedTrackColor = Color(0xFF263238),
+                ),
+            )
+        }
+
+        // Stream format picker for Xtream sources
+        if (source.kind == SourceKind.XTREAM) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "Stream Format:",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color(0xFF8B9BA8),
+                )
+                FormatSegment(
+                    label = "HLS (.m3u8)",
+                    selected = source.liveFormat == LiveStreamFormat.HLS,
+                    onClick = { onSetLiveFormat(LiveStreamFormat.HLS) },
+                )
+                FormatSegment(
+                    label = "MPEG-TS (.ts)",
+                    selected = source.liveFormat == LiveStreamFormat.MPEG_TS,
+                    onClick = { onSetLiveFormat(LiveStreamFormat.MPEG_TS) },
+                )
             }
         }
     }
@@ -309,11 +527,11 @@ private fun ProviderActionButton(label: String, icon: ImageVector, onClick: () -
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(10.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
-                else Color(0xFF1E2833),
+                if (focused) Brush.linearGradient(listOf(AppTheme.dark, AppTheme.primary))
+                else Brush.linearGradient(listOf(Color(0xFF1E2833), Color(0xFF1E2833))),
             )
             .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp))
+                if (focused) Modifier.border(2.dp, AppTheme.light, RoundedCornerShape(10.dp))
                 else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(10.dp)),
             )
             .focusable()
@@ -324,7 +542,7 @@ private fun ProviderActionButton(label: String, icon: ImageVector, onClick: () -
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (focused) Color(0xFF10171E) else Color(0xFF26C6DA),
+            tint = if (focused) Color.White else AppTheme.primary,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(8.dp))
@@ -332,7 +550,7 @@ private fun ProviderActionButton(label: String, icon: ImageVector, onClick: () -
             text = label,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = if (focused) Color(0xFF10171E) else Color.White,
+            color = Color.White,
         )
     }
 }
@@ -345,11 +563,11 @@ private fun ProviderBackButton(onClick: () -> Unit) {
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(10.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
-                else Color(0xFF1E2833),
+                if (focused) Brush.linearGradient(listOf(AppTheme.dark, AppTheme.primary))
+                else Brush.linearGradient(listOf(Color(0xFF1E2833), Color(0xFF1E2833))),
             )
             .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp))
+                if (focused) Modifier.border(2.dp, AppTheme.light, RoundedCornerShape(10.dp))
                 else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(10.dp)),
             )
             .focusable()
@@ -360,7 +578,7 @@ private fun ProviderBackButton(onClick: () -> Unit) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = null,
-            tint = if (focused) Color(0xFF10171E) else Color.White,
+            tint = Color.White,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(8.dp))
@@ -368,7 +586,7 @@ private fun ProviderBackButton(onClick: () -> Unit) {
             text = stringResource(R.string.common_done),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = if (focused) Color(0xFF10171E) else Color.White,
+            color = Color.White,
         )
     }
 }
@@ -404,7 +622,7 @@ private fun EditSourceDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Playlist / Provider Name") },
@@ -412,7 +630,7 @@ private fun EditSourceDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
                     label = {
@@ -429,14 +647,14 @@ private fun EditSourceDialog(
                 )
 
                 if (source.kind == SourceKind.XTREAM) {
-                    OutlinedTextField(
+                    TvOutlinedTextField(
                         value = username,
                         onValueChange = { username = it },
                         label = { Text("Username") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    TvOutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
                         label = { Text("Password") },
@@ -449,7 +667,7 @@ private fun EditSourceDialog(
                         onSelect = { liveFormat = it },
                     )
                 } else if (source.kind == SourceKind.STALKER) {
-                    OutlinedTextField(
+                    TvOutlinedTextField(
                         value = mac,
                         onValueChange = { mac = it },
                         label = { Text("MAC Address") },
@@ -458,7 +676,7 @@ private fun EditSourceDialog(
                     )
                 }
 
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = epgUrl,
                     onValueChange = { epgUrl = it },
                     label = { Text("Custom EPG / XMLTV URL (Optional)") },
@@ -466,7 +684,7 @@ private fun EditSourceDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = userAgent,
                     onValueChange = { userAgent = it },
                     label = { Text("User-Agent Header") },
@@ -588,13 +806,44 @@ private fun StreamFormatSelector(
     }
 }
 
-/** One option of the stream-format control: filled when chosen, outlined otherwise. */
 @Composable
 private fun FormatSegment(label: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick) { Text(label) }
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                when {
+                    focused -> AppTheme.primary
+                    selected -> AppTheme.dark
+                    else -> Color(0xFF1E2833)
+                }
+            )
+            .then(
+                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                else if (selected) Modifier.border(1.dp, AppTheme.primary.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                else Modifier.border(0.75.dp, Color(0xFF2C3E50), RoundedCornerShape(8.dp))
+            )
+            .focusable()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+            fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
+            color = when {
+                focused -> Color.White
+                selected -> AppTheme.light
+                else -> Color(0xFFB0BEC5)
+            }
+        )
     }
 }
 

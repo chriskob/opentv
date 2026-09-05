@@ -165,11 +165,20 @@ fun MainScreen(
         }
     }
 
+    var isLiveFullScreen by remember { mutableStateOf(false) }
+
+    val fullScreenReq by app.opentv.core.PlayRequests.fullScreenRequest.collectAsState()
+    LaunchedEffect(fullScreenReq) {
+        if (fullScreenReq != null) {
+            liveNavRailVisible = false
+        }
+    }
+
     // Double-press Back at the root (when on the main menu / nav rail) shows the exit dialog
     var lastBackPressMillis by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     var showExit by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = (tab == Tab.LIVE && liveNavRailVisible) || (tab != Tab.LIVE && tab == homeTab)) {
+    BackHandler(enabled = (tab == Tab.LIVE && liveNavRailVisible && !isLiveFullScreen) || (tab != Tab.LIVE && tab == homeTab)) {
         val now = System.currentTimeMillis()
         if (now - lastBackPressMillis <= 2000L) {
             showExit = true
@@ -206,7 +215,8 @@ fun MainScreen(
     // of it and leave a sliver poking out — so they live side by side and never collide.
     Column(Modifier.fillMaxSize()) {
       Row(Modifier.weight(1f).fillMaxWidth()) {
-        if (tab != Tab.LIVE || liveNavRailVisible) {
+        val showNavRail = if (tab == Tab.LIVE) (liveNavRailVisible && !isLiveFullScreen) else true
+        if (showNavRail) {
             NavRail(
                 tabs = visibleTabs,
                 current = tab,
@@ -239,6 +249,13 @@ fun MainScreen(
                     onRefresh = onRefresh,
                     onPlayCatchup = onPlayCatchup,
                     onOpenMainMenu = { liveNavRailVisible = true },
+                    onDismissMainMenu = { liveNavRailVisible = false },
+                    onFullScreenChanged = { fs ->
+                        isLiveFullScreen = fs
+                        if (fs) {
+                            liveNavRailVisible = false
+                        }
+                    },
                     onOpenSearch = onOpenSearch,
                     onOpenSettings = onOpenSettings,
                 )

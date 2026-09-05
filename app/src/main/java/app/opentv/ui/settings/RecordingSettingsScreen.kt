@@ -40,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -549,7 +551,7 @@ private fun SectionCard(title: String, content: @Composable () -> Unit) {
 private fun TargetRow(label: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val borderModifier = when {
-        focused -> Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp))
+        focused -> Modifier.border(2.dp, Color(0xFF26C6DA).copy(alpha = 0.7f), RoundedCornerShape(10.dp))
         selected -> Modifier.border(1.dp, Color(0xFF26C6DA).copy(alpha = 0.5f), RoundedCornerShape(10.dp))
         else -> Modifier
     }
@@ -559,7 +561,7 @@ private fun TargetRow(label: String, subtitle: String, selected: Boolean, onClic
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(10.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
+                if (focused) Color(0xFF1A2838)
                 else if (selected) Color(0xFF1E2F3E)
                 else Color.Transparent,
             )
@@ -572,7 +574,7 @@ private fun TargetRow(label: String, subtitle: String, selected: Boolean, onClic
         Icon(
             if (selected) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
             contentDescription = null,
-            tint = if (focused) Color(0xFF00838F) else if (selected) Color(0xFF26C6DA) else Color(0xFF90A4AE),
+            tint = if (focused) Color(0xFF4DD0E1) else if (selected) Color(0xFF26C6DA) else Color(0xFF90A4AE),
         )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -580,19 +582,19 @@ private fun TargetRow(label: String, subtitle: String, selected: Boolean, onClic
                 text = label,
                 style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
                 fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Medium,
-                color = if (focused) Color(0xFF10171E) else Color.White,
+                color = Color.White,
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
-                color = if (focused) Color(0xFF37474F) else Color.White.copy(alpha = 0.65f),
+                color = if (focused) Color(0xFFB0BEC5) else Color.White.copy(alpha = 0.65f),
             )
         }
         if (selected) {
             Icon(
                 Icons.Filled.CheckCircle,
                 null,
-                tint = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
+                tint = if (focused) Color(0xFF4DD0E1) else Color(0xFF26C6DA),
             )
         }
     }
@@ -601,14 +603,14 @@ private fun TargetRow(label: String, subtitle: String, selected: Boolean, onClic
 @Composable
 private fun RecordingBackButton(onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val borderModifier = if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp)) else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(10.dp))
+    val borderModifier = if (focused) Modifier.border(2.dp, Color(0xFF4DD0E1), RoundedCornerShape(10.dp)) else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(10.dp))
     Row(
         Modifier
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(10.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
-                else Color(0xFF1E2833),
+                if (focused) Brush.linearGradient(listOf(Color(0xFF00838F), Color(0xFF26C6DA)))
+                else Brush.linearGradient(listOf(Color(0xFF1E2833), Color(0xFF1E2833))),
             )
             .then(borderModifier)
             .focusable()
@@ -619,7 +621,7 @@ private fun RecordingBackButton(onClick: () -> Unit) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = null,
-            tint = if (focused) Color(0xFF10171E) else Color.White,
+            tint = Color.White,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(8.dp))
@@ -627,7 +629,7 @@ private fun RecordingBackButton(onClick: () -> Unit) {
             text = stringResource(R.string.common_done),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = if (focused) Color(0xFF10171E) else Color.White,
+            color = Color.White,
         )
     }
 }
@@ -641,7 +643,7 @@ private fun Field(
     onChange: (String) -> Unit,
 ) {
     var revealed by remember { mutableStateOf(false) }
-    OutlinedTextField(
+    TvOutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },

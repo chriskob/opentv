@@ -141,26 +141,48 @@ fun GuidePreview(
             // Line 1: Large Bold Programme Title + Star Icon on far right
             Row(
                 Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                val titleText = displayProg?.title ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
-                Text(
-                    text = titleText,
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Row(
                     modifier = Modifier.weight(1f, fill = false),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (displayProg?.isNewEpisode() == true) {
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFFE65100))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "NEW",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = 12.sp,
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    val titleText = displayProg?.resolvedTitle() ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
+                    Text(
+                        text = titleText,
+                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (row != null) {
                     Spacer(Modifier.width(8.dp))
                     Icon(
                         imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
                         contentDescription = null,
                         tint = if (row.primary.favourite) Color(0xFFFFD54F) else Color(0xFF90A4AE),
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(18.dp).padding(top = 2.dp),
                     )
                 }
             }
@@ -229,14 +251,14 @@ fun GuidePreview(
                     }
                 }
 
-                // Line 3: Description / Synopsis (up to 3 lines)
+                // Line 3: Description / Synopsis (up to 5 lines)
                 val synopsis = displayProg.description?.takeIf { it.isNotBlank() }
                 if (synopsis != null) {
                     Text(
                         text = synopsis,
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 18.sp),
                         color = Color(0xFFB0BEC5),
-                        maxLines = 3,
+                        maxLines = 5,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

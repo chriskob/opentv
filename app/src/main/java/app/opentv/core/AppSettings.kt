@@ -35,6 +35,12 @@ class AppSettings private constructor(context: Context) {
     private val _themeMode = MutableStateFlow(readThemeMode())
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
+    /** Accent color used throughout the app for highlights, focus rings, progress, and badges. */
+    enum class AccentColor { CYAN, EMERALD, SAPPHIRE, AMETHYST, AMBER }
+
+    private val _accentColor = MutableStateFlow(readAccentColor())
+    val accentColor: StateFlow<AccentColor> = _accentColor.asStateFlow()
+
     /**
      * How the live-TV channel list is laid out: the scrolling EPG time-[ChannelLayout.GRID], or a
      * compact one-channel-per-row [ChannelLayout.LIST] (logo, name, now/next) for people who find
@@ -56,6 +62,10 @@ class AppSettings private constructor(context: Context) {
     /** Whether the guide preview plays sound (on by default so audio continues playing). */
     private val _guidePreviewSound = MutableStateFlow(prefs.getBoolean(KEY_PREVIEW_SOUND, true))
     val guidePreviewSound: StateFlow<Boolean> = _guidePreviewSound.asStateFlow()
+
+    /** Whether reopening the guide resets the viewport and focus to the current live broadcast. */
+    private val _guideResetOnOpen = MutableStateFlow(prefs.getBoolean(KEY_GUIDE_RESET_ON_OPEN, true))
+    val guideResetOnOpen: StateFlow<Boolean> = _guideResetOnOpen.asStateFlow()
 
     /** The profile whose watch history is active. Defaults to the built-in profile (id 1). */
     private val _activeProfileId = MutableStateFlow(prefs.getLong(KEY_ACTIVE_PROFILE, 1L))
@@ -153,6 +163,11 @@ class AppSettings private constructor(context: Context) {
         _themeMode.value = mode
     }
 
+    fun setAccentColor(accent: AccentColor) {
+        prefs.edit().putString(KEY_ACCENT_COLOR, accent.name).apply()
+        _accentColor.value = accent
+    }
+
     fun setChannelLayout(layout: ChannelLayout) {
         prefs.edit().putString(KEY_CHANNEL_LAYOUT, layout.name).apply()
         _channelLayout.value = layout
@@ -173,6 +188,11 @@ class AppSettings private constructor(context: Context) {
         _guidePreviewSound.value = enabled
     }
 
+    fun setGuideResetOnOpen(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GUIDE_RESET_ON_OPEN, enabled).apply()
+        _guideResetOnOpen.value = enabled
+    }
+
     /** Whether launching the app jumps straight back to the last channel you watched. */
     private val _resumeLastChannel = MutableStateFlow(prefs.getBoolean(KEY_RESUME_LAST, true))
     val resumeLastChannel: StateFlow<Boolean> = _resumeLastChannel.asStateFlow()
@@ -180,6 +200,15 @@ class AppSettings private constructor(context: Context) {
     fun setResumeLastChannel(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_RESUME_LAST, enabled).apply()
         _resumeLastChannel.value = enabled
+    }
+
+    /** Whether pressing Home shrinks playback into Picture-in-Picture mode (false by default to prevent stuck overlay on TV). */
+    private val _pipOnHomeEnabled = MutableStateFlow(prefs.getBoolean(KEY_PIP_ON_HOME, false))
+    val pipOnHomeEnabled: StateFlow<Boolean> = _pipOnHomeEnabled.asStateFlow()
+
+    fun setPipOnHomeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PIP_ON_HOME, enabled).apply()
+        _pipOnHomeEnabled.value = enabled
     }
 
     // ---- Recording behaviour -----------------------------------------------------------------
@@ -311,6 +340,10 @@ class AppSettings private constructor(context: Context) {
     private fun readThemeMode(): ThemeMode =
         runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "") }
             .getOrDefault(ThemeMode.SYSTEM)
+
+    private fun readAccentColor(): AccentColor =
+        runCatching { AccentColor.valueOf(prefs.getString(KEY_ACCENT_COLOR, null) ?: "") }
+            .getOrDefault(AccentColor.CYAN)
 
     private fun readChannelLayout(): ChannelLayout =
         runCatching { ChannelLayout.valueOf(prefs.getString(KEY_CHANNEL_LAYOUT, null) ?: "") }
@@ -449,6 +482,23 @@ class AppSettings private constructor(context: Context) {
         _epgSyncWithPlaylist.value = enabled
     }
 
+    /** URLs or identifiers of feeds the user has deleted so ensureFeeds() does not restore them. */
+    private val _deletedFeedUrls = MutableStateFlow(
+        prefs.getStringSet(KEY_DELETED_FEED_URLS, emptySet())?.toSet() ?: emptySet()
+    )
+    val deletedFeedUrls: StateFlow<Set<String>> = _deletedFeedUrls.asStateFlow()
+
+    fun markFeedDeleted(key: String) {
+        val updated = _deletedFeedUrls.value + key
+        prefs.edit().putStringSet(KEY_DELETED_FEED_URLS, updated).apply()
+        _deletedFeedUrls.value = updated
+    }
+
+    fun restoreBuiltInFeeds() {
+        prefs.edit().remove(KEY_DELETED_FEED_URLS).apply()
+        _deletedFeedUrls.value = emptySet()
+    }
+
     /**
      * When the VOD (movies + series) catalogue was last fetched from the provider, in epoch
      * millis; 0 = never. A provider's 40k-title VOD list is expensive to re-download and
@@ -557,12 +607,14 @@ class AppSettings private constructor(context: Context) {
 
     companion object {
         private const val KEY_THEME = "theme_mode"
+        private const val KEY_ACCENT_COLOR = "accent_color"
         private const val KEY_SUBMENU_BUTTONS = "submenu_buttons"
         private const val KEY_AUDIO_DELAY_MS = "audio_delay_ms"
         private const val KEY_CHANNEL_LAYOUT = "channel_layout"
         private const val KEY_SUBTITLES = "subtitles_enabled"
         private const val KEY_PREVIEW_VIDEO = "guide_preview_video"
         private const val KEY_PREVIEW_SOUND = "guide_preview_sound"
+        private const val KEY_GUIDE_RESET_ON_OPEN = "guide_reset_on_open"
         private const val KEY_PIN_HASH = "parental_pin_hash"
         private const val KEY_HIDDEN_CATS = "hidden_categories"
         private const val KEY_ACTIVE_PROFILE = "active_profile_id"
@@ -573,6 +625,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_LAST_CHANNEL = "last_channel_id"
         private const val KEY_LAST_CATEGORY_KEY = "last_category_key"
         private const val KEY_LAST_FAVOURITES_ONLY = "last_favourites_only"
+        private const val KEY_PIP_ON_HOME = "pip_on_home_enabled"
         private const val KEY_RESIZE_MODE = "player_resize_mode"
         private const val KEY_LANGUAGE = "language_tag"
 
@@ -604,6 +657,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_PLAYLIST_REFRESH_HOURS = "playlist_refresh_hours"
         private const val KEY_EPG_REFRESH_HOURS = "epg_refresh_hours"
         private const val KEY_EPG_SYNC_WITH_PLAYLIST = "epg_sync_with_playlist"
+        private const val KEY_DELETED_FEED_URLS = "deleted_feed_urls"
         private const val KEY_REMOTE_PAIRING_URL = "remote_pairing_server_url"
 
         /**

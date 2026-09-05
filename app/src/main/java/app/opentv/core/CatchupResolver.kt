@@ -57,19 +57,24 @@ object CatchupResolver {
     fun resolve(source: Source, channel: Channel, programme: Programme): String? {
         val startUtcMillis = programme.startUtcMillis
         val endUtcMillis = programme.endUtcMillis
-        val durationMillis = (endUtcMillis - startUtcMillis).coerceAtLeast(60_000L)
-        val durationMinutes = ((durationMillis + 30_000L) / 60_000L).toInt().coerceAtLeast(1)
-        val durationSeconds = (durationMillis / 1000L).coerceAtLeast(60L)
+        val nowMillis = System.currentTimeMillis()
+        val progDurationMillis = if (endUtcMillis > startUtcMillis) {
+            endUtcMillis - startUtcMillis
+        } else {
+            60 * 60_000L
+        }
+        val durationMinutes = ((progDurationMillis + 30_000L) / 60_000L).toInt().coerceIn(15, 1440)
+        val durationSeconds = (progDurationMillis / 1000L).coerceAtLeast(60L)
         val startUtcSec = startUtcMillis / 1000L
-        val endUtcSec = endUtcMillis / 1000L
-        val nowSec = System.currentTimeMillis() / 1000L
+        val endUtcSec = (startUtcMillis + progDurationMillis) / 1000L
+        val nowSec = nowMillis / 1000L
         val offsetSec = (nowSec - startUtcSec).coerceAtLeast(0L)
         val utcTz = TimeZone.getTimeZone("UTC")
         val stamp = SimpleDateFormat("yyyy-MM-dd:HH-mm", Locale.US).apply { timeZone = utcTz }.format(Date(startUtcMillis))
 
         // 1. Native Xtream Codes source
         if (source.kind == SourceKind.XTREAM) {
-            val cleanStreamId = channel.streamId.removePrefix("tvg:").removePrefix("url:")
+            val cleanStreamId = channel.streamId.removePrefix("tvg:").removePrefix("url:").substringBeforeLast('.')
             val baseUrl = source.url.trimEnd('/')
             val u = source.username.orEmpty()
             val p = source.password.orEmpty()

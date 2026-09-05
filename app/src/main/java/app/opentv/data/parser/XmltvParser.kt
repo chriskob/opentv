@@ -120,11 +120,13 @@ object XmltvParser {
         val stop = parseXmltvTime(parser.getAttributeValue(null, "stop"))
 
         var title: String? = null
+        var subTitle: String? = null
         var description: String? = null
         var category: String? = null
         var iconUrl: String? = null
         var season: Int? = null
         var episode: Int? = null
+        var isNew = false
 
         var depth = 1
         while (depth > 0) {
@@ -135,6 +137,9 @@ object XmltvParser {
                         "title" -> {
                             if (title == null) { title = parser.nextText().trim(); depth-- }
                         }
+                        "sub-title" -> {
+                            if (subTitle == null) { subTitle = parser.nextText().trim(); depth-- }
+                        }
                         "desc" -> {
                             if (description == null) { description = parser.nextText().trim(); depth-- }
                         }
@@ -143,6 +148,9 @@ object XmltvParser {
                         }
                         "icon" -> {
                             if (iconUrl == null) iconUrl = parser.getAttributeValue(null, "src")
+                        }
+                        "new", "premiere" -> {
+                            isNew = true
                         }
                         "episode-num" -> {
                             val system = parser.getAttributeValue(null, "system")
@@ -169,17 +177,25 @@ object XmltvParser {
         val end = stop ?: (start + DEFAULT_DURATION_MILLIS)
         if (end <= start) return null
 
+        val resolvedDesc = when {
+            subTitle.isNullOrBlank() -> description?.takeIf { it.isNotEmpty() }
+            description.isNullOrBlank() -> subTitle
+            description.startsWith(subTitle, ignoreCase = true) -> description
+            else -> "$subTitle - $description"
+        }
+
         return Programme(
             feedId = feedId,
             epgChannelId = channelId,
             startUtcMillis = start,
             endUtcMillis = end,
             title = title?.takeIf { it.isNotEmpty() } ?: UNTITLED,
-            description = description?.takeIf { it.isNotEmpty() },
+            description = resolvedDesc,
             category = category?.takeIf { it.isNotEmpty() },
             season = season,
             episode = episode,
             iconUrl = iconUrl?.takeIf { it.isNotEmpty() },
+            isNew = isNew,
         )
     }
 

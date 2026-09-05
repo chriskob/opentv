@@ -6,6 +6,7 @@
 package app.opentv.data.repo
 
 import android.util.Log
+import app.opentv.core.AppSettings
 import app.opentv.data.db.ChannelDao
 import app.opentv.data.db.EpgChannelAliasDao
 import app.opentv.data.db.EpgFeedDao
@@ -68,6 +69,7 @@ class EpgRepository(
     private val sourceDao: SourceDao,
     private val api: XtreamApi,
     private val http: OkHttpClient,
+    private val settings: AppSettings? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -169,21 +171,46 @@ class EpgRepository(
 
     suspend fun setFeedEnabled(id: Long, enabled: Boolean) = feedDao.setEnabled(id, enabled)
 
-    suspend fun removeFeed(feed: EpgFeed) {
+    suspend fun updateFeed(feed: EpgFeed) = feedDao.update(feed)
+
+    suspend fun removeFeed(feed: EpgFeed) = withContext(Dispatchers.IO) {
         // A removed feed takes its guide data with it — orphaned programmes would otherwise
         // keep matching channels forever with content that never refreshes.
-        programmeDao.deleteForFeed(feed.id)
-        aliasDao.deleteForFeed(feed.id)
+        feed.url?.let { settings?.markFeedDeleted(it) }
+        feed.providerSourceId?.let { settings?.markFeedDeleted("provider:$it") }
+        settings?.markFeedDeleted("feed_name:${feed.name}")
         feedDao.delete(feed.id)
+        aliasDao.deleteForFeed(feed.id)
+        scope.launch {
+            programmeDao.deleteForFeed(feed.id)
+        }
     }
 
     /**
      * Makes sure the standing feed rows exist: one per provider source, plus the curated
      * built-in list. Insert-if-absent, so user toggles survive every call.
      */
-    suspend fun ensureFeeds() {
+    suspend fun ensureFeeds() = withContext(Dispatchers.IO) {
+        val deleted = settings?.deletedFeedUrls?.value ?: emptySet()
+        // Automatically prune any orphaned provider feeds whose parent provider source was removed
+        val orphanedFeedIds = mutableListOf<Long>()
+        for (feed in feedDao.all()) {
+            if (feed.providerSourceId != null && sourceDao.byId(feed.providerSourceId) == null) {
+                orphanedFeedIds.add(feed.id)
+                feedDao.delete(feed.id)
+                aliasDao.deleteForFeed(feed.id)
+            }
+        }
+        if (orphanedFeedIds.isNotEmpty()) {
+            scope.launch {
+                for (id in orphanedFeedIds) {
+                    programmeDao.deleteForFeed(id)
+                }
+            }
+        }
         for (source in sourceDao.enabled()) {
-            if (feedDao.forProvider(source.id) == null) {
+            val key = "provider:${source.id}"
+            if (key !in deleted && "feed_name:${source.name} (provider guide)" !in deleted && feedDao.forProvider(source.id) == null) {
                 feedDao.insert(
                     EpgFeed(
                         name = "${source.name} (provider guide)",
@@ -194,7 +221,7 @@ class EpgRepository(
             }
         }
         for ((name, url) in BUILT_IN_FEEDS) {
-            if (feedDao.byUrl(url) == null) {
+            if (url !in deleted && "feed_name:$name" !in deleted && feedDao.byUrl(url) == null) {
                 // Off by default: shipping a switched-on 20 MB download for a country the
                 // user may not live in would be rude. The EPG settings screen makes
                 // enabling one a single click.

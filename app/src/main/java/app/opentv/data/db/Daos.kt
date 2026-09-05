@@ -55,6 +55,9 @@ interface SourceDao {
 
     @Query("UPDATE sources SET lastCatalogSyncMillis = :millis WHERE id = :id")
     suspend fun markCatalogSynced(id: Long, millis: Long)
+
+    @Query("UPDATE sources SET enabled = :enabled WHERE id = :id")
+    suspend fun setEnabled(id: Long, enabled: Boolean)
 }
 
 @Dao
@@ -506,8 +509,25 @@ interface ProgrammeDao {
         }
     }
 
-    @Query("DELETE FROM programmes WHERE feedId = :feedId")
-    suspend fun deleteForFeed(feedId: Long)
+    @Query(
+        """
+        DELETE FROM programmes
+        WHERE id IN (
+            SELECT id FROM programmes
+            WHERE feedId = :feedId
+            LIMIT :limit
+        )
+        """
+    )
+    suspend fun deleteForFeedBatch(feedId: Long, limit: Int = 2000): Int
+
+    suspend fun deleteForFeed(feedId: Long) {
+        while (true) {
+            val count = deleteForFeedBatch(feedId, 2000)
+            if (count < 2000) break
+            kotlinx.coroutines.delay(25)
+        }
+    }
 }
 
 @Dao

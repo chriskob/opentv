@@ -25,17 +25,47 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Card
+import app.opentv.ui.theme.AppTheme
+import app.opentv.ui.theme.cardFocusBg
+import app.opentv.ui.theme.displayName
+import app.opentv.ui.theme.primary
+import app.opentv.ui.theme.dark
+import app.opentv.ui.theme.light
+import app.opentv.ui.theme.highlightGlow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -49,7 +79,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -70,12 +102,15 @@ import app.opentv.data.work.SyncWorker
 fun AppSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { AppSettings.get(context) }
+    val currentAccent by settings.accentColor.collectAsState()
     val themeMode by settings.themeMode.collectAsState()
     val channelLayout by settings.channelLayout.collectAsState()
     val previewVideo by settings.guidePreviewVideo.collectAsState()
     val previewSound by settings.guidePreviewSound.collectAsState()
+    val guideResetOnOpen by settings.guideResetOnOpen.collectAsState()
     val captions by settings.subtitlesEnabled.collectAsState()
     val resumeLast by settings.resumeLastChannel.collectAsState()
+    val pipOnHome by settings.pipOnHomeEnabled.collectAsState()
     val language by settings.languageTag.collectAsState()
     val liveEnabled by settings.liveEnabled.collectAsState()
     val moviesEnabled by settings.moviesEnabled.collectAsState()
@@ -124,27 +159,38 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(24.dp))
 
-        SettingsSection(stringResource(R.string.settings_appearance)) {
-            ThemeOption(stringResource(R.string.settings_theme_system), themeMode == AppSettings.ThemeMode.SYSTEM) {
-                settings.setThemeMode(AppSettings.ThemeMode.SYSTEM)
-            }
-            ThemeOption(stringResource(R.string.settings_theme_dark), themeMode == AppSettings.ThemeMode.DARK) {
-                settings.setThemeMode(AppSettings.ThemeMode.DARK)
-            }
-            ThemeOption(stringResource(R.string.settings_theme_light), themeMode == AppSettings.ThemeMode.LIGHT) {
-                settings.setThemeMode(AppSettings.ThemeMode.LIGHT)
-            }
-            Spacer(Modifier.height(4.dp))
+        SettingsSection(stringResource(R.string.settings_appearance), Icons.Filled.Palette) {
             Text(
-                stringResource(R.string.settings_theme_note),
+                text = "Accent Color",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Select a signature color for highlights, focus borders, badges, and buttons throughout OpenTV.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AppSettings.AccentColor.entries.forEach { accent ->
+                    AccentColorPill(
+                        accent = accent,
+                        selected = accent == currentAccent,
+                        onSelect = { settings.setAccentColor(accent) },
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(16.dp))
 
-        SettingsSection(stringResource(R.string.settings_section_content)) {
+        SettingsSection(stringResource(R.string.settings_section_content), Icons.Filled.VideoLibrary) {
             Text(
                 stringResource(R.string.settings_content_note),
                 style = MaterialTheme.typography.bodyMedium,
@@ -176,7 +222,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
-        SettingsSection(stringResource(R.string.settings_section_data_refresh)) {
+        SettingsSection(stringResource(R.string.settings_section_data_refresh), Icons.Filled.Sync) {
             Text(
                 stringResource(R.string.settings_data_refresh_note),
                 style = MaterialTheme.typography.bodyMedium,
@@ -184,50 +230,34 @@ fun AppSettingsScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(8.dp))
 
-            // ---- Playlist refresh interval
-            Text(
-                stringResource(R.string.settings_playlist_refresh),
-                style = MaterialTheme.typography.titleMedium,
+            val playlistRefreshOptions = listOf(
+                stringResource(R.string.settings_refresh_2h) to 2,
+                stringResource(R.string.settings_refresh_4h) to 4,
+                stringResource(R.string.settings_refresh_6h) to 6,
+                stringResource(R.string.settings_refresh_8h) to 8,
+                stringResource(R.string.settings_refresh_12h) to 12,
+                stringResource(R.string.settings_refresh_24h) to 24,
+                stringResource(R.string.settings_refresh_manual) to 0,
             )
-            val playlistOptions = listOf(2, 4, 6, 8, 12, 24, 0)
-            for (hours in playlistOptions) {
-                val label = when (hours) {
-                    2 -> stringResource(R.string.settings_refresh_2h)
-                    4 -> stringResource(R.string.settings_refresh_4h)
-                    6 -> stringResource(R.string.settings_refresh_6h)
-                    8 -> stringResource(R.string.settings_refresh_8h)
-                    12 -> stringResource(R.string.settings_refresh_12h)
-                    24 -> stringResource(R.string.settings_refresh_24h)
-                    else -> stringResource(R.string.settings_refresh_manual)
-                }
-                ThemeOption(label, playlistRefreshHours == hours) {
-                    settings.setPlaylistRefreshHours(hours)
-                    SyncWorker.schedule(context, hours)
-                }
+
+            DropdownPickerRow(
+                title = stringResource(R.string.settings_playlist_refresh),
+                subtitle = "Frequency to check playlists for channel and VOD updates",
+                options = playlistRefreshOptions,
+                selectedValue = playlistRefreshHours,
+            ) { hours ->
+                settings.setPlaylistRefreshHours(hours)
+                SyncWorker.schedule(context, hours)
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
 
-            // ---- Guide refresh interval
-            Text(
-                stringResource(R.string.settings_guide_refresh),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            val guideOptions = listOf(2, 4, 6, 8, 12, 24, 0)
-            for (hours in guideOptions) {
-                val label = when (hours) {
-                    2 -> stringResource(R.string.settings_refresh_2h)
-                    4 -> stringResource(R.string.settings_refresh_4h)
-                    6 -> stringResource(R.string.settings_refresh_6h)
-                    8 -> stringResource(R.string.settings_refresh_8h)
-                    12 -> stringResource(R.string.settings_refresh_12h)
-                    24 -> stringResource(R.string.settings_refresh_24h)
-                    else -> stringResource(R.string.settings_refresh_manual)
-                }
-                ThemeOption(label, epgRefreshHours == hours) {
-                    settings.setEpgRefreshHours(hours)
-                }
-            }
+            DropdownPickerRow(
+                title = stringResource(R.string.settings_guide_refresh),
+                subtitle = "Frequency to fetch fresh TV guide and programme data",
+                options = playlistRefreshOptions,
+                selectedValue = epgRefreshHours,
+            ) { hours -> settings.setEpgRefreshHours(hours) }
 
             Spacer(Modifier.height(12.dp))
 
@@ -251,37 +281,32 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
-        SettingsSection(stringResource(R.string.settings_section_language)) {
-            ThemeOption(stringResource(R.string.settings_language_system), language.isBlank()) {
-                changeLanguage(context, settings, "")
+        SettingsSection(stringResource(R.string.settings_section_language), Icons.Filled.Language) {
+            val languageOptions = buildList {
+                add(stringResource(R.string.settings_language_system) to "")
+                OpenTvLanguages.forEach { (tag, name) -> add(name to tag) }
             }
-            // Each language is listed in its own name (endonym), the convention users expect.
-            OpenTvLanguages.forEach { (tag, name) ->
-                ThemeOption(name, language == tag) { changeLanguage(context, settings, tag) }
+            DropdownPickerRow(
+                title = stringResource(R.string.settings_section_language),
+                subtitle = stringResource(R.string.settings_language_note),
+                options = languageOptions,
+                selectedValue = language,
+            ) { tag ->
+                changeLanguage(context, settings, tag)
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                stringResource(R.string.settings_language_note),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
         Spacer(Modifier.height(16.dp))
 
-        SettingsSection(stringResource(R.string.settings_section_guide)) {
-            Text(
-                stringResource(R.string.settings_channel_layout_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            ThemeOption(
+        SettingsSection(stringResource(R.string.settings_section_guide), Icons.Filled.LiveTv) {
+            val layoutOptions = listOf(
                 stringResource(R.string.settings_channel_layout_grid),
-                channelLayout == AppSettings.ChannelLayout.GRID,
-            ) { settings.setChannelLayout(AppSettings.ChannelLayout.GRID) }
-            ThemeOption(
                 stringResource(R.string.settings_channel_layout_list),
-                channelLayout == AppSettings.ChannelLayout.LIST,
-            ) { settings.setChannelLayout(AppSettings.ChannelLayout.LIST) }
+            )
+            val layoutIndex = if (channelLayout == AppSettings.ChannelLayout.GRID) 0 else 1
+            SegmentedSelector(layoutOptions, layoutIndex) { idx ->
+                settings.setChannelLayout(if (idx == 0) AppSettings.ChannelLayout.GRID else AppSettings.ChannelLayout.LIST)
+            }
             Spacer(Modifier.height(8.dp))
             ToggleRow(
                 title = stringResource(R.string.settings_live_preview_title),
@@ -295,11 +320,17 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 checked = previewSound,
                 onToggle = settings::setGuidePreviewSound,
             )
+            ToggleRow(
+                title = stringResource(R.string.settings_guide_reset_on_open_title),
+                subtitle = stringResource(R.string.settings_guide_reset_on_open_subtitle),
+                checked = guideResetOnOpen,
+                onToggle = settings::setGuideResetOnOpen,
+            )
         }
 
         Spacer(Modifier.height(16.dp))
 
-        SettingsSection(stringResource(R.string.settings_section_playback)) {
+        SettingsSection(stringResource(R.string.settings_section_playback), Icons.Filled.PlayCircle) {
             ToggleRow(
                 title = stringResource(R.string.settings_subtitles_title),
                 subtitle = stringResource(R.string.settings_subtitles_subtitle),
@@ -312,11 +343,17 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 checked = resumeLast,
                 onToggle = settings::setResumeLastChannel,
             )
+            ToggleRow(
+                title = stringResource(R.string.settings_pip_on_home_title),
+                subtitle = stringResource(R.string.settings_pip_on_home_subtitle),
+                checked = pipOnHome,
+                onToggle = settings::setPipOnHomeEnabled,
+            )
         }
 
         Spacer(Modifier.height(16.dp))
 
-        SettingsSection(stringResource(R.string.settings_section_submenu_buttons)) {
+        SettingsSection(stringResource(R.string.settings_section_submenu_buttons), Icons.Filled.Tune) {
             Text(
                 stringResource(R.string.settings_submenu_buttons_note),
                 style = MaterialTheme.typography.bodyMedium,
@@ -372,14 +409,14 @@ private fun TmdbKeySection(settings: AppSettings) {
     var field by remember(savedKey) { mutableStateOf(savedKey) }
     val savedMessage = stringResource(R.string.settings_tmdb_saved)
 
-    SettingsSection(stringResource(R.string.settings_section_metadata)) {
+    SettingsSection(stringResource(R.string.settings_section_metadata), Icons.Filled.Movie) {
         Text(
             stringResource(R.string.settings_tmdb_note),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
+        TvOutlinedTextField(
             value = field,
             onValueChange = { field = it.trim() },
             singleLine = true,
@@ -457,32 +494,171 @@ private fun SleepTimerSection() {
         val left = it - System.currentTimeMillis()
         if (left <= 0L) 0 else ((left + 59_999L) / 60_000L).toInt()
     }
+    var expanded by remember { mutableStateOf(false) }
+    var headerFocused by remember { mutableStateOf(false) }
 
-    Text(
-        stringResource(R.string.settings_sleep_timer),
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-    )
-    Spacer(Modifier.height(8.dp))
-    Card {
+    SettingsSection(stringResource(R.string.settings_sleep_timer), Icons.Filled.Bedtime) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                if (remaining == null) stringResource(R.string.settings_sleep_off_desc)
-                else stringResource(R.string.settings_sleep_on_desc, remaining),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(4.dp))
-            SleepOption(stringResource(R.string.settings_sleep_off), selected = remaining == null) { SleepTimer.clear() }
-            SleepTimer.presets.forEach { mins ->
-                SleepOption(stringResource(R.string.settings_sleep_minutes, mins), selected = false) { SleepTimer.armMinutes(mins) }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { headerFocused = it.isFocused }
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (headerFocused) AppTheme.cardFocusBg
+                        else Color(0xFF1B2632)
+                    )
+                    .then(
+                        if (headerFocused) Modifier.border(2.dp, AppTheme.primary, RoundedCornerShape(8.dp))
+                        else Modifier.border(0.75.dp, Color(0xFF263442), RoundedCornerShape(8.dp))
+                    )
+                    .focusable()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_sleep_timer),
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                        fontWeight = if (headerFocused) FontWeight.Bold else FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (remaining == null) stringResource(R.string.settings_sleep_off_desc)
+                        else stringResource(R.string.settings_sleep_on_desc, remaining),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                        color = if (remaining != null) AppTheme.primary else Color(0xFFB0BEC5),
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (remaining != null) AppTheme.dark.copy(alpha = 0.6f) else Color(0xFF243242))
+                            .border(
+                                1.dp,
+                                if (remaining != null) AppTheme.primary else Color(0xFF37474F),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = if (remaining != null) "${remaining}m remaining" else "Off",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (remaining != null) AppTheme.light else Color(0xFF90A4AE),
+                        )
+                    }
+                    Icon(
+                        imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        tint = if (headerFocused) Color.White else AppTheme.primary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    SleepOption(stringResource(R.string.settings_sleep_off), selected = remaining == null) {
+                        SleepTimer.clear()
+                    }
+                    SleepTimer.presets.forEach { mins ->
+                        SleepOption(stringResource(R.string.settings_sleep_minutes, mins), selected = false) {
+                            SleepTimer.armMinutes(mins)
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun AccentColorPill(
+    accent: AppSettings.AccentColor,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val primaryColor = accent.primary
+
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                when {
+                    focused -> accent.cardFocusBg
+                    selected -> Color(0xFF1E2834)
+                    else -> Color(0xFF161F28)
+                }
+            )
+            .border(
+                width = if (focused) 2.dp else if (selected) 1.5.dp else 0.75.dp,
+                color = when {
+                    focused -> primaryColor
+                    selected -> primaryColor.copy(alpha = 0.8f)
+                    else -> Color(0xFF263442)
+                },
+                shape = RoundedCornerShape(12.dp),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onSelect,
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(18.dp)
+                .clip(CircleShape)
+                .background(primaryColor)
+                .border(
+                    width = if (focused || selected) 1.5.dp else 1.dp,
+                    color = if (focused) Color.White else Color.Black.copy(alpha = 0.35f),
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = Color(0xFF0D141C),
+                    modifier = Modifier.size(12.dp),
+                )
+            }
+        }
+
+        Text(
+            text = accent.displayName,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+            fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
+            color = if (focused) Color.White else if (selected) primaryColor else Color(0xFFCFD8DC),
+        )
     }
 }
 
@@ -495,13 +671,13 @@ private fun SleepOption(label: String, selected: Boolean, onSelect: () -> Unit) 
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
+                if (focused) AppTheme.cardFocusBg
                 else if (selected) Color(0xFF1E2F3E)
                 else Color.Transparent,
             )
             .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                else if (selected) Modifier.border(1.dp, Color(0xFF26C6DA).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                if (focused) Modifier.border(2.dp, AppTheme.primary.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                else if (selected) Modifier.border(1.dp, AppTheme.primary.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                 else Modifier,
             )
             .focusable()
@@ -513,7 +689,7 @@ private fun SleepOption(label: String, selected: Boolean, onSelect: () -> Unit) 
             selected = selected,
             onClick = onSelect,
             colors = androidx.compose.material3.RadioButtonDefaults.colors(
-                selectedColor = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
+                selectedColor = if (focused) AppTheme.dark else AppTheme.primary,
                 unselectedColor = if (focused) Color(0xFF37474F) else Color(0xFF90A4AE),
             ),
         )
@@ -522,20 +698,25 @@ private fun SleepOption(label: String, selected: Boolean, onSelect: () -> Unit) 
             text = label,
             style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
             fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Normal,
-            color = if (focused) Color(0xFF10171E) else Color.White,
+            color = Color.White,
         )
     }
 }
 
 @Composable
-private fun SettingsSection(title: String, content: @Composable () -> Unit) {
-    Text(
-        text = title.uppercase(),
-        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
-        fontWeight = FontWeight.Bold,
-        color = Color(0xFF26C6DA),
-        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-    )
+private fun SettingsSection(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, content: @Composable () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
+        if (icon != null) {
+            Icon(imageVector = icon, contentDescription = null, tint = AppTheme.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
+            fontWeight = FontWeight.Bold,
+            color = AppTheme.primary,
+        )
+    }
     Spacer(Modifier.height(4.dp))
     Box(
         Modifier
@@ -561,13 +742,13 @@ private fun ThemeOption(label: String, selected: Boolean, onSelect: () -> Unit) 
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
+                if (focused) AppTheme.cardFocusBg
                 else if (selected) Color(0xFF1E2F3E)
                 else Color.Transparent,
             )
             .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                else if (selected) Modifier.border(1.dp, Color(0xFF26C6DA).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                if (focused) Modifier.border(2.dp, AppTheme.primary.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                else if (selected) Modifier.border(1.dp, AppTheme.primary.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                 else Modifier,
             )
             .focusable()
@@ -579,7 +760,7 @@ private fun ThemeOption(label: String, selected: Boolean, onSelect: () -> Unit) 
             selected = selected,
             onClick = onSelect,
             colors = androidx.compose.material3.RadioButtonDefaults.colors(
-                selectedColor = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
+                selectedColor = if (focused) AppTheme.dark else AppTheme.primary,
                 unselectedColor = if (focused) Color(0xFF37474F) else Color(0xFF90A4AE),
             ),
         )
@@ -588,7 +769,7 @@ private fun ThemeOption(label: String, selected: Boolean, onSelect: () -> Unit) 
             text = label,
             style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
             fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Normal,
-            color = if (focused) Color(0xFF10171E) else Color.White,
+            color = Color.White,
         )
     }
 }
@@ -607,11 +788,11 @@ private fun ToggleRow(
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
+                if (focused) AppTheme.cardFocusBg
                 else Color.Transparent,
             )
             .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                if (focused) Modifier.border(2.dp, AppTheme.primary.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
                 else Modifier,
             )
             .focusable()
@@ -619,17 +800,21 @@ private fun ToggleRow(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (focused) {
+            Box(Modifier.width(3.dp).height(24.dp).background(AppTheme.primary))
+            Spacer(Modifier.width(9.dp))
+        }
         Column(Modifier.weight(1f).widthIn(max = 640.dp)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
                 fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold,
-                color = if (focused) Color(0xFF10171E) else Color.White,
+                color = Color.White,
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
-                color = if (focused) Color(0xFF37474F) else Color.White.copy(alpha = 0.65f),
+                color = if (focused) Color(0xFFB0BEC5) else Color.White.copy(alpha = 0.65f),
             )
         }
         Spacer(Modifier.width(16.dp))
@@ -637,8 +822,8 @@ private fun ToggleRow(
             checked = checked,
             onCheckedChange = onToggle,
             colors = androidx.compose.material3.SwitchDefaults.colors(
-                checkedThumbColor = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
-                checkedTrackColor = if (focused) Color(0xFFB2EBF2) else Color(0xFF004D40),
+                checkedThumbColor = if (focused) AppTheme.dark else AppTheme.primary,
+                checkedTrackColor = if (focused) AppTheme.light else AppTheme.dark.copy(alpha = 0.5f),
             ),
         )
     }
@@ -664,16 +849,20 @@ private fun ContentToggleRow(
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
+                if (focused) AppTheme.cardFocusBg
                 else Color.Transparent,
             )
             .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                if (focused) Modifier.border(2.dp, AppTheme.primary.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
                 else Modifier,
             )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (focused) {
+            Box(Modifier.width(3.dp).height(24.dp).background(AppTheme.primary))
+            Spacer(Modifier.width(9.dp))
+        }
         Column(
             Modifier
                 .weight(1f)
@@ -684,12 +873,12 @@ private fun ContentToggleRow(
                 text = title,
                 style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
                 fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold,
-                color = if (focused) Color(0xFF10171E) else Color.White,
+                color = Color.White,
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
-                color = if (focused) Color(0xFF37474F) else Color.White.copy(alpha = 0.65f),
+                color = if (focused) Color(0xFFB0BEC5) else Color.White.copy(alpha = 0.65f),
             )
         }
         Spacer(Modifier.width(8.dp))
@@ -697,7 +886,7 @@ private fun ContentToggleRow(
             Icon(
                 Icons.Filled.Refresh,
                 contentDescription = stringResource(R.string.settings_content_refresh),
-                tint = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
+                tint = if (focused) AppTheme.dark else AppTheme.primary,
             )
         }
         Spacer(Modifier.width(8.dp))
@@ -705,8 +894,8 @@ private fun ContentToggleRow(
             checked = checked,
             onCheckedChange = onToggle,
             colors = androidx.compose.material3.SwitchDefaults.colors(
-                checkedThumbColor = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
-                checkedTrackColor = if (focused) Color(0xFFB2EBF2) else Color(0xFF004D40),
+                checkedThumbColor = if (focused) AppTheme.dark else AppTheme.primary,
+                checkedTrackColor = if (focused) AppTheme.light else AppTheme.dark.copy(alpha = 0.5f),
             ),
         )
     }
@@ -720,11 +909,11 @@ private fun SettingsBackButton(onClick: () -> Unit) {
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(10.dp))
             .background(
-                if (focused) Color(0xFFF0F4F8)
-                else Color(0xFF1E2833),
+                if (focused) Brush.linearGradient(listOf(AppTheme.dark, AppTheme.primary))
+                else androidx.compose.ui.graphics.SolidColor(Color(0xFF1E2833)),
             )
             .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp))
+                if (focused) Modifier.border(2.dp, AppTheme.light, RoundedCornerShape(10.dp))
                 else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(10.dp)),
             )
             .focusable()
@@ -735,7 +924,7 @@ private fun SettingsBackButton(onClick: () -> Unit) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = null,
-            tint = if (focused) Color(0xFF10171E) else Color.White,
+            tint = Color.White,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(8.dp))
@@ -743,7 +932,7 @@ private fun SettingsBackButton(onClick: () -> Unit) {
             text = stringResource(R.string.common_done),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = if (focused) Color(0xFF10171E) else Color.White,
+            color = Color.White,
         )
     }
 }
@@ -756,13 +945,13 @@ private fun SettingsActionButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val bg = when {
-        focused -> Color(0xFFF0F4F8)
-        isPrimary -> Color(0xFF00695C)
+        focused -> AppTheme.primary
+        isPrimary -> AppTheme.dark
         else -> Color(0xFF1E2833)
     }
     val fg = when {
-        focused -> Color(0xFF10171E)
-        isPrimary -> Color(0xFF80CBC4)
+        focused -> Color.White
+        isPrimary -> AppTheme.light
         else -> Color(0xFFB0BEC5)
     }
     Row(
@@ -772,7 +961,7 @@ private fun SettingsActionButton(
             .background(bg)
             .then(
                 if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                else if (isPrimary) Modifier.border(1.dp, Color(0xFF26C6DA).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                else if (isPrimary) Modifier.border(1.dp, AppTheme.primary.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                 else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(8.dp)),
             )
             .focusable()
@@ -789,4 +978,210 @@ private fun SettingsActionButton(
     }
 }
 
+@Composable
+private fun SegmentedSelector(options: List<String>, selectedIndex: Int, accentColor: Color = AppTheme.primary, onSelect: (Int) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF1B2632))
+            .border(0.5.dp, Color(0xFF263442), RoundedCornerShape(12.dp)),
+    ) {
+        options.forEachIndexed { index, option ->
+            val isSelected = index == selectedIndex
+            var isFocused by remember { mutableStateOf(false) }
+            
+            Box(
+                Modifier
+                    .weight(1f)
+                    .onFocusChanged { isFocused = it.isFocused }
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (isFocused) accentColor.copy(alpha = 0.3f)
+                        else if (isSelected) accentColor
+                        else Color.Transparent
+                    )
+                    .then(
+                        if (isFocused) Modifier.border(2.dp, accentColor, RoundedCornerShape(10.dp))
+                        else Modifier
+                    )
+                    .focusable()
+                    .clickable { onSelect(index) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = option,
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isFocused) Color.White else if (isSelected) Color(0xFF0E1620) else Color(0xFF8B9BA8)
+                )
+            }
+        }
+    }
+}
 
+@Composable
+private fun <T> DropdownPickerRow(
+    title: String,
+    subtitle: String,
+    options: List<Pair<String, T>>,
+    selectedValue: T,
+    onSelect: (T) -> Unit,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    var showDialog by remember { mutableStateOf(false) }
+    val currentLabel = options.firstOrNull { it.second == selectedValue }?.first ?: "$selectedValue"
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onFocusChanged { isFocused = it.isFocused }
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (isFocused) AppTheme.cardFocusBg
+                else Color.Transparent,
+            )
+            .then(
+                if (isFocused) Modifier.border(2.dp, AppTheme.primary, RoundedCornerShape(8.dp))
+                else Modifier,
+            )
+            .focusable()
+            .clickable { showDialog = true }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isFocused) {
+            Box(Modifier.width(3.dp).height(24.dp).background(AppTheme.primary))
+            Spacer(Modifier.width(9.dp))
+        }
+        Column(
+            Modifier
+                .weight(1f)
+                .widthIn(max = 640.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                fontWeight = if (isFocused) FontWeight.Bold else FontWeight.SemiBold,
+                color = Color.White,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                color = if (isFocused) Color(0xFFB0BEC5) else Color.White.copy(alpha = 0.65f),
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (isFocused) AppTheme.primary.copy(alpha = 0.25f) else Color(0xFF1B2632))
+                .border(
+                    if (isFocused) 1.5.dp else 0.75.dp,
+                    if (isFocused) AppTheme.primary else Color(0xFF263442),
+                    RoundedCornerShape(8.dp)
+                )
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = currentLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isFocused) Color.White else AppTheme.primary,
+            )
+            Icon(
+                imageVector = Icons.Filled.UnfoldMore,
+                contentDescription = null,
+                tint = if (isFocused) Color.White else AppTheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            containerColor = Color(0xFF161F28),
+            shape = RoundedCornerShape(16.dp),
+            title = {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            },
+            text = {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(options) { option ->
+                        val isSelected = option.second == selectedValue
+                        var itemFocused by remember { mutableStateOf(false) }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged { itemFocused = it.isFocused }
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    when {
+                                        itemFocused -> AppTheme.cardFocusBg
+                                        isSelected -> Color(0xFF1E2834)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                                .then(
+                                    if (itemFocused) Modifier.border(2.dp, AppTheme.primary, RoundedCornerShape(8.dp))
+                                    else if (isSelected) Modifier.border(1.dp, AppTheme.primary.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                    else Modifier
+                                )
+                                .focusable()
+                                .clickable {
+                                    onSelect(option.second)
+                                    showDialog = false
+                                }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = option.first,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isSelected || itemFocused) FontWeight.Bold else FontWeight.Normal,
+                                color = when {
+                                    itemFocused -> Color.White
+                                    isSelected -> AppTheme.primary
+                                    else -> Color(0xFFCFD8DC)
+                                }
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = null,
+                                    tint = AppTheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text(
+                        stringResource(R.string.common_cancel),
+                        color = AppTheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        )
+    }
+}

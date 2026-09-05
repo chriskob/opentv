@@ -16,8 +16,8 @@
     <string name="exit_body">You\'ll go back to your TV\'s home screen.</string>
     <string name="exit_confirm">Leave</string>
     <string name="exit_cancel">Stay</string>
-    <string name="common_favourite">Favourite</string>
-    <string name="common_remove_favourite">Remove favourite</string>
+    <string name="common_favourite">Favorite</string>
+    <string name="common_remove_favourite">Remove favorite</string>
     <string name="common_keep_typing">Keep typing…</string>
     <string name="common_channels">Channels</string>
     <string name="common_try_again">Try again</string>
@@ -32,7 +32,7 @@
 
     <!-- ============================ Live TV guide / home ============================ -->
     <string name="guide_search_channels">🔍  Search channels</string>
-    <string name="guide_favourites">★ Favourites</string>
+    <string name="guide_favourites">★ Favorites</string>
     <string name="guide_all_channels">All channels</string>
     <string name="guide_watch_from_start">▶  Watch from start (catch-up)</string>
     <string name="guide_catchup_link_failed">Couldn\'t build the catch-up link</string>
@@ -55,7 +55,7 @@
     <string name="guide_loading_channels">Loading your channels</string>
     <string name="guide_fetching_desc">Fetching the channel list and guide from your provider. A large provider can take a couple of minutes the first time.</string>
     <string name="guide_building_desc">Building your guide from the channels saved on this device. On a big provider this takes a moment — it\'ll appear shortly.</string>
-    <string name="guide_no_favourites_title">No favourites yet</string>
+    <string name="guide_no_favourites_title">No favorites yet</string>
     <string name="guide_no_favourites_desc">Press the star on any channel and it lands here.</string>
     <string name="guide_no_channels_title">No channels yet</string>
     <string name="guide_add_provider_desc">Add a provider to get started.</string>
@@ -101,15 +101,15 @@
     <string name="rec_status_recording">● Recording · %1$s · %2$s</string>
     <string name="rec_status_failed">Failed · %1$s</string>
     <string name="rec_error_unknown">unknown error</string>
-    <string name="rec_notification_one">Recording 1 programme</string>
-    <string name="rec_notification_many">Recording %1$d programmes</string>
+    <string name="rec_notification_one">Recording 1 program</string>
+    <string name="rec_notification_many">Recording %1$d programs</string>
     <string name="rec_channel_name">Recording</string>
     <string name="rec_channel_desc">Shown while OpenTV is recording</string>
     <string name="rec_error_nothing">Nothing was recorded</string>
     <string name="rec_error_usb_no_folder">No USB folder chosen. Open Recording settings and pick a folder on your drive.</string>
     <string name="rec_error_usb_unavailable">USB drive not available. Re-plug the drive and choose the folder again in Recording settings.</string>
     <string name="rec_background_prompt_title">Keep recording when you leave?</string>
-    <string name="rec_background_prompt_body">Android may stop this recording when the screen sleeps or you leave OpenTV. Allow OpenTV to ignore battery optimisation so recordings keep running, even in standby — the way a set-top box does.</string>
+    <string name="rec_background_prompt_body">Android may stop this recording when the screen sleeps or you leave OpenTV. Allow OpenTV to ignore battery optimization so recordings keep running, even in standby — the way a set-top box does.</string>
     <string name="rec_background_prompt_allow">Allow</string>
     <string name="rec_background_prompt_not_now">Not now</string>
 
@@ -187,9 +187,9 @@
     <string name="addons_empty">No add-ons yet. Paste a manifest URL above to add one.</string>
     <string name="settings_guide_title">TV guide</string>
     <string name="settings_guide_subtitle">Guide sources and free XMLTV feeds</string>
-    <string name="settings_channels_subtitle">Hide or favourite individual channels</string>
+    <string name="settings_channels_subtitle">Hide or favorite individual channels</string>
     <string name="settings_webmanager_title">Manage on phone or laptop</string>
-    <string name="settings_webmanager_subtitle">Organise channels in a browser, with a keyboard and mouse</string>
+    <string name="settings_webmanager_subtitle">Organize channels in a browser, with a keyboard and mouse</string>
     <string name="settings_display_title">Display &amp; playback</string>
     <string name="settings_display_subtitle">Theme, subtitles, live guide preview</string>
     <string name="settings_recording_title">Recording</string>
@@ -227,11 +227,17 @@
     <string name="settings_live_preview_subtitle">Play the selected channel in the preview pane. Turn this off if the guide stutters on an older box.</string>
     <string name="settings_preview_sound_title">Preview sound</string>
     <string name="settings_preview_sound_subtitle">Play the preview channel\'s audio too, not just the picture.</string>
+    <string name="settings_guide_reset_on_open_title">Reset to live on open</string>
+    <string name="settings_guide_reset_on_open_subtitle">Always position the guide at the live broadcast when opened, instead of keeping past scroll history.</string>
+    <string name="guide_jump_to_live">Jump to Live</string>
     <string name="settings_section_playback">Playback</string>
     <string name="settings_subtitles_title">Show subtitles when available</string>
     <string name="settings_subtitles_subtitle">The default for new channels. While watching, the Subtitles button on the player lets you pick a specific track or turn them off.</string>
     <string name="settings_resume_title">Resume last channel on startup</string>
     <string name="settings_resume_subtitle">Open the app straight into the channel you were last watching, instead of the guide. Press Back to reach the guide.</string>
+    <string name="settings_pip_on_home_title">Picture-in-picture on Home</string>
+    <string name="settings_pip_on_home_subtitle">Shrink playback into a small floating window when the Home button is pressed. Keep disabled on Fire TV to stop playback when exiting.</string>
+    <string name="pip_action_close">Close</string>
     <string name="settings_sleep_timer">Sleep timer</string>
     <string name="settings_sleep_off_desc">Off — playback keeps going until you stop it.</string>
     <string name="settings_sleep_on_desc">On — playback will stop in about %1$d min.</string>
@@ -513,8 +519,8 @@
     <!-- ============================ Reminder notification ============================ -->
     <string name="reminder_starting_now">Starting now on %1$s</string>
     <string name="reminder_watch_now">Watch now</string>
-    <string name="reminder_channel_name">Programme reminders</string>
-    <string name="reminder_channel_desc">Alerts you when a programme you set a reminder for begins</string>
+    <string name="reminder_channel_name">Program reminders</string>
+    <string name="reminder_channel_desc">Alerts you when a program you set a reminder for begins</string>
     <!-- Recording quality picker + clash -->
     <string name="rec_quality_label">Record in</string>
     <string name="rec_record_from">Record from</string>

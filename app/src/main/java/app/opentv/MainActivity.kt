@@ -5,12 +5,17 @@
  */
 package app.opentv
 
+import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
 import android.app.UiModeManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
@@ -90,6 +95,18 @@ import app.opentv.update.UpdateGate
 
 class MainActivity : ComponentActivity() {
 
+    private val pipCloseReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_PIP_CLOSE) {
+                runCatching {
+                    val graph = ServiceLocator.get(this@MainActivity)
+                    graph.livePlayer.stop()
+                    finish()
+                }
+            }
+        }
+    }
+
     // Apply the chosen UI language before any view or resource is resolved. A language change in
     // settings calls recreate(), which re-runs this with the new tag.
     override fun attachBaseContext(newBase: Context) {
@@ -99,11 +116,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val filter = IntentFilter(ACTION_PIP_CLOSE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipCloseReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(pipCloseReceiver, filter)
+        }
         handlePlayIntent(intent)
         val isTelevision = isRunningOnTelevision(this)
 
         setContent {
             val settings = remember { ServiceLocator.get(this).settings }
+            val accentColor by settings.accentColor.collectAsState()
             val themeMode by settings.themeMode.collectAsState()
             val darkTheme = when (themeMode) {
                 AppSettings.ThemeMode.DARK -> true
@@ -111,7 +135,7 @@ class MainActivity : ComponentActivity() {
                 // A living-room screen defaults to dark; a phone/tablet follows the system.
                 AppSettings.ThemeMode.SYSTEM -> isTelevision || isSystemInDarkTheme()
             }
-            OpenTvTheme(darkTheme = darkTheme) {
+            OpenTvTheme(accent = accentColor, darkTheme = darkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
@@ -190,12 +214,10 @@ class MainActivity : ComponentActivity() {
      */
     override fun onStop() {
         super.onStop()
-        if (app.opentv.core.PipState.inPip.value) {
-            // PiP: just quieten the player — the floating window keeps showing.
-            runCatching {
-                val graph = ServiceLocator.get(this)
-                graph.livePlayer.player.pause()
-            }
+        val inPip = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode) ||
+            app.opentv.core.PipState.inPip.value
+        if (inPip) {
+            // PiP: floating window keeps showing.
         } else {
             // Not PiP: hard stop — clear the decoder immediately so background audio cannot
             // leak. This also prevents the error-listener auto-restart from re-triggering,
@@ -221,6 +243,7 @@ class MainActivity : ComponentActivity() {
      */
     override fun onDestroy() {
         super.onDestroy()
+        runCatching { unregisterReceiver(pipCloseReceiver) }
         backHandler.removeCallbacks(longPressRunnable)
         if (isFinishing) {
             // Activity is being intentionally destroyed — full release so nothing survives.
@@ -247,7 +270,7 @@ class MainActivity : ComponentActivity() {
 
     // ---- Picture-in-picture ------------------------------------------------------------------
 
-    /** Home pressed while a programme is playing → shrink to a floating window instead of stopping. */
+    /** Home pressed while a programme is playing → shrink to a floating window only if enabled. */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         maybeEnterPip()
@@ -258,6 +281,8 @@ class MainActivity : ComponentActivity() {
             packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
     fun maybeEnterPip() {
+        val graph = ServiceLocator.get(this)
+        if (!graph.settings.pipOnHomeEnabled.value) return
         if (!app.opentv.core.PipState.eligible || !app.opentv.core.PipState.isPlaying) return
         enterPipNow()
     }
@@ -266,11 +291,28 @@ class MainActivity : ComponentActivity() {
     fun enterPipNow() {
         if (!supportsPip()) return
         runCatching {
-            enterPictureInPictureMode(
-                PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .build(),
-            )
+            val builder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val closeIntent = PendingIntent.getBroadcast(
+                    this,
+                    0,
+                    Intent(ACTION_PIP_CLOSE).setPackage(packageName),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                val closeIcon = Icon.createWithResource(
+                    this,
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                )
+                val closeAction = RemoteAction(
+                    closeIcon,
+                    getString(R.string.pip_action_close),
+                    getString(R.string.pip_action_close),
+                    closeIntent,
+                )
+                builder.setActions(listOf(closeAction))
+            }
+            enterPictureInPictureMode(builder.build())
         }
     }
 
@@ -285,6 +327,8 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        const val ACTION_PIP_CLOSE = "app.opentv.action.PIP_CLOSE"
+
         /** A reminder notification carries the channel to tune to in this extra. */
         const val EXTRA_PLAY_CHANNEL = "opentv.play_channel"
 
@@ -613,6 +657,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                 PlayerScreen(
                     channelId = channelId,
                     onBack = {
+                        channelsViewModel.guideToNow()
                         if (!navController.popBackStack()) {
                             navController.navigate(Routes.HOME) {
                                 popUpTo(0) { inclusive = true }

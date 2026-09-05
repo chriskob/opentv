@@ -249,6 +249,7 @@ data class Programme(
     val season: Int? = null,
     val episode: Int? = null,
     val iconUrl: String? = null,
+    @ColumnInfo(defaultValue = "0") val isNew: Boolean = false,
 ) {
     val durationMillis: Long get() = endUtcMillis - startUtcMillis
 
@@ -259,7 +260,62 @@ data class Programme(
         if (durationMillis <= 0L) return 0f
         return ((nowUtcMillis - startUtcMillis).toFloat() / durationMillis).coerceIn(0f, 1f)
     }
+
+    /**
+     * True if marked as new in XMLTV (<new />, <premiere />), or indicated by category / title / desc text.
+     */
+    fun isNewEpisode(): Boolean {
+        if (isNew) return true
+        val cat = category?.lowercase() ?: ""
+        if (cat.contains("new episode") || cat.contains("new series") || cat == "new") return true
+        val t = title.trim()
+        if (t.startsWith("[new]", ignoreCase = true) || t.startsWith("(new)", ignoreCase = true) ||
+            t.startsWith("new:", ignoreCase = true) || t.startsWith("new.", ignoreCase = true)
+        ) return true
+        val d = description?.trim() ?: ""
+        if (d.startsWith("[new]", ignoreCase = true) || d.startsWith("(new)", ignoreCase = true) ||
+            d.startsWith("new:", ignoreCase = true) || d.startsWith("new episode", ignoreCase = true)
+        ) return true
+        return false
+    }
+
+    /**
+     * Cleaned display title, stripping redundant prefix tags or recovering titles cut off with "..."
+     * if the full title is embedded in the description or sub-title.
+     */
+    fun resolvedTitle(): String {
+        var clean = title.trim()
+        // Strip leading [NEW] / (NEW) / NEW: if present so it doesn't duplicate our badge
+        if (clean.startsWith("[new]", ignoreCase = true)) {
+            clean = clean.substring(5).trim()
+        } else if (clean.startsWith("(new)", ignoreCase = true)) {
+            clean = clean.substring(5).trim()
+        } else if (clean.startsWith("new:", ignoreCase = true)) {
+            clean = clean.substring(4).trim()
+        }
+
+        // Check if title ends with ellipsis "..." and try to recover from description
+        if (clean.endsWith("...") || clean.endsWith("…")) {
+            val prefix = clean.trimEnd('.', '…').trim()
+            if (prefix.length >= 5 && description != null) {
+                val d = description.trim()
+                if (d.startsWith(prefix, ignoreCase = true)) {
+                    val endIdx = d.indexOfAny(charArrayOf('.', '!', '?', '\n', '-'))
+                    if (endIdx > prefix.length) {
+                        val candidate = d.substring(0, endIdx).trim()
+                        if (candidate.length < 80) {
+                            clean = candidate
+                        }
+                    }
+                }
+            }
+        }
+        return clean
+    }
 }
+
+/** American English alias for [Programme]. */
+typealias Program = Programme
 
 @Entity(
     tableName = "movies",

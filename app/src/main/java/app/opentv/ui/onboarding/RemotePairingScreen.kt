@@ -33,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -377,7 +378,7 @@ private fun ServerConfigDialog(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
                     label = { Text("Server URL") },
@@ -578,7 +579,7 @@ private fun ProvisioningProgressDashboard(
                         text = if (progress.epgChannelsMatched > 0)
                             "${progress.epgChannelsMatched} / ${progress.epgChannelsTotal} channels matched"
                         else
-                            "Programmes Scheduled",
+                            "Programs Scheduled",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.6f)
                     )

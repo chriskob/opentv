@@ -22,10 +22,10 @@ android {
 
     defaultConfig {
         applicationId = "app.opentv"
-        minSdk = 23
+        minSdk = project.findProperty("devMinSdk")?.toString()?.toIntOrNull() ?: 23
         targetSdk = 35
-        versionCode = 95
-        versionName = "0.12.74"
+        versionCode = 101
+        versionName = "0.12.80"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "DEFAULT_REMOTE_PAIRING_URL", "\"$defaultPairingUrl\"")
     }
@@ -44,10 +44,13 @@ android {
         }
     }
 
+    val isCi = providers.environmentVariable("CI").orNull == "true" || providers.environmentVariable("KEYSTORE_PATH").orNull != null
+    val enableMinify = project.hasProperty("minify") || (isCi && !project.hasProperty("fast"))
+
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = enableMinify
+            isShrinkResources = enableMinify
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -73,7 +76,7 @@ android {
                 }
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // Keep package name as app.opentv so debug builds update existing TV app without wiping data
             isMinifyEnabled = false
         }
     }

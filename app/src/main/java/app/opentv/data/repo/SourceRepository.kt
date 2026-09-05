@@ -25,6 +25,10 @@ class SourceRepository(
 
     suspend fun byId(id: Long): Source? = dao.byId(id)
 
+    suspend fun setEnabled(id: Long, enabled: Boolean) = withContext(Dispatchers.IO) {
+        dao.setEnabled(id, enabled)
+    }
+
     suspend fun save(source: Source): Long = withContext(Dispatchers.IO) {
         val normalised = source.copy(url = normaliseUrl(source.url, source.kind))
         if (source.id == 0L) dao.insert(normalised)

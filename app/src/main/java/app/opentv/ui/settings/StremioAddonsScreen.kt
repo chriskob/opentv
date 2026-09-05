@@ -33,7 +33,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -172,7 +172,7 @@ fun StremioAddonsScreen(onBack: () -> Unit) {
                     color = Color.White.copy(alpha = 0.65f),
                 )
                 Spacer(Modifier.height(14.dp))
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = input,
                     onValueChange = {
                         input = it

@@ -29,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -167,7 +168,7 @@ fun AddSourceScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            OutlinedTextField(
+            TvOutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text(stringResource(R.string.epg_name_optional)) },
@@ -176,7 +177,7 @@ fun AddSourceScreen(
             )
             Spacer(Modifier.height(12.dp))
 
-            OutlinedTextField(
+            TvOutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
                 label = {
@@ -205,7 +206,7 @@ fun AddSourceScreen(
 
             if (kind == SourceKind.XTREAM) {
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
                     label = { Text(stringResource(R.string.recset_field_username)) },
@@ -214,7 +215,7 @@ fun AddSourceScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
                     label = { Text(stringResource(R.string.recset_field_password)) },
@@ -228,7 +229,7 @@ fun AddSourceScreen(
 
             if (kind == SourceKind.STALKER) {
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = mac,
                     onValueChange = { mac = it },
                     label = { Text(stringResource(R.string.onboarding_mac_address)) },
@@ -246,7 +247,7 @@ fun AddSourceScreen(
 
             if (showAdvanced) {
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = epgUrl,
                     onValueChange = { epgUrl = it },
                     label = { Text(stringResource(R.string.onboarding_guide_url_optional)) },
@@ -257,7 +258,7 @@ fun AddSourceScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
+                TvOutlinedTextField(
                     value = userAgent,
                     onValueChange = { userAgent = it },
                     label = { Text("User-Agent") },

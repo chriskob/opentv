@@ -11,10 +11,95 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import app.opentv.core.AppSettings.AccentColor
+
+val AccentColor.primary: Color
+    get() = when (this) {
+        AccentColor.CYAN -> Color(0xFF26C6DA)
+        AccentColor.EMERALD -> Color(0xFF2ECC71)
+        AccentColor.SAPPHIRE -> Color(0xFF2979FF)
+        AccentColor.AMETHYST -> Color(0xFFAB47BC)
+        AccentColor.AMBER -> Color(0xFFFFA726)
+    }
+
+val AccentColor.dark: Color
+    get() = when (this) {
+        AccentColor.CYAN -> Color(0xFF00838F)
+        AccentColor.EMERALD -> Color(0xFF2E7D32)
+        AccentColor.SAPPHIRE -> Color(0xFF1565C0)
+        AccentColor.AMETHYST -> Color(0xFF7B1FA2)
+        AccentColor.AMBER -> Color(0xFFE65100)
+    }
+
+val AccentColor.light: Color
+    get() = when (this) {
+        AccentColor.CYAN -> Color(0xFF80DEEA)
+        AccentColor.EMERALD -> Color(0xFF81C784)
+        AccentColor.SAPPHIRE -> Color(0xFF82B1FF)
+        AccentColor.AMETHYST -> Color(0xFFCE93D8)
+        AccentColor.AMBER -> Color(0xFFFFCC80)
+    }
+
+val AccentColor.highlightGlow: Color
+    get() = when (this) {
+        AccentColor.CYAN -> Color(0xFF00E5FF)
+        AccentColor.EMERALD -> Color(0xFF69F0AE)
+        AccentColor.SAPPHIRE -> Color(0xFF448AFF)
+        AccentColor.AMETHYST -> Color(0xFFE040FB)
+        AccentColor.AMBER -> Color(0xFFFFD54F)
+    }
+
+val AccentColor.cardFocusBg: Color
+    get() = when (this) {
+        AccentColor.CYAN -> Color(0xFF16252C)
+        AccentColor.EMERALD -> Color(0xFF132518)
+        AccentColor.SAPPHIRE -> Color(0xFF141E2C)
+        AccentColor.AMETHYST -> Color(0xFF241528)
+        AccentColor.AMBER -> Color(0xFF281C12)
+    }
+
+val AccentColor.displayName: String
+    get() = when (this) {
+        AccentColor.CYAN -> "Cyan"
+        AccentColor.EMERALD -> "Emerald"
+        AccentColor.SAPPHIRE -> "Sapphire"
+        AccentColor.AMETHYST -> "Amethyst"
+        AccentColor.AMBER -> "Amber"
+    }
+
+val LocalAccentColor = staticCompositionLocalOf { AccentColor.CYAN }
+
+object AppTheme {
+    val accent: AccentColor
+        @Composable
+        get() = LocalAccentColor.current
+
+    val primary: Color
+        @Composable
+        get() = LocalAccentColor.current.primary
+
+    val dark: Color
+        @Composable
+        get() = LocalAccentColor.current.dark
+
+    val light: Color
+        @Composable
+        get() = LocalAccentColor.current.light
+
+    val highlightGlow: Color
+        @Composable
+        get() = LocalAccentColor.current.highlightGlow
+
+    val cardFocusBg: Color
+        @Composable
+        get() = LocalAccentColor.current.cardFocusBg
+}
 
 /**
  * A deliberately dark, low-chroma palette.
@@ -24,15 +109,12 @@ import androidx.compose.ui.unit.sp
  * actively unpleasant on a 55" panel at night, so everything here is anchored near-black with
  * a single restrained accent used only for focus and selection.
  */
-private val Accent = Color(0xFF26C6DA)
-private val AccentDim = Color(0xFF1E3A4A)
-
-private val DarkScheme = darkColorScheme(
-    primary = Accent,
+private fun buildDarkScheme(accent: AccentColor) = darkColorScheme(
+    primary = accent.primary,
     onPrimary = Color(0xFF0D141C),
-    primaryContainer = Color(0xFF1F303E),
-    onPrimaryContainer = Color(0xFFE0F7FA),
-    secondary = Color(0xFF80DEEA),
+    primaryContainer = accent.dark,
+    onPrimaryContainer = accent.light,
+    secondary = accent.light,
     background = Color(0xFF131A22),
     onBackground = Color(0xFFECEFF1),
     surface = Color(0xFF19222B),
@@ -45,13 +127,12 @@ private val DarkScheme = darkColorScheme(
 )
 
 /**
- * Light mode for anyone who wants it. By default TV boxes stay dark (a white living-room
- * screen at night is nobody's friend) — that default lives at the call site, so a user who
- * explicitly picks Light in settings gets it on any device.
+ * Light mode for anyone who wants it.
  */
-private val LightScheme = lightColorScheme(
-    primary = Color(0xFF3B4FCC),
+private fun buildLightScheme(accent: AccentColor) = lightColorScheme(
+    primary = accent.primary,
     onPrimary = Color.White,
+    secondary = accent.light,
     background = Color(0xFFFBFBFE),
     onBackground = Color(0xFF13141A),
     surface = Color.White,
@@ -79,12 +160,17 @@ private val OpenTvTypography = Typography(
 
 @Composable
 fun OpenTvTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    accent: AccentColor = AccentColor.CYAN,
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkScheme else LightScheme,
-        typography = OpenTvTypography,
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalAccentColor provides accent,
+    ) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) buildDarkScheme(accent) else buildLightScheme(accent),
+            typography = OpenTvTypography,
+            content = content,
+        )
+    }
 }

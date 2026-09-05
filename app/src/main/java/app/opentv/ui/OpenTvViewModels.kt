@@ -25,6 +25,7 @@ import app.opentv.data.model.StreamKind
 import app.opentv.data.parser.displayTitle
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.repo.CatalogRepository
+import app.opentv.data.repo.EpgRepository
 import app.opentv.data.repo.GenreGroup
 import app.opentv.data.repo.MovieVariantGroup
 import app.opentv.data.repo.PersonTitle
@@ -61,6 +62,9 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -310,7 +314,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             _provisioningProgress.value = _provisioningProgress.value?.copy(
                 stage = RemoteProvisioningProgress.Stage.SYNCING_EPG,
                 channelsProcessed = totalChannels,
-                statusMessage = "Downloading TV guide feeds and matching programmes…"
+                statusMessage = "Downloading TV guide feeds and matching programs…"
             )
 
             val timelineStart = now - (now % (30 * 60 * 1000L))
@@ -334,7 +338,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 epgChannelsTotal = chanTotal,
                 timelineStartMillis = timelineStart,
                 timelineEndMillis = timelineEnd,
-                statusMessage = "Sync Complete! $totalChannels channels and $progCount guide programmes ready.",
+                statusMessage = "Sync Complete! $totalChannels channels and $progCount guide programs ready.",
                 isComplete = true
             )
 
@@ -407,6 +411,15 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
     fun setLiveFormat(source: Source, format: LiveStreamFormat) {
         if (source.kind != SourceKind.XTREAM || source.liveFormat == format) return
         viewModelScope.launch { graph.catalogRepository.setLiveFormat(source.id, format) }
+    }
+
+    fun setEnabled(source: Source, enabled: Boolean) {
+        viewModelScope.launch {
+            graph.sourceRepository.setEnabled(source.id, enabled)
+            if (enabled) {
+                refreshAll()
+            }
+        }
     }
 
     fun refreshAll() {
@@ -541,6 +554,8 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         val programmes: List<Programme>,
     ) {
         val key: Any get() = if (primary.groupKey.isEmpty()) primary.id else primary.groupKey
+        /** American English alias for [programmes]. */
+        val programs: List<Programme> get() = programmes
     }
 
     /**
@@ -562,6 +577,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun guideToNow() {
+        nowTick.value = System.currentTimeMillis()
         _guideHourOffset.value = 0
     }
 
@@ -699,6 +715,49 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         selectedCategory.value = id
         settings.lastCategoryKey = id
         settings.lastFavouritesOnly = false
+    }
+
+    /**
+     * Automatically switch the active category to match the category of [channelId].
+     * Used when cross-category tuning occurs (e.g. from history carousel, shortcuts, or external requests).
+     */
+    fun selectCategoryForChannel(channelId: Long, onDone: ((CategoryGroup?) -> Unit)? = null) {
+        if (channelId <= 0L) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val channel = graph.catalogRepository.channel(channelId) ?: run {
+                withContext(Dispatchers.Main) { onDone?.invoke(null) }
+                return@launch
+            }
+            val catId = channel.categoryId ?: run {
+                withContext(Dispatchers.Main) { onDone?.invoke(null) }
+                return@launch
+            }
+            val rawCategories = graph.database.categories().allByKind(StreamKind.LIVE)
+            val scoped = if (channel.sourceId > 0L && selectedSource.value != null && selectedSource.value != channel.sourceId) {
+                rawCategories.filter { it.sourceId == channel.sourceId }
+            } else rawCategories
+            val groups = foldCategories(scoped)
+            val matchedGroup = groups.firstOrNull { catId in it.ids }
+
+            if (matchedGroup != null) {
+                withContext(Dispatchers.Main) {
+                    if (selectedSource.value != null && selectedSource.value != channel.sourceId) {
+                        selectedSource.value = channel.sourceId
+                    }
+                    if (selectedCategory.value != matchedGroup.key || favouritesOnly.value) {
+                        favouritesOnly.value = false
+                        selectedCategory.value = matchedGroup.key
+                        settings.lastCategoryKey = matchedGroup.key
+                        settings.lastFavouritesOnly = false
+                    }
+                    onDone?.invoke(matchedGroup)
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    onDone?.invoke(null)
+                }
+            }
+        }
     }
 
     fun selectFavourites() {
@@ -866,6 +925,7 @@ class EpgViewModel(app: Application) : AndroidViewModel(app) {
         val feeds: List<EpgFeed> = emptyList(),
         val syncing: Boolean = false,
         val statusLine: String? = null,
+        val hasDeletedBuiltIns: Boolean = false,
     )
 
     private val _ui = MutableStateFlow(UiState())
@@ -876,6 +936,14 @@ class EpgViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             graph.epgRepository.observeFeeds().collect { feeds ->
                 _ui.value = _ui.value.copy(feeds = feeds)
+            }
+        }
+        viewModelScope.launch {
+            graph.settings.deletedFeedUrls.collect { deleted ->
+                val hasDeletedBuiltIn = EpgRepository.BUILT_IN_FEEDS.any { (name, url) ->
+                    url in deleted || "feed_name:$name" in deleted
+                }
+                _ui.value = _ui.value.copy(hasDeletedBuiltIns = hasDeletedBuiltIn)
             }
         }
     }
@@ -896,6 +964,20 @@ class EpgViewModel(app: Application) : AndroidViewModel(app) {
 
     fun remove(feed: EpgFeed) {
         viewModelScope.launch { graph.epgRepository.removeFeed(feed) }
+    }
+
+    fun updateFeed(feed: EpgFeed) {
+        viewModelScope.launch {
+            graph.epgRepository.updateFeed(feed)
+            if (feed.enabled) refresh()
+        }
+    }
+
+    fun restoreDefaultFeeds() {
+        viewModelScope.launch {
+            graph.settings.restoreBuiltInFeeds()
+            graph.epgRepository.ensureFeeds()
+        }
     }
 
     fun refresh() {

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * This file is part of OpenTV.
  * Copyright (C) 2026 The OpenTV Contributors
  * Licensed under the GNU General Public License v3.0 or later.
@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import app.opentv.ui.theme.AppTheme
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
@@ -447,7 +448,7 @@ fun VodPlayerScreen(
                         isCatchup -> "CATCH-UP"
                         else -> "VOD"
                     }
-                    val badgeColor = if (growingRec) Color(0xFFE53935) else Color(0xFF26C6DA)
+                    val badgeColor = if (growingRec) Color(0xFFE53935) else AppTheme.primary
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(4.dp))
@@ -593,7 +594,7 @@ fun VodPlayerScreen(
                         contentDescription = stringResource(R.string.player_subtitles),
                         size = 36.dp,
                         iconSize = 18.dp,
-                        iconTint = if (vodPanel == VodPanel.SUBTITLES) Color(0xFF26C6DA) else null,
+                        iconTint = if (vodPanel == VodPanel.SUBTITLES) AppTheme.primary else null,
                         onClick = {
                             vodPanel = if (vodPanel == VodPanel.SUBTITLES) VodPanel.NONE else VodPanel.SUBTITLES
                             interaction++
@@ -608,7 +609,7 @@ fun VodPlayerScreen(
                         contentDescription = stringResource(R.string.player_audio),
                         size = 36.dp,
                         iconSize = 18.dp,
-                        iconTint = if (vodPanel == VodPanel.AUDIO) Color(0xFF26C6DA) else null,
+                        iconTint = if (vodPanel == VodPanel.AUDIO) AppTheme.primary else null,
                         onClick = {
                             vodPanel = if (vodPanel == VodPanel.AUDIO) VodPanel.NONE else VodPanel.AUDIO
                             interaction++
@@ -708,7 +709,7 @@ private fun InteractiveVodTimeline(
                 .fillMaxWidth(progress)
                 .height(trackHeight)
                 .clip(RoundedCornerShape(3.dp))
-                .background(Color(0xFF26C6DA)),
+                .background(AppTheme.primary),
         )
 
         // Cursor / Thumb
@@ -723,7 +724,7 @@ private fun InteractiveVodTimeline(
                     .clip(CircleShape)
                     .background(Color.White)
                     .then(
-                        if (isFocused) Modifier.border(2.5.dp, Color(0xFF26C6DA), CircleShape)
+                        if (isFocused) Modifier.border(2.5.dp, AppTheme.primary, CircleShape)
                         else Modifier
                     ),
             )
@@ -767,7 +768,7 @@ private fun TransportButton(
             .clip(CircleShape)
             .background(bg)
             .then(
-                if (focused) Modifier.border(2.5.dp, if (isPrimary) Color(0xFF26C6DA) else Color.White, CircleShape)
+                if (focused) Modifier.border(2.5.dp, if (isPrimary) AppTheme.primary else Color.White, CircleShape)
                 else if (isPrimary) Modifier.border(1.dp, Color.White, CircleShape)
                 else Modifier.border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape)
             )
