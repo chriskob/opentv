@@ -186,6 +186,8 @@ fun GuideGrid(
     restoreTick: Int = 0,
     /** Bumped when a rail category is focus-previewed: snaps the grid to its first channel. */
     scrollTopTick: Int = 0,
+    /** True while the rail previews a category: the grid tints its first row as the cursor. */
+    previewTopRow: Boolean = false,
     /** Fires whenever the timeline is displaced from "now" (scrubbed, paged, or panned). */
     onTimeShifted: (Boolean) -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
@@ -633,7 +635,7 @@ fun GuideGrid(
                             scroll = scroll,
                             catchUpChannelIds = catchUpChannelIds,
                             isSelected = isPlaying,
-                            isRowHighlighted = isHighlighted,
+                            isRowHighlighted = isHighlighted || (previewTopRow && index == 0),
                             targetProgKey = if (isHighlighted) targetProgKey else null,
                             rowFocusRequester = rowRequester,
                             externalFocusRequester = if (isHighlighted) activeCellFocusRequester else null,

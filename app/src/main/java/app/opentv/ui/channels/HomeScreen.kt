@@ -222,6 +222,8 @@ fun HomeScreen(
     // Bumped when a rail category gains focus: live-previews it and scrolls the guide to its
     // first channel (channel 1), TiviMate-style.
     var guideScrollTopTick by remember { mutableStateOf(0) }
+    // True while the rail previews a category: the grid tints its first row as the visible cursor.
+    var railPreviewing by remember { mutableStateOf(false) }
     val railWidth by animateDpAsState(
         targetValue = if (railExpanded) 240.dp else 0.dp,
         label = "railWidth",
@@ -318,8 +320,7 @@ fun HomeScreen(
         pendingLiveChannel = null
     }
 
-    val browsingAwayFromLive = backScrollActive || timeShifted || guideHourOffset != 0 ||
-        (highlightedRow != null && selectedRow != null && highlightedRow?.primary?.id != selectedRow?.primary?.id)
+    val browsingAwayFromLive = backScrollActive || timeShifted || guideHourOffset != 0
     BackHandler(enabled = !isFullScreen && !railExpanded && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
         if (browsingAwayFromLive) {
             nowMillis = System.currentTimeMillis()
@@ -437,6 +438,12 @@ fun HomeScreen(
         initialRow ?: activeSelectedRow
     }
 
+    // While rail-previewing a category, highlight its first channel (preview card + row tint).
+    LaunchedEffect(rows, railPreviewing) {
+        if (railPreviewing && rows.isNotEmpty()) {
+            highlightedRow = rows.firstOrNull()
+        }
+    }
     LaunchedEffect(rows) {
         val lastId = settings.lastChannelId
         if (lastId > 0L && rows.isNotEmpty() && (selectedRow == null || (selectedRow?.primary?.id == lastId && selectedRow?.programmes.isNullOrEmpty()))) {
@@ -791,7 +798,9 @@ fun HomeScreen(
                     if (e.type == KeyEventType.KeyDown) {
                         when (e.key) {
                             Key.DirectionRight -> {
+                                railPreviewing = false
                                 railExpanded = false
+                                guideRestoreTick++
                                 runCatching { guideFocusRequester.requestFocus() }
                                 pendingGuideFocus = true
                                 true
@@ -836,11 +845,14 @@ fun HomeScreen(
                             selected = selectedSource == null,
                             onFocused = {
                                 viewModel.selectSource(null)
+                                railPreviewing = true
                                 guideScrollTopTick++
                             },
                             onClick = {
                                 viewModel.selectSource(null)
+                                railPreviewing = false
                                 railExpanded = false
+                                guideRestoreTick++
                                 runCatching { guideFocusRequester.requestFocus() }
                                 pendingGuideFocus = true
                             },
@@ -852,11 +864,14 @@ fun HomeScreen(
                             selected = selectedSource == source.id,
                             onFocused = {
                                 viewModel.selectSource(source.id)
+                                railPreviewing = true
                                 guideScrollTopTick++
                             },
                             onClick = {
                                 viewModel.selectSource(source.id)
+                                railPreviewing = false
                                 railExpanded = false
+                                guideRestoreTick++
                                 runCatching { guideFocusRequester.requestFocus() }
                                 pendingGuideFocus = true
                             },
@@ -872,11 +887,14 @@ fun HomeScreen(
                         selected = favouritesOnly,
                         onFocused = {
                             viewModel.selectFavourites()
+                            railPreviewing = true
                             guideScrollTopTick++
                         },
                         onClick = {
                             viewModel.selectFavourites()
+                            railPreviewing = false
                             railExpanded = false
+                            guideRestoreTick++
                             runCatching { guideFocusRequester.requestFocus() }
                             pendingGuideFocus = true
                         },
@@ -890,11 +908,14 @@ fun HomeScreen(
                         selected = allSelected,
                         onFocused = {
                             viewModel.selectCategory(null)
+                            railPreviewing = true
                             guideScrollTopTick++
                         },
                         onClick = {
                             viewModel.selectCategory(null)
+                            railPreviewing = false
                             railExpanded = false
+                            guideRestoreTick++
                             runCatching { guideFocusRequester.requestFocus() }
                             pendingGuideFocus = true
                         },
@@ -908,11 +929,14 @@ fun HomeScreen(
                         selected = groupSelected,
                         onFocused = {
                             viewModel.selectCategory(group.key)
+                            railPreviewing = true
                             guideScrollTopTick++
                         },
                         onClick = {
                             viewModel.selectCategory(group.key)
+                            railPreviewing = false
                             railExpanded = false
+                            guideRestoreTick++
                             runCatching { guideFocusRequester.requestFocus() }
                             pendingGuideFocus = true
                         },
@@ -1099,6 +1123,7 @@ fun HomeScreen(
                         restoreTick = guideRestoreTick,
                         onTimeShifted = { timeShifted = it },
                         scrollTopTick = guideScrollTopTick,
+                        previewTopRow = railPreviewing,
                         selectedKey = activeHighlightedRow?.key,
                         playingKey = activeSelectedRow?.key,
                         focusRequester = guideFocusRequester,
