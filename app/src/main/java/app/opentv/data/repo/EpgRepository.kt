@@ -31,6 +31,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -154,6 +156,40 @@ class EpgRepository(
             programmeDao.windowForChannels(chunk, fromUtcMillis, toUtcMillis)
         }
         list.groupBy { it.epgChannelId }
+    }
+
+    // Incremental in-memory cache of the guide window's programmes, keyed by EPG channel id.
+    // Category switches reuse cached channels and fetch only the new ones, so rail browsing
+    // doesn't re-hydrate the full window each time. Cleared when the window moves (half-hourly)
+    // and after each guide sync. Bounded: oldest channels evicted past [WINDOW_CACHE_CAP].
+    private val windowCacheMutex = Mutex()
+    private var railCacheStart: Long = 0L
+    private var railCacheEnd: Long = 0L
+    private val railWindowCache = LinkedHashMap<String, List<Programme>>()
+    private val railCacheCap = 2_500
+
+    suspend fun windowForChannelsCached(
+        epgIds: List<String>,
+        fromUtcMillis: Long,
+        toUtcMillis: Long,
+    ): Map<String, List<Programme>> = windowCacheMutex.withLock {
+        if (railCacheStart != fromUtcMillis || railCacheEnd != toUtcMillis) {
+            railWindowCache.clear()
+            railCacheStart = fromUtcMillis
+            railCacheEnd = toUtcMillis
+        }
+        val requested = epgIds.toHashSet()
+        val missing = requested.filterNot { railWindowCache.containsKey(it) }
+        missing.chunked(500).forEach { chunk ->
+            windowForChannels(chunk, fromUtcMillis, toUtcMillis).forEach { (id, progs) ->
+                railWindowCache[id] = progs
+            }
+        }
+        while (railWindowCache.size > railCacheCap) {
+            val evict = railWindowCache.keys.firstOrNull { it !in requested } ?: break
+            railWindowCache.remove(evict)
+        }
+        requested.mapNotNull { id -> railWindowCache[id]?.let { id to it } }.toMap()
     }
 
     suspend fun upcoming(epgChannelId: String, nowUtcMillis: Long, limit: Int = 12): List<Programme> =
@@ -288,6 +324,8 @@ class EpgRepository(
             // guide covers; written above is programme rows, not channels, hence total here.
             settings?.lastGuideUpdatedMillis = nowUtcMillis
             settings?.lastGuideChannelCount = total
+            // Fresh guide data — drop the stale window cache so the guide re-reads it.
+            windowCacheMutex.withLock { railWindowCache.clear() }
             SyncSummary(succeeded, failed, written, matched, total)
         }
 

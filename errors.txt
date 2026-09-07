@@ -1,0 +1,11 @@
+﻿.\gradlew.bat : e: file:///C:/Users/buick/Desktop/data/opentv
+    + CategoryInfo          : NotSpecified: (e: file:///C:/U 
+e: file:///C:/Users/buick/Desktop/data/opentv/app/src/main/ja
+e: file:///C:/Users/buick/Desktop/data/opentv/app/src/main/ja
+e: file:///C:/Users/buick/Desktop/data/opentv/app/src/main/ja
+e: file:///C:/Users/buick/Desktop/data/opentv/app/src/main/ja
+e: file:///C:/Users/buick/Desktop/data/opentv/app/src/main/ja
+e: file:///C:/Users/buick/Desktop/data/opentv/app/src/main/ja
+e: file:///C:/Users/buick/Desktop/data/opentv/app/src/main/ja
+e: file:///C:/Users/buick/Desktop/data/opentv/app/src/main/ja
+e: file:///C:/Users/buick/Desktop/data/opentv/app/src/main/ja

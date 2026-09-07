@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -623,19 +624,26 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 // TiviMate Optimization: Query programmes ONLY for the active channels in this view.
                 // Never query or group 500,000 programmes for the entire universe, which exhausts 2GB RAM.
+                // Two-phase emission: the channel list appears instantly, then a second emission
+                // fills in the programmes. The EPG window comes from an incremental in-memory
+                // cache, so rail category browsing only fetches newly-seen channels.
                 combine(channelFlow, windowStartMillis) { rawChannels, windowStart ->
                     val now = System.currentTimeMillis()
                     val scoped = if (source == null) rawChannels else rawChannels.filter { it.sourceId == source }
                     val visible =
                         if (key.hiddenIds.isEmpty()) scoped
                         else scoped.filter { it.categoryId !in key.hiddenIds }
-
                     val epgIds = visible.mapNotNull { it.epgChannelId?.ifBlank { null } }.distinct()
-                    val byEpgChannel = if (epgIds.isEmpty()) emptyMap() else {
-                        graph.epgRepository.windowForChannels(epgIds, windowStart, windowStart + TOTAL_WINDOW_MILLIS)
+                    flow {
+                        emit(buildRows(visible, emptyMap(), now))
+                        if (epgIds.isNotEmpty()) {
+                            val byEpgChannel = graph.epgRepository.windowForChannelsCached(
+                                epgIds, windowStart, windowStart + TOTAL_WINDOW_MILLIS,
+                            )
+                            emit(buildRows(visible, byEpgChannel, now))
+                        }
                     }
-                    buildRows(visible, byEpgChannel, now)
-                }
+                }.flatMapLatest { it }
             }
             // Grouping thousands of channels against a 12-hour, all-feeds programme window is heavy
             // enough to freeze the UI for a big provider — a category tap that took minutes. Run the
