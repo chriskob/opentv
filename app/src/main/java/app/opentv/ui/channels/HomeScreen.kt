@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -161,6 +162,15 @@ fun HomeScreen(
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
     val sources by viewModel.sources.collectAsState()
     val selectedSource by viewModel.selectedSource.collectAsState()
+
+    // Rail index for a category key (accounts for the provider section, shown only when there
+    // is more than one source). Used to open the rail on the playing channel's category.
+    fun railIndexForCategoryKey(key: String?): Int {
+        val favouritesIndex = if (sources.size > 1) 3 + sources.size else 0
+        if (key == null) return favouritesIndex
+        val groupIdx = categories.indexOfFirst { it.key == key }
+        return if (groupIdx >= 0) favouritesIndex + 2 + groupIdx else favouritesIndex
+    }
     val windowStart by viewModel.windowStartMillis.collectAsState()
     // How many hours into the past the guide is scrolled (0 = live now).
     val guideHourOffset by viewModel.guideHourOffset.collectAsState()
@@ -217,11 +227,21 @@ fun HomeScreen(
         label = "railWidth",
     )
     val railFocusRequester = remember { FocusRequester() }
+    val railListState = rememberLazyListState()
+    // Rail index to scroll to when the rail opens (targets the playing channel's category).
+    var railScrollToIndex by remember { mutableStateOf(-1) }
     val guideFocusRequester = remember { FocusRequester() }
     // Set when LEFT reopens the rail; the effect waits for the rail to be laid out again before
     // moving focus onto it — a just-revealed node isn't focusable on the very same frame.
     var pendingRailFocus by remember { mutableStateOf(false) }
     var pendingGuideFocus by remember { mutableStateOf(false) }
+    // Scroll the rail list to the target entry BEFORE focus lands on it (a just-revealed
+    // off-screen row can't take focus).
+    LaunchedEffect(railExpanded, railScrollToIndex) {
+        if (railExpanded && railScrollToIndex >= 0) {
+            railListState.scrollToItem(railScrollToIndex)
+        }
+    }
     LaunchedEffect(pendingRailFocus) {
         if (pendingRailFocus) {
             delay(40)
@@ -314,6 +334,16 @@ fun HomeScreen(
             }
             guideRestoreTick++
         } else {
+            // Open the rail on the PLAYING channel's category (TiviMate-style), not on the last
+            // focus-previewed entry.
+            val playingChannel = (selectedRow ?: highlightedRow)?.primary
+            val playingGroup = playingChannel?.categoryId?.let { catId ->
+                categories.firstOrNull { catId in it.ids }
+            }
+            if (playingGroup != null) {
+                viewModel.selectCategory(playingGroup.key)
+                railScrollToIndex = railIndexForCategoryKey(playingGroup.key)
+            }
             railExpanded = true
             pendingRailFocus = true
         }
@@ -785,6 +815,7 @@ fun HomeScreen(
             // The top "Search channels" bar was removed — Search now lives in the global nav rail.
 
             LazyColumn(
+                state = railListState,
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
@@ -1017,6 +1048,15 @@ fun HomeScreen(
                     {
                         backScrollActive = false
                         if (!railExpanded) {
+                            // LEFT reopens the rail on the playing channel's category too.
+                            val playingChannel = (selectedRow ?: highlightedRow)?.primary
+                            val playingGroup = playingChannel?.categoryId?.let { catId ->
+                                categories.firstOrNull { catId in it.ids }
+                            }
+                            if (playingGroup != null) {
+                                viewModel.selectCategory(playingGroup.key)
+                                railScrollToIndex = railIndexForCategoryKey(playingGroup.key)
+                            }
                             railExpanded = true
                             pendingRailFocus = true
                             true
