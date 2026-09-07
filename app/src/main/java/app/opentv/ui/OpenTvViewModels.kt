@@ -624,9 +624,9 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 // TiviMate Optimization: Query programmes ONLY for the active channels in this view.
                 // Never query or group 500,000 programmes for the entire universe, which exhausts 2GB RAM.
-                // Two-phase emission: the channel list appears instantly, then a second emission
-                // fills in the programmes. The EPG window comes from an incremental in-memory
-                // cache, so rail category browsing only fetches newly-seen channels.
+                // Three-phase emission: (1) the channel list appears instantly, (2) the immediate
+                // viewing range (~now-2h to now+6h) fills in fast, (3) the full 48h window fills in
+                // behind — all incremental/cached, so rail category browsing stays responsive.
                 combine(channelFlow, windowStartMillis) { rawChannels, windowStart ->
                     val now = System.currentTimeMillis()
                     val scoped = if (source == null) rawChannels else rawChannels.filter { it.sourceId == source }
@@ -637,6 +637,10 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                     flow {
                         emit(buildRows(visible, emptyMap(), now))
                         if (epgIds.isNotEmpty()) {
+                            val quick = graph.epgRepository.windowForChannels(
+                                epgIds, now - QUICK_PAST_MILLIS, now + QUICK_FUTURE_MILLIS,
+                            )
+                            emit(buildRows(visible, quick, now))
                             val byEpgChannel = graph.epgRepository.windowForChannelsCached(
                                 epgIds, windowStart, windowStart + TOTAL_WINDOW_MILLIS,
                             )
@@ -919,6 +923,10 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         const val HALF_HOUR_MILLIS = 30 * 60 * 1000L
         const val PAST_HOURS = 24
         const val FUTURE_HOURS = 24
+        // Fast-fill range for the guide's two-phase load: the immediate viewing range is fetched
+        // first so the guide populates quickly; the full 48h window fills in behind it.
+        const val QUICK_PAST_MILLIS = 2 * 3600_000L
+        const val QUICK_FUTURE_MILLIS = 6 * 3600_000L
         const val HOURS_IN_WINDOW = PAST_HOURS + FUTURE_HOURS
         const val PAST_MILLIS = PAST_HOURS * 3600_000L
         const val TOTAL_WINDOW_MILLIS = HOURS_IN_WINDOW * 3600_000L
@@ -1571,3 +1579,4 @@ class WebManagerViewModel(app: Application) : AndroidViewModel(app) {
         server.stop()
     }
 }
+

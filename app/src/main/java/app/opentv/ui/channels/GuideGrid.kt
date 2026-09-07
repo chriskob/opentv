@@ -636,6 +636,7 @@ fun GuideGrid(
                             catchUpChannelIds = catchUpChannelIds,
                             isSelected = isPlaying,
                             isRowHighlighted = isHighlighted || (previewTopRow && index == 0),
+                        previewHighlight = previewTopRow && index == 0,
                             targetProgKey = if (isHighlighted) targetProgKey else null,
                             rowFocusRequester = rowRequester,
                             externalFocusRequester = if (isHighlighted) activeCellFocusRequester else null,
@@ -1053,6 +1054,7 @@ private fun GuideRow(
     temporalAnchorMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     catchUpChannelIds: Set<Long> = emptySet(),
+    previewHighlight: Boolean = false,
     isSelected: Boolean,
     isRowHighlighted: Boolean = false,
     targetProgKey: Long? = null,
@@ -1171,6 +1173,8 @@ private fun GuideRow(
             val windowEndMillis = windowStartMillis + (HOURS_IN_WINDOW * 3600_000L)
             if (programmes.isEmpty()) {
                 var emptyFocused by remember { mutableStateOf(false) }
+                // Pseudo-cursor while the rail previews this category (no focus stolen).
+                val emptyHighlighted = emptyFocused || previewHighlight
                 val extReq = if (isRowHighlighted) externalFocusRequester else null
                 Box(
                     Modifier
@@ -1180,11 +1184,11 @@ private fun GuideRow(
                         .fillMaxSize()
                         .clip(GuideCellShape)
                         .background(
-                            if (emptyFocused) Color.White
+                            if (emptyHighlighted) Color.White
                             else Color(0xFF222C36),
                         )
                         .then(
-                            if (emptyFocused) Modifier.border(1.5.dp, Color.White, GuideCellShape)
+                            if (emptyHighlighted) Modifier.border(1.5.dp, Color.White, GuideCellShape)
                             else Modifier.border(0.5.dp, Color(0xFF334250).copy(alpha = 0.6f), GuideCellShape),
                         )
                         .onFocusChanged {
@@ -1295,6 +1299,7 @@ private fun GuideRow(
                         isNow = isNow,
                         progress = if (isNow) prog.progressAt(nowMillis) else 0f,
                         isNew = prog.isNewEpisode(),
+                        pseudoFocused = previewHighlight && isTarget,
                         isRowHighlighted = isRowHighlighted,
                         focusRequester = blockRequester,
                         rowFocusRequester = if (isTarget) rowFocusRequester else null,
@@ -1375,6 +1380,7 @@ private fun ProgrammeBlock(
     isNow: Boolean,
     progress: Float,
     isNew: Boolean = false,
+    pseudoFocused: Boolean = false,
     isRowHighlighted: Boolean = false,
     focusRequester: FocusRequester? = null,
     rowFocusRequester: FocusRequester? = null,
@@ -1387,6 +1393,9 @@ private fun ProgrammeBlock(
 ) {
     var focused by remember { mutableStateOf(false) }
 
+    // Pseudo-cursor: rendered like focus without stealing it (rail category preview).
+    val highlighted = focused || pseudoFocused
+
     Box(
         Modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
@@ -1397,11 +1406,11 @@ private fun ProgrammeBlock(
             .padding(end = 1.5.dp)
             .clip(GuideCellShape)
             .background(
-                if (focused) Color.White
+                if (highlighted) Color.White
                 else Color(0xFF222C36)
             )
             .then(
-                if (focused) Modifier.border(1.5.dp, Color.White, GuideCellShape)
+                if (highlighted) Modifier.border(1.5.dp, Color.White, GuideCellShape)
                 else Modifier.border(0.5.dp, Color(0xFF334250).copy(alpha = 0.6f), GuideCellShape)
             )
             .onPreviewKeyEvent { e ->
@@ -1470,9 +1479,9 @@ private fun ProgrammeBlock(
                     fontSize = 12.sp,
                     lineHeight = 15.sp,
                 ),
-                fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Normal,
+                fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Normal,
                 color = when {
-                    focused -> Color(0xFF10171E) // Dark slate text on pure white focus background
+                    highlighted -> Color(0xFF10171E) // Dark slate text on pure white focus background
                     else -> Color(0xFFECEFF1)
                 },
                 maxLines = 2,
