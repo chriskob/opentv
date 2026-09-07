@@ -2132,8 +2132,9 @@ private fun LiveTimelineBar(
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             // Key handling lives in PlayerScreen's root onPreviewKeyEvent (TIMELINE tier): the
             // root preview always consumes Left/Right/Enter here first, so a handler on the bar
-            // itself would be dead code.
-            .then(if (isFocused) Modifier.focusable() else Modifier)
+            // itself would be dead code. Always focusable — the tier effect focuses it on entry,
+            // and a bar that is only focusable-when-focused could never take focus at all.
+            .focusable()
             .onSizeChanged { widthPx = it.width },
         contentAlignment = Alignment.CenterStart,
     ) {
