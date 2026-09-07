@@ -144,6 +144,10 @@
     <string name="settings_sync_subtitle">Copia el contenido en curso a otro dispositivo por wifi</string>
     <string name="settings_about_title">Acerca de</string>
     <string name="settings_pick_from_menu">Elige una sección del menú de la izquierda</string>
+    <string name="settings_show_fav_category_title">Categoría de favoritos</string>
+    <string name="settings_show_fav_category_subtitle">Muestra la entrada de favoritos en la lista de categorías de la guía</string>
+    <string name="settings_show_all_category_title">Categoría de todos los canales</string>
+    <string name="settings_show_all_category_subtitle">Muestra la entrada de todos los canales en la lista de categorías de la guía</string>
     <string name="settings_about_subtitle">Versión, actualizaciones, licencia y enlaces</string>
     <string name="settings_appearance">Apariencia</string>
     <string name="settings_theme_system">Igual que el sistema</string>

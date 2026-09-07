@@ -200,6 +200,10 @@
     <string name="settings_sync_subtitle">Copy continue-watching to another device over wifi</string>
     <string name="settings_about_title">About</string>
     <string name="settings_about_subtitle">Version, updates, licence and links</string>
+    <string name="settings_show_fav_category_title">Favourites category</string>
+    <string name="settings_show_fav_category_subtitle">Show the Favourites entry in the guide\'s category list</string>
+    <string name="settings_show_all_category_title">All channels category</string>
+    <string name="settings_show_all_category_subtitle">Show the All Channels entry in the guide\'s category list</string>
     <string name="settings_pick_from_menu">Choose a section from the menu on the left</string>
 
     <!-- ============================ Display & playback settings ============================ -->

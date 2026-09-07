@@ -162,14 +162,18 @@ fun HomeScreen(
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
     val sources by viewModel.sources.collectAsState()
     val selectedSource by viewModel.selectedSource.collectAsState()
+    val showFavouritesCategory by settings.showFavouritesCategory.collectAsState()
+    val showAllChannelsCategory by settings.showAllChannelsCategory.collectAsState()
 
     // Rail index for a category key (accounts for the provider section, shown only when there
     // is more than one source). Used to open the rail on the playing channel's category.
     fun railIndexForCategoryKey(key: String?): Int {
-        val favouritesIndex = if (sources.size > 1) 3 + sources.size else 0
-        if (key == null) return favouritesIndex
+        var idx = if (sources.size > 1) 3 + sources.size else 0
+        if (showFavouritesCategory) idx += 1
+        if (showAllChannelsCategory) idx += 1
+        if (key == null) return idx
         val groupIdx = categories.indexOfFirst { it.key == key }
-        return if (groupIdx >= 0) favouritesIndex + 2 + groupIdx else favouritesIndex
+        return if (groupIdx >= 0) idx + groupIdx else idx
     }
     val windowStart by viewModel.windowStartMillis.collectAsState()
     // How many hours into the past the guide is scrolled (0 = live now).
@@ -881,46 +885,58 @@ fun HomeScreen(
                 }
                 // The currently-selected entry carries the rail's FocusRequester, so reopening the
                 // rail (d-pad LEFT in the guide) lands focus straight back on the current category.
-                item {
-                    RailEntry(
-                        label = stringResource(R.string.guide_favourites),
-                        selected = favouritesOnly,
-                        onFocused = {
-                            viewModel.selectFavourites()
-                            railPreviewing = true
-                            guideScrollTopTick++
-                        },
-                        onClick = {
-                            viewModel.selectFavourites()
-                            railPreviewing = false
-                            railExpanded = false
-                            guideRestoreTick++
-                            runCatching { guideFocusRequester.requestFocus() }
-                            pendingGuideFocus = true
-                        },
-                        modifier = if (favouritesOnly) Modifier.focusRequester(railFocusRequester) else Modifier,
-                    )
+                // Rail focus target: the selected entry if it's visible; otherwise the first
+                // visible entry (a hidden selection can't take focus — focusing it auto-heals
+                // the view via the preview handler).
+                val selectedOnFavourites = favouritesOnly && showFavouritesCategory
+                val selectedOnAll = !favouritesOnly && selectedCategory == null && showAllChannelsCategory
+                val selectionHasRailEntry = selectedOnFavourites || selectedOnAll || selectedCategory != null
+                val focusFirstFavourites = !selectionHasRailEntry && showFavouritesCategory
+                val focusFirstAll = !selectionHasRailEntry && !showFavouritesCategory && showAllChannelsCategory
+                if (showFavouritesCategory) {
+                    item {
+                        RailEntry(
+                            label = stringResource(R.string.guide_favourites),
+                            selected = favouritesOnly,
+                            onFocused = {
+                                viewModel.selectFavourites()
+                                railPreviewing = true
+                                guideScrollTopTick++
+                            },
+                            onClick = {
+                                viewModel.selectFavourites()
+                                railPreviewing = false
+                                railExpanded = false
+                                guideRestoreTick++
+                                runCatching { guideFocusRequester.requestFocus() }
+                                pendingGuideFocus = true
+                            },
+                            modifier = if (selectedOnFavourites || focusFirstFavourites) Modifier.focusRequester(railFocusRequester) else Modifier,
+                        )
+                    }
                 }
-                item {
-                    val allSelected = !favouritesOnly && selectedCategory == null
-                    RailEntry(
-                        label = stringResource(R.string.guide_all_channels),
-                        selected = allSelected,
-                        onFocused = {
-                            viewModel.selectCategory(null)
-                            railPreviewing = true
-                            guideScrollTopTick++
-                        },
-                        onClick = {
-                            viewModel.selectCategory(null)
-                            railPreviewing = false
-                            railExpanded = false
-                            guideRestoreTick++
-                            runCatching { guideFocusRequester.requestFocus() }
-                            pendingGuideFocus = true
-                        },
-                        modifier = if (allSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
-                    )
+                if (showAllChannelsCategory) {
+                    item {
+                        val allSelected = !favouritesOnly && selectedCategory == null
+                        RailEntry(
+                            label = stringResource(R.string.guide_all_channels),
+                            selected = allSelected,
+                            onFocused = {
+                                viewModel.selectCategory(null)
+                                railPreviewing = true
+                                guideScrollTopTick++
+                            },
+                            onClick = {
+                                viewModel.selectCategory(null)
+                                railPreviewing = false
+                                railExpanded = false
+                                guideRestoreTick++
+                                runCatching { guideFocusRequester.requestFocus() }
+                                pendingGuideFocus = true
+                            },
+                            modifier = if (selectedOnAll || focusFirstAll) Modifier.focusRequester(railFocusRequester) else Modifier,
+                        )
+                    }
                 }
                 items(categories, key = { it.key }) { group ->
                     val groupSelected = !favouritesOnly && selectedCategory == group.key
@@ -940,7 +956,7 @@ fun HomeScreen(
                             runCatching { guideFocusRequester.requestFocus() }
                             pendingGuideFocus = true
                         },
-                        modifier = if (groupSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
+                        modifier = if (groupSelected || (!selectionHasRailEntry && !focusFirstFavourites && !focusFirstAll && categories.firstOrNull()?.key == group.key)) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
             }

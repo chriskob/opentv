@@ -106,6 +106,8 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val themeMode by settings.themeMode.collectAsState()
     val channelLayout by settings.channelLayout.collectAsState()
     val previewVideo by settings.guidePreviewVideo.collectAsState()
+    val showFavouritesCategory by settings.showFavouritesCategory.collectAsState()
+    val showAllChannelsCategory by settings.showAllChannelsCategory.collectAsState()
     val previewSound by settings.guidePreviewSound.collectAsState()
     val guideResetOnOpen by settings.guideResetOnOpen.collectAsState()
     val captions by settings.subtitlesEnabled.collectAsState()
@@ -325,6 +327,18 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 subtitle = stringResource(R.string.settings_guide_reset_on_open_subtitle),
                 checked = guideResetOnOpen,
                 onToggle = settings::setGuideResetOnOpen,
+            )
+            ToggleRow(
+                title = stringResource(R.string.settings_show_fav_category_title),
+                subtitle = stringResource(R.string.settings_show_fav_category_subtitle),
+                checked = showFavouritesCategory,
+                onToggle = settings::setShowFavouritesCategory,
+            )
+            ToggleRow(
+                title = stringResource(R.string.settings_show_all_category_title),
+                subtitle = stringResource(R.string.settings_show_all_category_subtitle),
+                checked = showAllChannelsCategory,
+                onToggle = settings::setShowAllChannelsCategory,
             )
         }
 
