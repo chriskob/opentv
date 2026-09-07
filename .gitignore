@@ -24,3 +24,5 @@ agent_*
 node_modules/
 
 .kotlin/
+
+*.log
