@@ -324,6 +324,14 @@ class AppSettings private constructor(context: Context) {
         get() = prefs.getLong(KEY_LAST_CHANNEL, 0L)
         set(value) { prefs.edit().putLong(KEY_LAST_CHANNEL, value).apply() }
 
+    /** Stamp + channel count written after each guide (EPG) sync, shown in the guide header. */
+    var lastGuideUpdatedMillis: Long
+        get() = prefs.getLong(KEY_LAST_GUIDE_UPDATED, 0L)
+        set(value) { prefs.edit().putLong(KEY_LAST_GUIDE_UPDATED, value).apply() }
+    var lastGuideChannelCount: Int
+        get() = prefs.getInt(KEY_LAST_GUIDE_CHANNELS, 0)
+        set(value) { prefs.edit().putInt(KEY_LAST_GUIDE_CHANNELS, value).apply() }
+
     /**
      * Video scaling in the player, as an [androidx.media3.ui.AspectRatioFrameLayout] RESIZE_MODE_*
      * constant (0 = Fit). Persisted so the choice survives leaving the player, which testers asked
@@ -656,6 +664,8 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_RECENT_CHANNELS = "recent_watched_channels"
         private const val KEY_PLAYLIST_REFRESH_HOURS = "playlist_refresh_hours"
         private const val KEY_EPG_REFRESH_HOURS = "epg_refresh_hours"
+        private const val KEY_LAST_GUIDE_UPDATED = "last_guide_updated_millis"
+        private const val KEY_LAST_GUIDE_CHANNELS = "last_guide_channels"
         private const val KEY_EPG_SYNC_WITH_PLAYLIST = "epg_sync_with_playlist"
         private const val KEY_DELETED_FEED_URLS = "deleted_feed_urls"
         private const val KEY_REMOTE_PAIRING_URL = "remote_pairing_server_url"

@@ -143,6 +143,7 @@
     <string name="settings_sync_title">Sincronizar historial de visualización</string>
     <string name="settings_sync_subtitle">Copia el contenido en curso a otro dispositivo por wifi</string>
     <string name="settings_about_title">Acerca de</string>
+    <string name="settings_pick_from_menu">Elige una sección del menú de la izquierda</string>
     <string name="settings_about_subtitle">Versión, actualizaciones, licencia y enlaces</string>
     <string name="settings_appearance">Apariencia</string>
     <string name="settings_theme_system">Igual que el sistema</string>

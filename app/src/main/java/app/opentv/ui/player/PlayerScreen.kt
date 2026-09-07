@@ -244,6 +244,10 @@ fun PlayerScreen(
     var panel by remember { mutableStateOf(Panel.NONE) }
     var channelListVisible by remember { mutableStateOf(false) }
     var osdTier by remember { mutableStateOf(OsdTier.HISTORY) }
+
+    // TiviMate-style timeline: each Left/Right press is an immediate skip (10s taps, accelerating
+    // while held). The pip on the bar tracks the player's real position, so every skip is visible.
+    // Playback seeks on every press — that's the point; the OSD stays up while keys repeat.
     var interaction by remember { mutableIntStateOf(0) }
     // Offered once per session the first time the user records here while OpenTV isn't exempt from
     // battery optimisation, so the capture survives the screen sleeping. Never blocks recording.
@@ -771,14 +775,20 @@ fun PlayerScreen(
                                     }
                                     Key.DirectionLeft -> {
                                         val cur = controller.player.currentPosition
-                                        controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
+                                        val step = scrubStepMillis(event.nativeKeyEvent.repeatCount)
+                                        val dur = controller.player.duration
+                                        val target = if (dur > 0) (cur - step).coerceIn(0L, dur) else (cur - step).coerceAtLeast(0L)
+                                        controller.player.seekTo(target)
+                                        interaction++
                                         true
                                     }
                                     Key.DirectionRight -> {
                                         val cur = controller.player.currentPosition
+                                        val step = scrubStepMillis(event.nativeKeyEvent.repeatCount)
                                         val dur = controller.player.duration
-                                        val newPos = if (dur > 0) (cur + 10_000L).coerceAtMost(dur) else cur + 10_000L
-                                        controller.player.seekTo(newPos)
+                                        val target = if (dur > 0) (cur + step).coerceIn(0L, dur) else cur + step
+                                        controller.player.seekTo(target)
+                                        interaction++
                                         true
                                     }
                                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
@@ -1161,29 +1171,18 @@ fun PlayerScreen(
                 Spacer(Modifier.height(10.dp))
 
                 // ---- Yellow / Gold Timeline Progress Bar (TiviMate Style) ----
+                // The pip tracks the player's REAL position, so every skip is visible instantly.
+                // Falls back to the programme wall-clock fraction when the stream reports no
+                // window length.
                 val progFraction = currentProg?.progressAt(nowMillis) ?: 0f
+                val playerDur = controller.player.duration
+                val barFraction = if (playerDur > 0) {
+                    (controller.player.currentPosition.toFloat() / playerDur.toFloat()).coerceIn(0f, 1f)
+                } else progFraction
                 LiveTimelineBar(
-                    progress = progFraction,
+                    progress = barFraction,
                     isFocused = osdTier == OsdTier.TIMELINE,
                     focusRequester = timelineFocus,
-                    onSeekBackward = {
-                        val cur = controller.player.currentPosition
-                        controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
-                        interaction++
-                    },
-                    onSeekForward = {
-                        val cur = controller.player.currentPosition
-                        val dur = controller.player.duration
-                        val newPos = if (dur > 0) (cur + 10_000L).coerceAtMost(dur) else cur + 10_000L
-                        controller.player.seekTo(newPos)
-                        interaction++
-                    },
-                    onCommitSeek = {
-                        val targetPlaying = paused
-                        controller.player.playWhenReady = targetPlaying
-                        paused = !targetPlaying
-                        interaction++
-                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
 
@@ -1199,17 +1198,19 @@ fun PlayerScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     ) {
-                        // Left: Programme progress time (e.g. 23:07 / 1:00:00)
+                        // Left: position / length. Player scale when the stream reports a window
+                        // (moves with every skip); programme wall-clock as the fallback.
                         val prog = currentProg
-                        val durationMs = if (prog != null && prog.durationMillis > 0L) {
-                            prog.durationMillis
-                        } else {
-                            controller.player.duration.coerceAtLeast(0L)
+                        val durationMs = when {
+                            playerDur > 0L -> playerDur
+                            prog != null && prog.durationMillis > 0L -> prog.durationMillis
+                            else -> 0L
                         }
-                        val elapsedMs = if (prog != null && prog.durationMillis > 0L) {
-                            (nowMillis - prog.startUtcMillis).coerceIn(0L, durationMs)
-                        } else {
-                            controller.player.currentPosition.coerceAtLeast(0L)
+                        val elapsedMs = when {
+                            playerDur > 0L -> controller.player.currentPosition.coerceIn(0L, playerDur)
+                            prog != null && prog.durationMillis > 0L ->
+                                (nowMillis - prog.startUtcMillis).coerceIn(0L, durationMs)
+                            else -> controller.player.currentPosition.coerceAtLeast(0L)
                         }
                         Text(
                             text = "${formatDurationMs(elapsedMs)} / ${formatDurationMs(durationMs)}",
@@ -2117,9 +2118,6 @@ private fun LiveTimelineBar(
     progress: Float,
     isFocused: Boolean = false,
     focusRequester: FocusRequester? = null,
-    onSeekBackward: () -> Unit = {},
-    onSeekForward: () -> Unit = {},
-    onCommitSeek: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var widthPx by remember { mutableIntStateOf(0) }
@@ -2132,24 +2130,9 @@ private fun LiveTimelineBar(
             .fillMaxWidth()
             .height(20.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.key) {
-                    Key.DirectionLeft -> {
-                        onSeekBackward()
-                        true
-                    }
-                    Key.DirectionRight -> {
-                        onSeekForward()
-                        true
-                    }
-                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                        onCommitSeek()
-                        true
-                    }
-                    else -> false
-                }
-            }
+            // Key handling lives in PlayerScreen's root onPreviewKeyEvent (TIMELINE tier): the
+            // root preview always consumes Left/Right/Enter here first, so a handler on the bar
+            // itself would be dead code.
             .then(if (isFocused) Modifier.focusable() else Modifier)
             .onSizeChanged { widthPx = it.width },
         contentAlignment = Alignment.CenterStart,
@@ -2186,6 +2169,14 @@ private fun LiveTimelineBar(
             )
         }
     }
+}
+
+/** TiviMate-style accelerating seek step: taps move 10s; holding ramps 10s → 20s → 30s → 60s. */
+private fun scrubStepMillis(repeatCount: Int): Long = when {
+    repeatCount >= 8 -> 60_000L
+    repeatCount >= 4 -> 30_000L
+    repeatCount >= 2 -> 20_000L
+    else -> 10_000L
 }
 
 private fun formatDurationMs(ms: Long): String {

@@ -34,6 +34,17 @@ object CatchupResolver {
         return XTREAM_URL_REGEX.containsMatchIn(channel.streamUrl)
     }
 
+    /**
+     * Whether this source's provider does catch-up for its channels at the portal level — an
+     * Xtream portal, or one reached through the portal's playlist endpoint. Many such providers
+     * never set the per-channel archive flag in their M3U, yet every channel supports catch-up,
+     * so the guide badge uses this instead of trusting the flag alone.
+     */
+    fun isSourceCapable(source: Source): Boolean =
+        source.kind == SourceKind.XTREAM ||
+            source.url.contains("get.php", ignoreCase = true) ||
+            source.url.contains("player_api.php", ignoreCase = true)
+
     private fun extractCredentials(source: Source): Pair<String, String>? {
         val user = source.username
         val pass = source.password

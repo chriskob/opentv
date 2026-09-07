@@ -84,7 +84,7 @@ import app.opentv.ui.settings.ProvidersScreen
 import app.opentv.ui.settings.StremioAddonsScreen
 import app.opentv.ui.settings.RecordingSettingsScreen
 import app.opentv.ui.settings.SyncScreen
-import app.opentv.ui.settings.SettingsHubScreen
+import app.opentv.ui.settings.SettingsScreen
 import app.opentv.ui.settings.WebManagerScreen
 import app.opentv.ui.theme.OpenTvTheme
 import app.opentv.ui.vod.MovieDetailScreen
@@ -579,19 +579,11 @@ private fun OpenTvApp(isTelevision: Boolean) {
             }
 
             composable(Routes.SETTINGS_HUB) {
-                SettingsHubScreen(
-                    onOpenProviders = { navController.navigate(Routes.PROVIDERS) },
-                    onOpenAddons = { navController.navigate(Routes.ADDONS) },
-                    onOpenGuide = { navController.navigate(Routes.EPG_SETTINGS) },
-                    onOpenChannels = { navController.navigate(Routes.CHANNELS) },
-                    onOpenWebManager = { navController.navigate(Routes.WEB_MANAGER) },
-                    onOpenDisplay = { navController.navigate(Routes.APP_SETTINGS) },
-                    onOpenParental = { navController.navigate(Routes.PARENTAL) },
-                    onOpenSync = { navController.navigate(Routes.SYNC) },
-                    onOpenRecordings = { navController.navigate(Routes.REC_SETTINGS) },
-                    onOpenAbout = { navController.navigate(Routes.ABOUT) },
+                SettingsScreen(
+                    sourcesViewModel = sourcesViewModel,
+                    onOpenAddSource = { navController.navigate(Routes.ADD_SOURCE) },
                     onOpenRemotePairing = { navController.navigate(Routes.REMOTE_PAIRING) },
-                    onBack = { navController.popBackStack() },
+                    onDismiss = { navController.popBackStack() },
                 )
             }
 

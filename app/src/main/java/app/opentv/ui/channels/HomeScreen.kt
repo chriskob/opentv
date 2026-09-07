@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
@@ -204,6 +205,13 @@ fun HomeScreen(
     // leftmost (channel) column slides it back and drops focus on the selected category.
     var railExpanded by remember { mutableStateOf(false) }
     var backScrollActive by remember { mutableStateOf(false) }
+    // True when the guide timeline is displaced from "now" (scrubbed, day-paged, panned forward).
+    var timeShifted by remember { mutableStateOf(false) }
+    // Bumped to ask GuideGrid to restore the cursor onto the playing channel at "now".
+    var guideRestoreTick by remember { mutableStateOf(0) }
+    // Bumped when a rail category gains focus: live-previews it and scrolls the guide to its
+    // first channel (channel 1), TiviMate-style.
+    var guideScrollTopTick by remember { mutableStateOf(0) }
     val railWidth by animateDpAsState(
         targetValue = if (railExpanded) 240.dp else 0.dp,
         label = "railWidth",
@@ -235,17 +243,26 @@ fun HomeScreen(
 
     // ---- Back button navigation flow ---------------------------------------------------------
     BackHandler(enabled = isFullScreen) {
-        val lastId = settings.lastChannelId
-        val matchInRows = rows.firstOrNull { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }
-        val targetRow = matchInRows ?: selectedRow?.takeIf { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }
+        // Return the guide to the channel that was ACTUALLY playing fullscreen. selectedRow is
+        // kept in lockstep with the player via PlayerScreen's onChannelChange (covers zapping),
+        // so it is authoritative here; lastChannelId is only a fallback for a fresh process.
+        val currentId = selectedRow?.primary?.id
+            ?: highlightedRow?.primary?.id
+            ?: settings.lastChannelId
+        val targetRow = rows.firstOrNull { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }
+            ?: selectedRow
+            ?: highlightedRow
         if (targetRow != null) {
             selectedRow = targetRow
             highlightedRow = targetRow
             val now = System.currentTimeMillis()
             highlightedProgramme = targetRow.programmes.firstOrNull { now in it.startUtcMillis until it.endUtcMillis } ?: targetRow.now
-        } else if (lastId > 0L) {
+        }
+        if (currentId > 0L && rows.isNotEmpty() && rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }) {
+            // The playing channel lives outside the current category rows: keep the selection
+            // pointing at it with a provisional row while the matching category loads.
             scope.launch {
-                val ch = graph.catalogRepository.channel(lastId)
+                val ch = graph.catalogRepository.channel(currentId)
                 if (ch != null) {
                     val prov = ChannelsViewModel.Row(
                         primary = ch,
@@ -258,9 +275,7 @@ fun HomeScreen(
                     highlightedRow = prov
                 }
             }
-        }
-        if (lastId > 0L && rows.isNotEmpty() && rows.none { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }) {
-            viewModel.selectCategoryForChannel(lastId)
+            viewModel.selectCategoryForChannel(currentId)
         }
         nowMillis = System.currentTimeMillis()
         viewModel.tick()
@@ -272,8 +287,10 @@ fun HomeScreen(
 
     // 1. If channel menu / recording dialog / background prompt is open, close it.
     // 2. If browsing past catch-up programmes (backScrollActive), Back returns to the live show.
-    // 3. If in the Guide timeline (!railExpanded), Back opens the Category/Channel List rail.
-    // 4. If in the Category/Channel List rail (railExpanded), Back opens the Main Menu sidebar.
+    // 3. If browsing away from the playing channel (catch-up scrub, forward walk, day-page, or a
+    //    different channel highlighted), Back returns to the playing channel at "now".
+    // 4. Otherwise (already on the playing channel at "now"), Back opens the Category/Channel
+    //    List rail, and from there the Main Menu sidebar.
     BackHandler(enabled = !isFullScreen && (channelMenu != null || recordTarget != null || showBackgroundPrompt || pendingLiveChannel != null)) {
         channelMenu = null
         recordTarget = null
@@ -281,23 +298,25 @@ fun HomeScreen(
         pendingLiveChannel = null
     }
 
-    BackHandler(enabled = !isFullScreen && backScrollActive && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
-        nowMillis = System.currentTimeMillis()
-        viewModel.tick()
-        viewModel.guideToNow()
-        backScrollActive = false
-        val targetRow = selectedRow ?: rows.firstOrNull()
-        if (targetRow != null) {
-            highlightedRow = targetRow
-            val now = System.currentTimeMillis()
-            highlightedProgramme = targetRow.programmes.firstOrNull { now in it.startUtcMillis until it.endUtcMillis } ?: targetRow.now
-            pendingGuideFocus = true
+    val browsingAwayFromLive = backScrollActive || timeShifted || guideHourOffset != 0 ||
+        (highlightedRow != null && selectedRow != null && highlightedRow?.primary?.id != selectedRow?.primary?.id)
+    BackHandler(enabled = !isFullScreen && !railExpanded && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
+        if (browsingAwayFromLive) {
+            nowMillis = System.currentTimeMillis()
+            viewModel.tick()
+            viewModel.guideToNow()
+            backScrollActive = false
+            val targetRow = selectedRow ?: rows.firstOrNull()
+            if (targetRow != null) {
+                highlightedRow = targetRow
+                val now = System.currentTimeMillis()
+                highlightedProgramme = targetRow.programmes.firstOrNull { now in it.startUtcMillis until it.endUtcMillis } ?: targetRow.now
+            }
+            guideRestoreTick++
+        } else {
+            railExpanded = true
+            pendingRailFocus = true
         }
-    }
-
-    BackHandler(enabled = !isFullScreen && !backScrollActive && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && !railExpanded) {
-        railExpanded = true
-        pendingRailFocus = true
     }
 
     BackHandler(enabled = !isFullScreen && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && railExpanded) {
@@ -472,6 +491,12 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // The channel the preview pane is currently streaming (it shares the live player with
+    // PlayerScreen). startLive uses this to recognise "fullscreen was requested for the channel
+    // already previewing", so the second OK hands the running stream to the full surface without
+    // a stop/restart.
+    var previewedChannelId by remember { mutableStateOf<Long?>(null) }
+
     // Watching a live channel while a recording runs opens a second stream on the same line — which
     // cuts the recording and can get a single-connection account banned. So every jump to full-screen
     // live is funnelled through [requestLive]: with a recording active it asks first.
@@ -486,7 +511,7 @@ fun HomeScreen(
             highlightedRow = match
             highlightedProgramme = match.now
         }
-        val isAlreadyPlayingThisChannel = (settings.lastChannelId == channel.id) &&
+        val isAlreadyPlayingThisChannel = (settings.lastChannelId == channel.id || previewedChannelId == channel.id) &&
             (previewController.player.playbackState == androidx.media3.common.Player.STATE_READY ||
              previewController.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)
 
@@ -526,6 +551,7 @@ fun HomeScreen(
         val url = graph.catalogRepository.resolvePlaybackUrl(channel, source)
         if (previewController.currentRequest?.url == url && (previewController.player.playbackState == androidx.media3.common.Player.STATE_READY || previewController.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)) {
             previewController.player.playWhenReady = true
+            previewedChannelId = channel.id
             return@LaunchedEffect
         }
         previewController.play(
@@ -537,6 +563,7 @@ fun HomeScreen(
             ),
             debounce = false,
         )
+        previewedChannelId = channel.id
     }
 
     LaunchedEffect(isFullScreen, previewSound) {
@@ -641,17 +668,23 @@ fun HomeScreen(
             PlayerScreen(
                 channelId = (selectedRow ?: highlightedRow ?: activeSelectedRow ?: activeHighlightedRow)?.primary?.id ?: (if (settings.lastChannelId > 0L) settings.lastChannelId else null),
                 onBack = {
-                    val lastId = settings.lastChannelId
-                    val matchInRows = rows.firstOrNull { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }
-                    val targetRow = matchInRows ?: selectedRow?.takeIf { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }
+                    // Mirror of the BackHandler above: the guide returns to the channel that was
+                    // actually playing fullscreen (selectedRow is synced via onChannelChange).
+                    val currentId = selectedRow?.primary?.id
+                        ?: highlightedRow?.primary?.id
+                        ?: settings.lastChannelId
+                    val targetRow = rows.firstOrNull { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }
+                        ?: selectedRow
+                        ?: highlightedRow
                     if (targetRow != null) {
                         selectedRow = targetRow
                         highlightedRow = targetRow
                         val now = System.currentTimeMillis()
                         highlightedProgramme = targetRow.programmes.firstOrNull { now in it.startUtcMillis until it.endUtcMillis } ?: targetRow.now
-                    } else if (lastId > 0L) {
+                    }
+                    if (currentId > 0L && rows.isNotEmpty() && rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }) {
                         scope.launch {
-                            val ch = graph.catalogRepository.channel(lastId)
+                            val ch = graph.catalogRepository.channel(currentId)
                             if (ch != null) {
                                 val prov = ChannelsViewModel.Row(
                                     primary = ch,
@@ -664,9 +697,7 @@ fun HomeScreen(
                                 highlightedRow = prov
                             }
                         }
-                    }
-                    if (lastId > 0L && rows.isNotEmpty() && rows.none { it.primary.id == lastId || it.variants.any { v -> v.id == lastId } }) {
-                        viewModel.selectCategoryForChannel(lastId)
+                        viewModel.selectCategoryForChannel(currentId)
                     }
                     nowMillis = System.currentTimeMillis()
                     viewModel.tick()
@@ -772,6 +803,10 @@ fun HomeScreen(
                         RailEntry(
                             label = stringResource(R.string.channels_manager_all_sources),
                             selected = selectedSource == null,
+                            onFocused = {
+                                viewModel.selectSource(null)
+                                guideScrollTopTick++
+                            },
                             onClick = {
                                 viewModel.selectSource(null)
                                 railExpanded = false
@@ -784,6 +819,10 @@ fun HomeScreen(
                         RailEntry(
                             label = source.name,
                             selected = selectedSource == source.id,
+                            onFocused = {
+                                viewModel.selectSource(source.id)
+                                guideScrollTopTick++
+                            },
                             onClick = {
                                 viewModel.selectSource(source.id)
                                 railExpanded = false
@@ -800,6 +839,10 @@ fun HomeScreen(
                     RailEntry(
                         label = stringResource(R.string.guide_favourites),
                         selected = favouritesOnly,
+                        onFocused = {
+                            viewModel.selectFavourites()
+                            guideScrollTopTick++
+                        },
                         onClick = {
                             viewModel.selectFavourites()
                             railExpanded = false
@@ -814,6 +857,10 @@ fun HomeScreen(
                     RailEntry(
                         label = stringResource(R.string.guide_all_channels),
                         selected = allSelected,
+                        onFocused = {
+                            viewModel.selectCategory(null)
+                            guideScrollTopTick++
+                        },
                         onClick = {
                             viewModel.selectCategory(null)
                             railExpanded = false
@@ -828,6 +875,10 @@ fun HomeScreen(
                     RailEntry(
                         label = group.label,
                         selected = groupSelected,
+                        onFocused = {
+                            viewModel.selectCategory(group.key)
+                            guideScrollTopTick++
+                        },
                         onClick = {
                             viewModel.selectCategory(group.key)
                             railExpanded = false
@@ -860,6 +911,22 @@ fun HomeScreen(
             } else {
                 // Hand the player the list you're browsing so it can zap channel up/down.
                 fun goFullscreen(channel: Channel) = requestLive(channel)
+
+                // TiviMate guide tuning: OK on a channel (or its live programme) selects it and
+                // plays it in the preview pane while the guide stays open; OK again on the
+                // already-selected channel goes fullscreen. The preview pane and PlayerScreen share
+                // one player, so the second OK hands the already-streaming playback to the full
+                // surface without a restart. Focus never leaves the guide on the first press.
+                fun tuneOrFullscreen(row: ChannelsViewModel.Row) {
+                    lastInteractionTime = System.currentTimeMillis()
+                    if (selectedRow?.primary?.id == row.primary.id) {
+                        requestLive(row.primary)
+                    } else {
+                        selectedRow = row
+                        highlightedRow = row
+                        highlightedProgramme = row.now
+                    }
+                }
 
                 // Record the highlighted channel's now-programme (bounded to its end), or stop it
                 // if it's already recording. Powers the preview pane's quick record dot.
@@ -906,6 +973,35 @@ fun HomeScreen(
                         }
                     },
                 )
+                // Per-channel catch-up capability, mirroring CatchupResolver: the badge shows
+                // exactly when the resolver would build a catch-up URL for that channel (archive
+                // flag, catch-up template, Xtream portal source, or Xtream-format stream URL).
+                // Computed OFF the main thread with a linear probe — the resolver's own regex has
+                // catastrophic backtracking on non-matching URLs, and running it per channel in
+                // composition blocked input dispatch for seconds (ANR).
+                val catchUpChannelIds by produceState(
+                    initialValue = emptySet<Long>(),
+                    sources,
+                    rows,
+                ) {
+                    val byId = sources.associateBy { it.id }
+                    value = withContext(Dispatchers.Default) {
+                        rows.mapNotNull { row ->
+                            val ch = row.primary
+                            val src = byId[ch.sourceId]
+                            val capable = ch.tvArchive ||
+                                !ch.cmd.isNullOrBlank() ||
+                                src?.kind == app.opentv.data.model.SourceKind.XTREAM ||
+                                !src?.username.isNullOrBlank() ||
+                                looksLikeXtreamStream(ch.streamUrl)
+                            if (capable) ch.id else null
+                        }.toSet()
+                    }
+                }
+                // TiviMate-style guide header stamp: when the guide last synced + channel count.
+                val epgInfoLine = if (settings.lastGuideUpdatedMillis > 0L) {
+                    "EPG updated ${formatTime(settings.lastGuideUpdatedMillis)} · ${settings.lastGuideChannelCount} channels"
+                } else null
                 // Shared by both layouts: focus follows the highlight and collapses the rail; LEFT
                 // from the leftmost element reopens the rail (consumed only when it was hidden).
                 val onFocusChannel: (ChannelsViewModel.Row, Programme?) -> Unit = remember(onDismissMainMenu) {
@@ -935,7 +1031,7 @@ fun HomeScreen(
                         selectedKey = activeHighlightedRow?.key,
                         playingKey = activeSelectedRow?.key,
                         focusRequester = guideFocusRequester,
-                        onSelectRow = { row -> requestLive(row.primary) },
+                        onSelectRow = { row -> tuneOrFullscreen(row) },
                         onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
@@ -958,17 +1054,22 @@ fun HomeScreen(
                         rows = rows,
                         windowStartMillis = windowStart,
                         dayOffset = guideHourOffset / 24,
+                        catchUpChannelIds = catchUpChannelIds,
+                        epgInfoLine = epgInfoLine,
+                        restoreTick = guideRestoreTick,
+                        onTimeShifted = { timeShifted = it },
+                        scrollTopTick = guideScrollTopTick,
                         selectedKey = activeHighlightedRow?.key,
                         playingKey = activeSelectedRow?.key,
                         focusRequester = guideFocusRequester,
-                        onSelectRow = { row -> requestLive(row.primary) },
+                        onSelectRow = { row -> tuneOrFullscreen(row) },
                         onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
                         onProgramme = { row, programme ->
                             val liveNow = nowMillis in programme.startUtcMillis until programme.endUtcMillis
                             val isPast = programme.endUtcMillis <= nowMillis
                             if (liveNow) {
-                                requestLive(row.primary)
+                                tuneOrFullscreen(row)
                             } else if (isPast) {
                                 recordScope.launch {
                                     val source = graph.sourceRepository.byId(row.primary.sourceId)
@@ -992,7 +1093,6 @@ fun HomeScreen(
                             }
                         },
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
-                        onExitLeftFromChannel = onExitLeftChannel,
                         onEnableBackScroll = { backScrollActive = true },
                         onJumpToLive = {
                             nowMillis = System.currentTimeMillis()
@@ -1479,6 +1579,7 @@ private fun RailEntry(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    onFocused: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1493,7 +1594,10 @@ private fun RailEntry(
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .fillMaxWidth()
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused?.invoke()
+            }
             .clip(RoundedCornerShape(8.dp))
             .background(
                 if (focused) Color(0xFFF0F4F8)
@@ -1707,3 +1811,18 @@ private fun EmptyState(onAddSource: () -> Unit) {
 private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
 
 private fun formatTime(utcMillis: Long): String = timeFormat.format(Date(utcMillis))
+
+/**
+ * Linear, backtracking-free probe for Xtream-format stream URLs (`host/[live/]user/pass/id`).
+ * Mirrors CatchupResolver.XTREAM_URL_REGEX without its catastrophic-backtracking risk on
+ * non-matching inputs — this runs once per channel over the whole list, off the main thread.
+ */
+private fun looksLikeXtreamStream(url: String): Boolean {
+    val schemeEnd = url.indexOf("://")
+    if (schemeEnd <= 0 || !url.startsWith("http")) return false
+    val path = url.substring(schemeEnd + 3).substringBefore('?').substringBefore('#').trimEnd('/')
+    val segments = path.split('/')
+    if (segments.size < 4) return false
+    val afterHost = if (segments[1].equals("live", ignoreCase = true)) segments.drop(2) else segments.drop(1)
+    return afterHost.size >= 3 && afterHost.last().isNotBlank()
+}

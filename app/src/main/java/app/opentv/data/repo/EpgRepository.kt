@@ -284,6 +284,10 @@ class EpgRepository(
             val start = nowUtcMillis - (nowUtcMillis % (30 * 60 * 1000L))
             val lookahead = 6 * 60 * 60 * 1000L
             runCatching { loadWindow(start, start + lookahead) }
+            // Stamp for the guide header ("EPG updated … · N channels"). total = channels the
+            // guide covers; written above is programme rows, not channels, hence total here.
+            settings?.lastGuideUpdatedMillis = nowUtcMillis
+            settings?.lastGuideChannelCount = total
             SyncSummary(succeeded, failed, written, matched, total)
         }
 

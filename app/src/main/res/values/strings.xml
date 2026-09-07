@@ -200,6 +200,7 @@
     <string name="settings_sync_subtitle">Copy continue-watching to another device over wifi</string>
     <string name="settings_about_title">About</string>
     <string name="settings_about_subtitle">Version, updates, licence and links</string>
+    <string name="settings_pick_from_menu">Choose a section from the menu on the left</string>
 
     <!-- ============================ Display & playback settings ============================ -->
     <string name="settings_appearance">Appearance</string>

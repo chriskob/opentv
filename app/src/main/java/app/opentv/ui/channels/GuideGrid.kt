@@ -40,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -82,7 +83,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -168,13 +171,23 @@ fun GuideGrid(
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
     onProgramme: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
-    onExitLeftFromChannel: () -> Boolean = { false },
     onEnableBackScroll: () -> Unit = {},
     onJumpToLive: () -> Unit = {},
     highlightedProgramme: Programme? = null,
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
     dayOffset: Int = 0,
+    /** Channel ids whose catch-up the resolver can actually build (per-channel capability) —
+     *  the guide's catch-up badge shows exactly for these, never for the rest. */
+    catchUpChannelIds: Set<Long> = emptySet(),
+    /** "EPG updated … · N channels" stamp shown in the time header, or null until first sync. */
+    epgInfoLine: String? = null,
+    /** Increment to ask the grid to restore the cursor onto the playing channel at "now". */
+    restoreTick: Int = 0,
+    /** Bumped when a rail category is focus-previewed: snaps the grid to its first channel. */
+    scrollTopTick: Int = 0,
+    /** Fires whenever the timeline is displaced from "now" (scrubbed, paged, or panned). */
+    onTimeShifted: (Boolean) -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
     backScrollActive: Boolean = false,
     modifier: Modifier = Modifier,
@@ -231,6 +244,125 @@ fun GuideGrid(
     var focusCenterJob by remember { mutableStateOf<Job?>(null) }
     var horizontalScrollJob by remember { mutableStateOf<Job?>(null) }
     val coroutineScope = rememberCoroutineScope()
+
+    // ---- TiviMate-style timeline scrub (hold LEFT / RIGHT) -------------------------------------
+    // HOLD Left/Right anywhere scrolls the timeline continuously (accelerating) within the loaded
+    // guide window. Single taps fall through untouched and keep stepping programme-by-programme.
+    // On release, focus re-anchors to the programme now under the viewport's left edge, so the
+    // cursor is back on screen and Up/Down continues from the scrubbed time. Back returns to live
+    // (HomeScreen's backScrollActive handler), which is also how the category rail is reached.
+    var holdPressActive by remember { mutableStateOf(false) }
+    var pressIsForward by remember { mutableStateOf(false) }
+    var scrubEngaged by remember { mutableStateOf(false) }
+    var scrubIsForward by remember { mutableStateOf(false) }
+    var holdTimeoutJob by remember { mutableStateOf<Job?>(null) }
+    var scrubJob by remember { mutableStateOf<Job?>(null) }
+    // Until this time, keep-visible auto-scrolls are suppressed so nothing yanks the timeline
+    // while the post-scrub re-anchor settles.
+    var scrubSettlingUntilMillis by remember { mutableLongStateOf(0L) }
+
+    val engageScrub: (Boolean) -> Unit = { forward ->
+        if (!scrubEngaged) {
+            scrubEngaged = true
+            scrubIsForward = forward
+            holdTimeoutJob?.cancel()
+            scrubJob?.cancel()
+            scrubJob = coroutineScope.launch {
+                // Either direction enters back-scroll layout: rows re-lay out from the loaded
+                // window's start and the viewport is anchored on "now" first — so pressing Back
+                // afterwards restores "now + playing channel" for forward scrubs too.
+                onEnableBackScroll()
+                val frameStart = calculateMountedFrameStartTime(System.currentTimeMillis())
+                scroll.scrollTo(
+                    calculateInitialScrollOffsetPx(
+                        windowStartMillis = windowStartMillis,
+                        frameStartMillis = frameStart,
+                        minuteDp = MINUTE_DP,
+                        density = density.density,
+                    ),
+                )
+                delay(30)
+                var lastFrame = System.currentTimeMillis()
+                val startedAt = lastFrame
+                while (isActive) {
+                    delay(16)
+                    val frame = System.currentTimeMillis()
+                    val dt = (frame - lastFrame).coerceAtLeast(1L)
+                    lastFrame = frame
+                    // ~10 minutes/sec at first, easing to ~90 minutes/sec after a few seconds held:
+                    // nearby programmes stay precise, and a week of catch-up is still only seconds.
+                    val heldSeconds = (frame - startedAt) / 1000f
+                    val minutesPerSecond = (SCRUB_MINUTES_PER_SECOND_START +
+                        heldSeconds * SCRUB_ACCELERATION).coerceAtMost(SCRUB_MINUTES_PER_SECOND_MAX)
+                    val deltaPx = (minutesPerSecond * MINUTE_DP * density.density * dt / 1000f).roundToInt()
+                    if (deltaPx > 0) {
+                        val target = if (scrubIsForward) scroll.value + deltaPx else scroll.value - deltaPx
+                        scroll.scrollTo(target.coerceIn(0, scroll.maxValue))
+                    }
+                }
+            }
+        }
+    }
+
+    val onDirectionPressStarted: (Boolean) -> Unit = { forward ->
+        pressIsForward = forward
+        holdPressActive = true
+        holdTimeoutJob?.cancel()
+        holdTimeoutJob = coroutineScope.launch {
+            delay(SCRUB_ENGAGE_MILLIS)
+            if (holdPressActive && !scrubEngaged) engageScrub(pressIsForward)
+        }
+    }
+
+    val releaseScrub: () -> Unit = {
+        holdTimeoutJob?.cancel()
+        scrubJob?.cancel()
+        scrubJob = null
+        val wasScrubbing = scrubEngaged
+        scrubEngaged = false
+        holdPressActive = false
+        if (wasScrubbing) {
+            // Kill any in-flight keep-visible animation so nothing can drift after release, and
+            // suppress auto-scrolls briefly while the re-anchor settles.
+            horizontalScrollJob?.cancel()
+            scrubSettlingUntilMillis = System.currentTimeMillis() + SCRUB_SETTLE_MILLIS
+            // Re-anchor focus to the programme containing/nearest the viewport's left edge, and
+            // set targetProgKey EXPLICITLY: the picker's fallback chain ends at the live
+            // programme, which can sit far right of the scrub position — without this, focus
+            // jumps there and keep-visible animates the whole timeline back (cursor "vanishes",
+            // guide keeps moving).
+            val key = activeFocusedKey ?: playingKey ?: selectedKey ?: rows.firstOrNull()?.key
+            val row = rows.firstOrNull { it.key == key }
+            val scrollDp = with(density) { scroll.value.toDp() }
+            val anchorMillis = effectiveStartMillis + (scrollDp.value / MINUTE_DP).toLong() * 60_000L
+            val anchorProgramme = row?.programmes
+                ?.firstOrNull { anchorMillis in it.startUtcMillis until it.endUtcMillis }
+                ?: row?.programmes?.minByOrNull {
+                    if (anchorMillis < it.startUtcMillis) it.startUtcMillis - anchorMillis
+                    else anchorMillis - it.endUtcMillis
+                }
+            val targetReq = key?.let { rowFocusRequesters[it] }
+            if (row != null && targetReq != null) {
+                temporalAnchorMillis = anchorProgramme?.let { computeProgrammeMidpoint(it) } ?: anchorMillis
+                targetProgKey = anchorProgramme?.id
+                coroutineScope.launch {
+                    delay(16)
+                    for (attempt in 0..4) {
+                        val res = runCatching { targetReq.requestFocus() }
+                        if (res.isSuccess) break
+                        delay(25)
+                    }
+                }
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            holdTimeoutJob?.cancel()
+            scrubJob?.cancel()
+        }
+    }
 
     val focusAndCenterRow = { targetKey: Any?, animate: Boolean ->
         if (rows.isNotEmpty()) {
@@ -298,20 +430,42 @@ fun GuideGrid(
     }
 
     LaunchedEffect(backScrollActive) {
-        val targetPx = if (backScrollActive) {
+        if (backScrollActive) {
             val now = System.currentTimeMillis()
             val frameStart = calculateMountedFrameStartTime(now)
-            calculateInitialScrollOffsetPx(
+            val targetPx = calculateInitialScrollOffsetPx(
                 windowStartMillis = windowStartMillis,
                 frameStartMillis = frameStart,
                 minuteDp = MINUTE_DP,
                 density = density.density,
             )
-        } else {
-            0
+            if (targetPx != scroll.value) {
+                scroll.scrollTo(targetPx)
+            }
         }
-        if (targetPx != scroll.value) {
-            scroll.scrollTo(targetPx)
+    }
+
+    // HomeScreen Back handler: restore the cursor onto the playing channel at "now".
+    LaunchedEffect(restoreTick) {
+        if (restoreTick > 0) {
+            focusAndCenterRow(playingKey ?: selectedKey, false)
+        }
+    }
+
+    // Report timeline displacement so HomeScreen's Back handler knows the user is browsing
+    // away from "now" (scrubbed, day-paged, or panned forward) versus sitting on live.
+    LaunchedEffect(backScrollActive, scroll.value) {
+        onTimeShifted(backScrollActive || scroll.value > 4)
+    }
+
+    // Rail category focus-preview: snap the grid to the top (channel 1) and clear any stale
+    // cursor state, so the previewed category always starts from its first channel.
+    LaunchedEffect(scrollTopTick) {
+        if (scrollTopTick > 0) {
+            listState.scrollToItem(0, 0)
+            activeFocusedKey = null
+            activeFocusedIndex = null
+            targetProgKey = null
         }
     }
 
@@ -395,10 +549,54 @@ fun GuideGrid(
         modifier
             .fillMaxSize()
             .onPreviewKeyEvent { e ->
-                if (e.type == KeyEventType.KeyDown && (e.key == Key.MediaPlay || e.key == Key.MediaPlayPause)) {
-                    handleJumpToLive()
-                    true
-                } else false
+                when {
+                    // MediaPlay jumps the guide back to the live edge.
+                    e.type == KeyEventType.KeyDown && (e.key == Key.MediaPlay || e.key == Key.MediaPlayPause) -> {
+                        handleJumpToLive()
+                        true
+                    }
+                    // TiviMate-style scrub: HOLD Left/Right anywhere on the timeline to rewind or
+                    // fast-forward; single taps return false and keep stepping programme focus.
+                    // Key repeats are consumed once a press is active so focus-walking stops and
+                    // the scrub takes over.
+                    e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft -> {
+                        if (e.nativeKeyEvent.repeatCount == 0) {
+                            onDirectionPressStarted(false)
+                            false
+                        } else {
+                            if (holdPressActive) engageScrub(false)
+                            holdPressActive
+                        }
+                    }
+                    e.type == KeyEventType.KeyUp && e.key == Key.DirectionLeft -> {
+                        if (scrubEngaged) {
+                            releaseScrub()
+                            true
+                        } else {
+                            holdPressActive = false
+                            false
+                        }
+                    }
+                    e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight -> {
+                        if (e.nativeKeyEvent.repeatCount == 0) {
+                            onDirectionPressStarted(true)
+                            false
+                        } else {
+                            if (holdPressActive) engageScrub(true)
+                            holdPressActive
+                        }
+                    }
+                    e.type == KeyEventType.KeyUp && e.key == Key.DirectionRight -> {
+                        if (scrubEngaged) {
+                            releaseScrub()
+                            true
+                        } else {
+                            holdPressActive = false
+                            false
+                        }
+                    }
+                    else -> false
+                }
             }
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -406,6 +604,7 @@ fun GuideGrid(
                 windowStartMillis = effectiveStartMillis,
                 nowMillis = currentTickMillis,
                 scroll = scroll,
+                epgInfoLine = epgInfoLine,
             )
             Spacer(Modifier.height(2.dp))
 
@@ -432,6 +631,7 @@ fun GuideGrid(
                             nowMillis = currentTickMillis,
                             temporalAnchorMillis = temporalAnchorMillis,
                             scroll = scroll,
+                            catchUpChannelIds = catchUpChannelIds,
                             isSelected = isPlaying,
                             isRowHighlighted = isHighlighted,
                             targetProgKey = if (isHighlighted) targetProgKey else null,
@@ -454,7 +654,9 @@ fun GuideGrid(
 
                                 // Keep horizontally visible if focused block is outside current viewport
                                 // Only scroll if NOT navigating vertically AND programme is completely offscreen
-                                if (prog != null && !isNavigatingVertically) {
+                                if (prog != null && !isNavigatingVertically &&
+                                    System.currentTimeMillis() >= scrubSettlingUntilMillis
+                                ) {
                                     val progStartX = widthFor(effectiveStartMillis, prog.startUtcMillis)
                                     val progEndX = widthFor(effectiveStartMillis, prog.endUtcMillis)
                                     val currentScrollDp = with(density) { scroll.value.toDp() }
@@ -472,8 +674,6 @@ fun GuideGrid(
                             },
                             onProgramme = { programme -> onProgramme(row, programme) },
                             onToggleFavourite = { onToggleFavourite(row) },
-                            onExitLeft = onExitLeftFromChannel,
-                            onEnableBackScroll = onEnableBackScroll,
                             onNavigateVertical = { isDown -> handleNavigateVertical(isDown, index) },
                             onWrapToBottom = { handleWrapToBottom() },
                             onWrapToTop = { handleWrapToTop() },
@@ -771,6 +971,7 @@ private fun TimeHeader(
     windowStartMillis: Long,
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
+    epgInfoLine: String? = null,
 ) {
     val currentDateTimeFmt = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
     val slotTimeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
@@ -778,11 +979,12 @@ private fun TimeHeader(
     Row(
         Modifier
             .fillMaxWidth()
-            .height(28.dp)
+            .height(38.dp)
             .background(Color(0xFF161E26)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Top-left label: Current Date & Time in clean Cyan, matching TiviMate
+        // Top-left label: Current Date & Time in clean Cyan, matching TiviMate, with the
+        // EPG sync stamp ("EPG updated … · N channels") stacked underneath it.
         Row(
             Modifier
                 .width(CHANNEL_COLUMN)
@@ -790,12 +992,23 @@ private fun TimeHeader(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = currentDateTimeFmt.format(Date(nowMillis)),
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Medium),
-                color = AppTheme.primary,
-                maxLines = 1,
-            )
+            Column {
+                Text(
+                    text = currentDateTimeFmt.format(Date(nowMillis)),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                    color = AppTheme.primary,
+                    maxLines = 1,
+                )
+                if (epgInfoLine != null) {
+                    Text(
+                        text = epgInfoLine,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = Color(0xFF8B9BA8),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
 
         // Timeline slots
@@ -810,7 +1023,7 @@ private fun TimeHeader(
                     Box(
                         Modifier
                             .width(HALF_HOUR_WIDTH)
-                            .height(28.dp)
+                            .height(38.dp)
                             .padding(start = 6.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
@@ -837,6 +1050,7 @@ private fun GuideRow(
     nowMillis: Long,
     temporalAnchorMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
+    catchUpChannelIds: Set<Long> = emptySet(),
     isSelected: Boolean,
     isRowHighlighted: Boolean = false,
     targetProgKey: Long? = null,
@@ -847,8 +1061,6 @@ private fun GuideRow(
     onFocus: (Programme?) -> Unit,
     onProgramme: (Programme) -> Unit,
     onToggleFavourite: () -> Unit = {},
-    onExitLeft: () -> Boolean = { false },
-    onEnableBackScroll: () -> Unit = {},
     onNavigateVertical: (isDown: Boolean) -> Boolean = { false },
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
@@ -926,8 +1138,10 @@ private fun GuideRow(
                 )
             }
 
-            // Catchup Icon if available (circular replay icon ↺)
-            if (row.primary.tvArchive) {
+            // Catchup Icon if available (circular replay icon ↺) — per-channel, mirroring what
+            // CatchupResolver can actually build for THIS channel (flag, template, portal source,
+            // or Xtream-format stream URL). Channels outside that get no badge.
+            if (row.primary.tvArchive || row.primary.id in catchUpChannelIds) {
                 Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.Filled.History,
@@ -980,7 +1194,6 @@ private fun GuideRow(
                                 when (e.key) {
                                     Key.DirectionUp -> onNavigateVertical(false)
                                     Key.DirectionDown -> onNavigateVertical(true)
-                                    Key.DirectionLeft -> onExitLeft()
                                     else -> false
                                 }
                             } else false
@@ -1087,14 +1300,12 @@ private fun GuideRow(
                         onFocus = { onFocus(prog) },
                         onClick = { onProgramme(prog) },
                         onNavigateVertical = onNavigateVertical,
-                        onExitLeft = if (isFirst) onExitLeft else null,
                         onMoveLeft = if (!isFirst) {
                             { runCatching { blockFocusRequesters[pOrder - 1].requestFocus() } }
                         } else null,
                         onMoveRight = if (!isLast) {
                             { runCatching { blockFocusRequesters[pOrder + 1].requestFocus() } }
                         } else null,
-                        onEnableBackScroll = if (isFirst) onEnableBackScroll else null,
                     )
                 }
 
@@ -1169,10 +1380,8 @@ private fun ProgrammeBlock(
     onFocus: () -> Unit = {},
     onClick: () -> Unit,
     onNavigateVertical: ((isDown: Boolean) -> Boolean)? = null,
-    onExitLeft: (() -> Boolean)? = null,
     onMoveLeft: (() -> Unit)? = null,
     onMoveRight: (() -> Unit)? = null,
-    onEnableBackScroll: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
 
@@ -1203,17 +1412,14 @@ private fun ProgrammeBlock(
                         onNavigateVertical(true)
                     } else false
                 } else if (e.key == Key.DirectionLeft) {
+                    // Single Left taps step between blocks; on the leftmost block Left is a no-op
+                    // (the category rail is reached with Back). HOLD Left is the timeline scrub,
+                    // handled at the GuideGrid root.
                     if (e.type == KeyEventType.KeyDown) {
-                        when {
-                            onMoveLeft != null -> {
-                                onMoveLeft()
-                                true
-                            }
-                            onExitLeft != null -> {
-                                onExitLeft()
-                            }
-                            else -> false
-                        }
+                        if (onMoveLeft != null) {
+                            onMoveLeft()
+                            true
+                        } else false
                     } else false
                 } else if (e.key == Key.DirectionRight) {
                     if (onMoveRight != null) {
@@ -1282,6 +1488,16 @@ private fun widthFor(fromMillis: Long, toMillis: Long): Dp {
 }
 
 private const val MINUTE_DP = 7.0f
+
+// ---- TiviMate-style hold-to-scrub tuning ------------------------------------------------
+/** How long Left/Right must be held before the timeline scrub engages (a tap stays a tap). */
+private const val SCRUB_ENGAGE_MILLIS = 400L
+/** Scrub speed in minutes of timeline per second: start, acceleration per second held, cap. */
+private const val SCRUB_MINUTES_PER_SECOND_START = 10f
+private const val SCRUB_ACCELERATION = 20f
+private const val SCRUB_MINUTES_PER_SECOND_MAX = 90f
+/** How long after a scrub release keep-visible auto-scrolls stay suppressed. */
+private const val SCRUB_SETTLE_MILLIS = 400L
 private const val PAST_HOURS = 24
 private const val FUTURE_HOURS = 24
 private const val HOURS_IN_WINDOW = PAST_HOURS + FUTURE_HOURS
