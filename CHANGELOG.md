@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.12.81
+
+- **TiviMate-Style Guide Scrubbing**:
+  - Long-hold Left/Right scrubs the guide timeline (accelerating), auto-anchoring at "now".
+  - Release re-anchors the cursor onto the programme at the scrub position with no drift; keep-visible auto-scrolls are suppressed while settling.
+- **Context-Aware Back in the Guide**:
+  - Back returns the cursor to the playing channel at "now" after catch-up scrubbing, forward walking, day-paging, or browsing another channel.
+  - Only when already on the playing channel at "now" does Back open the category rail → main menu.
+- **Player Timeline = Immediate 10s Skips**:
+  - Each Left/Right press on the timeline seeks exactly 10 seconds (accelerating 10s → 60s while held).
+  - Works from live TV even when the stream reports no window length; the progress pip and time readout track the real player position.
+- **Preview Player Tuning (TiviMate Guide Flow)**:
+  - OK in the guide plays the channel in the preview player and keeps the guide open; a second OK goes fullscreen with a seamless same-player handoff.
+  - Back from fullscreen returns the guide to the channel actually playing.
+- **Rail Category Focus-Preview**:
+  - Stopping the cursor on a rail entry (favourites, all channels, categories, sources) live-switches the guide to it, always starting at channel 1.
+- **Settings Slide-Out Menu**:
+  - Replaced the settings card grid with a persistent slide-out menu; sections open on the right, BACK row exits.
+- **Per-Channel Catch-Up Badge**:
+  - Guide shows the ↺ catch-up marker per channel using the same rule as the catch-up resolver (flags, template, portal source, or Xtream-format stream URLs).
+  - Capability set computed off the main thread with a linear probe (fixes an input-dispatch ANR from regex backtracking).
+- **"EPG updated" Guide Stamp**:
+  - Guide header shows when the EPG last synced and how many channels it covers.
+
 ## 0.12.80
 
 - **Cross-Category History Tuning & Guide Synchronization**:
