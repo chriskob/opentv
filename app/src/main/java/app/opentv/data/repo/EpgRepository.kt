@@ -11,6 +11,7 @@ import app.opentv.data.db.ChannelDao
 import app.opentv.data.db.EpgChannelAliasDao
 import app.opentv.data.db.EpgFeedDao
 import app.opentv.data.db.ProgrammeDao
+import app.opentv.data.db.OpenTvDatabase
 import app.opentv.data.db.SourceDao
 import app.opentv.data.model.EpgChannelAlias
 import app.opentv.data.model.EpgFeed
@@ -72,6 +73,7 @@ class EpgRepository(
     private val api: XtreamApi,
     private val http: OkHttpClient,
     private val settings: AppSettings? = null,
+    private val db: OpenTvDatabase? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -165,7 +167,10 @@ class EpgRepository(
     private val windowCacheMutex = Mutex()
     private var railCacheStart: Long = 0L
     private var railCacheEnd: Long = 0L
-    private val railWindowCache = LinkedHashMap<String, List<Programme>>()
+    // Access-ordered so the eviction loop in [windowForChannelsCached] is true LRU: the
+    // category the user is currently bouncing between stays cached even when a big
+    // category loaded in between would otherwise push it out by insertion age.
+    private val railWindowCache = LinkedHashMap<String, List<Programme>>(0, 0.75f, true)
     private val railCacheCap = 2_500
 
     suspend fun windowForChannelsCached(
@@ -190,6 +195,46 @@ class EpgRepository(
             railWindowCache.remove(evict)
         }
         requested.mapNotNull { id -> railWindowCache[id]?.let { id to it } }.toMap()
+    }
+
+    /**
+     * The guide's quick "immediate viewing range" fetch, rail-cache aware.
+     *
+     * Every category switch asks for roughly the same now-2h→now+6h window. When the 48h
+     * [railWindowCache] already holds a channel — any category browsed this half-hour — its
+     * quick window is sliced out of memory and only channels never seen before hit the
+     * database. The first visit to a category costs one query; every revisit costs none,
+     * which is what makes rail category browsing feel instant.
+     */
+    suspend fun quickWindowForChannels(
+        epgIds: List<String>,
+        fromUtcMillis: Long,
+        toUtcMillis: Long,
+    ): Map<String, List<Programme>> = windowCacheMutex.withLock {
+        if (epgIds.isEmpty()) return@withLock emptyMap()
+        val out = HashMap<String, List<Programme>>(epgIds.size)
+        val missing = ArrayList<String>()
+        // Slice only when the quick window sits fully inside the cached 48h range — true for
+        // live browsing. A catch-up hour offset widens the window backwards past the cache,
+        // and slicing a cache that doesn't cover the ask would return wrong-time programmes.
+        if (railCacheStart != 0L && fromUtcMillis >= railCacheStart && toUtcMillis <= railCacheEnd) {
+            for (id in epgIds) {
+                val cached = railWindowCache[id]
+                if (cached != null) {
+                    out[id] = cached.filter { it.endUtcMillis > fromUtcMillis && it.startUtcMillis < toUtcMillis }
+                } else {
+                    missing += id
+                }
+            }
+        } else {
+            missing.addAll(epgIds)
+        }
+        if (missing.isNotEmpty()) {
+            windowForChannels(missing, fromUtcMillis, toUtcMillis).forEach { (id, progs) ->
+                out[id] = progs
+            }
+        }
+        out
     }
 
     suspend fun upcoming(epgChannelId: String, nowUtcMillis: Long, limit: Int = 12): List<Programme> =
@@ -314,7 +359,9 @@ class EpgRepository(
 
             if (succeeded > 0) {
                 programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
+                programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
             }
+            reclaimDiskSpace()
 
             val (matched, total) = runMatcher()
             val start = nowUtcMillis - (nowUtcMillis % (30 * 60 * 1000L))
@@ -328,6 +375,46 @@ class EpgRepository(
             windowCacheMutex.withLock { railWindowCache.clear() }
             SyncSummary(succeeded, failed, written, matched, total)
         }
+
+    /**
+     * Reclaims disk space after the prune passes. SQLite moves deleted rows to a freelist but
+     * never returns the pages to the OS, so a database that once held a large guide stays at
+     * its high-water mark forever unless it is vacuumed. The WAL is checkpoint-truncated
+     * unconditionally (cheap); a full VACUUM runs only when the freelist holds meaningful
+     * space, since it rewrites the whole file. All sizes are logged for on-device diagnostics.
+     */
+    private suspend fun reclaimDiskSpace() {
+        val sqlite = db?.openHelper?.writableDatabase ?: return
+        withContext(Dispatchers.IO) {
+            runCatching {
+                sqlite.query("PRAGMA wal_checkpoint(TRUNCATE);").use { it.close() }
+                fun pragmaLong(name: String): Long =
+                    sqlite.query("PRAGMA $name;").use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+                val pageSize = pragmaLong("page_size")
+                val beforePages = pragmaLong("page_count")
+                val freeBytes = pageSize * pragmaLong("freelist_count")
+                Log.i(
+                    TAG,
+                    "EPG db: %.1f MB on disk, %.1f MB reclaimable".format(
+                        beforePages * pageSize / 1048576.0,
+                        freeBytes / 1048576.0,
+                    ),
+                )
+                if (freeBytes > VACUUM_THRESHOLD_BYTES) {
+                    Log.i(TAG, "Reclaiming %.1f MB via VACUUM...".format(freeBytes / 1048576.0))
+                    sqlite.execSQL("VACUUM")
+                    val afterBytes = pageSize * pragmaLong("page_count")
+                    Log.i(
+                        TAG,
+                        "VACUUM done: %.1f MB -> %.1f MB".format(
+                            beforePages * pageSize / 1048576.0,
+                            afterBytes / 1048576.0,
+                        ),
+                    )
+                }
+            }.onFailure { Log.w(TAG, "Disk reclaim skipped: ${it.message}") }
+        }
+    }
 
     private sealed interface FeedResult {
         data class Success(val programmes: Int, val channels: Int) : FeedResult
@@ -357,9 +444,14 @@ class EpgRepository(
                         }
                     },
                     onProgramme = { programme ->
-                        // Skip anything that finished before the retention cut-off; no point
-                        // writing rows we are about to prune.
-                        if (programme.endUtcMillis >= nowUtcMillis - RETENTION_PAST_MILLIS) {
+                        // Skip anything outside the retention window; no point writing rows we
+                        // are about to prune. Past is bounded for catch-up browsing, future is
+                        // bounded because providers ship 7-14 day schedules while the guide
+                        // shows 48h and scheduled recordings only need ~7 days ahead — storing
+                        // the full horizon for every channel is what grew the database past 1 GB.
+                        if (programme.endUtcMillis >= nowUtcMillis - RETENTION_PAST_MILLIS &&
+                            programme.startUtcMillis <= nowUtcMillis + RETENTION_FUTURE_MILLIS
+                        ) {
                             batch += programme
                             if (batch.size >= BATCH_SIZE) {
                                 programmeDao.upsertAll(batch)
@@ -512,8 +604,18 @@ class EpgRepository(
         /** Writes per transaction. Large enough to be fast, small enough not to hold WAL open. */
         const val BATCH_SIZE = 500
 
-        /** Keep finished programmes for 7 days to support catch-up / archive TV browsing. */
-        val RETENTION_PAST_MILLIS: Long = TimeUnit.DAYS.toMillis(7)
+        /** Keep finished programmes for 3 days to support catch-up / archive TV browsing. */
+        val RETENTION_PAST_MILLIS: Long = TimeUnit.DAYS.toMillis(3)
+
+        /**
+         * Cap on how far ahead programmes are stored. Feeds publish 7-14 day schedules, but the
+         * guide renders 48h and the recording scheduler only needs ~7 days — capping this is
+         * what keeps the database a fraction of the size of an uncapped store.
+         */
+        val RETENTION_FUTURE_MILLIS: Long = TimeUnit.DAYS.toMillis(7)
+
+        /** Vacuum only when the freelist holds at least this much — a full rewrite is not cheap. */
+        const val VACUUM_THRESHOLD_BYTES: Long = 32L * 1024 * 1024
 
         /** Feeds publish rolling windows; refreshing more often than this is rude. */
         val REFRESH_INTERVAL_MILLIS: Long = TimeUnit.HOURS.toMillis(6)

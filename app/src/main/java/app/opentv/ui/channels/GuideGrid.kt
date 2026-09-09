@@ -410,11 +410,15 @@ fun GuideGrid(
                     listState.scrollToItem(targetVisible, 0)
                 }
                 delay(30)
-                val targetReq = rowFocusRequesters[k] ?: activeCellFocusRequester
-                for (attempt in 0..3) {
-                    val res = runCatching { targetReq.requestFocus() }
-                    if (res.isSuccess) break
-                    delay(30)
+                // While the rail is previewing, focus must stay in the rail: centering is purely
+                // visual. Reclaiming row focus here would collapse the rail (onFocusRow closes it).
+                if (!previewTopRow) {
+                    val targetReq = rowFocusRequesters[k] ?: activeCellFocusRequester
+                    for (attempt in 0..3) {
+                        val res = runCatching { targetReq.requestFocus() }
+                        if (res.isSuccess) break
+                        delay(30)
+                    }
                 }
             }
         }
@@ -448,9 +452,27 @@ fun GuideGrid(
     }
 
     // HomeScreen Back handler: restore the cursor onto the playing channel at "now".
+    // During a rail preview the rail owns focus — focusAndCenterRow calls onFocusRow, which
+    // collapses the rail — so only center the list visually and park the focus-box state.
     LaunchedEffect(restoreTick) {
         if (restoreTick > 0) {
-            focusAndCenterRow(playingKey ?: selectedKey, false)
+            if (previewTopRow) {
+                if (rows.isNotEmpty()) {
+                    val k = playingKey ?: selectedKey ?: rows.first().key
+                    val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
+                    val targetVisible = when {
+                        rows.size <= 6 -> 0
+                        index <= 2 -> 0
+                        index >= rows.size - 3 -> (rows.size - 6).coerceAtLeast(0)
+                        else -> index - 2
+                    }
+                    listState.scrollToItem(targetVisible, 0)
+                    activeFocusedIndex = index
+                    activeFocusedKey = k
+                }
+            } else {
+                focusAndCenterRow(playingKey ?: selectedKey, false)
+            }
         }
     }
 
@@ -616,6 +638,28 @@ fun GuideGrid(
                     contentPadding = PaddingValues(top = 2.dp, bottom = 2.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
+                    if (rows.isEmpty()) {
+                        // Focusable empty state: exiting the rail onto an empty category (e.g.
+                        // Favourites with nothing starred) needs a focus target inside the guide,
+                        // or focus strands on the rail entry and the screen dead-ends.
+                        item(key = "guide-empty") {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(72.dp)
+                                    .focusRequester(activeCellFocusRequester)
+                                    .focusable()
+                                    .padding(horizontal = 16.dp),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Text(
+                                    stringResource(R.string.channels_manager_empty_category),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                     itemsIndexed(
                         items = rows,
                         key = { _, row -> row.key },
@@ -822,6 +866,27 @@ fun ChannelList(
         contentPadding = PaddingValues(top = 2.dp, bottom = 2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+        if (rows.isEmpty()) {
+            // Focusable empty state — same reason as GuideGrid's: the guide must always offer
+            // a focus target, or leaving the rail onto an empty category strands the cursor.
+            item(key = "guide-empty") {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                        .focusRequester(activeCellRequester)
+                        .focusable()
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(
+                        stringResource(R.string.channels_manager_empty_category),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
         itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
             val currentActiveKey = activeFocusedIndex?.let { rows.getOrNull(it)?.key } ?: selectedKey ?: playingKey ?: rows.firstOrNull()?.key
             val isPlaying = row.key == playingKey

@@ -647,9 +647,13 @@ private fun AccentColorPill(
     ) {
         Box(
             modifier = Modifier
-                .size(18.dp)
+                .size(20.dp)
                 .clip(CircleShape)
-                .background(primaryColor)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(accent.light, primaryColor),
+                    ),
+                )
                 .border(
                     width = if (focused || selected) 1.5.dp else 1.dp,
                     color = if (focused) Color.White else Color.Black.copy(alpha = 0.35f),

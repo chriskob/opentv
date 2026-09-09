@@ -528,6 +528,27 @@ interface ProgrammeDao {
             kotlinx.coroutines.delay(25)
         }
     }
+
+    /** Housekeeping: drop anything starting beyond the future retention horizon, in batches. */
+    @Query(
+        """
+        DELETE FROM programmes
+        WHERE id IN (
+            SELECT id FROM programmes
+            WHERE startUtcMillis > :afterUtcMillis
+            LIMIT :limit
+        )
+        """
+    )
+    suspend fun deleteStartsAfterBatch(afterUtcMillis: Long, limit: Int = 2000): Int
+
+    suspend fun deleteStartsAfter(afterUtcMillis: Long) {
+        while (true) {
+            val count = deleteStartsAfterBatch(afterUtcMillis, 2000)
+            if (count < 2000) break
+            kotlinx.coroutines.delay(25)
+        }
+    }
 }
 
 @Dao

@@ -21,47 +21,47 @@ import app.opentv.core.AppSettings.AccentColor
 
 val AccentColor.primary: Color
     get() = when (this) {
-        AccentColor.CYAN -> Color(0xFF26C6DA)
-        AccentColor.EMERALD -> Color(0xFF2ECC71)
-        AccentColor.SAPPHIRE -> Color(0xFF2979FF)
-        AccentColor.AMETHYST -> Color(0xFFAB47BC)
-        AccentColor.AMBER -> Color(0xFFFFA726)
+        AccentColor.CYAN -> Color(0xFF22D3EE)
+        AccentColor.EMERALD -> Color(0xFF34D399)
+        AccentColor.SAPPHIRE -> Color(0xFF60A5FA)
+        AccentColor.AMETHYST -> Color(0xFFA78BFA)
+        AccentColor.AMBER -> Color(0xFFFBBF24)
     }
 
 val AccentColor.dark: Color
     get() = when (this) {
-        AccentColor.CYAN -> Color(0xFF00838F)
-        AccentColor.EMERALD -> Color(0xFF2E7D32)
-        AccentColor.SAPPHIRE -> Color(0xFF1565C0)
-        AccentColor.AMETHYST -> Color(0xFF7B1FA2)
-        AccentColor.AMBER -> Color(0xFFE65100)
+        AccentColor.CYAN -> Color(0xFF0891B2)
+        AccentColor.EMERALD -> Color(0xFF059669)
+        AccentColor.SAPPHIRE -> Color(0xFF2563EB)
+        AccentColor.AMETHYST -> Color(0xFF7C3AED)
+        AccentColor.AMBER -> Color(0xFFD97706)
     }
 
 val AccentColor.light: Color
     get() = when (this) {
-        AccentColor.CYAN -> Color(0xFF80DEEA)
-        AccentColor.EMERALD -> Color(0xFF81C784)
-        AccentColor.SAPPHIRE -> Color(0xFF82B1FF)
-        AccentColor.AMETHYST -> Color(0xFFCE93D8)
-        AccentColor.AMBER -> Color(0xFFFFCC80)
+        AccentColor.CYAN -> Color(0xFFA5F3FC)
+        AccentColor.EMERALD -> Color(0xFFA7F3D0)
+        AccentColor.SAPPHIRE -> Color(0xFFBFDBFE)
+        AccentColor.AMETHYST -> Color(0xFFDDD6FE)
+        AccentColor.AMBER -> Color(0xFFFDE68A)
     }
 
 val AccentColor.highlightGlow: Color
     get() = when (this) {
-        AccentColor.CYAN -> Color(0xFF00E5FF)
-        AccentColor.EMERALD -> Color(0xFF69F0AE)
-        AccentColor.SAPPHIRE -> Color(0xFF448AFF)
-        AccentColor.AMETHYST -> Color(0xFFE040FB)
-        AccentColor.AMBER -> Color(0xFFFFD54F)
+        AccentColor.CYAN -> Color(0xFF67E8F9)
+        AccentColor.EMERALD -> Color(0xFF6EE7B7)
+        AccentColor.SAPPHIRE -> Color(0xFF93C5FD)
+        AccentColor.AMETHYST -> Color(0xFFC4B5FD)
+        AccentColor.AMBER -> Color(0xFFFCD34D)
     }
 
 val AccentColor.cardFocusBg: Color
     get() = when (this) {
-        AccentColor.CYAN -> Color(0xFF16252C)
-        AccentColor.EMERALD -> Color(0xFF132518)
-        AccentColor.SAPPHIRE -> Color(0xFF141E2C)
-        AccentColor.AMETHYST -> Color(0xFF241528)
-        AccentColor.AMBER -> Color(0xFF281C12)
+        AccentColor.CYAN -> Color(0xFF12262E)
+        AccentColor.EMERALD -> Color(0xFF12261E)
+        AccentColor.SAPPHIRE -> Color(0xFF131D2F)
+        AccentColor.AMETHYST -> Color(0xFF231B31)
+        AccentColor.AMBER -> Color(0xFF2A2110)
     }
 
 val AccentColor.displayName: String

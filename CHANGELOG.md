@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.12.82
+
+- **Modernized Accent Palette (Appearance)**:
+  - All five accents (Cyan, Emerald, Sapphire, Amethyst, Amber) refreshed to current-generation hues, with retuned dark/light/glow/focus-background roles everywhere they are used.
+  - Settings swatches get a subtle gradient "chip" look; focus/selection behaviour unchanged.
+- **Faster Category Switching in the Guide**:
+  - Revisiting a category renders its programmes straight from the in-memory window cache — zero database queries on every rail up/down; LRU eviction keeps recently browsed categories hot.
+  - Programmes load for all candidate EPG ids (manual override, provider id, name match), so channels whose provider guide id is dead but which matched by name now show guide info instead of "No info".
+- **Rail Open & Preview Fixes**:
+  - LEFT/Back opens the rail on the playing channel's category and can no longer grab Favourites: the category switch now happens after focus lands in the rail, not inside the key dispatch (also fixes an input-dispatch ANR from focus-searching a rebuilding guide).
+  - Rail preview keeps a single highlight, anchored on the playing channel when the previewed category contains it, and no longer jumps the guide cursor to channel 1 on every focus move.
+  - Exiting the rail always restores guide focus, including on empty categories.
+- **Fire OS Background Playback Fix**:
+  - Home now always stops playback; a stuck picture-in-picture flag could previously leave audio running until force-close. Reopening the app resumes.
+- **EPG Database Footprint**:
+  - Future programmes capped at 7 days and past retention cut to 3 days (stored window −3d → +7d); after each sync the database is checkpointed and vacuumed when ≥32 MB is reclaimable, so the file shrinks instead of growing forever.
+
 ## 0.12.81
 
 - **TiviMate-Style Guide Scrubbing**:

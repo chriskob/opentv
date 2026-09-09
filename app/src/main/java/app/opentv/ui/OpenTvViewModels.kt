@@ -615,6 +615,9 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         }
             .filterNotNull()
             .combine(selectedSource) { key, source -> key to source }
+            // identity restarts of the pipeline (equal RowsKey re-emitted after a DB refresh)
+            // must not re-run the channel query and re-hydrate the EPG window.
+            .distinctUntilChanged()
             .flatMapLatest { (key, source) ->
                 val channelFlow = when {
                     key.query.isNotBlank() -> graph.catalogRepository.searchChannels(key.query)
@@ -633,11 +636,18 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                     val visible =
                         if (key.hiddenIds.isEmpty()) scoped
                         else scoped.filter { it.categoryId !in key.hiddenIds }
-                    val epgIds = visible.mapNotNull { it.epgChannelId?.ifBlank { null } }.distinct()
+                    // Fetch programmes for EVERY candidate id, not just the provider's tvg-id:
+                    // the matcher's working name-match lives in matchedEpgId (and users can set
+                    // epgOverrideId manually), so fetching only epgChannelId left name-matched
+                    // channels with no guide info at all.
+                    val epgIds = visible.flatMap { it.epgCandidates }.filter { it.isNotBlank() }.distinct()
                     flow {
                         emit(buildRows(visible, emptyMap(), now))
                         if (epgIds.isNotEmpty()) {
-                            val quick = graph.epgRepository.windowForChannels(
+                            // Cache-aware quick fill: channels the 48h rail cache already holds
+                            // (any category browsed this half-hour) are sliced from memory, so
+                            // rail category switches render their programmes with no DB query.
+                            val quick = graph.epgRepository.quickWindowForChannels(
                                 epgIds, now - QUICK_PAST_MILLIS, now + QUICK_FUTURE_MILLIS,
                             )
                             emit(buildRows(visible, quick, now))

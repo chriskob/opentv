@@ -129,6 +129,7 @@ object ServiceLocator {
                 api = xtreamApi,
                 http = httpClient,
                 settings = settings,
+                db = database,
             )
         }
 

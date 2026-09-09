@@ -204,28 +204,24 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * When the activity is no longer visible AND we are not in PiP mode, immediately stop
-     * playback, clear all media items, and release the audio focus. This is the aggressive
-     * "no background audio" guarantee: the moment the user leaves the app (Home, Back, switching
-     * apps), the stream cuts — no lingering sound from the decoder.
+     * When the activity is no longer visible, immediately stop playback, clear all media items,
+     * and release the audio focus. This is the aggressive "no background audio" guarantee: the
+     * moment the user leaves the app (Home, Back, switching apps), the stream cuts — no lingering
+     * sound from the decoder.
      *
-     * PiP is exempt: the whole point of picture-in-picture is continuous playback in a
-     * floating window, so we only pause (not stop) in that case.
+     * There is deliberately NO PiP exemption here. A *visible* PiP window keeps the activity
+     * RESUMED, so onStop can only ever fire once the floating window itself is gone — at which
+     * point playback must stop. Checking the flag here is how background audio leaked on Fire
+     * OS: dismissing the PiP window can deliver the mode-change callback late (or not at all),
+     * leaving [PipState.inPip] stuck true, and every subsequent Home press then skipped the
+     * stop. Resetting the flag here also self-heals that stuck state.
      */
     override fun onStop() {
         super.onStop()
-        val inPip = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode) ||
-            app.opentv.core.PipState.inPip.value
-        if (inPip) {
-            // PiP: floating window keeps showing.
-        } else {
-            // Not PiP: hard stop — clear the decoder immediately so background audio cannot
-            // leak. This also prevents the error-listener auto-restart from re-triggering,
-            // because stop() nulls out `current` in PlayerController.
-            runCatching {
-                val graph = ServiceLocator.get(this)
-                graph.livePlayer.stop()
-            }
+        app.opentv.core.PipState.setInPip(false)
+        runCatching {
+            val graph = ServiceLocator.get(this)
+            graph.livePlayer.stop()
         }
     }
 
