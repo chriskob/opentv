@@ -27,9 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # enablement: true lets the workflow turn Pages on itself the first time,
-      # instead of failing with "failed to create deployment" when the repo
-      # has never had Pages enabled (Settings -> Pages -> Source: GitHub Actions).
+      # Pages must be enabled once by a human (repo admin): Settings -> Pages ->
+      # "Build and deployment" -> Source: GitHub Actions. GITHUB_TOKEN cannot
+      # create the Pages site itself, so deploy-pages fails with "failed to
+      # create deployment (status: 404)" until that one-time toggle is set.
+      # enablement: true is kept so a re-enable after accidental disable heals.
       - uses: actions/configure-pages@v5
         with:
           enablement: true
