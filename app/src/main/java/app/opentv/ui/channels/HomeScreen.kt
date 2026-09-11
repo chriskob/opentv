@@ -1168,14 +1168,20 @@ fun HomeScreen(
                     },
                 )
                 // Per-channel catch-up capability: the badge shows only where the provider actually
-                // said catch-up exists for that channel.
+                // said catch-up exists for THAT channel.
                 //
-                // This block used to treat "the source is Xtream" and "the source has a username" as
-                // evidence of catch-up, which badged channels their provider had marked as having
-                // none: an Xtream portal answers tv_archive and tv_archive_duration per channel, so
-                // that per-channel answer is the whole truth and a "no" there means no. Only a plain
-                // M3U — which carries no per-channel answer at all — falls back to the shape of the
-                // stream URL, which is the case that assumption was ever meant to cover.
+                // Exactly two pieces of evidence count, and both are per-channel facts the parser
+                // read out of the provider's own listing:
+                //   * tvArchive — Xtream `tv_archive`, or the M3U `catchup` / `catchup-days` /
+                //     `timeshift` attributes (see M3uParser).
+                //   * cmd — an M3U `catchup-source` template.
+                // Nothing else does. In particular:
+                //   * tvArchiveDays is the archive *window*, not a yes/no. Panels routinely report
+                //     `tv_archive_duration` for channels whose `tv_archive` is 0, so treating a
+                //     duration as evidence badged channels that have no archive.
+                //   * the shape of the stream URL (`host[/live]/user/pass/id.ts`) says nothing about
+                //     archive. Every channel of an M3U exported from an Xtream panel has that shape,
+                //     so probing it badged the entire list.
                 //
                 // Runs once per channel over the whole list, so it is computed off the main thread.
                 val catchUpChannelIds by produceState(
@@ -1183,17 +1189,10 @@ fun HomeScreen(
                     sources,
                     rows,
                 ) {
-                    val byId = sources.associateBy { it.id }
                     value = withContext(Dispatchers.Default) {
                         rows.mapNotNull { row ->
                             val ch = row.primary
-                            val src = byId[ch.sourceId]
-                            val fromPortal = src?.kind == app.opentv.data.model.SourceKind.XTREAM
-                            val capable = ch.tvArchive ||
-                                ch.tvArchiveDays > 0 ||
-                                !ch.cmd.isNullOrBlank() ||
-                                (!fromPortal && looksLikeXtreamStream(ch.streamUrl))
-                            if (capable) ch.id else null
+                            if (ch.tvArchive || !ch.cmd.isNullOrBlank()) ch.id else null
                         }.toSet()
                     }
                 }
@@ -2037,17 +2036,4 @@ private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
 
 private fun formatTime(utcMillis: Long): String = timeFormat.format(Date(utcMillis))
 
-/**
- * Linear, backtracking-free probe for Xtream-format stream URLs (`host/[live/]user/pass/id`).
- * Mirrors CatchupResolver.XTREAM_URL_REGEX without its catastrophic-backtracking risk on
- * non-matching inputs — this runs once per channel over the whole list, off the main thread.
- */
-private fun looksLikeXtreamStream(url: String): Boolean {
-    val schemeEnd = url.indexOf("://")
-    if (schemeEnd <= 0 || !url.startsWith("http")) return false
-    val path = url.substring(schemeEnd + 3).substringBefore('?').substringBefore('#').trimEnd('/')
-    val segments = path.split('/')
-    if (segments.size < 4) return false
-    val afterHost = if (segments[1].equals("live", ignoreCase = true)) segments.drop(2) else segments.drop(1)
-    return afterHost.size >= 3 && afterHost.last().isNotBlank()
-}
+
