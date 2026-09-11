@@ -549,6 +549,27 @@ fun PlayerScreen(
         }
     }
 
+    // The guide hands over the list you were browsing, but it is not the only way into the
+    // player and that handoff is never cleared. When it is empty, channel up/down would
+    // silently do nothing, so fall back to the channels of the source we are playing, in the
+    // same sortIndex order the guide lists them in.
+    LaunchedEffect(currentChannel?.sourceId) {
+        if (queue.isNotEmpty()) return@LaunchedEffect
+        val sourceId = currentChannel?.sourceId ?: return@LaunchedEffect
+        val channels = withContext(Dispatchers.IO) {
+            graph.database.channels().observe(sourceId, null).firstOrNull()
+        }.orEmpty()
+        if (channels.isNotEmpty()) {
+            queue = channels.map { PlaybackQueue.Item(it.id, it.shownName, it.logoUrl, it.number) }
+        }
+    }
+
+    /**
+     * Steps one channel along the list the way a remote's CH+ / CH- does: [delta] of +1 lands on
+     * the next channel *up* the list — the next channel number, since the list is in channel
+     * order — and -1 on the one before it. Stops at either end rather than wrapping, so the
+     * first and last channel say so by doing nothing.
+     */
     fun zapBy(delta: Int) {
         if (queue.isEmpty()) return
         val cur = queue.indexOfFirst { it.id == currentId }.let { if (it < 0) 0 else it }
@@ -842,22 +863,22 @@ fun PlayerScreen(
                             }
                         }
                     }
-                    // When in full-screen (controls hidden):
-                    // Dedicated Channel Up / Page Up (ONN 4k box remote) or D-Pad Up:
+                    // D-Pad Up, or a dedicated Channel Up / Page Up (ONN 4k box remote), while
+                    // full-screen: the next channel up the list — the next channel number.
                     event.key == Key.ChannelUp ||
                     event.key == Key.PageUp ||
                     event.nativeKeyEvent.keyCode == 166 || // KEYCODE_CHANNEL_UP
                     event.nativeKeyEvent.keyCode == 92 ||  // KEYCODE_PAGE_UP
                     event.key == Key.DirectionUp
-                    -> { zapBy(-1); reveal(); true }
+                    -> { zapBy(1); reveal(); true }
 
-                    // Dedicated Channel Down / Page Down (ONN 4k box remote) or D-Pad Down:
+                    // D-Pad Down, or a dedicated Channel Down / Page Down: the channel before it.
                     event.key == Key.ChannelDown ||
                     event.key == Key.PageDown ||
                     event.nativeKeyEvent.keyCode == 167 || // KEYCODE_CHANNEL_DOWN
                     event.nativeKeyEvent.keyCode == 93 ||  // KEYCODE_PAGE_DOWN
                     event.key == Key.DirectionDown
-                    -> { zapBy(1); reveal(); true }
+                    -> { zapBy(-1); reveal(); true }
 
                     // Center/Enter/OK/Info button on remote: reveals the OSD menu without pausing playback.
                     event.key == Key.DirectionCenter ||
