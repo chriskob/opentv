@@ -49,8 +49,8 @@ android {
         applicationId = "app.opentv"
         minSdk = project.findProperty("devMinSdk")?.toString()?.toIntOrNull() ?: 23
         targetSdk = 35
-        versionCode = 107
-        versionName = "0.12.86"
+        versionCode = 108
+        versionName = "0.12.87"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "DEFAULT_REMOTE_PAIRING_URL", "\"$defaultPairingUrl\"")
     }
