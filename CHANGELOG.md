@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.12.88
+
+- **D-pad up and down change channel, in list order.** Up called the channel step with -1, so it
+  moved *back* up the list to a lower channel — the opposite of what a CH+ key does. Up now moves
+  forward through the list and down moves back, for the d-pad and for the dedicated Channel
+  Up/Down and Page Up/Down keys, which were inverted the same way. Order is the list's own order,
+  never a channel number, so a channel you have dragged to the top zaps to whatever you put under
+  it. Zapping also falls back to the channels of the source being played when the playback queue is
+  empty, which is the case whenever playback did not start from the guide — up and down used to do
+  nothing at all there.
+- **D-pad left rewinds live TV.** The ten-second step only ran in the timeline tier, but the
+  on-screen bar opens on the history tier, where left and right scroll the watched-channel
+  carousel, so the press never reached a seek. Left now steps back ten seconds a press, further
+  when pressed quickly, and deliberately leaves the bar hidden so a quick double press keeps
+  rewinding instead of switching to carousel scrolling. Streams with no DVR window keep left's
+  old meaning and open the channel list; the Guide key always does.
+- **D-pad right returns to the previous channel, from every category.** The previous channel was
+  remembered inside the player only, so it was forgotten the moment you left — and reaching a
+  category player normally means going back to the guide and picking a channel, so there was
+  never anything to go back to. The channel being left is now remembered beyond the player.
+- **Long-press a watched channel to forget it.** Holding OK on a card in the history carousel
+  removes that channel from the history, with a confirming toast. A tap still just tunes to it.
+- **Watch history no longer loses channels.** History stored channel row ids, and a guide sync
+  deletes rows: it prunes channels the provider dropped, and re-syncing a source clears the table
+  while ids are regenerated. An id that survived a sync resolved to nothing, so the card vanished
+  — and the dead id stayed in the list for good, still counting against the 30-entry cap and
+  pushing watchable channels off the end. Unresolvable ids are now swept out.
+
 ## 0.12.87
 
 - **Self-update now actually installs.** "Check for updates" correctly found a newer version
