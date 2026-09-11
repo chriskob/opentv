@@ -9,6 +9,7 @@ import android.app.Application
 import android.content.Context
 import app.opentv.core.LocaleUtils
 import app.opentv.core.ServiceLocator
+import app.opentv.core.Startup
 import app.opentv.data.repo.CatalogRepository
 import app.opentv.data.work.SyncWorker
 import coil.ImageLoader
@@ -19,6 +20,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** How long startup maintenance waits for the first frame before running anyway. */
+private const val FIRST_FRAME_WAIT_MILLIS = 10_000L
 
 class OpenTvApp : Application(), ImageLoaderFactory {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -78,22 +84,36 @@ class OpenTvApp : Application(), ImageLoaderFactory {
         // Cold-start reconciliation: a recording still marked "in progress" at process start is an
         // orphan from a killed capture. Done here, once per process — NOT when the Recordings screen
         // opens — so checking on a recording you just started never marks it interrupted.
-        appScope.launch { runCatching { graph.recordingRepository.failInterrupted() } }
+        //
+        // This one runs before the first frame, deliberately. It is a single UPDATE, and a process
+        // that started *because* a booked recording is firing marks that recording in progress
+        // within milliseconds of this line — so deferring it would let it run afterwards and label
+        // an honest recording as interrupted.
+        appScope.launch(Dispatchers.IO) { runCatching { graph.recordingRepository.failInterrupted() } }
 
-        // Re-arm scheduled recordings on every launch, for the same reason as the reminders below:
-        // a force-stop or app update drops their exact alarms and only a reboot is covered by the
-        // boot receiver. Re-setting the same alarm is idempotent, so this quietly keeps bookings alive.
-        appScope.launch { runCatching { graph.recordingEngine.rearmScheduled() } }
-
-        // Re-arm programme reminders on every launch. Alarms are lost on a force-stop or app
-        // update (not just a reboot, which the boot receiver already covers), and re-setting an
-        // exact alarm for the same reminder is idempotent — so this quietly keeps bells alive.
+        // Everything below only re-arms alarms that are already set, so it waits for the first frame
+        // — and it should: the reminder loop and the recording re-arm each make one binder call per
+        // booking, and running them during launch put them in direct competition with the guide's
+        // first database query for the disk, at the one moment the process can least afford it.
+        //
+        // The wait is bounded, because a headless start — a scheduled recording firing while the app
+        // is closed — never draws a frame, and these still have to run there.
         appScope.launch {
-            runCatching {
-                val now = System.currentTimeMillis()
-                graph.reminderRepository.deleteEndedBefore(now)
-                graph.reminderRepository.upcoming(now).forEach {
-                    app.opentv.reminders.ReminderScheduler.set(this@OpenTvApp, it.id, it.startUtcMillis)
+            withTimeoutOrNull(FIRST_FRAME_WAIT_MILLIS) { Startup.firstFrameDrawn.first { it } }
+
+            // A force-stop or app update drops exact alarms, and only a reboot is covered by the
+            // boot receiver. Re-setting the same alarm is idempotent, so this keeps bookings alive.
+            launch(Dispatchers.IO) { runCatching { graph.recordingEngine.rearmScheduled() } }
+
+            // Program reminders, for the same reason: setting an exact alarm for the same reminder
+            // twice is harmless.
+            launch(Dispatchers.IO) {
+                runCatching {
+                    val now = System.currentTimeMillis()
+                    graph.reminderRepository.deleteEndedBefore(now)
+                    graph.reminderRepository.upcoming(now).forEach {
+                        app.opentv.reminders.ReminderScheduler.set(this@OpenTvApp, it.id, it.startUtcMillis)
+                    }
                 }
             }
         }

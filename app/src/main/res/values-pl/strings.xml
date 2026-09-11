@@ -159,6 +159,8 @@
     <string name="settings_section_language">Język</string>
     <string name="settings_language_system">Domyślny systemowy</string>
     <string name="settings_language_note">Ustawia język aplikacji. Ekran przeładuje się po zmianie.</string>
+    <string name="settings_match_refresh_title">Dopasuj częstotliwość odświeżania</string>
+    <string name="settings_match_refresh_subtitle">Przełącza telewizor w tryb, w który strumień dzieli się bez reszty — 50 Hz dla kanału 50 fps — dzięki czemu obraz przestaje drgać raz na sekundę. Przy przełączeniu ekran może na chwilę zgasnąć; wyłącz, jeśli telewizor sobie z tym nie radzi.</string>
     <string name="settings_section_guide">Przewodnik</string>
     <string name="settings_channel_layout_title">Układ kanałów</string>
     <string name="settings_channel_layout_grid">Siatka przewodnika (z osią czasu)</string>

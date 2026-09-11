@@ -14,6 +14,18 @@
   language problem.
 - The two language-name strings that only the removed picker entries used, and the Spanish label,
   are gone with them.
+- **The TV is matched to the stream.** Almost all European IPTV is 25 or 50 fps, and a 25 fps channel
+  on a 60 Hz panel cannot be shown evenly: the picture advances in a pattern of 2, 2, 3 display
+  refreshes per frame instead of a steady 2, and that extra refresh shows up as a hitch once a second
+  on a panning camera or a scrolling ticker. OpenTV now asks the display for a mode the frame rate
+  divides into exactly — 50 Hz for a 50 fps channel, 24 Hz for a film — and hands the display back
+  when you leave the player. It applies to live and to films, and it is **off by default** under
+  Settings → Playback, because switching mode re-syncs the HDMI link and the screen blanks for a
+  beat; turn it on unless your TV copes badly with that.
+- **Startup re-arms alarms after the first frame rather than during it.** Reminders and booked
+  recordings survive a force-stop or an update exactly as before. The work simply waits for the UI to
+  be up now, instead of making a per-booking alarm call each while the guide was drawing its first
+  frame and competing for the same disk.
 
 ## 0.12.88
 

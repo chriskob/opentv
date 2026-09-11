@@ -135,6 +135,7 @@ import androidx.media3.ui.PlayerView
 import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.core.CatchupResolver
+import app.opentv.core.DisplayRefresh
 import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
@@ -334,6 +335,11 @@ fun PlayerScreen(
                     }
                     if (videoFormat.frameRate > 0f) {
                         fpsText = "${videoFormat.frameRate.toInt()} fps"
+                        // Match the panel to the stream — 50 Hz for a 50 fps channel — so a panning
+                        // camera stops hitching once a second. Opt-in: see DisplayRefresh.
+                        if (settings.matchRefreshRate.value) {
+                            context.findActivity()?.let { DisplayRefresh.match(it, videoFormat.frameRate) }
+                        }
                     }
                     val mime = videoFormat.sampleMimeType ?: ""
                     videoCodecText = when {
@@ -389,6 +395,9 @@ fun PlayerScreen(
         controller.player.addListener(listener)
         onDispose {
             controller.player.removeListener(listener)
+            // Hand the display back to the system, so a box is never left on 50 Hz chosen by a
+            // channel that stopped playing. No-op when nothing was requested.
+            context.findActivity()?.let { DisplayRefresh.restore(it) }
         }
     }
 

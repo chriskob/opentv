@@ -117,6 +117,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val captions by settings.subtitlesEnabled.collectAsState()
     val resumeLast by settings.resumeLastChannel.collectAsState()
     val pipOnHome by settings.pipOnHomeEnabled.collectAsState()
+    val matchRefreshRate by settings.matchRefreshRate.collectAsState()
     val language by settings.languageTag.collectAsState()
     val liveEnabled by settings.liveEnabled.collectAsState()
     val moviesEnabled by settings.moviesEnabled.collectAsState()
@@ -368,6 +369,12 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 subtitle = stringResource(R.string.settings_pip_on_home_subtitle),
                 checked = pipOnHome,
                 onToggle = settings::setPipOnHomeEnabled,
+            )
+            ToggleRow(
+                title = stringResource(R.string.settings_match_refresh_title),
+                subtitle = stringResource(R.string.settings_match_refresh_subtitle),
+                checked = matchRefreshRate,
+                onToggle = settings::setMatchRefreshRate,
             )
         }
 

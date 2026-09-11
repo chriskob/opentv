@@ -93,6 +93,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import app.opentv.R
+import app.opentv.core.DisplayRefresh
 import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
@@ -199,6 +200,32 @@ fun VodPlayerScreen(
             scope.launch { savePosition() }
             controller.release()
             scope.cancel()
+        }
+    }
+
+    // Match the display to the film or episode. After live sport this is where a wrong mode shows
+    // most: 23.976 fps on a 60 Hz panel is 3:2 pulldown, and a mode the rate divides exactly is the
+    // difference between a film and a film that steps slightly every so often.
+    DisposableEffect(controller.player) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onTracksChanged(tracks: Tracks) {
+                if (!settings.matchRefreshRate.value) return
+                val group = tracks.groups.firstOrNull {
+                    it.type == C.TRACK_TYPE_VIDEO && it.isSelected
+                } ?: return
+                val format = (0 until group.length)
+                    .firstOrNull { group.isTrackSelected(it) }
+                    ?.let { group.getTrackFormat(it) }
+                    ?: return
+                if (format.frameRate <= 0f) return
+                context.findActivity()?.let { DisplayRefresh.match(it, format.frameRate) }
+            }
+        }
+        controller.player.addListener(listener)
+        onDispose {
+            controller.player.removeListener(listener)
+            // Hand the display back to the system rather than leaving the box on the film's mode.
+            context.findActivity()?.let { DisplayRefresh.restore(it) }
         }
     }
 

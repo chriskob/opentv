@@ -222,6 +222,8 @@
     <string name="settings_section_language">Language</string>
     <string name="settings_language_system">System default</string>
     <string name="settings_language_note">Sets the app\'s language. The screen reloads when you change it.</string>
+    <string name="settings_match_refresh_title">Match display refresh rate</string>
+    <string name="settings_match_refresh_subtitle">Switch the TV to a mode the stream divides into evenly — 50 Hz for a 50 fps channel — so it stops juddering once a second. The screen can blank for a moment when it switches; leave it off if your TV dislikes that.</string>
     <string name="settings_section_guide">Guide</string>
     <string name="settings_channel_layout_title">Channel layout</string>
     <string name="settings_channel_layout_grid">Guide grid (with timeline)</string>

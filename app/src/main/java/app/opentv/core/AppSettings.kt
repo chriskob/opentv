@@ -661,6 +661,23 @@ class AppSettings private constructor(context: Context) {
         _audioDelayMs.value = ms
     }
 
+    /**
+     * Whether to ask the display for a mode that matches each stream's frame rate — 50 Hz for a
+     * 50 fps channel, 24 Hz for a film, so the panel is not forced to repeat or skip a frame.
+     *
+     * Off by default, and deliberately so: changing mode re-syncs the HDMI link, which shows as a
+     * brief blank, and a TV that handles that badly looks worse than one that judders. It earns its
+     * place because 25/50 fps European IPTV on a 60 Hz panel judders once a second without it — see
+     * [DisplayRefresh] for the matching rule.
+     */
+    private val _matchRefreshRate = MutableStateFlow(prefs.getBoolean(KEY_MATCH_REFRESH_RATE, false))
+    val matchRefreshRate: StateFlow<Boolean> = _matchRefreshRate.asStateFlow()
+
+    fun setMatchRefreshRate(value: Boolean) {
+        prefs.edit().putBoolean(KEY_MATCH_REFRESH_RATE, value).apply()
+        _matchRefreshRate.value = value
+    }
+
     var requestedHomeTab: String? = null
 
     companion object {
@@ -668,6 +685,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_ACCENT_COLOR = "accent_color"
         private const val KEY_SUBMENU_BUTTONS = "submenu_buttons"
         private const val KEY_AUDIO_DELAY_MS = "audio_delay_ms"
+        private const val KEY_MATCH_REFRESH_RATE = "match_refresh_rate"
         private const val KEY_CHANNEL_LAYOUT = "channel_layout"
         private const val KEY_SUBTITLES = "subtitles_enabled"
         private const val KEY_PREVIEW_VIDEO = "guide_preview_video"

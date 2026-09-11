@@ -136,6 +136,13 @@ class MainActivity : ComponentActivity() {
                 AppSettings.ThemeMode.SYSTEM -> isTelevision || isSystemInDarkTheme()
             }
             OpenTvTheme(accent = accentColor, darkTheme = darkTheme) {
+                // Tells startup maintenance it may begin: the first frame is about to be on screen.
+                // Those jobs wait on this instead of guessing a delay — see OpenTvApp — so they start
+                // the moment the UI is up and never compete with it for the disk beforehand.
+                LaunchedEffect(Unit) {
+                    androidx.compose.runtime.withFrameNanos { }
+                    app.opentv.core.Startup.noteFirstFrameDrawn()
+                }
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
