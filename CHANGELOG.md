@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.84
+
+- **Fixed: "Remote NAS Setup" could never connect on a released APK.** The pairing service address
+  was baked into the build from `local.properties`, which is gitignored — so every CI-built APK
+  carried the placeholder `https://pair.example.com` instead of the real host, and pairing failed
+  with a connection error naming a URL nobody recognised. The address now also resolves from the
+  `OPENTV_PAIRING_URL` repository variable (wired into both workflows), and the build prints a loud
+  warning if it ever has to fall back to the placeholder. Local builds are unchanged: a developer's
+  `local.properties` still wins.
+  - Until your device is on a build that carries the right address, the pairing screen's
+    **Change server** dialog accepts it manually and remembers it.
+
 ## 0.12.83
 
 - **Guide Performance — no more full re-hydration on every pipeline restart**:
