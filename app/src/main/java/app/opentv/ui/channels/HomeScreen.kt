@@ -1167,12 +1167,11 @@ fun HomeScreen(
                         }
                     },
                 )
-                // Per-channel catch-up capability, mirroring CatchupResolver: the badge shows
-                // exactly when the resolver would build a catch-up URL for that channel (archive
-                // flag, catch-up template, Xtream portal source, or Xtream-format stream URL).
-                // Computed OFF the main thread with a linear probe — the resolver's own regex has
-                // catastrophic backtracking on non-matching URLs, and running it per channel in
-                // composition blocked input dispatch for seconds (ANR).
+                // Per-channel catch-up capability. The rule lives in CatchupResolver now — one copy,
+                // so the badge and the resolver cannot drift apart (they had: this block said every
+                // channel of an Xtream source was capable, which badged channels the provider had
+                // marked as having no archive). It runs once per channel over the whole list, so it
+                // is asked off the main thread.
                 val catchUpChannelIds by produceState(
                     initialValue = emptySet<Long>(),
                     sources,
@@ -1182,13 +1181,11 @@ fun HomeScreen(
                     value = withContext(Dispatchers.Default) {
                         rows.mapNotNull { row ->
                             val ch = row.primary
-                            val src = byId[ch.sourceId]
-                            val capable = ch.tvArchive ||
-                                !ch.cmd.isNullOrBlank() ||
-                                src?.kind == app.opentv.data.model.SourceKind.XTREAM ||
-                                !src?.username.isNullOrBlank() ||
-                                looksLikeXtreamStream(ch.streamUrl)
-                            if (capable) ch.id else null
+                            if (app.opentv.core.CatchupResolver.isSupported(byId[ch.sourceId], ch)) {
+                                ch.id
+                            } else {
+                                null
+                            }
                         }.toSet()
                     }
                 }
