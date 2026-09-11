@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -98,6 +100,7 @@ import app.opentv.data.work.SyncWorker
  * settings so neither screen becomes a junk drawer. Everything here writes straight to
  * [AppSettings] and takes effect immediately.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -175,10 +178,12 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(10.dp))
-            Row(
+            // FlowRow: with 11 accents the pills wrap onto a second line on narrow panels
+            // instead of overflowing the screen edge.
+            FlowRow(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 AppSettings.AccentColor.entries.forEach { accent ->
                     AccentColorPill(
@@ -840,8 +845,12 @@ private fun ToggleRow(
             checked = checked,
             onCheckedChange = onToggle,
             colors = androidx.compose.material3.SwitchDefaults.colors(
-                checkedThumbColor = if (focused) AppTheme.dark else AppTheme.primary,
-                checkedTrackColor = if (focused) AppTheme.light else AppTheme.dark.copy(alpha = 0.5f),
+                checkedThumbColor = AppTheme.primary,
+                checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                // Gray→white track when off (was accent-tinted): a switch's OFF state should
+                // read as neutral "inactive", not as a colored highlight.
+                uncheckedThumbColor = Color(0xFFB0BEC5),
+                uncheckedTrackColor = Color(0xFF37474F),
             ),
         )
     }
@@ -912,8 +921,10 @@ private fun ContentToggleRow(
             checked = checked,
             onCheckedChange = onToggle,
             colors = androidx.compose.material3.SwitchDefaults.colors(
-                checkedThumbColor = if (focused) AppTheme.dark else AppTheme.primary,
-                checkedTrackColor = if (focused) AppTheme.light else AppTheme.dark.copy(alpha = 0.5f),
+                checkedThumbColor = AppTheme.primary,
+                checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                uncheckedThumbColor = Color(0xFFB0BEC5),
+                uncheckedTrackColor = Color(0xFF37474F),
             ),
         )
     }

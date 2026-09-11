@@ -36,7 +36,7 @@ class AppSettings private constructor(context: Context) {
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
     /** Accent color used throughout the app for highlights, focus rings, progress, and badges. */
-    enum class AccentColor { CYAN, EMERALD, SAPPHIRE, AMETHYST, AMBER }
+    enum class AccentColor { CYAN, SAPPHIRE, VIOLET, EMERALD, LIME, GOLD, ORANGE, CRIMSON, ROSE, AMETHYST, AMBER }
 
     private val _accentColor = MutableStateFlow(readAccentColor())
     val accentColor: StateFlow<AccentColor> = _accentColor.asStateFlow()

@@ -322,6 +322,12 @@ fun HomeScreen(
             // focus key would silently focus a leftover entry from the previous open.
             railScrollToIndex = -1
             railOpenFocusKey = null
+            // End preview mode on EVERY close path (d-pad RIGHT out of the rail, Back, OK on an
+            // entry, app switch) — not just OK-clicks. A stuck-on previewTopRow kept a second
+            // pseudo-cursor on the guide's top row after exiting the rail, which is exactly
+            // the "two highlighted blocks" bug: the pseudo-cursor + the real focused row's
+            // cursor both rendered.
+            railPreviewing = false
         }
     }
     LaunchedEffect(pendingGuideFocus) {
@@ -367,9 +373,12 @@ fun HomeScreen(
                 }
             }
         }
-        // Always switch to the playing channel's category — not just when it's
-        // missing from current rows. Fixes "Back always opens Favourites" bug.
-        if (currentId > 0L) {
+        // Switch to the playing channel's category ONLY when it actually differs from the
+        // rows already on screen. Unconditionally calling selectCategoryForChannel re-emitted
+        // selectedCategory → flatMapLatest restarted the whole pipeline (channel query +
+        // quick EPG + full 48h window) on EVERY Back from fullscreen — a ~10s rebuild on a
+        // 25k-channel category for nothing, since the data was already loaded.
+        if (currentId > 0L && (rows.isEmpty() || rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } })) {
             viewModel.selectCategoryForChannel(currentId)
         }
         nowMillis = System.currentTimeMillis()
@@ -745,18 +754,11 @@ fun HomeScreen(
                 lastInteractionTime = System.currentTimeMillis()
                 if (!isFullScreen && e.type == KeyEventType.KeyDown) {
                     when (e.key) {
-                        Key.MediaRewind, Key.PageUp, Key.ChannelUp -> {
-                            if (guideHourOffset > -168) {
-                                viewModel.nudgeGuideDay(-1)
-                                true
-                            } else false
-                        }
-                        Key.MediaFastForward, Key.PageDown, Key.ChannelDown -> {
-                            if (guideHourOffset < 0) {
-                                viewModel.nudgeGuideDay(1)
-                                true
-                            } else false
-                        }
+                        // Deliberately NO day-paging keys (MediaRewind/PageUp/ChannelUp and
+                        // MediaFastForward/PageDown/ChannelDown were removed): they jumped the
+                        // guide a full day on accidental presses. Day browsing stays on the
+                        // header's prev/next-day buttons; HOLD LEFT/RIGHT remains the timeline
+                        // scrub, and MediaPlay still snaps back to live.
                         Key.MediaPlay, Key.MediaPlayPause -> {
                             viewModel.guideToNow()
                             backScrollActive = false
@@ -1154,7 +1156,9 @@ fun HomeScreen(
                     } == true,
                     onRecord = { recordSelected() },
                     dayLabel = dayLabel,
-                    canGoPrevDay = guideHourOffset > -168,
+                    // Bound derived from EPG retention (see MAX_PAGE_BACK_HOURS): the deepest
+                    // page's left edge is exactly the retention boundary — never a blank day.
+                    canGoPrevDay = guideHourOffset > -viewModel.maxPageBackHours,
                     onPrevDay = { viewModel.nudgeGuideDay(-1) },
                     onNextDay = { viewModel.nudgeGuideDay(1) },
                     onPreviewBoundsChanged = { rect ->

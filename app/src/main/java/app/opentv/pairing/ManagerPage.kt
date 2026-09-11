@@ -136,7 +136,14 @@ object ManagerPage {
                   <input id="provPass" type="password" autocomplete="off"></label>
                 <label class="field" id="provMacField"><span>MAC address</span>
                   <input id="provMac" placeholder="00:1A:79:xx:xx:xx" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-                <button class="save" id="provSave">Add &amp; load channels</button>
+                <div class="field"><span>Load from this playlist</span>
+                  <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-weight:400;">
+                    <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" id="provLive" checked> TV channels</label>
+                    <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" id="provVod" checked> Movies</label>
+                    <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" id="provSeries" checked> Shows</label>
+                  </div>
+                </div>
+                <button class="save" id="provSave">Add &amp; load</button>
                 <button class="save" id="provTest" style="background:var(--surface2);border-color:var(--line);margin-left:8px;">Test</button>
               </div>
             </details>
@@ -480,7 +487,8 @@ object ManagerPage {
 
           function provBody(){
             return { kind: provType(), name: el('provName').value.trim(), url: el('provUrl').value.trim(),
-                     username: el('provUser').value.trim(), password: el('provPass').value, mac: el('provMac').value.trim() };
+                     username: el('provUser').value.trim(), password: el('provPass').value, mac: el('provMac').value.trim(),
+                     includeLive: el('provLive').checked, includeVod: el('provVod').checked, includeSeries: el('provSeries').checked };
           }
           function provInvalid(b){
             if (!b.url) return 'Enter the URL.';
@@ -497,11 +505,11 @@ object ManagerPage {
           };
           el('provSave').onclick = function(){
             var b = provBody(); var bad = provInvalid(b); if (bad){ setStatus(bad, 'err'); return; }
-            setStatus('Adding & loading channels…');
+            setStatus('Adding & loading…');
             post('/source', b)
               .then(function(r){
                 if (r && r.ok){
-                  setStatus('Added — ' + (r.channels || 0) + ' channels loaded.', 'ok');
+                  setStatus('Added — ' + (r.channels || 0) + ' channels, ' + (r.movies || 0) + ' movies, ' + (r.shows || 0) + ' shows loaded.', 'ok');
                   el('provUrl').value = ''; el('provUser').value = ''; el('provPass').value = '';
                   el('provMac').value = ''; el('provName').value = '';
                   loadMeta();

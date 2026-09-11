@@ -546,9 +546,9 @@ private fun FeedRow(
             onCheckedChange = onToggle,
             colors = androidx.compose.material3.SwitchDefaults.colors(
                 checkedThumbColor = AppTheme.primary,
-                checkedTrackColor = Color(0xFF004D40),
-                uncheckedThumbColor = Color(0xFF90A4AE),
-                uncheckedTrackColor = Color(0xFF263238),
+                checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                uncheckedThumbColor = Color(0xFFB0BEC5),
+                uncheckedTrackColor = Color(0xFF37474F),
             ),
         )
     }
@@ -634,7 +634,9 @@ private fun EditFeedDialog(
                             onCheckedChange = { enabled = it },
                             colors = androidx.compose.material3.SwitchDefaults.colors(
                                 checkedThumbColor = AppTheme.primary,
-                                checkedTrackColor = Color(0xFF004D40),
+                                checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                                uncheckedThumbColor = Color(0xFFB0BEC5),
+                                uncheckedTrackColor = Color(0xFF37474F),
                             ),
                         )
                     }

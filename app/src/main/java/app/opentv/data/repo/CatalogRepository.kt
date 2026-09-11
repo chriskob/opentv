@@ -621,22 +621,36 @@ class CatalogRepository(
         // Live is gated here (not in syncLive) so onboarding's direct syncLive still loads channels.
         // Already-synced rows are left untouched: turning a type back on and refreshing restores it.
         val live =
-            if (settings.liveEnabled.value) syncLive(source, nowUtcMillis)
+            if (SourceGates.live(settings.liveEnabled.value, source)) syncLive(source, nowUtcMillis)
             else SyncResult.Success(0, 0, 0)
-        if (live is SyncResult.Success && source.kind == SourceKind.XTREAM) {
+        // Per-playlist intent: a playlist whose Channels box is unchecked must also stop
+        // syncing live HERE, not just at add time — otherwise the next refresh re-listed its
+        // channels and they reappeared in the guide with the box still off. Its VOD still
+        // refreshes when Movies/Shows were requested for that playlist.
+        if (live is SyncResult.Success && source.kind == SourceKind.XTREAM &&
+            SourceGates.anyVod(settings.moviesEnabled.value, settings.seriesEnabled.value, source)
+        ) {
             runCatching { syncXtreamVod(source, nowUtcMillis) }
                 .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
         }
         live
     }
 
-    /** Live channels only — the fast path so the guide can show before VOD and the guide load. */
-    suspend fun syncLive(source: Source, nowUtcMillis: Long): SyncResult = withContext(Dispatchers.IO) {
+    /** Live channels only — the fast path so the guide can show before VOD and the guide load.
+     *
+     * [onProgress] receives `(written, total)`; the total is known as soon as the provider's list
+     * arrives, so a caller can show a real bar rather than an indeterminate spinner. Stalker and
+     * M3U pass through the same contract with whatever they can report. */
+    suspend fun syncLive(
+        source: Source,
+        nowUtcMillis: Long,
+        onProgress: ((Int, Int) -> Unit)? = null,
+    ): SyncResult = withContext(Dispatchers.IO) {
         try {
             when (source.kind) {
-                SourceKind.XTREAM -> syncXtreamLive(source, nowUtcMillis)
-                SourceKind.M3U -> syncM3u(source, nowUtcMillis)
-                SourceKind.STALKER -> syncStalkerLive(source, nowUtcMillis)
+                SourceKind.XTREAM -> syncXtreamLive(source, nowUtcMillis, onProgress)
+                SourceKind.M3U -> syncM3u(source, nowUtcMillis, onProgress)
+                SourceKind.STALKER -> syncStalkerLive(source, nowUtcMillis, onProgress)
             }
         } catch (e: CancellationException) {
             throw e
@@ -646,19 +660,49 @@ class CatalogRepository(
         }
     }
 
-    /** Movies + series — best-effort, meant to run in the background so a huge VOD list never
-     * blocks live TV. Silent on failure: an account with no VOD is normal, not an error. */
-    suspend fun syncVod(source: Source, nowUtcMillis: Long) = withContext(Dispatchers.IO) {
-        runCatching { if (source.kind == SourceKind.XTREAM) syncXtreamVod(source, nowUtcMillis) }
-            .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
+    /** What a VOD pass actually wrote. Surfaced on the provisioning dashboard. */
+    data class VodSyncResult(val movies: Int, val series: Int) {
+        companion object {
+            val NONE = VodSyncResult(0, 0)
+        }
     }
 
-    private suspend fun syncXtreamLive(source: Source, nowUtcMillis: Long): SyncResult {
+    /** Hides every stored channel for a source. Used when a playlist has Live TV switched off, so
+     *  rows an earlier add left behind stop appearing in the guide. */
+    suspend fun hideChannelsForSource(sourceId: Long) = withContext(Dispatchers.IO) {
+        channelDao.forSource(sourceId).forEach { channelDao.setHidden(it.id, true) }
+    }
+
+    /** Movies + series — best-effort, meant to run in the background so a huge VOD list never
+     * blocks live TV. Silent on failure: an account with no VOD is normal, not an error.
+     *
+     * [onProgress] receives `(moviesWritten, moviesTotal, seriesWritten, seriesTotal)`. The totals
+     * come from the provider's list, which is in hand before the first write, so a caller can show
+     * a real percentage rather than a spinner. */
+    suspend fun syncVod(
+        source: Source,
+        nowUtcMillis: Long,
+        onProgress: ((Int, Int, Int, Int) -> Unit)? = null,
+    ): VodSyncResult = withContext(Dispatchers.IO) {
+        runCatching {
+            if (source.kind == SourceKind.XTREAM) syncXtreamVod(source, nowUtcMillis, onProgress)
+            else VodSyncResult.NONE
+        }
+            .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
+            .getOrDefault(VodSyncResult.NONE)
+    }
+
+    private suspend fun syncXtreamLive(
+        source: Source,
+        nowUtcMillis: Long,
+        onProgress: ((Int, Int) -> Unit)? = null,
+    ): SyncResult {
         // Authenticate first so a wrong password produces a clear message rather than
         // four separate confusing failures further down.
         api.authenticate(source)
 
         val liveCategories = api.liveCategories(source)
+        onProgress?.invoke(0, 0)
         val channels = api.liveStreams(source)
         if (channels.isEmpty()) {
             return SyncResult.Failed(
@@ -667,9 +711,12 @@ class CatalogRepository(
             )
         }
 
+        // The whole list is in hand, so the dashboard can show "12,000 of 26,979 channels".
+        onProgress?.invoke(0, channels.size)
         categoryDao.upsertAll(liveCategories)
         val categoryNames = liveCategories.associate { it.id to it.name }
         channelDao.replaceCatalogue(source.id, normalized(channels, categoryNames), nowUtcMillis)
+        onProgress?.invoke(channels.size, channels.size)
         sourceDao.markCatalogSynced(source.id, nowUtcMillis)
         return SyncResult.Success(channels.size, 0, 0)
     }
@@ -680,7 +727,11 @@ class CatalogRepository(
      * play time. The handshake happens inside [StalkerApi] on first call; a bad MAC or URL throws
      * here with a clear message, caught by [syncLive].
      */
-    private suspend fun syncStalkerLive(source: Source, nowUtcMillis: Long): SyncResult {
+    private suspend fun syncStalkerLive(
+        source: Source,
+        nowUtcMillis: Long,
+        onProgress: ((Int, Int) -> Unit)? = null,
+    ): SyncResult {
         val liveCategories = stalkerApi.liveCategories(source)
         val channels = stalkerApi.liveChannels(source)
         if (channels.isEmpty()) {
@@ -689,9 +740,11 @@ class CatalogRepository(
                 null,
             )
         }
+        onProgress?.invoke(0, channels.size)
         categoryDao.upsertAll(liveCategories)
         val categoryNames = liveCategories.associate { it.id to it.name }
         channelDao.replaceCatalogue(source.id, normalized(channels, categoryNames), nowUtcMillis)
+        onProgress?.invoke(channels.size, channels.size)
         sourceDao.markCatalogSynced(source.id, nowUtcMillis)
         return SyncResult.Success(channels.size, 0, 0)
     }
@@ -708,35 +761,63 @@ class CatalogRepository(
         return runCatching { stalkerApi.createLink(source, cmd) }.getOrNull() ?: channel.streamUrl
     }
 
-    private suspend fun syncXtreamVod(source: Source, nowUtcMillis: Long) {
+    private suspend fun syncXtreamVod(
+        source: Source,
+        nowUtcMillis: Long,
+        onProgress: ((Int, Int, Int, Int) -> Unit)? = null,
+    ): VodSyncResult {
         // VOD is optional: plenty of accounts have live TV only, and a 404 on get_vod_streams
         // must not cost the user their channel list. Movies and series are gated independently so
         // a user who only turned off, say, Series still gets their movie library refreshed.
-        val moviesOn = settings.moviesEnabled.value
-        val seriesOn = settings.seriesEnabled.value
-        if (!moviesOn && !seriesOn) return
+        //
+        // The playlist's own Movies/Shows ticks gate this too: a playlist the user excluded from
+        // VOD must not have its titles pulled because another playlist wanted them.
+        val moviesOn = SourceGates.movies(settings.moviesEnabled.value, source)
+        val seriesOn = SourceGates.series(settings.seriesEnabled.value, source)
+        if (!moviesOn && !seriesOn) return VodSyncResult.NONE
 
-        val movieCategories =
-            if (moviesOn) runCatching { api.movieCategories(source) }.getOrDefault(emptyList())
-            else emptyList()
-        val movies =
-            if (moviesOn) runCatching { api.movies(source) }.getOrDefault(emptyList())
-            else emptyList()
-        val seriesCategories =
-            if (seriesOn) runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
-            else emptyList()
-        val series =
-            if (seriesOn) runCatching { api.series(source) }.getOrDefault(emptyList())
-            else emptyList()
+        var moviesWritten = 0
+        var seriesWritten = 0
+        var moviesTotal = 0
+        var seriesTotal = 0
 
-        if (movieCategories.isNotEmpty() || seriesCategories.isNotEmpty()) {
-            categoryDao.upsertAll(movieCategories + seriesCategories)
+        // Fetch → write → release, ONE CONTENT TYPE AT A TIME, in 500-row chunks.
+        // The old shape built the entire movie list and the entire series list, then held both
+        // (plus their parsed JSON) alive while writing — the peak that tipped a big provider over
+        // the 384MB heap on TV boxes. Each list here is tens of thousands of rows.
+        if (moviesOn) {
+            runCatching { api.movieCategories(source) }.getOrDefault(emptyList())
+                .takeIf { it.isNotEmpty() }?.let { categoryDao.upsertAll(it) }
+            val movies = runCatching { api.movies(source) }.getOrDefault(emptyList())
+            moviesTotal = movies.size
+            onProgress?.invoke(moviesWritten, moviesTotal, seriesWritten, seriesTotal)
+            movies.chunked(VOD_UPSERT_CHUNK).forEach { chunk ->
+                movieDao.upsertAll(chunk)
+                moviesWritten += chunk.size
+                onProgress?.invoke(moviesWritten, moviesTotal, seriesWritten, seriesTotal)
+            }
         }
-        if (movies.isNotEmpty()) movieDao.upsertAll(movies)
-        if (series.isNotEmpty()) seriesDao.upsertAll(series)
+        if (seriesOn) {
+            runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
+                .takeIf { it.isNotEmpty() }?.let { categoryDao.upsertAll(it) }
+            val series = runCatching { api.series(source) }.getOrDefault(emptyList())
+            seriesTotal = series.size
+            onProgress?.invoke(moviesWritten, moviesTotal, seriesWritten, seriesTotal)
+            series.chunked(VOD_UPSERT_CHUNK).forEach { chunk ->
+                seriesDao.upsertAll(chunk)
+                seriesWritten += chunk.size
+                onProgress?.invoke(moviesWritten, moviesTotal, seriesWritten, seriesTotal)
+            }
+        }
+        sourceDao.markCatalogSynced(source.id, nowUtcMillis)
+        return VodSyncResult(moviesWritten, seriesWritten)
     }
 
-    private suspend fun syncM3u(source: Source, nowUtcMillis: Long): SyncResult {
+    private suspend fun syncM3u(
+        source: Source,
+        nowUtcMillis: Long,
+        onProgress: ((Int, Int) -> Unit)? = null,
+    ): SyncResult {
         val request = Request.Builder()
             .url(source.url)
             .header("User-Agent", source.userAgent)
@@ -774,7 +855,9 @@ class CatalogRepository(
 
         categoryDao.upsertAll(categories)
         val categoryNames = categories.associate { it.id to it.name }
+        onProgress?.invoke(0, parsed.channels.size)
         channelDao.replaceCatalogue(source.id, normalized(parsed.channels, categoryNames), nowUtcMillis)
+        onProgress?.invoke(parsed.channels.size, parsed.channels.size)
 
         // If the playlist declared its own guide URL and the user did not set one, adopt it.
         if (source.epgUrl.isNullOrBlank() && !parsed.declaredEpgUrl.isNullOrBlank()) {
@@ -936,6 +1019,13 @@ class CatalogRepository(
 
     companion object {
         private const val TAG = "CatalogRepository"
+
+        /**
+         * Rows per VOD write batch. A provider with tens of thousands of titles is written in
+         * chunks rather than one enormous transaction — smaller transient allocations, and the
+         * write can't hold the whole list in a single Room statement.
+         */
+        private const val VOD_UPSERT_CHUNK = 2000
         val SEPARATOR_CHARS = setOf('#', '*', '=', '~', '-', '_', '•', '█', '▓', '|')
 
         /**

@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
+import app.opentv.ui.theme.AppTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -288,7 +289,16 @@ private fun NasPane(viewModel: SyncViewModel) {
                     color = Color.White,
                     modifier = Modifier.weight(1f),
                 )
-                Switch(checked = autoSync, onCheckedChange = { viewModel.setNasAutoSync(it) })
+                Switch(
+                    checked = autoSync,
+                    onCheckedChange = { viewModel.setNasAutoSync(it) },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = AppTheme.primary,
+                        checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                        uncheckedThumbColor = Color(0xFFB0BEC5),
+                        uncheckedTrackColor = Color(0xFF37474F),
+                    ),
+                )
             }
         }
     }

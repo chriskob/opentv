@@ -22,8 +22,14 @@ import app.opentv.core.AppSettings.AccentColor
 val AccentColor.primary: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFF22D3EE)
-        AccentColor.EMERALD -> Color(0xFF34D399)
         AccentColor.SAPPHIRE -> Color(0xFF60A5FA)
+        AccentColor.VIOLET -> Color(0xFFA76FFC)
+        AccentColor.EMERALD -> Color(0xFF34D399)
+        AccentColor.LIME -> Color(0xFFA0F933)
+        AccentColor.GOLD -> Color(0xFFF6D72C)
+        AccentColor.ORANGE -> Color(0xFFEC971E)
+        AccentColor.CRIMSON -> Color(0xFFE43935)
+        AccentColor.ROSE -> Color(0xFFE65680)
         AccentColor.AMETHYST -> Color(0xFFA78BFA)
         AccentColor.AMBER -> Color(0xFFFBBF24)
     }
@@ -31,8 +37,14 @@ val AccentColor.primary: Color
 val AccentColor.dark: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFF0891B2)
-        AccentColor.EMERALD -> Color(0xFF059669)
         AccentColor.SAPPHIRE -> Color(0xFF2563EB)
+        AccentColor.VIOLET -> Color(0xFF7C3AED)
+        AccentColor.EMERALD -> Color(0xFF059669)
+        AccentColor.LIME -> Color(0xFF65A30D)
+        AccentColor.GOLD -> Color(0xFFCA8A04)
+        AccentColor.ORANGE -> Color(0xFFC2410C)
+        AccentColor.CRIMSON -> Color(0xFFB91C1C)
+        AccentColor.ROSE -> Color(0xFFBE123C)
         AccentColor.AMETHYST -> Color(0xFF7C3AED)
         AccentColor.AMBER -> Color(0xFFD97706)
     }
@@ -40,8 +52,14 @@ val AccentColor.dark: Color
 val AccentColor.light: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFFA5F3FC)
-        AccentColor.EMERALD -> Color(0xFFA7F3D0)
         AccentColor.SAPPHIRE -> Color(0xFFBFDBFE)
+        AccentColor.VIOLET -> Color(0xFFE9D5FF)
+        AccentColor.EMERALD -> Color(0xFFA7F3D0)
+        AccentColor.LIME -> Color(0xFFECFCCB)
+        AccentColor.GOLD -> Color(0xFFFDE68A)
+        AccentColor.ORANGE -> Color(0xFFFED7AA)
+        AccentColor.CRIMSON -> Color(0xFFFECACA)
+        AccentColor.ROSE -> Color(0xFFFECDD3)
         AccentColor.AMETHYST -> Color(0xFFDDD6FE)
         AccentColor.AMBER -> Color(0xFFFDE68A)
     }
@@ -49,8 +67,14 @@ val AccentColor.light: Color
 val AccentColor.highlightGlow: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFF67E8F9)
-        AccentColor.EMERALD -> Color(0xFF6EE7B7)
         AccentColor.SAPPHIRE -> Color(0xFF93C5FD)
+        AccentColor.VIOLET -> Color(0xFFC4B5FD)
+        AccentColor.EMERALD -> Color(0xFF6EE7B7)
+        AccentColor.LIME -> Color(0xFFD9F99D)
+        AccentColor.GOLD -> Color(0xFFFDE047)
+        AccentColor.ORANGE -> Color(0xFFFDBA74)
+        AccentColor.CRIMSON -> Color(0xFFFCA5A5)
+        AccentColor.ROSE -> Color(0xFFFDA4AF)
         AccentColor.AMETHYST -> Color(0xFFC4B5FD)
         AccentColor.AMBER -> Color(0xFFFCD34D)
     }
@@ -58,8 +82,14 @@ val AccentColor.highlightGlow: Color
 val AccentColor.cardFocusBg: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFF12262E)
-        AccentColor.EMERALD -> Color(0xFF12261E)
         AccentColor.SAPPHIRE -> Color(0xFF131D2F)
+        AccentColor.VIOLET -> Color(0xFF221536)
+        AccentColor.EMERALD -> Color(0xFF12261E)
+        AccentColor.LIME -> Color(0xFF1F2A0F)
+        AccentColor.GOLD -> Color(0xFF2B230E)
+        AccentColor.ORANGE -> Color(0xFF2D1C0E)
+        AccentColor.CRIMSON -> Color(0xFF2E1414)
+        AccentColor.ROSE -> Color(0xFF2E151B)
         AccentColor.AMETHYST -> Color(0xFF231B31)
         AccentColor.AMBER -> Color(0xFF2A2110)
     }
@@ -67,8 +97,14 @@ val AccentColor.cardFocusBg: Color
 val AccentColor.displayName: String
     get() = when (this) {
         AccentColor.CYAN -> "Cyan"
-        AccentColor.EMERALD -> "Emerald"
         AccentColor.SAPPHIRE -> "Sapphire"
+        AccentColor.VIOLET -> "Violet"
+        AccentColor.EMERALD -> "Emerald"
+        AccentColor.LIME -> "Lime"
+        AccentColor.GOLD -> "Gold"
+        AccentColor.ORANGE -> "Orange"
+        AccentColor.CRIMSON -> "Crimson"
+        AccentColor.ROSE -> "Rose"
         AccentColor.AMETHYST -> "Amethyst"
         AccentColor.AMBER -> "Amber"
     }

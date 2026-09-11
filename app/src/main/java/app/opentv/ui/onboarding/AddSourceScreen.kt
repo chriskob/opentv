@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -110,6 +111,14 @@ fun AddSourceScreen(
     var showAdvanced by remember { mutableStateOf(false) }
     var userAgent by remember { mutableStateOf(Source.DEFAULT_USER_AGENT) }
 
+    // What to load from this playlist. Unticking TV channels leaves the guide empty for this
+    // provider — the same choice the phone page offers, and the reason a playlist added for its
+    // VOD must not dump its channel list into the guide. Ticking Movies/Shows fills those
+    // sections straight away instead of waiting for a background refresh.
+    var includeLive by remember { mutableStateOf(true) }
+    var includeVod by remember { mutableStateOf(true) }
+    var includeSeries by remember { mutableStateOf(true) }
+
     fun draft() = Source(
         name = name.ifBlank {
             if (kind == SourceKind.M3U) context.getString(R.string.onboarding_default_playlist_name)
@@ -122,6 +131,9 @@ fun AddSourceScreen(
         macAddress = mac.takeIf { it.isNotBlank() },
         epgUrl = epgUrl.takeIf { it.isNotBlank() },
         userAgent = userAgent.ifBlank { Source.DEFAULT_USER_AGENT },
+        includeLive = includeLive,
+        includeVod = includeVod,
+        includeSeries = includeSeries,
     )
 
     val canSubmit = url.isNotBlank() && when (kind) {
@@ -294,6 +306,18 @@ fun AddSourceScreen(
                 Spacer(Modifier.height(12.dp))
             }
 
+            // What to load. TV channels off means this playlist contributes no channels and no
+            // live categories at all.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LoadOption(stringResource(R.string.nav_live_tv), includeLive) { includeLive = it }
+                LoadOption(stringResource(R.string.nav_movies), includeVod) { includeVod = it }
+                LoadOption(stringResource(R.string.nav_shows), includeSeries) { includeSeries = it }
+            }
+            Spacer(Modifier.height(12.dp))
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
                     onClick = { viewModel.test(draft()) },
@@ -356,3 +380,17 @@ private fun PasteButton(onPaste: (String) -> Unit) {
         Icon(Icons.Filled.ContentPaste, contentDescription = stringResource(R.string.kbd_paste))
     }
 }
+
+/**
+ * One "load this section?" tick on the add-source screen. TV channels off means the playlist
+ * contributes nothing to the guide — no channels and no live categories — which is what the
+ * checkbox promises.
+ */
+@Composable
+private fun LoadOption(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = checked, onCheckedChange = onChange)
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+

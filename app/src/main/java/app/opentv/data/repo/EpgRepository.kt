@@ -77,20 +77,12 @@ class EpgRepository(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    @Volatile
-    private var windowCache: Pair<LongRange, Map<String, List<Programme>>>? = null
-
-    init {
-        // Eagerly pre-warm the active 6-hour guide window in memory on cold startup
-        scope.launch {
-            val now = System.currentTimeMillis()
-            val start = now - (now % (30 * 60 * 1000L))
-            val lookahead = 6 * 60 * 60 * 1000L
-            runCatching {
-                loadWindow(start, start + lookahead)
-            }
-        }
-    }
+    // NOTE: an eager `windowCache` used to be filled here on cold start — and again after every
+    // sync — with EVERY channel's programmes for a 6-hour window. Nothing ever read it
+    // (getCachedWindow/observeWindow had no callers), yet on a 25k-channel playlist it retained
+    // hundreds of thousands of Programme objects and was a primary cause of the OutOfMemoryError
+    // crashes on the ONN box (384MB heap). The guide's real cache is the bounded LRU
+    // [railWindowCache], which is what the queries below actually use and evict.
 
     data class SyncSummary(
         val feedsSucceeded: Int,
@@ -103,40 +95,6 @@ class EpgRepository(
     // ---- Reads -----------------------------------------------------------------------------
 
     fun observeFeeds(): Flow<List<EpgFeed>> = feedDao.observeAll()
-
-    fun getCachedWindow(fromUtcMillis: Long, toUtcMillis: Long): Map<String, List<Programme>>? {
-        val current = windowCache
-        if (current != null && fromUtcMillis >= current.first.first && toUtcMillis <= current.first.last) {
-            return current.second
-        }
-        return null
-    }
-
-    suspend fun loadWindow(fromUtcMillis: Long, toUtcMillis: Long): Map<String, List<Programme>> =
-        withContext(Dispatchers.IO) {
-            val list = programmeDao.window(fromUtcMillis, toUtcMillis)
-            val map = list.groupBy { it.epgChannelId }.mapValues { (_, progs) ->
-                progs.sortedBy { it.startUtcMillis }
-            }
-            windowCache = (fromUtcMillis..toUtcMillis) to map
-            map
-        }
-
-    fun observeWindow(fromUtcMillis: Long, toUtcMillis: Long): Flow<Map<String, List<Programme>>> =
-        programmeDao.observeWindow(fromUtcMillis, toUtcMillis)
-            .map { programmes ->
-                val map = programmes.groupBy { it.epgChannelId }.mapValues { (_, progs) ->
-                    progs.sortedBy { it.startUtcMillis }
-                }
-                windowCache = (fromUtcMillis..toUtcMillis) to map
-                map
-            }
-            .onStart {
-                val cached = windowCache
-                if (cached != null && fromUtcMillis >= cached.first.first && toUtcMillis <= cached.first.last) {
-                    emit(cached.second)
-                }
-            }
 
     fun observeNow(nowUtcMillis: Long): Flow<List<Programme>> =
         programmeDao.observeNow(nowUtcMillis)
@@ -171,7 +129,25 @@ class EpgRepository(
     // category the user is currently bouncing between stays cached even when a big
     // category loaded in between would otherwise push it out by insertion age.
     private val railWindowCache = LinkedHashMap<String, List<Programme>>(0, 0.75f, true)
-    private val railCacheCap = 2_500
+    // 2500 was too generous for a 384MB heap: 2500 channels × ~60 programmes ≈ 150k retained
+    // Programme objects on top of the rows list. 800 was then too *small*: a guide fill of a
+    // 254-row category asks for ~1,000 ids, so a fill evicted its own earlier chunks. 1500 clears
+    // one full fill with headroom while staying far below the growth that caused the OOM — and
+    // the guide's own row cache now covers the repeat case, so this one no longer has to.
+    private val railCacheCap = 1500
+
+    /**
+     * Bumped only when a sync delivers fresh programme data. Consumers that cache guide rows watch
+     * this so their copy cannot go stale.
+     *
+     * Deliberately NOT bumped when [railWindowCache] is simply re-scoped to a different window
+     * (the guide's quick 8h pass and its 48h fill use different bounds on every single run, so a
+     * bounds-driven counter moved twice per run — which invalidated the guide's row cache every
+     * time and quietly reduced it to a no-op).
+     */
+    @Volatile
+    var dataGeneration: Long = 0L
+        private set
 
     suspend fun windowForChannelsCached(
         epgIds: List<String>,
@@ -364,15 +340,18 @@ class EpgRepository(
             reclaimDiskSpace()
 
             val (matched, total) = runMatcher()
-            val start = nowUtcMillis - (nowUtcMillis % (30 * 60 * 1000L))
-            val lookahead = 6 * 60 * 60 * 1000L
-            runCatching { loadWindow(start, start + lookahead) }
+            // (The post-sync 6-hour `loadWindow` pre-warm that used to run here is gone: it held
+            // every channel's programmes in memory for no reader — see the note by [scope].)
             // Stamp for the guide header ("EPG updated … · N channels"). total = channels the
             // guide covers; written above is programme rows, not channels, hence total here.
             settings?.lastGuideUpdatedMillis = nowUtcMillis
             settings?.lastGuideChannelCount = total
-            // Fresh guide data — drop the stale window cache so the guide re-reads it.
-            windowCacheMutex.withLock { railWindowCache.clear() }
+            // Fresh guide data — drop the stale window cache so the guide re-reads it, and move the
+            // generation so every cached row built from the old data re-reads too.
+            windowCacheMutex.withLock {
+                railWindowCache.clear()
+                dataGeneration++
+            }
             SyncSummary(succeeded, failed, written, matched, total)
         }
 

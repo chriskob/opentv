@@ -38,13 +38,21 @@ class OpenTvApp : Application(), ImageLoaderFactory {
         ImageLoader.Builder(this)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.20)
+                    // 8%, not 20%: on the boxes this app targets the ART heap cap is 384MB, and a
+                    // 20% bitmap cache (~77MB) sat right where the guide's data and the video
+                    // decoder needed room — it was a direct contributor to the OutOfMemoryError
+                    // and GC-pressure ANR reports. 8% (~30MB) still covers a screenful of posters
+                    // several times over; the disk cache handles the long tail.
+                    .maxSizePercent(0.08)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(256L * 1024 * 1024)
+                    // 256MB of art on a box whose /data is already holding a multi-GB guide
+                    // database. 64MB keeps the "already seen" hit rate without hogging the
+                    // partition (and the trim work that comes with it).
+                    .maxSizeBytes(64L * 1024 * 1024)
                     .build()
             }
             .crossfade(false)

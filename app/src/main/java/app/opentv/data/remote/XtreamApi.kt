@@ -21,6 +21,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeToSequence
 import kotlinx.serialization.json.jsonObject
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -99,11 +100,12 @@ class XtreamApi(
     }
 
     suspend fun liveStreams(source: Source): List<Channel> = withContext(Dispatchers.IO) {
-        getJson(source, "get_live_streams").arrayOrEmpty.mapIndexedNotNull { index, element ->
-            val obj = element.jsonObjectOrNull ?: return@mapIndexedNotNull null
-            val streamId = obj["stream_id"].asStringOrNull ?: return@mapIndexedNotNull null
-            val name = obj["name"].asStringOrNull ?: return@mapIndexedNotNull null
-            Channel(
+        val out = ArrayList<Channel>(4096)
+        forEachArrayElement(source, "get_live_streams") { index, element ->
+            val obj = element.jsonObjectOrNull ?: return@forEachArrayElement
+            val streamId = obj["stream_id"].asStringOrNull ?: return@forEachArrayElement
+            val name = obj["name"].asStringOrNull ?: return@forEachArrayElement
+            out += Channel(
                 sourceId = source.id,
                 streamId = streamId,
                 name = name,
@@ -119,15 +121,17 @@ class XtreamApi(
                 sortIndex = obj["num"].asIntOrNull ?: index,
             )
         }
+        out
     }
 
     suspend fun movies(source: Source): List<Movie> = withContext(Dispatchers.IO) {
-        getJson(source, "get_vod_streams").arrayOrEmpty.mapNotNull { element ->
-            val obj = element.jsonObjectOrNull ?: return@mapNotNull null
-            val streamId = obj["stream_id"].asStringOrNull ?: return@mapNotNull null
-            val name = obj["name"].asStringOrNull ?: return@mapNotNull null
+        val out = ArrayList<Movie>(4096)
+        forEachArrayElement(source, "get_vod_streams") { _, element ->
+            val obj = element.jsonObjectOrNull ?: return@forEachArrayElement
+            val streamId = obj["stream_id"].asStringOrNull ?: return@forEachArrayElement
+            val name = obj["name"].asStringOrNull ?: return@forEachArrayElement
             val extension = obj["container_extension"].asStringOrNull?.takeIf { it.isNotBlank() }
-            Movie(
+            out += Movie(
                 sourceId = source.id,
                 streamId = streamId,
                 name = name,
@@ -150,14 +154,16 @@ class XtreamApi(
                 tmdbId = obj["tmdb_id"].asStringOrNull ?: obj["tmdb"].asStringOrNull,
             )
         }
+        out
     }
 
     suspend fun series(source: Source): List<Series> = withContext(Dispatchers.IO) {
-        getJson(source, "get_series").arrayOrEmpty.mapNotNull { element ->
-            val obj = element.jsonObjectOrNull ?: return@mapNotNull null
-            val seriesId = obj["series_id"].asStringOrNull ?: return@mapNotNull null
-            val name = obj["name"].asStringOrNull ?: return@mapNotNull null
-            Series(
+        val out = ArrayList<Series>(2048)
+        forEachArrayElement(source, "get_series") { _, element ->
+            val obj = element.jsonObjectOrNull ?: return@forEachArrayElement
+            val seriesId = obj["series_id"].asStringOrNull ?: return@forEachArrayElement
+            val name = obj["name"].asStringOrNull ?: return@forEachArrayElement
+            out += Series(
                 sourceId = source.id,
                 seriesId = seriesId,
                 name = name,
@@ -175,6 +181,7 @@ class XtreamApi(
                 tmdbId = obj["tmdb_id"].asStringOrNull ?: obj["tmdb"].asStringOrNull,
             )
         }
+        out
     }
 
     /**
@@ -320,6 +327,57 @@ class XtreamApi(
             ?: throw XtreamException("\"${source.url}\" is not a valid server address.")
 
     // ---- Plumbing ------------------------------------------------------------------------
+
+    /**
+     * Streams a top-level JSON array, handing each element to [onElement] as it arrives.
+     *
+     * The three big catalogue endpoints (`get_live_streams`, `get_vod_streams`, `get_series`)
+     * return tens of thousands of entries on a large provider. Reading the body as one String and
+     * then building a full JsonElement tree meant holding text + tree + the mapped entities at
+     * once — hundreds of MB of peak on a 384MB-heap TV box, which surfaced as GC-pressure ANRs
+     * ("WaitingForGcToComplete" on the main thread) and OutOfMemoryError crashes. Streaming keeps
+     * only the mapped entities alive.
+     */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    private fun forEachArrayElement(
+        source: Source,
+        action: String?,
+        extra: (HttpUrl.Builder) -> Unit = {},
+        onElement: (index: Int, element: JsonElement) -> Unit,
+    ) {
+        val builder = baseUrl(source).newBuilder()
+            .encodedPath("/player_api.php")
+            .addQueryParameter("username", source.username.orEmpty())
+            .addQueryParameter("password", source.password.orEmpty())
+        if (action != null) builder.addQueryParameter("action", action)
+        extra(builder)
+
+        http.newCall(request(source, builder.build())).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw XtreamException(describeHttpFailure(response.code))
+            }
+            val body = response.body ?: throw XtreamException("The server returned an empty response.")
+            var index = 0
+            var sawAny = false
+            try {
+                body.byteStream().use { bytes ->
+                    json.decodeToSequence<JsonElement>(bytes).forEach { element ->
+                        sawAny = true
+                        onElement(index++, element)
+                    }
+                }
+            } catch (e: Exception) {
+                // Panels behind a captive portal or Cloudflare return HTML here. Saying
+                // "not valid JSON" is useless to a user; say what it probably means.
+                throw XtreamException(
+                    "The server replied with something that is not a valid catalogue. " +
+                        "Check the address and port are correct.",
+                    e,
+                )
+            }
+            if (!sawAny) throw XtreamException("The server returned an empty response.")
+        }
+    }
 
     private fun getJson(
         source: Source,

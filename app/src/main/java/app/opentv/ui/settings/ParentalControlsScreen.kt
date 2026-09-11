@@ -34,6 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.Switch
+import app.opentv.ui.theme.AppTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -153,7 +154,16 @@ fun ParentalControlsScreen(
                         color = Color.White.copy(alpha = 0.65f),
                     )
                 }
-                Switch(checked = unlocked, onCheckedChange = settings::setHiddenUnlocked)
+                Switch(
+                    checked = unlocked,
+                    onCheckedChange = settings::setHiddenUnlocked,
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = AppTheme.primary,
+                        checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                        uncheckedThumbColor = Color(0xFFB0BEC5),
+                        uncheckedTrackColor = Color(0xFF37474F),
+                    ),
+                )
             }
         }
 
@@ -220,8 +230,10 @@ private fun CategoryToggleRow(
                 checked = checked,
                 onCheckedChange = onToggle,
                 colors = androidx.compose.material3.SwitchDefaults.colors(
-                    checkedThumbColor = if (focused) Color(0xFF00838F) else Color(0xFF26C6DA),
-                    checkedTrackColor = if (focused) Color(0xFFB2EBF2) else Color(0xFF004D40),
+                    checkedThumbColor = AppTheme.primary,
+                    checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                    uncheckedThumbColor = Color(0xFFB0BEC5),
+                    uncheckedTrackColor = Color(0xFF37474F),
                 ),
             )
         }

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.12.83
+
+- **Guide Performance — no more full re-hydration on every pipeline restart**:
+  - The guide now keeps its hydrated rows for the current window, keyed per channel. A restart
+    (Room re-emits `channels` on every catalogue-sync write) re-attaches programmes from memory
+    instead of re-reading ~97,000 programme rows from SQLite — measured at 11.7s and a 101MB /
+    2.1M-object GC per fill before, and this is what made Back from the player take 5-6 seconds.
+  - Fixed the invalidation counter that silently defeated that cache: the guide's own quick pass
+    and its 48h fill re-scope the repository cache with different bounds on every run, so a
+    bounds-driven generation moved twice per run and wiped the row cache every time.
+  - Progressive fill emissions are conflated (~180ms) — each one re-measures the visible rows.
+  - Rail cache sizing corrected (800 was smaller than the ~1,000 ids a 254-row fill needs, so a
+    fill evicted its own chunks); VOD upsert chunk 500 → 2000 rows, 4× fewer invalidations.
+- **Memory**:
+  - Coil's bitmap cache 20% → 8% of heap and the disk cache 256MB → 64MB: on a 384MB-heap box the
+    old bitmap cache sat exactly where the guide and the video decoder needed room.
+  - Guide accessibility nodes trimmed (the 96-slot time ruler is decorative and now semantically
+    empty; programme cells merge into one node) — these boxes run an accessibility service, so the
+    semantics tree is walked on every frame.
+  - Measured on the ONN after the change: Java heap 123MB → 79MB, RSS 328MB → 312MB, swap 6.4MB → 0.4MB.
+- **Loading page rebuilt**: cards now read **TV channels → Movies & Shows → TV guide**, and all
+  three carry a real bar, a percentage and a count (`62% · 12,000 of 26,979 channels`). Live and
+  VOD syncs report `(written, total)` through the repository so the numbers are real.
+- **Adding a playlist — the checkboxes now actually decide**:
+  - The on-TV add screen had **no** Channels/Movies/Shows options at all, so every add pulled live
+    channels and their categories regardless. Added the three ticks; unticking TV channels skips
+    the live import *and* hides rows a previous add left behind.
+  - The phone manager page had the same gap — it now offers the three ticks too.
+  - The remote-portal payload is read with alias keys (`include_live`/`live`/`channels`,
+    `vod`/`movies`, `series`/`shows`) and the playlist name accepts `title`/`playlistName`/`label`
+    as well as `name`: a key miss silently fell back to defaults, which is how a playlist excluded
+    from Live TV still imported its channels and how a typed name never stuck.
+  - The rule itself is now one place — `SourceGates` — instead of several inline copies, with
+    `SourceGatesTest` covering it (8 tests).
+- **Movies & Shows**:
+  - Fetched at add time rather than waiting for a background refresh, gated per playlist
+    (a playlist excluded from VOD no longer pulls titles because another playlist wanted them).
+  - Poster art warms the next 12 items past the visible edge of a shelf or grid, and posters use a
+    stable cache key so the same art is decoded once and every repeat appearance is a memory hit.
+
 ## 0.12.82
 
 - **Modernized Accent Palette (Appearance)**:

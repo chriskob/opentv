@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.Switch
+import app.opentv.ui.theme.AppTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -381,7 +382,16 @@ private fun ToggleRow(label: String, subtitle: String, checked: Boolean, onCheck
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = androidx.compose.material3.SwitchDefaults.colors(
+                checkedThumbColor = AppTheme.primary,
+                checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                uncheckedThumbColor = Color(0xFFB0BEC5),
+                uncheckedTrackColor = Color(0xFF37474F),
+            ),
+        )
     }
 }
 

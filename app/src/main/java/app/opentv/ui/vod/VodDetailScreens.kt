@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,7 @@ import app.opentv.data.model.Series
 import app.opentv.data.model.StremioStream
 import app.opentv.data.parser.displayTitle
 import app.opentv.ui.VodViewModel
+import app.opentv.ui.components.posterRequest
 import coil.compose.AsyncImage
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
@@ -384,7 +386,7 @@ private fun DetailBackdrop(
         var bgIndex by remember(bgCandidates) { mutableStateOf(0) }
         bgCandidates.getOrNull(bgIndex)?.let { model ->
             AsyncImage(
-                model = model,
+                model = posterRequest(LocalContext.current, model) ?: model,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),
@@ -454,7 +456,7 @@ private fun HeroPosterCard(posterUrl: String?, title: String) {
     ) {
         if (posterUrl != null && !posterFailed) {
             AsyncImage(
-                model = posterUrl,
+                model = posterRequest(LocalContext.current, posterUrl) ?: posterUrl,
                 contentDescription = title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),

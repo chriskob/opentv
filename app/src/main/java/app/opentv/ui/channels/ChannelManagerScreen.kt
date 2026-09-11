@@ -31,6 +31,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
+import app.opentv.ui.theme.AppTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -393,7 +395,16 @@ private fun ManagerRow(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(stringResource(R.string.channels_show), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             // Checked = visible; off = hidden. Reads the natural way: switch it off to hide.
-            Switch(checked = !hidden, onCheckedChange = { onToggleHidden() })
+            Switch(
+                checked = !hidden,
+                onCheckedChange = { onToggleHidden() },
+                colors = androidx.compose.material3.SwitchDefaults.colors(
+                    checkedThumbColor = AppTheme.primary,
+                    checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                    uncheckedThumbColor = Color(0xFFB0BEC5),
+                    uncheckedTrackColor = Color(0xFF37474F),
+                ),
+            )
         }
     }
 }

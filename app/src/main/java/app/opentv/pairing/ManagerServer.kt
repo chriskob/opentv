@@ -375,9 +375,10 @@ class ManagerServer(
     // ---- Add a provider ------------------------------------------------------------------------
 
     /**
-     * `POST /source {kind,name,url,username?,password?,mac?}` → save the provider and pull its live
-     * channels, so the catalogue fills without anyone typing a server address on the TV remote.
-     * Mirrors the on-device Add-source screen: save, then load live channels first.
+     * `POST /source {kind,name,url,username?,password?,mac?,includeLive?,includeVod?,includeSeries?}`
+     * → save the provider, then pull exactly what the user ticked: live channels, movies, shows.
+     * Unticking TV channels means no channels are fetched at all (and rows an earlier add left
+     * behind are hidden), so a playlist added for its VOD cannot reappear in the guide.
      */
     private fun handleAddSource(output: OutputStream, body: String) {
         val draft = runCatching { json.decodeFromString(SourceReq.serializer(), body) }.getOrNull()?.toDraftOrNull()
@@ -389,10 +390,36 @@ class ManagerServer(
             val id = sourceRepository.save(draft)
             val saved = sourceRepository.byId(id)
                 ?: return@runBlocking AddResultDto(ok = false, error = "Could not save the source.")
-            when (val r = catalog.syncLive(saved, System.currentTimeMillis())) {
-                is CatalogRepository.SyncResult.Success -> AddResultDto(ok = true, channels = r.channelCount)
-                is CatalogRepository.SyncResult.Failed -> AddResultDto(ok = false, error = r.reason)
+            val now = System.currentTimeMillis()
+
+            var channels = 0
+            if (saved.includeLive) {
+                when (val r = catalog.syncLive(saved, now)) {
+                    is CatalogRepository.SyncResult.Success -> channels = r.channelCount
+                    is CatalogRepository.SyncResult.Failed ->
+                        return@runBlocking AddResultDto(ok = false, error = r.reason)
+                }
+            } else {
+                // Live TV switched off for this playlist: hide anything a previous add stored,
+                // so unticking the box actually takes the channels out of the guide.
+                runCatching { catalog.hideChannelsForSource(saved.id) }
             }
+
+            // Movies/Shows are pulled here rather than waiting for the periodic worker, so the
+            // sections are populated by the time the phone page says it finished. Ticking the box
+            // is also the user asking for those sections, so switch them on — otherwise a ticked
+            // library would sync nothing while the global section toggle sat off.
+            if (saved.includeVod) settings.setMoviesEnabled(true)
+            if (saved.includeSeries) settings.setSeriesEnabled(true)
+            var movies = 0
+            var shows = 0
+            if (saved.includeVod || saved.includeSeries) {
+                val vod = runCatching { catalog.syncVod(saved, now) }
+                    .getOrDefault(CatalogRepository.VodSyncResult.NONE)
+                movies = vod.movies
+                shows = vod.series
+            }
+            AddResultDto(ok = true, channels = channels, movies = movies, shows = shows)
         }
         writeJson(output, AddResultDto.serializer(), result)
     }
@@ -430,6 +457,9 @@ class ManagerServer(
             password = password?.takeIf { it.isNotBlank() },
             macAddress = mac?.takeIf { it.isNotBlank() },
             userAgent = Source.DEFAULT_USER_AGENT,
+            includeLive = includeLive,
+            includeVod = includeVod,
+            includeSeries = includeSeries,
         )
     }
 
@@ -548,8 +578,18 @@ class ManagerServer(
     val username: String? = null,
     val password: String? = null,
     val mac: String? = null,
+    /** What to pull for this playlist. Omitted = the old behaviour (all three on). */
+    val includeLive: Boolean = true,
+    val includeVod: Boolean = true,
+    val includeSeries: Boolean = true,
 )
 
-@Serializable private data class AddResultDto(val ok: Boolean, val channels: Int = 0, val error: String? = null)
+@Serializable private data class AddResultDto(
+    val ok: Boolean,
+    val channels: Int = 0,
+    val movies: Int = 0,
+    val shows: Int = 0,
+    val error: String? = null,
+)
 
 @Serializable private data class TestResultDto(val ok: Boolean, val message: String? = null, val error: String? = null)

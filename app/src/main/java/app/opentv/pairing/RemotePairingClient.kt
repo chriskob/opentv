@@ -262,19 +262,33 @@ class RemotePairingClient(
                             for (i in 0 until playlistsArr.length()) {
                                 val item = playlistsArr.getJSONObject(i)
                                 val isXtream = item.optString("kind").equals("xtream", ignoreCase = true)
-                                val name = item.optString("name").ifBlank {
-                                    if (isXtream) "Xtream Provider" else "M3U Playlist"
-                                }
+                                // Portals spell the playlist name differently — `name`, `title`,
+                                // `playlistName`. Reading only `name` left the user's typed name
+                                // on the floor and fell back to "Xtream Provider".
+                                val name = listOf("name", "title", "playlistName", "label", "sourceName")
+                                    .firstNotNullOfOrNull { key -> item.optString(key).takeIf { it.isNotBlank() } }
+                                    ?: if (isXtream) "Xtream Provider" else "M3U Playlist"
                                 val epgUrl = item.optString("epgUrl").takeIf { it.isNotBlank() && it != "null" }
                                 val id = item.optLong("id", 0L).takeIf { it != 0L }
 
                                 if (isXtream) {
                                     val optObj = item.optJSONObject("options")
+                                    // Log what the portal actually sent. Field naming is the one
+                                    // thing we cannot see from here, and a miss silently falls
+                                    // back to a default — which is exactly how a playlist the
+                                    // user excluded from Live TV still imported its channels.
+                                    runCatching {
+                                        Log.i(
+                                            TAG,
+                                            "provision playlist keys=${item.keys().asSequence().toList()} " +
+                                                "options=${optObj?.keys()?.asSequence()?.toList() ?: emptyList<String>()}",
+                                        )
+                                    }
                                     val filterOptions = if (optObj != null) {
                                         XtreamFilterOptions(
-                                            includeLive = optObj.optBoolean("includeLive", true),
-                                            includeVod = optObj.optBoolean("includeVod", false),
-                                            includeSeries = optObj.optBoolean("includeSeries", false),
+                                            includeLive = optObj.optBooleanAny(true, "includeLive", "include_live", "live", "channels"),
+                                            includeVod = optObj.optBooleanAny(false, "includeVod", "include_vod", "vod", "movies"),
+                                            includeSeries = optObj.optBooleanAny(false, "includeSeries", "include_series", "series", "shows"),
                                             excludeKeywords = optObj.optString("excludeKeywords")
                                                 .split(',').map { it.trim() }.filter { it.isNotEmpty() },
                                             includeKeywords = optObj.optString("includeKeywords")
@@ -322,9 +336,9 @@ class RemotePairingClient(
                                 val optObj = xObj.optJSONObject("options")
                                 val filterOptions = if (optObj != null) {
                                     XtreamFilterOptions(
-                                        includeLive = optObj.optBoolean("includeLive", true),
-                                        includeVod = optObj.optBoolean("includeVod", false),
-                                        includeSeries = optObj.optBoolean("includeSeries", false),
+                                        includeLive = optObj.optBooleanAny(true, "includeLive", "include_live", "live", "channels"),
+                                        includeVod = optObj.optBooleanAny(false, "includeVod", "include_vod", "vod", "movies"),
+                                        includeSeries = optObj.optBooleanAny(false, "includeSeries", "include_series", "series", "shows"),
                                         excludeKeywords = optObj.optString("excludeKeywords")
                                             .split(',').map { it.trim() }.filter { it.isNotEmpty() },
                                         includeKeywords = optObj.optString("includeKeywords")
@@ -423,4 +437,17 @@ class RemotePairingClient(
     private companion object {
         const val TAG = "RemotePairingClient"
     }
+}
+
+/**
+ * Reads a boolean under any of [keys], in order.
+ *
+ * Portals spell these differently — `includeLive`, `include_live`, `live`, `channels` — and a miss
+ * silently falls back to the default. That is how a playlist the user excluded from Live TV still
+ * imported its channels: we asked for `includeLive`, the portal had called it something else, and
+ * the default (`true`) won.
+ */
+private fun JSONObject.optBooleanAny(default: Boolean, vararg keys: String): Boolean {
+    for (key in keys) if (has(key)) return optBoolean(key, default)
+    return default
 }

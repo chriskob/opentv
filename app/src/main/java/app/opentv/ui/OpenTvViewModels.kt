@@ -6,6 +6,7 @@
 package app.opentv.ui
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.opentv.core.ServiceLocator
@@ -86,6 +87,14 @@ data class RemoteProvisioningProgress(
     val currentPlaylistIndex: Int = 0,
     val currentPlaylistName: String = "",
     val channelsProcessed: Int = 0,
+    /** How many channels the provider reported — drives the Channels % bar. 0 until known. */
+    val channelsTotal: Int = 0,
+    /** Movies written so far, and how many the provider reported — drives the Movies % bar. */
+    val moviesProcessed: Int = 0,
+    val moviesTotal: Int = 0,
+    /** Series written so far, and how many the provider reported. */
+    val seriesProcessed: Int = 0,
+    val seriesTotal: Int = 0,
     val epgProgrammesProcessed: Int = 0,
     val epgChannelsMatched: Int = 0,
     val epgChannelsTotal: Int = 0,
@@ -95,10 +104,34 @@ data class RemoteProvisioningProgress(
     val isComplete: Boolean = false,
     val error: String? = null,
 ) {
+    /** 0..1 across movies+series, or null while the provider's list is still in flight. */
+    val vodFraction: Float?
+        get() {
+            val total = moviesTotal + seriesTotal
+            if (total <= 0) return null
+            return ((moviesProcessed + seriesProcessed).toFloat() / total).coerceIn(0f, 1f)
+        }
+
+    /** 0..1 across the channel import, or null until the provider's list has arrived. */
+    val channelsFraction: Float?
+        get() {
+            if (channelsTotal <= 0) return null
+            return (channelsProcessed.toFloat() / channelsTotal).coerceIn(0f, 1f)
+        }
+
+    /** 0..1 across the guide's channel matching, or null before there is anything to match. */
+    val epgFraction: Float?
+        get() {
+            if (epgChannelsTotal <= 0) return null
+            return (epgChannelsMatched.toFloat() / epgChannelsTotal).coerceIn(0f, 1f)
+        }
+
     enum class Stage {
         IDLE,
         SAVING_SOURCES,
         SYNCING_CHANNELS,
+        /** Movies + series for the playlists that asked for them, before the guide is built. */
+        SYNCING_VOD,
         SYNCING_EPG,
         COMPLETE,
         FAILED
@@ -166,30 +199,54 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            _ui.value = _ui.value.copy(syncMessage = "Loading channels…")
             val now = System.currentTimeMillis()
-            // Load live channels first and get the user watching straight away. Movies, series and
-            // the guide are what make a big provider take minutes — they load in the background so
-            // "loading channels" is a few seconds, not a twenty-minute blank screen.
-            when (val result = graph.catalogRepository.syncLive(saved, now)) {
-                is CatalogRepository.SyncResult.Failed -> {
-                    _ui.value = _ui.value.copy(syncing = false, syncMessage = result.reason)
-                    onDone(false)
-                    return@launch
+
+            // Channels unticked for this playlist: fetch none at all, and hide whatever an earlier
+            // add of the same playlist left behind — otherwise unticking the box changed nothing.
+            if (saved.includeLive) {
+                _ui.value = _ui.value.copy(syncMessage = "Loading channels…")
+                when (val result = graph.catalogRepository.syncLive(saved, now)) {
+                    is CatalogRepository.SyncResult.Failed -> {
+                        _ui.value = _ui.value.copy(syncing = false, syncMessage = result.reason)
+                        onDone(false)
+                        return@launch
+                    }
+                    is CatalogRepository.SyncResult.Success -> Unit
                 }
-                is CatalogRepository.SyncResult.Success -> {
-                    _ui.value = _ui.value.copy(
-                        syncing = false,
-                        syncMessage = "Loaded ${result.channelCount} channels. The guide is " +
-                            "loading in the background; Movies and Shows load when you open them.",
-                    )
-                    onDone(true)
-                }
+            } else {
+                runCatching { graph.catalogRepository.hideChannelsForSource(saved.id) }
             }
 
-            // Background: the guide. Movies/series are pulled on demand from their own tabs, so
-            // nothing the user hasn't asked for ever blocks the channels they can already watch.
+            // Ticking Movies/Shows is the user asking for those sections, so switch them on before
+            // anything tries to gate on them.
+            if (saved.includeVod) graph.settings.setMoviesEnabled(true)
+            if (saved.includeSeries) graph.settings.setSeriesEnabled(true)
+            val wantsVod = saved.includeVod || saved.includeSeries
+
+            _ui.value = _ui.value.copy(
+                syncing = false,
+                syncMessage = when {
+                    wantsVod -> "Loading movies and shows…"
+                    saved.includeLive -> "Channels ready. The guide is loading in the background."
+                    else -> "Source saved. Nothing selected to load — tick a section to fill it."
+                },
+            )
+            // Hand the user to the guide now; the heavy part below reports on the app-wide status
+            // bar, which shows a real percentage instead of a frozen onboarding screen.
+            onDone(true)
+
             runCatching {
+                if (wantsVod) {
+                    StatusBus.set("Loading movies & shows…")
+                    val vod = graph.catalogRepository.syncVod(saved, now) { mDone, mTotal, sDone, sTotal ->
+                        val total = mTotal + sTotal
+                        StatusBus.setProgress(
+                            if (total > 0) (mDone + sDone).toFloat() / total else null,
+                        )
+                        StatusBus.set("Loading movies & shows — %,d of %,d titles".format(mDone + sDone, total))
+                    }
+                    StatusBus.set("Loaded %,d movies and %,d shows.".format(vod.movies, vod.series))
+                }
                 val summary = StatusBus.during("Building the TV guide…") {
                     graph.epgRepository.syncAll(now)
                 }
@@ -206,6 +263,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 // Book any new series-link airings the fresh guide just revealed.
                 runCatching { graph.recordingEngine.rescanSeriesRules() }
             }.onFailure { Log.w("OpenTV", "Background VOD/guide load failed", it) }
+            StatusBus.set(null)
         }
     }
 
@@ -238,6 +296,14 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             var totalChannels = 0
+            /** What the providers said they have, so the dashboard's bars are real percentages. */
+            var channelsExpected = 0
+            // Movies/series across every playlist, plus what the providers said they have — the
+            // second number is what turns the dashboard's VOD bar into a real percentage.
+            var totalMovies = 0
+            var totalSeries = 0
+            var moviesExpected = 0
+            var seriesExpected = 0
             var anySuccess = false
 
             for ((idx, item) in provisionedList.withIndex()) {
@@ -269,6 +335,12 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                     userAgent = existing?.userAgent ?: Source.DEFAULT_USER_AGENT,
                     liveFormat = existing?.liveFormat ?: LiveStreamFormat.HLS,
                     enabled = true,
+                    // Persist the portal's content choices on the source row so they survive
+                    // every later refresh and re-add. Previously they were used once at add
+                    // time only, which is why an unchecked Channels box came back to life.
+                    includeLive = item.filterOptions?.includeLive ?: existing?.includeLive ?: true,
+                    includeVod = item.filterOptions?.includeVod ?: existing?.includeVod ?: true,
+                    includeSeries = item.filterOptions?.includeSeries ?: existing?.includeSeries ?: true,
                 )
 
                 val id = graph.sourceRepository.save(draft)
@@ -282,7 +354,32 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 _ui.value = _ui.value.copy(syncMessage = "Loading channels for ${saved.name}…")
 
-                when (val syncResult = graph.catalogRepository.syncLive(saved, now)) {
+                // Channels unchecked for this playlist: skip the live import entirely — nothing
+                // to hide when nothing is stored. Rows left over from an earlier add are hidden
+                // by applyChannelFilters below.
+                val wantsLive = item.filterOptions?.includeLive ?: saved.includeLive
+                var plannedChannels = 0
+                val syncResult = if (wantsLive) {
+                    // Report while it imports so the Channels card shows "12,000 of 26,979"
+                    // instead of an indeterminate spinner on a 27k-channel playlist.
+                    graph.catalogRepository.syncLive(saved, now) { written, total ->
+                        plannedChannels = total
+                        _provisioningProgress.value = _provisioningProgress.value?.copy(
+                            channelsProcessed = totalChannels + written,
+                            channelsTotal = channelsExpected + total,
+                            statusMessage = if (total > 0) {
+                                "Importing channels from ${saved.name} — %,d of %,d"
+                                    .format(totalChannels + written, channelsExpected + total)
+                            } else {
+                                "Importing channels from ${saved.name}…"
+                            },
+                        )
+                    }
+                } else {
+                    CatalogRepository.SyncResult.Success(0, 0, 0)
+                }
+                channelsExpected += plannedChannels
+                when (syncResult) {
                     is CatalogRepository.SyncResult.Success -> {
                         anySuccess = true
                         totalChannels += syncResult.channelCount
@@ -303,6 +400,44 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                             statusMessage = "Failed to load ${saved.name}: ${syncResult.reason}"
                         )
                     }
+                }
+
+                // Movies/Shows checked for this playlist: fetch them NOW so they land in their
+                // sections immediately. Previously only the periodic worker or a manual refresh
+                // ever fetched VOD, so a freshly added playlist's Movies/Shows tabs stayed empty
+                // until the next background sync — the "movies should go to the movies section"
+                // half of the bug. syncVod respects the global Movies/Shows toggles internally.
+                val wantsVod = item.filterOptions?.includeVod ?: saved.includeVod
+                val wantsSeries = item.filterOptions?.includeSeries ?: saved.includeSeries
+                if (wantsVod || wantsSeries) {
+                    _provisioningProgress.value = _provisioningProgress.value?.copy(
+                        stage = RemoteProvisioningProgress.Stage.SYNCING_VOD,
+                        statusMessage = "Loading movies and shows for ${saved.name}…"
+                    )
+                    // Report as we write: the counts come from the provider's own list, so the
+                    // dashboard shows "12,345 of 19,802" and a percentage rather than a spinner
+                    // that gives nothing away on a 20,000-title library.
+                    var plannedMovies = 0
+                    var plannedSeries = 0
+                    val vodResult = runCatching {
+                        graph.catalogRepository.syncVod(saved, now) { mDone, mTotal, sDone, sTotal ->
+                            plannedMovies = mTotal
+                            plannedSeries = sTotal
+                            _provisioningProgress.value = _provisioningProgress.value?.copy(
+                                moviesProcessed = totalMovies + mDone,
+                                moviesTotal = moviesExpected + mTotal,
+                                seriesProcessed = totalSeries + sDone,
+                                seriesTotal = seriesExpected + sTotal,
+                                statusMessage = "Loading movies and shows for ${saved.name} — " +
+                                    "%,d movies, %,d shows…".format(totalMovies + mDone, totalSeries + sDone)
+                            )
+                        }
+                    }.onFailure { Log.w("OpenTV", "VOD sync for ${saved.name} failed", it) }
+                        .getOrNull() ?: CatalogRepository.VodSyncResult.NONE
+                    totalMovies += vodResult.movies
+                    totalSeries += vodResult.series
+                    moviesExpected += plannedMovies
+                    seriesExpected += plannedSeries
                 }
             }
 
@@ -339,7 +474,8 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 epgChannelsTotal = chanTotal,
                 timelineStartMillis = timelineStart,
                 timelineEndMillis = timelineEnd,
-                statusMessage = "Sync Complete! $totalChannels channels and $progCount guide programs ready.",
+                statusMessage = "Sync Complete! %,d channels, %,d movies, %,d shows and %,d guide programs ready."
+                    .format(totalChannels, totalMovies, totalSeries, progCount),
                 isComplete = true
             )
 
@@ -498,10 +634,17 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         combine(
             graph.catalogRepository.observeCategories(StreamKind.LIVE),
             selectedSource,
-        ) { raw, sourceId ->
+            graph.sourceRepository.observeAll(),
+        ) { raw, sourceId, sources ->
             // Scope the category rail to the chosen provider, so a second playlist's categories show
             // on their own (cardiodoc's "keep sources separate"); null folds across every provider.
-            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
+            //
+            // A playlist whose Channels box is unchecked contributes no LIVE categories at all —
+            // without this the TV section still listed that playlist's categories after the user
+            // had switched its Channels off.
+            val noLiveIds = sources.filter { !it.includeLive }.map { it.id }.toSet()
+            val scoped = (if (sourceId == null) raw else raw.filter { it.sourceId == sourceId })
+                .filter { it.sourceId !in noLiveIds }
             foldCategories(scoped)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -567,9 +710,16 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private val _guideHourOffset = MutableStateFlow(0)
     val guideHourOffset: StateFlow<Int> = _guideHourOffset.asStateFlow()
 
-    /** Nudge the guide backward or forward by hours (clamped to -168h [7 days past] .. 0 [live now]). */
+    /** Public UI read of how far back day-paging may go (see [MAX_PAGE_BACK_HOURS]). */
+    val maxPageBackHours: Int get() = MAX_PAGE_BACK_HOURS
+
+    /**
+     * Nudge the guide backward or forward by hours. The clamp keeps day-paging within what EPG
+     * retention actually stores: the deepest page's left edge lands exactly on the retention
+     * boundary (`RETENTION_PAST_MILLIS`), so no page ever shows a blank dead zone.
+     */
     fun nudgeGuideHours(deltaHours: Int) {
-        _guideHourOffset.value = (_guideHourOffset.value + deltaHours).coerceIn(-168, 0)
+        _guideHourOffset.value = (_guideHourOffset.value + deltaHours).coerceIn(-MAX_PAGE_BACK_HOURS, 0)
     }
 
     /** Page the guide a day forward/back or jump to now. */
@@ -601,6 +751,79 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile
     private var guideBuilt = false
 
+    /**
+     * Programmes already hydrated for the CURRENT guide window, keyed by [Row.key].
+     *
+     * Room re-emits `channels` on every write, and syncing a 27k-channel catalogue writes it in
+     * batches — each batch restarted this whole pipeline. A restart re-hydrated the full 48h
+     * window for every row, which means reading ~97,000 programme rows back out of SQLite and
+     * materialising them again. Measured on the ONN box: an 11.7-second fill, 545 skipped
+     * frames, and a single GC freeing 2.1M objects (101MB). That was the five-second freeze on
+     * Back, and the GC thrash behind the ANRs.
+     *
+     * With this cache a restart only reads the rows it has never seen; everything else
+     * re-attaches from memory in milliseconds. The lists stored here are the *same instances*
+     * the rows and the repository's rail cache already hold, so the entries themselves cost
+     * almost nothing — but they do keep lists alive that the rail cache would otherwise evict,
+     * which is why this is an LRU bounded to [ROW_CACHE_CAP] rather than an unbounded map that
+     * would grow with every category browsed inside the half-hour.
+     *
+     * Cleared whenever the window moves (new half-hour, day nudge, "now") or the repository
+     * drops its window cache — the same policy as the rail cache, so it cannot go stale.
+     */
+    private val hydratedRowCache =
+        java.util.Collections.synchronizedMap(
+            object : LinkedHashMap<Any, List<Programme>>(0, 0.75f, true) {
+                override fun removeEldestEntry(
+                    eldest: MutableMap.MutableEntry<Any, List<Programme>>,
+                ): Boolean = size > ROW_CACHE_CAP
+            },
+        )
+
+    @Volatile
+    private var hydratedCacheWindow: Long = Long.MIN_VALUE
+
+    /** The repository's data generation when this row cache was filled — see [prepareRowCache]. */
+    @Volatile
+    private var hydratedCacheGeneration: Long = -1L
+
+    /**
+     * Drops the row cache when the guide window has moved on, or when a sync delivered fresh
+     * programmes. Returns true when the cache was cleared, i.e. everything must be re-read.
+     *
+     * Watches [EpgRepository.dataGeneration], which only moves on a *sync* — not on every window
+     * re-scope. The guide's own quick pass and full pass re-scope the repository cache with
+     * different bounds on every run, so watching a bounds-driven counter here cleared this cache
+     * every single time and silently turned the whole reuse path into a no-op.
+     */
+    private fun prepareRowCache(windowStart: Long): Boolean {
+        val generation = graph.epgRepository.dataGeneration
+        if (hydratedCacheWindow == windowStart && hydratedCacheGeneration == generation) return false
+        hydratedRowCache.clear()
+        hydratedCacheWindow = windowStart
+        hydratedCacheGeneration = generation
+        return true
+    }
+
+    /** Re-attaches cached programmes to a row, recomputing now/next for the current clock. */
+    private fun attachProgrammes(row: Row, programmes: List<Programme>, now: Long): Row =
+        row.copy(
+            now = programmes.firstOrNull { it.isLiveAt(now) },
+            next = programmes.firstOrNull { it.startUtcMillis > now },
+            programmes = programmes,
+        )
+
+    /**
+     * Hydrates one row, preferring the window cache over the database: a row already hydrated
+     * for this window costs a map lookup instead of a SQLite read plus a fresh Programme list.
+     */
+    private fun hydrateWithCache(row: Row, window: Map<String, List<Programme>>, now: Long): Row {
+        hydratedRowCache[row.key]?.let { return attachProgrammes(row, it, now) }
+        val hydrated = hydrateRow(row, window, now)
+        if (hydrated.programmes.isNotEmpty()) hydratedRowCache[row.key] = hydrated.programmes
+        return hydrated
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val rows: StateFlow<List<Row>> =
         combine(selectedCategory, favouritesOnly, query, categoryGroups, hiddenCategoryIds) {
@@ -614,48 +837,143 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             RowsKey(ids, favs, q, hidden)
         }
             .filterNotNull()
-            .combine(selectedSource) { key, source -> key to source }
-            // identity restarts of the pipeline (equal RowsKey re-emitted after a DB refresh)
-            // must not re-run the channel query and re-hydrate the EPG window.
-            .distinctUntilChanged()
-            .flatMapLatest { (key, source) ->
-                val channelFlow = when {
+            // The Live TV content toggle joins the key: switching it off must empty the guide
+        // immediately. It used to only gate FUTURE syncs, so channels already on disk kept
+        // showing — the "Channels unchecked but still visible" bug.
+        .combine(selectedSource) { key, source -> key to source }
+        .combine(graph.settings.liveEnabled) { (key, source), liveOn ->
+            Triple(key, source, liveOn)
+        }
+        // identity restarts of the pipeline (equal RowsKey re-emitted after a DB refresh)
+        // must not re-run the channel query and re-hydrate the EPG window.
+        .distinctUntilChanged()
+        .flatMapLatest { (key, source, liveOn) ->
+            if (!liveOn) {
+                // Live TV is switched off in Settings → Content. Emit no live rows at all:
+                // the section is gone from the navigation, and this makes any surface that
+                // still reads the guide agree.
+                guideBuilt = true
+                StatusBus.set(null)
+                return@flatMapLatest flowOf(emptyList())
+            }
+            val channelFlow = (when {
                     key.query.isNotBlank() -> graph.catalogRepository.searchChannels(key.query)
                     key.favs -> graph.catalogRepository.observeFavouriteChannels()
                     key.categoryIds != null -> graph.catalogRepository.observeChannelsIn(key.categoryIds)
                     else -> graph.catalogRepository.observeChannels(source)
-                }
+                })
+                // Room re-emits on every write to `channels`, and a catalogue sync writes it in
+                // batches. Drop emissions whose content is identical so a sync that changes
+                // nothing the guide reads cannot restart the pipeline at all.
+                .distinctUntilChanged()
                 // TiviMate Optimization: Query programmes ONLY for the active channels in this view.
                 // Never query or group 500,000 programmes for the entire universe, which exhausts 2GB RAM.
-                // Three-phase emission: (1) the channel list appears instantly, (2) the immediate
-                // viewing range (~now-2h to now+6h) fills in fast, (3) the full 48h window fills in
-                // behind — all incremental/cached, so rail category browsing stays responsive.
+                // Three-phase emission: (1) ALL rows built in ONE pass with no EPG — the guide
+                // paints the channel column immediately; (2) quick 8h EPG for the first rows
+                // (what's on screen); (3) the full 48h window fills in row-chunks behind,
+                // patching ONLY the chunk's rows per emission — never re-scanning the list.
                 combine(channelFlow, windowStartMillis) { rawChannels, windowStart ->
                     val now = System.currentTimeMillis()
+                    val t0 = SystemClock.elapsedRealtime()
                     val scoped = if (source == null) rawChannels else rawChannels.filter { it.sourceId == source }
                     val visible =
                         if (key.hiddenIds.isEmpty()) scoped
                         else scoped.filter { it.categoryId !in key.hiddenIds }
-                    // Fetch programmes for EVERY candidate id, not just the provider's tvg-id:
-                    // the matcher's working name-match lives in matchedEpgId (and users can set
-                    // epgOverrideId manually), so fetching only epgChannelId left name-matched
-                    // channels with no guide info at all.
-                    val epgIds = visible.flatMap { it.epgCandidates }.filter { it.isNotBlank() }.distinct()
+                    android.util.Log.i("GuidePerf", "pipeline start: channels=${visible.size} window=${windowStart}")
                     flow {
-                        emit(buildRows(visible, emptyMap(), now))
-                        if (epgIds.isNotEmpty()) {
-                            // Cache-aware quick fill: channels the 48h rail cache already holds
-                            // (any category browsed this half-hour) are sliced from memory, so
-                            // rail category switches render their programmes with no DB query.
-                            val quick = graph.epgRepository.quickWindowForChannels(
-                                epgIds, now - QUICK_PAST_MILLIS, now + QUICK_FUTURE_MILLIS,
-                            )
-                            emit(buildRows(visible, quick, now))
-                            val byEpgChannel = graph.epgRepository.windowForChannelsCached(
-                                epgIds, windowStart, windowStart + TOTAL_WINDOW_MILLIS,
-                            )
-                            emit(buildRows(visible, byEpgChannel, now))
+                        // Phase 1: one grouping pass over the whole category, no EPG. This is the
+                        // ONLY O(total) work on the critical path — everything else is chunked.
+                        val tBuild = SystemClock.elapsedRealtime()
+                        val builtRows = buildRows(visible, emptyMap(), now)
+                        android.util.Log.i("GuidePerf", "rows built: ${SystemClock.elapsedRealtime() - tBuild}ms rows=${builtRows.size}")
+                        // A restart for the SAME window (Room re-emitted `channels`) re-attaches the
+                        // programmes we already hold, so the first paint is a fully-populated guide
+                        // instead of a flash of empty cells that then re-measures. That re-attach is
+                        // the fix for the five-second Back: no SQLite read, no object churn.
+                        val windowMoved = prepareRowCache(windowStart)
+                        val rowsReused = !windowMoved && hydratedRowCache.isNotEmpty()
+                        val allRows = if (rowsReused) {
+                            builtRows.map { r -> hydratedRowCache[r.key]?.let { attachProgrammes(r, it, now) } ?: r }
+                        } else {
+                            builtRows
                         }
+                        emit(allRows)
+                        if (allRows.isNotEmpty()) {
+                            android.util.Log.i(
+                                "GuidePerf",
+                                "pipeline restart: windowMoved=$windowMoved reused=$rowsReused cached=${hydratedRowCache.size}",
+                            )
+                        }
+                        if (allRows.isEmpty()) {
+                            android.util.Log.i("GuidePerf", "pipeline complete: ${SystemClock.elapsedRealtime() - t0}ms total")
+                            return@flow
+                        }
+                        // Phase 2: quick 8h window for the first rows only — the rows on screen
+                        // right now. Bounded work regardless of category size.
+                        val firstRows = allRows.take(QUICK_FIRST_ROWS)
+                        // Only rows the window cache has never covered need the quick query.
+                        val quickIds = firstRows.filter { hydratedRowCache[it.key] == null }
+                            .flatMap { it.variants }
+                            .flatMap { it.epgCandidates }.filter { it.isNotBlank() }.distinct()
+                        val rows = allRows.toMutableList()
+                        if (quickIds.isNotEmpty()) {
+                            val tQuick = SystemClock.elapsedRealtime()
+                            val quick = graph.epgRepository.quickWindowForChannels(
+                                quickIds, now - QUICK_PAST_MILLIS, now + QUICK_FUTURE_MILLIS,
+                            )
+                            android.util.Log.i("GuidePerf", "quick window: ${SystemClock.elapsedRealtime() - tQuick}ms (rows=${firstRows.size} ids=${quickIds.size})")
+                            firstRows.forEachIndexed { i, r -> rows[i] = hydrateWithCache(r, quick, now) }
+                            emit(rows.toList())
+                        }
+                        // Phase 3: full 48h window in row-chunks, BOUNDED to the rows a viewer can
+                        // actually reach (EPG_MAX_ROWS). Hydrating every channel of a 25k-channel
+                        // category retained ~1.5M Programme objects inside [rows] and OOM'd the
+                        // 384MB heap on the ONN box (MediaCodec + Room invalidation both died).
+                        // Each chunk's map is released once its rows are patched; rows keep only
+                        // the lists they display.
+                        val tFull = SystemClock.elapsedRealtime()
+                        val hydrateLimit = minOf(allRows.size, EPG_MAX_ROWS)
+                        var base = 0
+                        var lastEmit = SystemClock.elapsedRealtime()
+                        while (base < hydrateLimit) {
+                            val end = minOf(base + FULL_WINDOW_ROW_CHUNK, hydrateLimit)
+                            val chunk = allRows.subList(base, end)
+                            // Only rows this window has never hydrated cost a database read; the
+                            // rest re-attach from the cache. This is what turns a pipeline restart
+                            // from an 11.7s / 2.1M-object rebuild into a few milliseconds.
+                            val unseen = chunk.filter { hydratedRowCache[it.key] == null }
+                            if (unseen.isNotEmpty()) {
+                                val ids = unseen.flatMap { it.variants }
+                                    .flatMap { it.epgCandidates }.filter { it.isNotBlank() }.distinct()
+                                if (ids.isNotEmpty()) {
+                                    val window = graph.epgRepository.windowForChannelsCached(
+                                        ids, windowStart, windowStart + TOTAL_WINDOW_MILLIS,
+                                    )
+                                    for (r in unseen) {
+                                        val hydrated = hydrateRow(r, window, now)
+                                        if (hydrated.programmes.isNotEmpty()) {
+                                            hydratedRowCache[r.key] = hydrated.programmes
+                                        }
+                                    }
+                                }
+                            }
+                            for (i in chunk.indices) {
+                                val r = chunk[i]
+                                val cached = hydratedRowCache[r.key]
+                                rows[base + i] = if (cached == null) r else attachProgrammes(r, cached, now)
+                            }
+                            base = end
+                            // Conflate: every emission hands Compose a fresh list and re-measures the
+                            // visible rows — main-thread work for no visual gain. The final chunk
+                            // always emits, so the grid can never end up short.
+                            val stamp = SystemClock.elapsedRealtime()
+                            if (stamp - lastEmit >= FILL_EMIT_INTERVAL_MILLIS || base >= hydrateLimit) {
+                                emit(rows.toList())
+                                lastEmit = stamp
+                            }
+                        }
+                        android.util.Log.i("GuidePerf", "full 48h window (chunked ${hydrateLimit}/${allRows.size} rows, cached=${hydratedRowCache.size}): ${SystemClock.elapsedRealtime() - tFull}ms")
+                        android.util.Log.i("GuidePerf", "pipeline complete: ${SystemClock.elapsedRealtime() - t0}ms total")
                     }
                 }.flatMapLatest { it }
             }
@@ -665,6 +983,32 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             .flowOn(Dispatchers.Default)
             .onEach { if (!guideBuilt && it.isNotEmpty()) { guideBuilt = true; StatusBus.set(null) } }
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * Attaches an EPG window to ONE already-built row — the per-chunk patch used by the
+     * progressive pipeline. Mirrors [buildRows]' variant/candidate matching: try each
+     * variant's candidate ids in order, first one with programmes wins.
+     */
+    private fun hydrateRow(row: Row, byEpgChannel: Map<String, List<Programme>>, now: Long): Row {
+        if (byEpgChannel.isEmpty()) return row
+        var list: List<Programme> = emptyList()
+        for (variant in row.variants) {
+            for (id in variant.epgCandidates) {
+                val progs = byEpgChannel[id]
+                if (!progs.isNullOrEmpty()) {
+                    list = progs
+                    break
+                }
+            }
+            if (list.isNotEmpty()) break
+        }
+        if (list.isEmpty()) return row
+        return row.copy(
+            now = list.firstOrNull { it.isLiveAt(now) },
+            next = list.firstOrNull { it.startUtcMillis > now },
+            programmes = list,
+        )
+    }
 
     private fun buildRows(
         channels: List<Channel>,
@@ -746,6 +1090,27 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     fun selectCategoryForChannel(channelId: Long, onDone: ((CategoryGroup?) -> Unit)? = null) {
         if (channelId <= 0L) return
         viewModelScope.launch(Dispatchers.IO) {
+            // Identity guard: if the playing channel's category is already the active one,
+            // do nothing. This path is hit on every Back from fullscreen — without the guard
+            // each press re-ran the whole rows pipeline (channels → quick EPG → 48h window)
+            // even though nothing changed, which read as a multi-second guide "reload".
+            if (favouritesOnly.value) {
+                // fall through: favourites isn't a category, it must be switched off
+            } else {
+                val activeCategory = selectedCategory.value
+                if (activeCategory != null) {
+                    val channel0 = graph.catalogRepository.channel(channelId)
+                    if (channel0 != null && channel0.categoryId != null) {
+                        val current = graph.database.categories().allByKind(StreamKind.LIVE)
+                        val groups0 = foldCategories(current)
+                        val active = groups0.firstOrNull { it.key == activeCategory }
+                        if (active != null && channel0.categoryId in active.ids) {
+                            withContext(Dispatchers.Main) { onDone?.invoke(active) }
+                            return@launch
+                        }
+                    }
+                }
+            }
             val channel = graph.catalogRepository.channel(channelId) ?: run {
                 withContext(Dispatchers.Main) { onDone?.invoke(null) }
                 return@launch
@@ -928,15 +1293,60 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         const val GUIDE_LOOKAHEAD_MILLIS = 6 * 60 * 60 * 1000L  // 6 hours of fast-loading timeline
         const val DAY_MILLIS = 24 * 60 * 60 * 1000L
-        const val GUIDE_MAX_PAST_DAYS = 7 // browse up to a week into the past for catch-up TV
-        const val GUIDE_MAX_DAYS = 6  // browse up to a week out, matching typical XMLTV depth
         const val HALF_HOUR_MILLIS = 30 * 60 * 1000L
         const val PAST_HOURS = 24
         const val FUTURE_HOURS = 24
+
+        /**
+         * How far back day-paging may go, derived from EPG retention — never hard-code this
+         * again. Each 48h guide window already carries [PAST_HOURS] of past reach on its own
+         * (windowStart = now + offset − 24h), so the deepest page's left edge is
+         * `now − RETENTION_PAST_MILLIS` exactly: with 3-day retention that's −48h of paging
+         * covering `now−72h … now+24h` with zero blank space. Bump retention and this follows.
+         * Not `const` — it derives from a runtime-computed retention constant.
+         */
+        val MAX_PAGE_BACK_HOURS: Int =
+            ((EpgRepository.RETENTION_PAST_MILLIS - PAST_HOURS * 3600_000L) / 3600_000L).toInt()
         // Fast-fill range for the guide's two-phase load: the immediate viewing range is fetched
         // first so the guide populates quickly; the full 48h window fills in behind it.
         const val QUICK_PAST_MILLIS = 2 * 3600_000L
         const val QUICK_FUTURE_MILLIS = 6 * 3600_000L
+
+        /**
+         * Rows (not ids) covered by the quick 8h fill — the rows on screen when the guide
+         * opens plus a deep scroll buffer. Small categories are fully covered; a 25k-channel
+         * category gets its on-screen rows' programmes in well under a second while the full
+         * 48h window streams in behind.
+         */
+        const val QUICK_FIRST_ROWS = 24
+
+        /** Row-chunk granularity for the progressive 48h window fill. */
+        const val FULL_WINDOW_ROW_CHUNK = 24
+
+        /**
+         * Minimum gap between the progressive fill's emissions. Every emission hands Compose a
+         * new row list, and the visible rows re-measure their programme blocks — on a TV box
+         * that is the main thread's whole frame budget. Conflating intermediate chunks (the
+         * final one always emits) costs nothing visually: the row cache below means the lost
+         * intermediates were only ever a partially-filled grid.
+         */
+        const val FILL_EMIT_INTERVAL_MILLIS = 180L
+
+        /**
+         * LRU bound on the guide's hydrated-row cache. A full fill of a [EPG_MAX_ROWS] category
+         * needs 400 entries, so this covers the deepest category the guide will hydrate while
+         * stopping a half-hour of category-hopping from retaining every row ever seen.
+         */
+        const val ROW_CACHE_CAP = 500
+
+        /**
+         * Hard ceiling on how many rows get EPG hydrated. Without it, a 25k-channel category
+         * keeps ~1.5M Programme objects alive inside the rows StateFlow and exhausts the 384MB
+         * heap on a TV box (measured: OutOfMemoryError in MediaCodec and in Room's invalidation
+         * tracker, plus GC thrash to the point of ANR). Rows past this render the channel with
+         * no programme blocks — they sit far below the viewport in a list that size.
+         */
+        const val EPG_MAX_ROWS = 400
         const val HOURS_IN_WINDOW = PAST_HOURS + FUTURE_HOURS
         const val PAST_MILLIS = PAST_HOURS * 3600_000L
         const val TOTAL_WINDOW_MILLIS = HOURS_IN_WINDOW * 3600_000L

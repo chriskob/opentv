@@ -43,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,6 +65,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -669,6 +672,12 @@ fun GuideGrid(
                         val isPlaying = row.key == playingKey
                         val isHighlighted = row.key == currentActiveKey
                         val rowRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() }
+                        // During a rail preview the pseudo-cursor must sit on the ANCHOR row (the
+                        // playing channel when visible, else the first row) — NOT hard-bound to
+                        // index 0. Hard-binding it made the cursor jump to the top block whenever
+                        // the rail opened, even when the playing channel sat mid-list.
+                        val previewAnchorKey = playingKey ?: rows.firstOrNull()?.key
+                        val isPreviewAnchor = previewTopRow && row.key == previewAnchorKey
                         GuideRow(
                             row = row,
                             rowIndex = index,
@@ -679,8 +688,8 @@ fun GuideGrid(
                             scroll = scroll,
                             catchUpChannelIds = catchUpChannelIds,
                             isSelected = isPlaying,
-                            isRowHighlighted = isHighlighted || (previewTopRow && index == 0),
-                        previewHighlight = previewTopRow && index == 0,
+                            isRowHighlighted = isHighlighted || isPreviewAnchor,
+                            previewHighlight = isPreviewAnchor,
                             targetProgKey = if (isHighlighted) targetProgKey else null,
                             rowFocusRequester = rowRequester,
                             externalFocusRequester = if (isHighlighted) activeCellFocusRequester else null,
@@ -1083,7 +1092,12 @@ private fun TimeHeader(
         Box(
             Modifier
                 .horizontalScroll(scroll)
-                .background(Color(0xFF161E26)),
+                .background(Color(0xFF161E26))
+                // The 96 half-hour ruler labels are pure decoration. Marking the strip
+                // semantically empty keeps them out of the accessibility tree: this box runs
+                // Projectivy's accessibility service, so Compose walks that tree on every frame
+                // and each node costs a HashMap allocation on the main thread.
+                .clearAndSetSemantics { },
         ) {
             Row {
                 repeat(HOURS_IN_WINDOW * 2) { i ->
@@ -1348,6 +1362,12 @@ private fun GuideRow(
                     List(blockLayouts.size) { FocusRequester() }
                 }
 
+                // Blocks are composed POSITIONALLY here, so a block that keeps its slot index
+                // across a data change (the two-phase EPG load swapping the quick 8h window for
+                // the full 48h one inserts blocks, shifting everything after them) would inherit
+                // ProgrammeBlock's remembered `focused` state from an UNRELATED programme — a
+                // stale white "double cursor" on a cell that isn't selected. key()ing each block
+                // by its programme id discards that state when the block's content changes.
                 for ((pOrder, layout) in blockLayouts.withIndex()) {
                     if (layout.spacerWidth > 0.dp) Spacer(Modifier.width(layout.spacerWidth))
                     val prog = programmes[layout.programmeIndex]
@@ -1358,27 +1378,29 @@ private fun GuideRow(
                     val blockRequester = blockFocusRequesters.getOrNull(pOrder)
                     val extReq = if (isTarget && isRowHighlighted) externalFocusRequester else null
 
-                    ProgrammeBlock(
-                        title = prog.resolvedTitle(),
-                        width = layout.blockWidth,
-                        isNow = isNow,
-                        progress = if (isNow) prog.progressAt(nowMillis) else 0f,
-                        isNew = prog.isNewEpisode(),
-                        pseudoFocused = previewHighlight && isTarget,
-                        isRowHighlighted = isRowHighlighted,
-                        focusRequester = blockRequester,
-                        rowFocusRequester = if (isTarget) rowFocusRequester else null,
-                        externalFocusRequester = extReq,
-                        onFocus = { onFocus(prog) },
-                        onClick = { onProgramme(prog) },
-                        onNavigateVertical = onNavigateVertical,
-                        onMoveLeft = if (!isFirst) {
-                            { runCatching { blockFocusRequesters[pOrder - 1].requestFocus() } }
-                        } else null,
-                        onMoveRight = if (!isLast) {
-                            { runCatching { blockFocusRequesters[pOrder + 1].requestFocus() } }
-                        } else null,
-                    )
+                    key(prog.id) {
+                        ProgrammeBlock(
+                            title = prog.resolvedTitle(),
+                            width = layout.blockWidth,
+                            isNow = isNow,
+                            progress = if (isNow) prog.progressAt(nowMillis) else 0f,
+                            isNew = prog.isNewEpisode(),
+                            pseudoFocused = previewHighlight && isTarget,
+                            isRowHighlighted = isRowHighlighted,
+                            focusRequester = blockRequester,
+                            rowFocusRequester = if (isTarget) rowFocusRequester else null,
+                            externalFocusRequester = extReq,
+                            onFocus = { onFocus(prog) },
+                            onClick = { onProgramme(prog) },
+                            onNavigateVertical = onNavigateVertical,
+                            onMoveLeft = if (!isFirst) {
+                                { runCatching { blockFocusRequesters[pOrder - 1].requestFocus() } }
+                            } else null,
+                            onMoveRight = if (!isLast) {
+                                { runCatching { blockFocusRequesters[pOrder + 1].requestFocus() } }
+                            } else null,
+                        )
+                    }
                 }
 
                 // Trailing filler block to guarantee 100% focus coverage across the entire window
@@ -1511,7 +1533,11 @@ private fun ProgrammeBlock(
                 if (it.isFocused) onFocus()
             }
             .focusable()
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            // One accessibility node per programme cell, not two (the cell + its title Text).
+            // Projectivy's accessibility service is active on these boxes, so Compose walks the
+            // semantics tree every frame — merging halves the nodes on the guide's busiest screen.
+            .semantics(mergeDescendants = true) {},
     ) {
         Row(
             modifier = Modifier

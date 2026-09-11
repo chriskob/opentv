@@ -76,6 +76,20 @@ data class Source(
      */
     val liveFormat: LiveStreamFormat = LiveStreamFormat.HLS,
     val enabled: Boolean = true,
+    /**
+     * Content types this playlist was added for — the phone manager portal's
+     * Channels / Movies / Shows checkboxes. Defaults keep manually added playlists
+     * behaving exactly as before.
+     *
+     *  - [includeLive] = false → the playlist's channels are never synced again and any
+     *    already-stored rows stay hidden, so an unchecked "Channels" really removes the
+     *    playlist from Live TV instead of only skipping the first import.
+     *  - [includeVod] / [includeSeries] = true → its movies/series are fetched into the
+     *    Movies and Shows sections on add, rather than waiting for a periodic refresh.
+     */
+    val includeLive: Boolean = true,
+    val includeVod: Boolean = true,
+    val includeSeries: Boolean = true,
     val lastCatalogSyncMillis: Long = 0,
 ) {
     companion object {
@@ -105,6 +119,11 @@ data class Category(
         Index(value = ["sourceId"]),
         Index(value = ["groupKey"]),
         Index(value = ["favourite"]),
+        // Standalone categoryId index: the guide's category query filters on categoryId
+        // WITHOUT sourceId (rail entries fold codec-split provider categories together),
+        // so the (sourceId, categoryId) composite can't serve it — without this index
+        // every rail switch full-scans the channels table (40k rows on big playlists).
+        Index(value = ["categoryId"]),
     ],
 )
 @androidx.compose.runtime.Immutable

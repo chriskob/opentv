@@ -483,9 +483,9 @@ private fun ProviderRow(
                 onCheckedChange = onToggle,
                 colors = androidx.compose.material3.SwitchDefaults.colors(
                     checkedThumbColor = AppTheme.primary,
-                    checkedTrackColor = AppTheme.dark.copy(alpha = 0.6f),
-                    uncheckedThumbColor = Color(0xFF90A4AE),
-                    uncheckedTrackColor = Color(0xFF263238),
+                    checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
+                    uncheckedThumbColor = Color(0xFFB0BEC5),
+                    uncheckedTrackColor = Color(0xFF37474F),
                 ),
             )
         }

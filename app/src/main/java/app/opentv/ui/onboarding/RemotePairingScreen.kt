@@ -72,6 +72,7 @@ import android.view.WindowManager
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -441,7 +442,7 @@ private fun ProvisioningProgressDashboard(
 
         // Progress Cards Grid
         Row(
-            Modifier.fillMaxWidth().widthIn(max = 840.dp),
+            Modifier.fillMaxWidth().widthIn(max = 1180.dp),
             horizontalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // Card 1: Playlists & Channels
@@ -503,6 +504,27 @@ private fun ProvisioningProgressDashboard(
                         color = Color.White.copy(alpha = 0.6f)
                     )
 
+                    val channelsFraction = progress.channelsFraction
+                    if (channelsFraction != null) {
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { channelsFraction },
+                            modifier = Modifier.fillMaxWidth().height(3.dp),
+                            color = Color(0xFF29B6F6),
+                            trackColor = Color(0xFF30363D),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "%.0f%% · %,d of %,d channels".format(
+                                channelsFraction * 100f,
+                                progress.channelsProcessed,
+                                progress.channelsTotal,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+
                     Spacer(Modifier.height(14.dp))
 
                     if (progress.currentPlaylistName.isNotBlank()) {
@@ -523,6 +545,105 @@ private fun ProvisioningProgressDashboard(
             }
 
             // Card 2: TV Guide & Timeline
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF161B22))
+                    .border(
+                        width = 1.dp,
+                        color = if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_EPG) Color(0xFF66BB6A) else Color(0xFF30363D),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .padding(20.dp)
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Movie,
+                            contentDescription = null,
+                            tint = Color(0xFFBA68C8),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "MOVIES & SHOWS",
+                            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFBA68C8)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_VOD) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Color(0xFFBA68C8)
+                            )
+                        } else if (progress.moviesProcessed > 0 || progress.seriesProcessed > 0) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF34D399),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Text(
+                        text = "%,d".format(progress.moviesProcessed),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Movies Imported",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Text(
+                        text = "%,d shows".format(progress.seriesProcessed),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFBA68C8)
+                    )
+
+                    val vodFraction = progress.vodFraction
+                    if (vodFraction != null) {
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { vodFraction },
+                            modifier = Modifier.fillMaxWidth().height(3.dp),
+                            color = Color(0xFFBA68C8),
+                            trackColor = Color(0xFF30363D),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "%.0f%% · %,d of %,d titles".format(
+                                vodFraction * 100f,
+                                progress.moviesProcessed + progress.seriesProcessed,
+                                progress.moviesTotal + progress.seriesTotal,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    } else {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Awaiting provider list…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            }
+
+            // Card 3: TV Guide & Timeline. Matching channels against the feeds is a percentage of
+            // the channels the guide covers, so it gets a real bar too.
             Box(
                 Modifier
                     .weight(1f)
@@ -583,6 +704,23 @@ private fun ProvisioningProgressDashboard(
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.6f)
                     )
+
+                    val epgFraction = progress.epgFraction
+                    if (epgFraction != null) {
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { epgFraction },
+                            modifier = Modifier.fillMaxWidth().height(3.dp),
+                            color = Color(0xFF66BB6A),
+                            trackColor = Color(0xFF30363D),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "%.0f%% matched".format(epgFraction * 100f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
 
                     Spacer(Modifier.height(14.dp))
 
