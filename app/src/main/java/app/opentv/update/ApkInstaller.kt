@@ -21,10 +21,12 @@ import java.io.File
  * Downloads an update APK and hands it to the system installer.
  *
  * The download lands in the app's own cache (no storage permission, cleaned up by the OS
- * under pressure) and is handed to `ACTION_INSTALL_PACKAGE` through a [FileProvider] uri —
- * a raw `file://` uri throws `FileUriExposedException` on modern Android. The system then
- * shows its own install screen; if the user has not yet allowed OpenTV to install unknown
- * apps, Android walks them through that first. We never install silently.
+ * under pressure) and is handed to the platform through a [FileProvider] uri — a raw
+ * `file://` uri throws `FileUriExposedException` on modern Android. `ACTION_VIEW` with the
+ * package-archive mime is what gets the system install screen on phones, Android TV and
+ * Fire OS; `ACTION_INSTALL_PACKAGE` is tried after it for older phone builds. If the user has
+ * not yet allowed OpenTV to install unknown apps we send them to that setting and say so,
+ * rather than firing an install the platform will silently refuse. We never install silently.
  */
 class ApkInstaller(private val http: OkHttpClient) {
 
