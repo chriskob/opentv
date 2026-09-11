@@ -22,9 +22,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "OpenTV"
 include(":app")
-
-/*
- * The baseline-profile module: it drives the app on a device or emulator, records which methods it
- * actually runs, and leaves a profile behind for the release build to carry. Not part of any APK.
- */
-include(":baselineprofile")

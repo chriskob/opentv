@@ -4,7 +4,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.baselineprofile)
 }
 
 import java.util.Properties
@@ -116,30 +115,6 @@ android {
             // Keep package name as app.opentv so debug builds update existing TV app without wiping data
             isMinifyEnabled = false
         }
-
-        /*
-         * The two release-like types the baseline profile is recorded against.
-         *
-         * A profile records the *names* of the methods the app actually ran, so it has to be recorded
-         * from a build whose names resemble what ships: a debug build is debuggable, and a minified
-         * one has R8's obfuscated names. These are therefore neither debuggable nor minified — ART
-         * must compile them the way it compiles a real install, and R8 rewrites the recorded profile
-         * into the obfuscated names when the real release build is assembled.
-         *
-         * They are signed with the debug key because they are only ever installed on a test device.
-         */
-        create("benchmarkRelease") {
-            isDebuggable = false
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("release")
-        }
-        create("nonMinifiedRelease") {
-            isDebuggable = false
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("release")
-        }
     }
 
     compileOptions {
@@ -176,13 +151,6 @@ android {
         ignoreTestSources = true
     }
 }
-
-/*
- * Baseline-profile recording.
- *
- * `./gradlew :app:generateBaselineProfile` records against a device or emulator that is already
- * connected — that is what CI provides — and writes the result into app/src/release/generated.
- */
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")

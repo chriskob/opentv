@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-  Nothing but a test APK: this module drives the app under test, so it asks for no permissions of its
-  own and declares no components.
--->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
