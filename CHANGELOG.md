@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.85
+
+- **Remote NAS Setup now works on a released APK.** The pairing service address fell back to an
+  unconfigured placeholder when `local.properties` was absent — which it always is on CI — so every
+  GitHub APK tried to reach `pair.example.com` and failed with a connection error naming a host
+  nobody recognised. The build now defaults to the project's real pairing service
+  (`https://pair.haloautohaus.com`), so a release pairs out of the box. A developer's
+  `local.properties` and the `OPENTV_PAIRING_URL` repository variable still override it.
+
 ## 0.12.84
 
 - **Fixed: "Remote NAS Setup" could never connect on a released APK.** The pairing service address

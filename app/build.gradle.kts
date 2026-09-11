@@ -22,23 +22,26 @@ android {
     //
     // Resolution order:
     //   1. local.properties        — a developer's own server (this file is gitignored)
-    //   2. OPENTV_PAIRING_URL      — a CI repository variable, so released APKs carry the real host
+    //   2. OPENTV_PAIRING_URL      — a CI repository variable, to point a build somewhere else
     //   3. -Popentv.remote.pairing.url
+    //   4. [pairingDefault]        — the project's own pairing service
     //
-    // This used to read local.properties only. CI has no local.properties, so every released APK
-    // baked in the placeholder below and "Remote NAS Setup" could never connect — the only symptom
-    // being a connection error naming a host nobody recognises.
+    // Step 4 matters: this used to fall back to an unconfigured placeholder, and because
+    // local.properties is gitignored, every CI-built release baked that placeholder in and
+    // "Remote NAS Setup" could never connect — the only symptom being a connection error naming a
+    // host nobody recognised. A build that cannot pair is worse than one that reaches the wrong
+    // server loudly, so the default is now the real service.
     val pairingPlaceholder = "https://pair.example.com"
+    val pairingDefault = "https://pair.haloautohaus.com"
     val defaultPairingUrl = localProps.getProperty("opentv.remote.pairing.url")
         ?: providers.environmentVariable("OPENTV_PAIRING_URL").orNull?.takeIf { it.isNotBlank() }
         ?: providers.gradleProperty("opentv.remote.pairing.url").orNull?.takeIf { it.isNotBlank() }
-        ?: pairingPlaceholder
+        ?: pairingDefault
     if (defaultPairingUrl == pairingPlaceholder) {
         logger.warn(
-            "OPENTV: no remote-pairing URL configured. This build falls back to " +
-                "$pairingPlaceholder, and Remote NAS Setup will not connect. " +
-                "Set 'opentv.remote.pairing.url' in local.properties, or set the " +
-                "OPENTV_PAIRING_URL repository variable so CI builds carry the real host.",
+            "OPENTV: the remote-pairing URL is set to the placeholder $pairingPlaceholder, so " +
+                "Remote NAS Setup will not connect. Set 'opentv.remote.pairing.url' in " +
+                "local.properties or the OPENTV_PAIRING_URL repository variable.",
         )
     }
 
@@ -46,8 +49,8 @@ android {
         applicationId = "app.opentv"
         minSdk = project.findProperty("devMinSdk")?.toString()?.toIntOrNull() ?: 23
         targetSdk = 35
-        versionCode = 105
-        versionName = "0.12.84"
+        versionCode = 106
+        versionName = "0.12.85"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "DEFAULT_REMOTE_PAIRING_URL", "\"$defaultPairingUrl\"")
     }
