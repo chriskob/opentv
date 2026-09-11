@@ -22,6 +22,15 @@
   when you leave the player. It applies to live and to films, and it is **off by default** under
   Settings → Playback, because switching mode re-syncs the HDMI link and the screen blanks for a
   beat; turn it on unless your TV copes badly with that.
+- **The app now records its own baseline profile.** A baseline profile is a list of the methods the app
+  runs during startup and normal use, which ART pre-compiles on device so the first frame after launch
+  is not spent interpreting code. Compose's and AndroidX's profiles were already being merged into the
+  APK automatically; what was missing was a profile for OpenTV's own classes, which is where the
+  guide's opening and scrolling live. A new `:baselineprofile` module records it — see
+  `docs/PERFORMANCE.md` — and `Baseline profile` runs it on an emulator when asked. The profile itself
+  appears once that recording has been run once; a sideloaded install picks it up on first run and
+  finishes compiling on the next idle maintenance, so the gain can arrive after a reboot rather than
+  immediately.
 - **Startup re-arms alarms after the first frame rather than during it.** Reminders and booked
   recordings survive a force-stop or an update exactly as before. The work simply waits for the UI to
   be up now, instead of making a per-booking alarm call each while the guide was drawing its first
