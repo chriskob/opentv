@@ -18,6 +18,7 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
@@ -196,9 +197,27 @@ class PlayerController(
             .build()
     }
 
+    /**
+     * Software-decode fallback.
+     *
+     * Vendor hardware decoders routinely refuse to initialise for some codecs on cheap TV boxes
+     * (HEVC 10-bit, MPEG-2, AV1, and Dolby audio on devices that only do passthrough). By default
+     * ExoPlayer never tries a second decoder, so a channel VLC plays happily fails here outright —
+     * which is the usual reason a stream "works in other apps".
+     *
+     * `EXTENSION_RENDERER_MODE_ON` is the hook for the Media3 FFmpeg extension: it is used when
+     * present and ignored (with a log line) when it is not, so bundling the extension later needs
+     * no code change here. ON rather than PREFER on purpose — these boxes are weak, so the hardware
+     * decoder keeps first refusal and software is only the rescue path.
+     */
+    private val renderersFactory = DefaultRenderersFactory(context)
+        .setEnableDecoderFallback(true)
+        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+
     val player: ExoPlayer = ExoPlayer.Builder(context)
         .setSeekBackIncrementMs(SEEK_INCREMENT_MILLIS)
         .setSeekForwardIncrementMs(SEEK_INCREMENT_MILLIS)
+        .setRenderersFactory(renderersFactory)
         .setMediaSourceFactory(
             DefaultMediaSourceFactory(dataSourceFactory)
                 .setLoadErrorHandlingPolicy(loadErrorPolicy),

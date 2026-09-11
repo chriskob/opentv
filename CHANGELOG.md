@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.86
+
+- **Software decode fallback — streams that only play in VLC now have a chance here.** ExoPlayer
+  never tries a second decoder when the vendor hardware one refuses to initialise, which is the
+  usual reason a channel "works in other apps" but not in this one (HEVC 10-bit, MPEG-2, AV1, and
+  Dolby audio on devices that only pass it through). The player now enables decoder fallback, and
+  the renderers factory is wired for the Media3 FFmpeg extension so bundling software decoders later
+  needs no code change.
+
 ## 0.12.85
 
 - **Remote NAS Setup now works on a released APK.** The pairing service address fell back to an
