@@ -61,3 +61,22 @@ dependencies {
     implementation(libs.androidx.test.uiautomator)
     implementation(libs.junit)
 }
+
+/*
+ * Device-dependent tasks stay out of generic builds.
+ *
+ * Recording a profile means running instrumented tests on a real device or emulator, and the profile
+ * plugin wires those `connected*AndroidTest` tasks into this module. That is right when a recording is
+ * what was asked for — `:app:generateBaselineProfile` — and wrong for everything else: `assemble`,
+ * `build`, and CodeQL's autobuild all build every module, on machines with no device attached, and
+ * they fail on exactly these two tasks. That is what broke the code-scanning run the first time this
+ * module was pushed.
+ *
+ * So they are enabled only when the recording was actually requested. Anything that merely builds the
+ * project skips them instead of failing.
+ */
+val recordingProfile = gradle.startParameter.taskNames.any {
+    it.contains("generateBaselineProfile", ignoreCase = true)
+}
+tasks.matching { it.name.startsWith("connected") && it.name.endsWith("AndroidTest") }
+    .configureEach { enabled = recordingProfile }

@@ -35,7 +35,10 @@ jobs:
         env:
           # See release.yml — keeps CI builds pointing at the real pairing host.
           OPENTV_PAIRING_URL: ${{ vars.OPENTV_PAIRING_URL }}
-        run: ./gradlew assembleDebug --stacktrace
+        # :app on purpose. A bare `assembleDebug` also builds :baselineprofile, whose variants are
+        # paired with the app's and which needs a device to do anything useful — the profile is
+        # recorded by the Baseline profile workflow, not by every push.
+        run: ./gradlew :app:assembleDebug --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
