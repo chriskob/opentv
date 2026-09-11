@@ -492,7 +492,14 @@ fun PlayerScreen(
         // Cut old channel immediately so it never lingers on screen
         controller.player.stop()
         controller.player.clearMediaItems()
-        currentId?.let { if (it != id) previousId = it }
+        currentId?.let {
+            if (it != id) {
+                previousId = it
+                // Remember it past this player instance too, so "previous channel" still works
+                // after leaving and re-entering from a different category.
+                PlaybackQueue.previousChannelId = it
+            }
+        }
         currentId = id
         scope.launch {
             val (target, source, url) = withContext(Dispatchers.IO) {
@@ -910,7 +917,11 @@ fun PlayerScreen(
                     -> { if (queue.isNotEmpty()) channelListVisible = true; true }
 
                     event.key == Key.DirectionRight -> {
+                        // The channel watched before this one. previousId only knows about swaps
+                        // made inside this visit, so fall back to the one recorded across player
+                        // instances before reaching for the watch history.
                         val targetId = previousId
+                            ?: PlaybackQueue.previousChannelId.takeIf { it > 0L && it != currentId }
                             ?: recentChannels.firstOrNull { it.id != currentId }?.id
                             ?: recentChannelIds.firstOrNull { it != currentId }
                         if (targetId != null && targetId != currentId) {
