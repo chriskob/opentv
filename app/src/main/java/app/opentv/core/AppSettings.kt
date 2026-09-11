@@ -117,6 +117,36 @@ class AppSettings private constructor(context: Context) {
         _recentChannelIds.value = emptyList()
     }
 
+    /**
+     * Drops one channel from the history: the long-press "forget this" in the player.
+     * See [forgetRecentChannels] for why removal exists at all.
+     */
+    fun forgetRecentChannel(channelId: Long) = forgetRecentChannels(listOf(channelId))
+
+    /**
+     * Drops several channels at once, in a single write.
+     *
+     * History stores channel *row ids*, and a guide sync can delete those rows — `lastSeenMillis
+     * < syncStamp` prunes channels the provider dropped, and re-syncing a source clears the table
+     * outright while `id` is `autoGenerate`. An id that survives such a sync can therefore resolve
+     * to nothing. Those dead ids used to sit in the list forever, still counting against the
+     * 30-entry cap, so they slowly pushed watchable channels off the end of the bar. Sweeping them
+     * out is what keeps the bar showing channels that are actually still there.
+     */
+    fun forgetRecentChannels(channelIds: Collection<Long>) {
+        val drop = channelIds.toSet()
+        if (drop.isEmpty()) return
+        val current = readRecentChannelIds()
+        val kept = current.filterNot { it in drop }
+        if (kept.size == current.size) return
+        if (kept.isEmpty()) {
+            prefs.edit().remove(KEY_RECENT_CHANNELS).apply()
+        } else {
+            prefs.edit().putString(KEY_RECENT_CHANNELS, kept.joinToString(",")).apply()
+        }
+        _recentChannelIds.value = kept
+    }
+
     // ---- Parental controls -------------------------------------------------------------------
 
     /** Whether a parental PIN is set. The PIN itself is only ever stored as a salted hash. */

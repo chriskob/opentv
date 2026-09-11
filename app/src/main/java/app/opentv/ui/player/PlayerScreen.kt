@@ -646,6 +646,12 @@ fun PlayerScreen(
         withContext(Dispatchers.IO) {
             val ids = (listOfNotNull(currentId) + recentChannelIds).distinct()
             val loaded = ids.mapNotNull { graph.catalogRepository.channel(it) }
+            // Ids that resolve to nothing are channels the database no longer holds — pruned by a
+            // sync, or rebuilt under new ids. They can never come back, so forget them rather than
+            // let them hold a slot in the history for good.
+            val resolved = loaded.mapTo(mutableSetOf()) { it.id }
+            val dead = recentChannelIds.filterNot { it in resolved }
+            if (dead.isNotEmpty()) settings.forgetRecentChannels(dead)
             withContext(Dispatchers.Main) {
                 recentChannels = loaded
             }
@@ -1426,6 +1432,14 @@ fun PlayerScreen(
                                     programme = queueProgrammes[ch.id],
                                     isCurrent = ch.id == currentId,
                                     onClick = { playChannelId(ch.id) },
+                                    onLongClick = {
+                                        settings.forgetRecentChannels(listOf(ch.id))
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.history_removed, ch.shownName),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    },
                                 )
                             }
 
@@ -2079,8 +2093,12 @@ private fun QuickChannelCard(
     focusRequester: FocusRequester? = null,
     onFocusChanged: (Boolean) -> Unit = {},
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    // Set while OK is held, so the release that follows a long press is swallowed instead of
+    // being passed on as a click too.
+    var longPressed by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -2103,6 +2121,28 @@ private fun QuickChannelCard(
                 else Modifier.border(0.5.dp, Color(0xFF1E3A4B), RoundedCornerShape(8.dp)),
             )
             .focusable()
+            // Holding OK forgets the channel. A remote auto-repeats a held d-pad centre, so the
+            // first repeat is the long press; the release afterwards is swallowed rather than
+            // passed on, so a hold does not also fire the short-press click.
+            .onPreviewKeyEvent { e ->
+                val forget = onLongClick
+                val isCenter = e.key == Key.DirectionCenter ||
+                    e.key == Key.Enter ||
+                    e.key == Key.NumPadEnter
+                when {
+                    forget == null || !isCenter -> false
+                    e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount > 0 -> {
+                        longPressed = true
+                        forget()
+                        true
+                    }
+                    e.type == KeyEventType.KeyUp && longPressed -> {
+                        longPressed = false
+                        true
+                    }
+                    else -> false
+                }
+            }
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 5.dp),
         contentAlignment = Alignment.Center,

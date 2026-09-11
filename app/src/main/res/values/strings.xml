@@ -572,4 +572,5 @@
     <string name="settings_tmdb_active">Active</string>
     <string name="history_clear">Clear history</string>
     <string name="history_cleared">Watch history cleared</string>
+    <string name="history_removed">%1$s removed from history</string>
 </resources>
