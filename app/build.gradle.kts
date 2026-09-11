@@ -193,6 +193,20 @@ dependencies {
     // back in-app over the network. Pure-Java SMB2/3, no native bits.
     implementation("com.hierynomus:smbj:0.12.2")
 
+    /*
+     * Software audio decoders (Media3's FFmpeg extension).
+     *
+     * Android ships no free AC-3 / E-AC-3 / DTS decoder, so channels carrying them fail on devices
+     * that can only pass the bitstream through — the "plays in VLC but not here" case. The extension
+     * is not on Maven and must be cross-compiled: run .github/workflows/codecs.yml and put the
+     * resulting AAR in app/libs/. Nothing changes until that file exists, so this is safe to leave
+     * in place. See docs/CODECS.md.
+     */
+    val ffmpegDecoderAar = fileTree("libs") { include("*.aar") }
+    if (ffmpegDecoderAar.files.isNotEmpty()) {
+        implementation(ffmpegDecoderAar)
+    }
+
     testImplementation(libs.junit)
     testImplementation(libs.truth)
     testImplementation(libs.robolectric)

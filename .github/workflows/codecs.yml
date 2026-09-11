@@ -1,0 +1,85 @@
+name: Build FFmpeg decoders
+
+# Media3's FFmpeg decoder extension is NOT published to Google Maven — it has to be cross-compiled
+# from source with the Android NDK. That needs a Linux toolchain, which is exactly what this runner
+# is, so the build lives here instead of on someone's laptop.
+#
+# What it fixes: Android ships no free AC-3 / E-AC-3 / DTS decoder, so channels carrying them fail
+# on devices that can only pass the bitstream through. VLC and TiviMate sound-decode them; with this
+# AAR, so do we.
+#
+# Manual trigger only, and it only produces an artifact — it never touches a release, so it cannot
+# break the normal release path. See docs/CODECS.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      media3_tag:
+        description: 'androidx/media tag — must match the media3 version in gradle/libs.versions.toml'
+        required: true
+        default: '1.5.0'
+      decoders:
+        description: 'FFmpeg decoders to enable (space separated)'
+        required: true
+        default: 'ac3 eac3 dca mlp truehd mp2 opus flac alac vorbis'
+
+permissions:
+  contents: read
+
+jobs:
+  ffmpeg:
+    name: Build libffmpeg for Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # r26b is the version Media3's own instructions are tested against.
+      - name: Install NDK
+        run: |
+          sdkmanager "ndk;26.1.10909125"
+          echo "NDK_PATH=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> "$GITHUB_ENV"
+
+      - name: Fetch Media3 sources
+        run: |
+          git clone --depth 1 --branch "${{ inputs.media3_tag }}" \
+            https://github.com/androidx/media.git media
+          echo "FFMPEG_MODULE_PATH=$GITHUB_WORKSPACE/media/libraries/decoder_ffmpeg/src/main" >> "$GITHUB_ENV"
+
+      - name: Fetch FFmpeg sources
+        run: |
+          git clone --depth 1 --branch release/6.0 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+          echo "FFMPEG_PATH=$GITHUB_WORKSPACE/ffmpeg" >> "$GITHUB_ENV"
+
+      # build_ffmpeg.sh expects a link to the FFmpeg checkout inside the module's jni directory,
+      # then builds every ABI the script lists (armeabi-v7a, arm64-v8a, x86, x86_64 by default).
+      - name: Build FFmpeg for each ABI
+        run: |
+          cd "$FFMPEG_MODULE_PATH/jni"
+          ln -sf "$FFMPEG_PATH" ffmpeg
+          # ANDROID_ABI is the API level for the native code and must not exceed the app's minSdk.
+          ./build_ffmpeg.sh \
+            "$FFMPEG_MODULE_PATH" \
+            "$NDK_PATH" \
+            "linux-x86_64" \
+            "21" \
+            ${{ inputs.decoders }}
+
+      - name: Assemble the decoder extension AAR
+        run: |
+          cd "$GITHUB_WORKSPACE/media"
+          ./gradlew :libdecoder_ffmpeg:assembleRelease --stacktrace
+
+      - name: Upload the AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: media3-decoder-ffmpeg
+          path: media/libraries/decoder_ffmpeg/build/outputs/aar/*.aar
+          if-no-files-found: error
