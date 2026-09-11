@@ -7,13 +7,16 @@ package app.opentv.update
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -87,7 +90,41 @@ fun UpdateGate(viewModel: UpdateViewModel = viewModel()) {
             confirmButton = { TextButton(onClick = viewModel::install) { Text("Retry") } },
             dismissButton = { TextButton(onClick = viewModel::dismiss) { Text("Close") } },
             title = { Text("Update failed") },
-            text = { Text("Could not download the update. Check the connection and try again.") },
+            text = {
+                Column {
+                    Text("Could not download the update. Check the connection and try again.")
+                    if (!s.reason.isNullOrBlank()) {
+                        Text(
+                            text = s.reason,
+                            modifier = Modifier.padding(top = 8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+        )
+
+        // Android is asking on the platform's behalf: installs from this app are not allowed
+        // yet. Say so plainly and keep a route back to that setting — without this the
+        // install looks like it simply did nothing.
+        is UpdateUiState.NeedsPermission -> AlertDialog(
+            onDismissRequest = viewModel::dismiss,
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = viewModel::openInstallSettings) { Text("Settings") }
+                    TextButton(onClick = viewModel::install) { Text("Try again") }
+                }
+            },
+            dismissButton = { TextButton(onClick = viewModel::dismiss) { Text("Close") } },
+            title = { Text("Allow OpenTV to install updates") },
+            text = {
+                Text(
+                    "Android will not let OpenTV install its own update until you allow it. " +
+                        "Turn on \"Allow from this source\" for OpenTV in Settings, then tap " +
+                        "Try again. On a TV, look under Settings → Security & restrictions → " +
+                        "Unknown sources.",
+                )
+            },
         )
     }
 }
@@ -96,7 +133,12 @@ sealed interface UpdateUiState {
     data object Idle : UpdateUiState
     data class Available(val update: UpdateChecker.Update) : UpdateUiState
     data class Downloading(val update: UpdateChecker.Update, val fraction: Float) : UpdateUiState
-    data class Failed(val update: UpdateChecker.Update) : UpdateUiState
+
+    /** [reason] carries the technical detail, so a failed attempt is reportable, not a mystery. */
+    data class Failed(val update: UpdateChecker.Update, val reason: String? = null) : UpdateUiState
+
+    /** The platform needs the user to allow installs from OpenTV before the update can land. */
+    data class NeedsPermission(val update: UpdateChecker.Update) : UpdateUiState
 }
 
 /**
@@ -143,6 +185,7 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
             is UpdateUiState.Available -> s.update
             is UpdateUiState.Failed -> s.update
             is UpdateUiState.Downloading -> s.update
+            is UpdateUiState.NeedsPermission -> s.update
             UpdateUiState.Idle -> return
         }
         viewModelScope.launch {
@@ -153,13 +196,24 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
                     url = update.apkUrl,
                     expectedBytes = update.apkSizeBytes,
                 ) { fraction -> _state.value = UpdateUiState.Downloading(update, fraction) }
-            }.onSuccess {
-                // The system installer is now front-and-centre; step our dialog aside.
-                _state.value = UpdateUiState.Idle
-            }.onFailure {
-                _state.value = UpdateUiState.Failed(update)
+            }.onSuccess { outcome ->
+                // Only stand down once the system installer is genuinely on screen. If the
+                // platform wants the install permission first, keep talking to the user —
+                // closing the dialog here regardless was the "nothing happened" bug.
+                _state.value = when (outcome) {
+                    ApkInstaller.Outcome.InstallerShown -> UpdateUiState.Idle
+                    ApkInstaller.Outcome.NeedsUnknownSourcesPermission ->
+                        UpdateUiState.NeedsPermission(update)
+                }
+            }.onFailure { failure ->
+                _state.value = UpdateUiState.Failed(update, failure.message)
             }
         }
+    }
+
+    /** Re-opens the "install unknown apps" screen when the user has lost their way back to it. */
+    fun openInstallSettings() {
+        installer.openUnknownSourcesSettings(getApplication())
     }
 
     fun dismiss() { _state.value = UpdateUiState.Idle }
