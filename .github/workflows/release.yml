@@ -43,6 +43,10 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # The remote-pairing host baked into the APK. Without this the release falls back to a
+          # placeholder and "Remote NAS Setup" cannot connect. Set it under
+          # Settings -> Secrets and variables -> Actions -> Variables as OPENTV_PAIRING_URL.
+          OPENTV_PAIRING_URL: ${{ vars.OPENTV_PAIRING_URL }}
         run: ./gradlew assembleRelease --stacktrace
 
       # A stable asset name matters: the install page and the /apk short link both look for

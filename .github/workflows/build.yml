@@ -32,6 +32,9 @@ jobs:
         run: chmod +x gradlew
 
       - name: Assemble debug APK
+        env:
+          # See release.yml — keeps CI builds pointing at the real pairing host.
+          OPENTV_PAIRING_URL: ${{ vars.OPENTV_PAIRING_URL }}
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload debug APK
