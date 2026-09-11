@@ -912,20 +912,27 @@ fun PlayerScreen(
                     }
                     // D-Pad Up, or a dedicated Channel Up / Page Up (ONN 4k box remote), while
                     // full-screen: the next channel up the list — the next channel number.
+                    //
+                    // Deliberately does not reveal the OSD. It used to, and on the ONN remote that
+                    // made channel up/down behave like a menu key: every press zapped the channel
+                    // *and* threw the history bar and the shortcut row up over the picture, so the
+                    // key read as "open the bar" rather than "next channel". A zap is a channel
+                    // change; the bar is still on OK.
                     event.key == Key.ChannelUp ||
                     event.key == Key.PageUp ||
                     event.nativeKeyEvent.keyCode == 166 || // KEYCODE_CHANNEL_UP
                     event.nativeKeyEvent.keyCode == 92 ||  // KEYCODE_PAGE_UP
                     event.key == Key.DirectionUp
-                    -> { zapBy(1); reveal(); true }
+                    -> { zapBy(1); true }
 
                     // D-Pad Down, or a dedicated Channel Down / Page Down: the channel before it.
+                    // Same reasoning as above — no reveal.
                     event.key == Key.ChannelDown ||
                     event.key == Key.PageDown ||
                     event.nativeKeyEvent.keyCode == 167 || // KEYCODE_CHANNEL_DOWN
                     event.nativeKeyEvent.keyCode == 93 ||  // KEYCODE_PAGE_DOWN
                     event.key == Key.DirectionDown
-                    -> { zapBy(-1); reveal(); true }
+                    -> { zapBy(-1); true }
 
                     // Center/Enter/OK/Info button on remote: reveals the OSD menu without pausing playback.
                     event.key == Key.DirectionCenter ||
