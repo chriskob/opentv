@@ -158,8 +158,6 @@
     <string name="settings_content_refreshing">Odświeżanie…</string>
     <string name="settings_section_language">Język</string>
     <string name="settings_language_system">Domyślny systemowy</string>
-    <string name="settings_language_english">English</string>
-    <string name="settings_language_spanish">Español</string>
     <string name="settings_language_note">Ustawia język aplikacji. Ekran przeładuje się po zmianie.</string>
     <string name="settings_section_guide">Przewodnik</string>
     <string name="settings_channel_layout_title">Układ kanałów</string>

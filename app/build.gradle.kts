@@ -51,6 +51,17 @@ android {
         targetSdk = 35
         versionCode = 109
         versionName = "0.12.88"
+
+        /*
+         * Only the languages OpenTV itself ships: English (the default resources) and Polish.
+         *
+         * Deleting the other values-xx/ directories only removes *our* translations. The APK still
+         * carried every locale the AndroidX, Compose, Media3 and Coil libraries are translated into
+         * — eighty-odd languages of library strings, so a device set to German showed a German
+         * "Cancel" next to English app text. This strips them at build time, which makes the app
+         * speak two languages consistently and takes the rest of the weight out of the download.
+         */
+        resourceConfigurations += listOf("en", "pl")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "DEFAULT_REMOTE_PAIRING_URL", "\"$defaultPairingUrl\"")
     }

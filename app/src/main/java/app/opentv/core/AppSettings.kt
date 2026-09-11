@@ -355,11 +355,13 @@ class AppSettings private constructor(context: Context) {
     }
 
     /**
-     * UI language override. Blank = follow the device; otherwise a BCP-47 tag ("en", "es").
+     * UI language override. Blank = follow the device; otherwise a BCP-47 tag ("en", "pl").
      * Applied at [android.content.ContextWrapper.attachBaseContext] time so the whole app —
      * including notifications built off the app context — picks it up.
      */
-    private val _languageTag = MutableStateFlow(prefs.getString(KEY_LANGUAGE, "").orEmpty())
+    private val _languageTag = MutableStateFlow(
+        prefs.getString(KEY_LANGUAGE, "").orEmpty().takeIf { OpenTvLanguages.supports(it) }.orEmpty(),
+    )
     val languageTag: StateFlow<String> = _languageTag.asStateFlow()
 
     fun setLanguageTag(tag: String) {
@@ -691,9 +693,14 @@ class AppSettings private constructor(context: Context) {
          * Reads the saved language tag straight from prefs, for use in attachBaseContext before
          * the settings singleton (or anything else) is initialised. Blank = follow the device.
          */
-        fun savedLanguageTag(context: Context): String =
-            context.getSharedPreferences("opentv_settings", Context.MODE_PRIVATE)
+        fun savedLanguageTag(context: Context): String {
+            val tag = context.getSharedPreferences("opentv_settings", Context.MODE_PRIVATE)
                 .getString(KEY_LANGUAGE, "").orEmpty()
+            // A tag we no longer have resources for must not be applied. Someone who had picked
+            // German before it was dropped would otherwise keep a German default Locale for dates
+            // and numbers while every string fell back to English.
+            return if (OpenTvLanguages.supports(tag)) tag else ""
+        }
         private const val KEY_REC_TARGET = "recording_target"
         private const val KEY_SMB_HOST = "smb_host"
         private const val KEY_SMB_SHARE = "smb_share"

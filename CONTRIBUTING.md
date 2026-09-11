@@ -72,7 +72,8 @@ explaining why an obvious implementation was rejected.
 - Device-specific playback bugs — if you own the device, you are uniquely able to fix it
 - Test coverage for `EpgRepository.sync` failure paths (see the end of `docs/ARCHITECTURE.md`)
 - Accessibility: content descriptions, focus order, caption styling
-- Translations
+- Polish translation gaps — `values-pl/strings.xml` lags the English strings, so newer text shows
+  in English until someone fills it in
 
 ## Things that need discussion before you build them
 

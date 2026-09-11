@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.89
+
+- **Thirty translations became two.** OpenTV now ships English and Polish only. Thirty
+  half-maintained translations meant every new string added English text to twenty-nine of them, so
+  the languages that were nominally supported were in practice partly English — and each one had to
+  be kept in sync forever. Shipping two that are actually read beats advertising thirty that are
+  not, and the download is smaller for it.
+- **A language that is gone can no longer be applied.** Anyone who had chosen one of the removed
+  languages still has a saved tag with no resources behind it, and that tag is now ignored at
+  startup. Without the check the process kept, say, a German default locale for dates and numbers
+  while every string fell back to English — which reads as "the clock is wrong" rather than as a
+  language problem.
+- The two language-name strings that only the removed picker entries used, and the Spanish label,
+  are gone with them.
+
 ## 0.12.88
 
 - **D-pad up and down change channel, in list order.** Up called the channel step with -1, so it

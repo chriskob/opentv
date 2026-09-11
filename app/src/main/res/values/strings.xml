@@ -221,8 +221,6 @@
     <string name="settings_content_refreshing">Refreshing…</string>
     <string name="settings_section_language">Language</string>
     <string name="settings_language_system">System default</string>
-    <string name="settings_language_english">English</string>
-    <string name="settings_language_spanish">Español</string>
     <string name="settings_language_note">Sets the app\'s language. The screen reloads when you change it.</string>
     <string name="settings_section_guide">Guide</string>
     <string name="settings_channel_layout_title">Channel layout</string>
