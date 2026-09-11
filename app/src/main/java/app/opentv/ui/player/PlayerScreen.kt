@@ -590,6 +590,25 @@ fun PlayerScreen(
         if (next != cur) playChannelId(queue[next].id)
     }
 
+    /**
+     * Steps back through the stream and reports whether it took the seek.
+     *
+     * Live HLS with a DVR window — what Xtream live gives us — accepts this, which is how a live
+     * channel can be rewound without changing stream. A stream with no window, such as plain
+     * progressive TS, reports itself unseekable; the caller then falls back to what left used to
+     * do rather than swallowing the press.
+     *
+     * The caller must NOT reveal the OSD: with the bar up, left/right belong to the history
+     * carousel, so revealing would make the second press of a quick double-press scroll the list
+     * instead of rewinding further.
+     */
+    fun seekBackBy(stepMillis: Long): Boolean {
+        if (!controller.isSeekable) return false
+        val cur = controller.player.currentPosition
+        controller.player.seekTo((cur - stepMillis).coerceAtLeast(0L))
+        return true
+    }
+
     fun toggleRecord() {
         val active = activeRecordings.firstOrNull { it.channelId == currentId }
         if (active != null) {
@@ -910,8 +929,20 @@ fun PlayerScreen(
                         true
                     }
 
-                    // Immersive shortcuts & Guide key when hidden:
-                    event.key == Key.DirectionLeft ||
+                    // D-pad left while watching: back through the stream, TiviMate-style. The
+                    // step is 10s a press and scales with the key repeat, so holding backs up
+                    // further. With the bar showing, left/right belong to the history carousel
+                    // instead — that branch is handled above this one.
+                    event.key == Key.DirectionLeft -> {
+                        if (!seekBackBy(scrubStepMillis(event.nativeKeyEvent.repeatCount))) {
+                            // No DVR window to step back through: keep left's old meaning.
+                            if (queue.isNotEmpty()) channelListVisible = true
+                        }
+                        true
+                    }
+
+                    // The Guide key — and the ONN box's dedicated key — still open the channel
+                    // list, which is where left used to lead on every stream.
                     event.key == Key.Guide ||
                     event.nativeKeyEvent.keyCode == 172 // KEYCODE_GUIDE
                     -> { if (queue.isNotEmpty()) channelListVisible = true; true }
