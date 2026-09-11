@@ -1167,11 +1167,17 @@ fun HomeScreen(
                         }
                     },
                 )
-                // Per-channel catch-up capability. The rule lives in CatchupResolver now — one copy,
-                // so the badge and the resolver cannot drift apart (they had: this block said every
-                // channel of an Xtream source was capable, which badged channels the provider had
-                // marked as having no archive). It runs once per channel over the whole list, so it
-                // is asked off the main thread.
+                // Per-channel catch-up capability: the badge shows only where the provider actually
+                // said catch-up exists for that channel.
+                //
+                // This block used to treat "the source is Xtream" and "the source has a username" as
+                // evidence of catch-up, which badged channels their provider had marked as having
+                // none: an Xtream portal answers tv_archive and tv_archive_duration per channel, so
+                // that per-channel answer is the whole truth and a "no" there means no. Only a plain
+                // M3U — which carries no per-channel answer at all — falls back to the shape of the
+                // stream URL, which is the case that assumption was ever meant to cover.
+                //
+                // Runs once per channel over the whole list, so it is computed off the main thread.
                 val catchUpChannelIds by produceState(
                     initialValue = emptySet<Long>(),
                     sources,
@@ -1181,11 +1187,13 @@ fun HomeScreen(
                     value = withContext(Dispatchers.Default) {
                         rows.mapNotNull { row ->
                             val ch = row.primary
-                            if (app.opentv.core.CatchupResolver.isSupported(byId[ch.sourceId], ch)) {
-                                ch.id
-                            } else {
-                                null
-                            }
+                            val src = byId[ch.sourceId]
+                            val fromPortal = src?.kind == app.opentv.data.model.SourceKind.XTREAM
+                            val capable = ch.tvArchive ||
+                                ch.tvArchiveDays > 0 ||
+                                !ch.cmd.isNullOrBlank() ||
+                                (!fromPortal && looksLikeXtreamStream(ch.streamUrl))
+                            if (capable) ch.id else null
                         }.toSet()
                     }
                 }
