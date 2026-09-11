@@ -27,7 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # enablement: true lets the workflow turn Pages on itself the first time,
+      # instead of failing with "failed to create deployment" when the repo
+      # has never had Pages enabled (Settings -> Pages -> Source: GitHub Actions).
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
