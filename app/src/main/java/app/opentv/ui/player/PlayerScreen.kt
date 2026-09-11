@@ -560,15 +560,21 @@ fun PlayerScreen(
             graph.database.channels().observe(sourceId, null).firstOrNull()
         }.orEmpty()
         if (channels.isNotEmpty()) {
-            queue = channels.map { PlaybackQueue.Item(it.id, it.shownName, it.logoUrl, it.number) }
+            // `number` is the list position here, matching what the guide hands over — the
+            // field feeds numeric entry and the on-screen channel number, so the two entry
+            // paths have to fill it the same way.
+            queue = channels.mapIndexed { index, ch ->
+                PlaybackQueue.Item(ch.id, ch.shownName, ch.logoUrl, index + 1)
+            }
         }
     }
 
     /**
-     * Steps one channel along the list the way a remote's CH+ / CH- does: [delta] of +1 lands on
-     * the next channel *up* the list — the next channel number, since the list is in channel
-     * order — and -1 on the one before it. Stops at either end rather than wrapping, so the
-     * first and last channel say so by doing nothing.
+     * Steps one channel along the list, the way a remote's CH+ / CH- does: [delta] of +1 moves
+     * forward through the list and -1 back, so d-pad up is channel up and d-pad down is channel
+     * down. Order is the list's own order — whatever order the channels are shown in — never a
+     * channel number. Stops at either end rather than wrapping, so the first and last channel
+     * say so by doing nothing.
      */
     fun zapBy(delta: Int) {
         if (queue.isEmpty()) return
