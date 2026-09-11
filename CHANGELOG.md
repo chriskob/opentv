@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.12.87
+
+- **Self-update now actually installs.** "Check for updates" correctly found a newer version
+  and offered to install it, but tapping Update closed the dialog and nothing happened — no
+  install screen, no error, just back to where you started. The installer intent carried
+  `EXTRA_RETURN_RESULT`, which asks the platform to report back to a `startActivityForResult`
+  caller; fired through a plain `startActivity` there is no caller to report to, so Android
+  cancelled the install and finished the installer activity with no UI at all. That extra is
+  gone. The APK is now offered through `ACTION_VIEW` with the package-archive mime — the
+  action Android TV and Fire OS actually handle — with `ACTION_INSTALL_PACKAGE` kept as a
+  fallback for older phone builds, and the app asks for the "install unknown apps" permission
+  up front rather than firing an install the platform will refuse in silence. The dialog only
+  stands down once the installer is really on screen, and says why when it is not, so a
+  failure can no longer be mistaken for nothing happening.
+- **A truncated or bogus download is caught before it reaches the installer.** An interrupted
+  download used to be handed straight to the system, which answered with an unhelpful
+  "problem parsing the package" screen. The downloaded file is now checked for its expected
+  size and zip magic first, and reported as a failed download instead.
+
 ## 0.12.86
 
 - **Software decode fallback — streams that only play in VLC now have a chance here.** ExoPlayer
