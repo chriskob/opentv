@@ -98,6 +98,9 @@ data class RemoteProvisioningProgress(
     val epgProgrammesProcessed: Int = 0,
     val epgChannelsMatched: Int = 0,
     val epgChannelsTotal: Int = 0,
+    /** Channels the matcher has been through while it runs, and how many it has to get through. */
+    val epgChannelsScanned: Int = 0,
+    val epgChannelsToScan: Int = 0,
     /** Guide feeds finished / total, so the bar moves while feeds are still downloading. */
     val epgFeedsDone: Int = 0,
     val epgFeedsTotal: Int = 0,
@@ -122,12 +125,16 @@ data class RemoteProvisioningProgress(
             return (channelsProcessed.toFloat() / channelsTotal).coerceIn(0f, 1f)
         }
 
-    /** 0..1 across the guide stage: feed parsing first, then channel matching once it runs. */
+    /** 0..1 across the guide stage: feed parsing, then the matcher's pass, then the match result. */
     val epgFraction: Float?
         get() {
-            // Matching is the more informative bar when it is available, because it is the step that
-            // decides whether channels have a guide at all. Until then, report how much of the feed
-            // download is done — otherwise the bar has nothing to say for the minutes that step takes.
+            // While the matcher is running, how far through the catalogue it is. That pass is the
+            // longest single step of a guide sync and used to report nothing at all, which is why the
+            // bar sat at "1 of 1 feeds" with a spinner beside it. Then the feed download, so the bar
+            // has something to say for the minutes that step takes.
+            if (epgChannelsToScan > 0) {
+                return (epgChannelsScanned.toFloat() / epgChannelsToScan).coerceIn(0f, 1f)
+            }
             if (epgChannelsTotal > 0) {
                 return (epgChannelsMatched.toFloat() / epgChannelsTotal).coerceIn(0f, 1f)
             }
@@ -137,9 +144,13 @@ data class RemoteProvisioningProgress(
             return null
         }
 
-    /** True while the bar is measuring feeds rather than matched channels. */
+    /** True while the bar is measuring feeds rather than channels. */
     val epgBarIsFeeds: Boolean
-        get() = epgChannelsTotal <= 0 && epgFeedsTotal > 0
+        get() = epgChannelsToScan <= 0 && epgChannelsTotal <= 0 && epgFeedsTotal > 0
+
+    /** True while the bar is measuring the matcher's pass over the catalogue. */
+    val epgBarIsMatching: Boolean
+        get() = epgChannelsToScan > 0
 
     enum class Stage {
         IDLE,
@@ -532,15 +543,30 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                         epgFeedsDone = p.feedsDone,
                         epgFeedsTotal = p.feedsTotal,
                         epgProgrammesProcessed = p.programmesWritten,
-                        statusMessage = if (p.feedsTotal > 0) {
-                            "Guide feeds — %,d of %,d done, %,d programmes parsed%s".format(
-                                p.feedsDone,
-                                p.feedsTotal,
-                                p.programmesWritten,
-                                if (p.currentFeed.isBlank()) "" else " (${p.currentFeed})",
-                            )
-                        } else {
-                            "Downloading TV guide feeds…"
+                        epgChannelsScanned = p.channelsScanned,
+                        epgChannelsToScan = p.channelsToScan,
+                        statusMessage = when {
+                            // The matcher counts channels, not feeds: saying "1 of 1 feeds" while
+                            // thousands of channels are being joined is what made this look stuck.
+                            p.matching && p.channelsToScan > 0 ->
+                                "Matching channels — %,d of %,d checked".format(
+                                    p.channelsScanned,
+                                    p.channelsToScan,
+                                )
+                            p.matching -> "Guide feeds done — matching channels to programmes…"
+                            p.feedsTotal > 0 -> if (p.programmesWritten == 0) {
+                                // Feeds inside their refresh window are skipped, so "0 programmes"
+                                // means "nothing new to fetch", not "the guide failed".
+                                "Guide feeds up to date — checking channels against programs…"
+                            } else {
+                                "Guide feeds — %,d of %,d done, %,d programmes parsed%s".format(
+                                    p.feedsDone,
+                                    p.feedsTotal,
+                                    p.programmesWritten,
+                                    if (p.currentFeed.isBlank()) "" else " (${p.currentFeed})",
+                                )
+                            }
+                            else -> "Downloading TV guide feeds…"
                         },
                     )
                 }

@@ -20,6 +20,17 @@
   let deletedSourceIds = []; // Explicitly removed source IDs
   let sessionCheckTimeout = null;
   let lastCheckedCode = '';
+  // Set as soon as the user touches the form. The session poll loads the device's playlists once the
+  // TV connects, which rebuilds every card — and that used to happen a couple of seconds after someone
+  // typed the pairing code, wiping the name and credentials they had just entered. The typed name never
+  // reached the TV; the device's stored name did.
+  let userHasEditedPlaylists = false;
+
+  // Any typing or toggling inside the form marks it as mid-edit. Capture phase, so this sees changes
+  // on the inputs the cards create later without having to wire each one up.
+  ['input', 'change', 'click'].forEach(evt =>
+    playlistsContainer.addEventListener(evt, () => { userHasEditedPlaylists = true; }, true)
+  );
 
   function showAlert(message, type = 'error') {
     alertBanner.textContent = message;
@@ -137,6 +148,13 @@
   }
 
   function populateFromExistingSources(sources) {
+    // Never rebuild the form under someone who is already typing in it. Loading the TV's playlists is
+    // a convenience for editing them; throwing away the user's own input to do it is not.
+    if (userHasEditedPlaylists) {
+      setDeviceStatus(`Connected to TV — keeping the ${sources.length} playlist(s) open in this form`, true);
+      return;
+    }
+
     playlistsContainer.innerHTML = '';
     playlists.length = 0;
     playlistCounter = 0;
@@ -807,6 +825,7 @@
     playlists.length = 0;
     playlistCounter = 0;
     deletedSourceIds = [];
+    userHasEditedPlaylists = false;
     createPlaylistCard('m3u');
     successScreen.style.display = 'none';
     setupForm.style.display = 'block';

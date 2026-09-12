@@ -302,6 +302,16 @@ class EpgRepository(
         val programmesWritten: Int,
         /** The feed being worked on, for the "what is it doing" line. */
         val currentFeed: String = "",
+        /**
+         * True while the matcher pass runs. The feeds are finished by then, so a caller must stop
+         * saying "parsing feed N of M": on a big catalogue the matcher is the *longer* half of the
+         * sync, and reporting nothing for it is what made the provisioning dashboard look hung — a
+         * spinner beside "1 of 1 feeds, 0 programmes" that never changed.
+         */
+        val matching: Boolean = false,
+        /** Channels the matcher has been through so far, and how many it has to get through. */
+        val channelsScanned: Int = 0,
+        val channelsToScan: Int = 0,
     )
 
     /** Downloads every enabled feed, merges, prunes, and re-runs the matcher.
@@ -369,9 +379,21 @@ class EpgRepository(
             // The matcher is its own long stretch on a big catalogue; say so rather than letting the
             // bar sit at the end of the feeds with no explanation.
             onProgress?.invoke(
-                SyncProgress(feeds.size, feeds.size, written, "Matching channels…"),
+                SyncProgress(feeds.size, feeds.size, written, "Matching channels…", matching = true),
             )
-            val (matched, total) = runMatcher()
+            val (matched, total) = runMatcher { scanned, toScan ->
+                onProgress?.invoke(
+                    SyncProgress(
+                        feedsDone = feeds.size,
+                        feedsTotal = feeds.size,
+                        programmesWritten = written,
+                        currentFeed = "Matching channels…",
+                        matching = true,
+                        channelsScanned = scanned,
+                        channelsToScan = toScan,
+                    ),
+                )
+            }
             // (The post-sync 6-hour `loadWindow` pre-warm that used to run here is gone: it held
             // every channel's programmes in memory for no reader — see the note by [scope].)
             // Stamp for the guide header ("EPG updated … · N channels"). total = channels the
@@ -536,8 +558,16 @@ class EpgRepository(
     /**
      * Joins every channel to the merged guide by normalised name.
      * Returns (channels with a working guide id, total channels).
+     *
+     * [onProgress] receives `(scanned, total)` as it goes. On a provider with tens of thousands of
+     * channels this loop is the longest single step in a guide sync, and it used to report nothing at
+     * all: the dashboard sat on "1 of 1 feeds" with a spinner for the whole pass, which reads as a
+     * hang. The count is throttled — one callback per few hundred channels is plenty to animate a bar
+     * without adding work to the loop.
      */
-    suspend fun runMatcher(): Pair<Int, Int> {
+    suspend fun runMatcher(
+        onProgress: ((scanned: Int, total: Int) -> Unit)? = null,
+    ): Pair<Int, Int> {
         val aliases = aliasDao.all()
         val index = EpgMatcher.buildIndex(aliases.map { it.epgId to it.displayName })
         // Only ids that actually have programmes count as "working" — a match against a
@@ -546,6 +576,8 @@ class EpgRepository(
 
         val channels = channelDao.allForMatching()
         var matched = 0
+        var scanned = 0
+        val reportEvery = 500
         val updates = ArrayList<Pair<Long, String?>>()
 
         for (channel in channels) {
@@ -556,7 +588,12 @@ class EpgRepository(
             val works = channel.epgCandidates.any { it in populated } ||
                 (newMatch != null && newMatch in populated)
             if (works) matched++
+            scanned++
+            if (scanned % reportEvery == 0) onProgress?.invoke(scanned, channels.size)
         }
+        // Land on 100% before the writes, so the bar is not left a few hundred short while the
+        // updates are flushed.
+        onProgress?.invoke(channels.size, channels.size)
 
         if (updates.isNotEmpty()) {
             updates.chunked(BATCH_SIZE).forEach { chunk ->

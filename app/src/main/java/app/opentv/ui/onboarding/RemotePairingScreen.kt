@@ -698,8 +698,15 @@ private fun ProvisioningProgressDashboard(
                     )
                     Text(
                         text = when {
+                            progress.epgBarIsMatching ->
+                                "Matching channels — %,d of %,d checked".format(
+                                    progress.epgChannelsScanned,
+                                    progress.epgChannelsToScan,
+                                )
                             progress.epgChannelsMatched > 0 ->
                                 "${progress.epgChannelsMatched} / ${progress.epgChannelsTotal} channels matched"
+                            progress.epgFeedsTotal > 0 && progress.epgProgrammesProcessed == 0 ->
+                                "Guide feeds up to date — no new programs to fetch"
                             progress.epgFeedsTotal > 0 ->
                                 "Parsing guide feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal}"
                             else -> "Programs Scheduled"
@@ -719,10 +726,13 @@ private fun ProvisioningProgressDashboard(
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = if (progress.epgBarIsFeeds)
-                                "%.0f%% of feeds parsed".format(epgFraction * 100f)
-                            else
-                                "%.0f%% matched".format(epgFraction * 100f),
+                            text = when {
+                                progress.epgBarIsMatching ->
+                                    "%.0f%% of channels checked".format(epgFraction * 100f)
+                                progress.epgBarIsFeeds ->
+                                    "%.0f%% of feeds parsed".format(epgFraction * 100f)
+                                else -> "%.0f%% matched".format(epgFraction * 100f)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.6f)
                         )
