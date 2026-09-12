@@ -653,6 +653,49 @@ class AppSettings private constructor(context: Context) {
         _enabledSubMenuButtons.value = updated
     }
 
+    // ---- Movie & show player buttons ---------------------------------------------------------
+
+    /**
+     * The buttons the movie/show player can show, in the order they appear along the bottom.
+     *
+     * Kept separate from [SubMenuButton] on purpose: that list is the *live* player's (record,
+     * multiview, favourites…), none of which mean anything for a film, and mixing them would put
+     * toggles in one settings list that do nothing on half the screens they claim to control.
+     */
+    enum class VodPlayerButton(val key: String, val titleRes: Int, val subtitle: String) {
+        REWIND("rewind", app.opentv.R.string.player_rewind, "Skip back 10 seconds"),
+        PLAY_PAUSE("play_pause", app.opentv.R.string.player_play, "Play and pause"),
+        FORWARD("forward", app.opentv.R.string.player_forward, "Skip forward 10 seconds"),
+        SPEED("speed", app.opentv.R.string.player_speed, "Playback speed (0.5× to 2×)"),
+        SUBTITLES("subtitles", app.opentv.R.string.player_subtitles, "Subtitle and caption track"),
+        AUDIO("audio", app.opentv.R.string.player_audio, "Audio track and channel format"),
+        FORMAT("format", app.opentv.R.string.player_format, "Stream format: resolution, codecs, data size"),
+        ASPECT("aspect", app.opentv.R.string.player_aspect, "Aspect ratio (Normal, Fill, Stretch)"),
+        NEXT_EPISODE("next_episode", app.opentv.R.string.player_next_episode, "Jump to the next episode of a series"),
+    }
+
+    private val _enabledVodButtons = MutableStateFlow(readEnabledVodButtons())
+    val enabledVodButtons: StateFlow<Set<VodPlayerButton>> = _enabledVodButtons.asStateFlow()
+
+    private fun readEnabledVodButtons(): Set<VodPlayerButton> {
+        val raw = prefs.getString(KEY_VOD_BUTTONS, null) ?: return VodPlayerButton.entries.toSet()
+        val storedKeys = raw.split(",").map { it.trim() }.toSet()
+        return VodPlayerButton.entries.filter { it.key in storedKeys }.toSet()
+    }
+
+    fun setVodButtonEnabled(button: VodPlayerButton, enabled: Boolean) {
+        val current = _enabledVodButtons.value.toMutableSet()
+        if (enabled) current.add(button) else current.remove(button)
+        prefs.edit().putString(KEY_VOD_BUTTONS, current.joinToString(",") { it.key }).apply()
+        _enabledVodButtons.value = current
+    }
+
+    fun setAllVodButtons(enabled: Boolean) {
+        val updated = if (enabled) VodPlayerButton.entries.toSet() else emptySet()
+        prefs.edit().putString(KEY_VOD_BUTTONS, updated.joinToString(",") { it.key }).apply()
+        _enabledVodButtons.value = updated
+    }
+
     private val _audioDelayMs = MutableStateFlow(prefs.getInt(KEY_AUDIO_DELAY_MS, 0))
     val audioDelayMs: StateFlow<Int> = _audioDelayMs.asStateFlow()
 
@@ -684,6 +727,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_ACCENT_COLOR = "accent_color"
         private const val KEY_SUBMENU_BUTTONS = "submenu_buttons"
+    private const val KEY_VOD_BUTTONS = "vod_player_buttons"
         private const val KEY_AUDIO_DELAY_MS = "audio_delay_ms"
         private const val KEY_MATCH_REFRESH_RATE = "match_refresh_rate"
         private const val KEY_CHANNEL_LAYOUT = "channel_layout"

@@ -134,6 +134,25 @@
     <string name="player_aspect_ratio_title">Aspect ratio</string>
     <string name="player_none_available">None available</string>
     <string name="player_subtitles_off">Off</string>
+    <string name="player_speed">Speed</string>
+    <string name="player_format">Format</string>
+    <string name="player_stream_info">Stream info</string>
+    <string name="player_video_format">Video format</string>
+    <string name="player_resolution">Resolution</string>
+    <string name="player_frame_rate">Frame rate</string>
+    <string name="player_video_codec">Video</string>
+    <string name="player_audio_codec">Audio</string>
+    <string name="player_dynamic_range">Dynamic range</string>
+    <string name="player_advertised">Advertised</string>
+    <string name="player_runtime">Runtime</string>
+    <string name="player_estimated_size">Estimated size</string>
+    <string name="player_skip_back">10s</string>
+    <string name="player_skip_forward">10s</string>
+    <string name="player_next_episode">Next episode</string>
+    <string name="player_next_short">Next</string>
+    <string name="player_next_episode_none">No other episodes for this series</string>
+    <string name="player_up_next">Up next</string>
+    <string name="player_up_next_in">Playing in %1$d s</string>
 
     <!-- Sub Menu Buttons -->
     <string name="submenu_btn_search">Search</string>
@@ -171,6 +190,8 @@
     <string name="settings_section_submenu_buttons">Player Sub Menu Buttons</string>
     <string name="settings_submenu_buttons_note">Choose which quick action buttons appear on the bottom sub menu while playing live TV.</string>
     <string name="settings_submenu_enable_all">Enable all</string>
+    <string name="settings_section_vod_buttons">Movie &amp; show player buttons</string>
+    <string name="settings_vod_buttons_note">Choose which buttons appear along the bottom of the movie and show player.</string>
     <string name="settings_submenu_disable_all">Disable all</string>
 
     <!-- ============================ Settings hub ============================ -->
@@ -517,6 +538,7 @@
     <string name="vod_cast">Cast</string>
     <string name="vod_director">Director</string>
     <string name="vod_season">Season %1$d</string>
+    <string name="vod_episode">Episode %1$d</string>
     <string name="vod_detail_loading">Loading…</string>
     <string name="vod_person_title">With %1$s</string>
     <string name="vod_person_empty">Nothing else with %1$s in your library.</string>

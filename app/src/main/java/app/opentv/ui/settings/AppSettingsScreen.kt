@@ -126,6 +126,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val epgRefreshHours by settings.epgRefreshHours.collectAsState()
     val epgSyncWithPlaylist by settings.epgSyncWithPlaylist.collectAsState()
     val enabledSubMenuButtons by settings.enabledSubMenuButtons.collectAsState()
+    val enabledVodButtons by settings.enabledVodButtons.collectAsState()
 
     // A refresh next to each content toggle kicks a full catalogue re-sync (which now honours the
     // toggles, so a type just switched on is fetched). Runs as background work so it isn't cut short
@@ -410,6 +411,44 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                     subtitle = btn.subtitle,
                     checked = isEnabled,
                     onToggle = { settings.setSubMenuButtonEnabled(btn, it) },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // The movie/show player has its own button set: record, multiview, favourites and the rest
+        // of the live row mean nothing on a film, so they are configured separately rather than
+        // shared. See AppSettings.VodPlayerButton.
+        SettingsSection(stringResource(R.string.settings_section_vod_buttons), Icons.Filled.Movie) {
+            Text(
+                stringResource(R.string.settings_vod_buttons_note),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.7f),
+            )
+            Spacer(Modifier.height(8.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsActionButton(
+                    text = stringResource(R.string.settings_submenu_enable_all),
+                    isPrimary = true,
+                    onClick = { settings.setAllVodButtons(true) },
+                )
+                SettingsActionButton(
+                    text = stringResource(R.string.settings_submenu_disable_all),
+                    isPrimary = false,
+                    onClick = { settings.setAllVodButtons(false) },
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            AppSettings.VodPlayerButton.entries.forEach { btn ->
+                ToggleRow(
+                    title = stringResource(btn.titleRes),
+                    subtitle = btn.subtitle,
+                    checked = enabledVodButtons.contains(btn),
+                    onToggle = { settings.setVodButtonEnabled(btn, it) },
                 )
             }
         }
