@@ -5,6 +5,7 @@
  */
 package app.opentv.ui.onboarding
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,6 +14,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -50,8 +52,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -416,31 +423,46 @@ private fun ProvisioningProgressDashboard(
     val dateFormat = remember { SimpleDateFormat("EEE h:mm a", Locale.getDefault()) }
     val isComplete = progress.isComplete
 
+    // Atmosphere for free: one vertical gradient behind everything. A Brush is a single draw pass —
+    // no blur, no shadow, no image, nothing that costs frames on a box that runs interpreted.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(DashBgTop, DashBgBottom)))
+    ) {
     Column(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .padding(horizontal = 40.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Title & Description Header
+        // Eyebrow, then state: the title carries what is happening, the line under it explains, and
+        // nothing repeats itself.
         Text(
-            text = if (isComplete) "Setup & Sync Complete!" else "Setting Up Your TV Experience…",
-            style = MaterialTheme.typography.headlineMedium,
+            text = "OPENTV  ·  REMOTE SETUP",
+            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 3.sp),
             fontWeight = FontWeight.Bold,
-            color = if (isComplete) Color(0xFF34D399) else Color.White,
+            color = DashMuted.copy(alpha = 0.75f),
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = if (isComplete) "You're all set" else "Setting up your TV",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+            color = DashInk,
+        )
+        Spacer(Modifier.height(6.dp))
         Text(
             text = if (isComplete)
-                "Playlists, channels, and TV guide timeline have been configured and saved."
+                "Playlists, channels and the TV guide have been saved."
             else
-                "Importing channels, organizing categories, and generating the guide timeline.",
+                "Importing channels, organizing categories, and building the guide.",
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.7f),
+            color = DashMuted,
         )
 
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(34.dp))
 
         // Progress Cards Grid
         Row(
@@ -451,83 +473,48 @@ private fun ProvisioningProgressDashboard(
             horizontalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // Card 1: Playlists & Channels
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF161B22))
-                    .border(
-                        width = 1.dp,
-                        color = if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_CHANNELS) Color(0xFF26C6DA) else Color(0xFF30363D),
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    .padding(20.dp)
+            CardShell(
+                accent = AccentChannels,
+                active = progress.stage == RemoteProvisioningProgress.Stage.SYNCING_CHANNELS,
+                modifier = Modifier.weight(1f),
             ) {
-                Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Filled.Dns,
                             contentDescription = null,
-                            tint = Color(0xFF29B6F6),
-                            modifier = Modifier.size(24.dp)
+                            tint = AccentChannels,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "CHANNELS & PLAYLISTS",
-                            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
+                            text = "CHANNELS",
+                            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.6.sp),
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF29B6F6)
+                            color = AccentChannels
                         )
                         Spacer(Modifier.weight(1f))
-                        if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_CHANNELS) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFF29B6F6)
-                            )
-                        } else if (progress.channelsProcessed > 0 || progress.channelsSkipped) {
-                            Icon(
-                                imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF34D399),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                        ProgressRing(
+                            fraction = if (progress.channelsSkipped) null else progress.channelsFraction,
+                            accent = AccentChannels,
+                            label = ringLabel(progress.channelsFraction, progress.channelsSkipped),
+                            muted = progress.channelsSkipped,
+                            modifier = Modifier.size(52.dp),
+                        )
                     }
 
                     Spacer(Modifier.height(16.dp))
 
-                    Text(
-                        text = if (progress.channelsSkipped) "Skipped" else "%,d".format(progress.channelsProcessed),
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (progress.channelsSkipped) Color.White.copy(alpha = 0.45f) else Color.White
+                    StatValue(
+                        value = if (progress.channelsSkipped) "Skipped" else "%,d".format(progress.channelsProcessed),
+                        label = if (progress.channelsSkipped) "Channels — unchecked" else "Channels imported",
+                        dimmed = progress.channelsSkipped,
                     )
-                    Text(
-                        text = if (progress.channelsSkipped) "Channels — unchecked" else "Channels Imported",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-
-                    val channelsFraction = progress.channelsFraction
-                    if (channelsFraction != null && !progress.channelsSkipped) {
-                        Spacer(Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = { channelsFraction },
-                            modifier = Modifier.fillMaxWidth().height(3.dp),
-                            color = Color(0xFF29B6F6),
-                            trackColor = Color(0xFF30363D),
-                        )
-                        Spacer(Modifier.height(6.dp))
+                    if (!progress.channelsSkipped && progress.channelsTotal > 0) {
+                        Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "%.0f%% · %,d of %,d channels".format(
-                                channelsFraction * 100f,
-                                progress.channelsProcessed,
-                                progress.channelsTotal,
-                            ),
+                            text = "%,d of %,d".format(progress.channelsProcessed, progress.channelsTotal),
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = DashMuted
                         )
                     }
 
@@ -546,184 +533,118 @@ private fun ProvisioningProgressDashboard(
                     } else if (progress.totalPlaylists > 0) {
                         Text(
                             text = "${progress.totalPlaylists} playlist(s) registered",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.8f)
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DashMuted
                         )
                     }
-                }
             }
 
-            // Card 2: TV Guide & Timeline
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF161B22))
-                    .border(
-                        width = 1.dp,
-                        color = if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_EPG) Color(0xFF66BB6A) else Color(0xFF30363D),
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    .padding(20.dp)
+            // Card 2: Movies & Shows
+            CardShell(
+                accent = AccentVod,
+                active = progress.stage == RemoteProvisioningProgress.Stage.SYNCING_VOD,
+                modifier = Modifier.weight(1f),
             ) {
-                Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Filled.Movie,
                             contentDescription = null,
-                            tint = Color(0xFFBA68C8),
-                            modifier = Modifier.size(24.dp)
+                            tint = AccentVod,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = "MOVIES & SHOWS",
-                            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
+                            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.6.sp),
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFBA68C8)
+                            color = AccentVod
                         )
                         Spacer(Modifier.weight(1f))
-                        if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_VOD) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFFBA68C8)
-                            )
-                        } else if (progress.moviesProcessed > 0 || progress.seriesProcessed > 0) {
-                            Icon(
-                                imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF34D399),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                        ProgressRing(
+                            fraction = progress.vodFraction,
+                            accent = AccentVod,
+                            label = ringLabel(progress.vodFraction, progress.moviesSkipped && progress.showsSkipped),
+                            muted = progress.moviesSkipped && progress.showsSkipped,
+                            modifier = Modifier.size(52.dp),
+                        )
                     }
 
                     Spacer(Modifier.height(16.dp))
 
-                    // Movies and Shows side by side, the same size: on a TV box the shows count is
-                    // the one people care about, and it used to be a small footnote under the movies
-                    // number.
                     Row(verticalAlignment = Alignment.Bottom) {
                         Column(Modifier.weight(1f)) {
-                            Text(
-                                text = if (progress.moviesSkipped) "Skipped" else "%,d".format(progress.moviesProcessed),
-                                style = MaterialTheme.typography.displaySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (progress.moviesSkipped) Color.White.copy(alpha = 0.45f) else Color.White
-                            )
-                            Text(
-                                text = if (progress.moviesSkipped) "Movies — unchecked" else "Movies",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.6f)
+                            StatValue(
+                                value = if (progress.moviesSkipped) "Skipped" else "%,d".format(progress.moviesProcessed),
+                                label = if (progress.moviesSkipped) "Movies — unchecked" else "Movies",
+                                dimmed = progress.moviesSkipped,
                             )
                         }
                         Column(Modifier.weight(1f)) {
-                            Text(
-                                text = if (progress.showsSkipped) "Skipped" else "%,d".format(progress.seriesProcessed),
-                                style = MaterialTheme.typography.displaySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (progress.showsSkipped) Color.White.copy(alpha = 0.45f) else Color(0xFFBA68C8)
-                            )
-                            Text(
-                                text = if (progress.showsSkipped) "Shows — unchecked" else "Shows",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.6f)
+                            StatValue(
+                                value = if (progress.showsSkipped) "Skipped" else "%,d".format(progress.seriesProcessed),
+                                label = if (progress.showsSkipped) "Shows — unchecked" else "Shows",
+                                accent = AccentVod,
+                                dimmed = progress.showsSkipped,
                             )
                         }
                     }
 
                     val vodFraction = progress.vodFraction
                     if (vodFraction != null && !progress.moviesSkipped) {
-                        Spacer(Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = { vodFraction },
-                            modifier = Modifier.fillMaxWidth().height(3.dp),
-                            color = Color(0xFFBA68C8),
-                            trackColor = Color(0xFF30363D),
-                        )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "%.0f%% · %,d of %,d titles".format(
-                                vodFraction * 100f,
+                            text = "%,d of %,d titles".format(
                                 progress.moviesProcessed + progress.seriesProcessed,
                                 progress.moviesTotal + progress.seriesTotal,
                             ),
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = DashMuted
                         )
-                    } else if (progress.moviesSkipped) {
-                        Spacer(Modifier.height(6.dp))
+                    } else if (progress.moviesSkipped && progress.showsSkipped) {
+                        Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "Skipped — nothing to import",
+                            text = "Nothing to import",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.5f)
-                        )
-                    } else {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "Awaiting provider list…",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.5f)
+                            color = DashMuted
                         )
                     }
-                }
             }
 
             // Card 3: TV Guide & Timeline. Matching channels against the feeds is a percentage of
-            // the channels the guide covers, so it gets a real bar too.
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF161B22))
-                    .border(
-                        width = 1.dp,
-                        color = if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_EPG) Color(0xFF66BB6A) else Color(0xFF30363D),
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    .padding(20.dp)
+            // the channels the guide covers, so it gets a real ring too.
+            CardShell(
+                accent = AccentGuide,
+                active = progress.stage == RemoteProvisioningProgress.Stage.SYNCING_EPG,
+                modifier = Modifier.weight(1f),
             ) {
-                Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Filled.LiveTv,
                             contentDescription = null,
-                            tint = Color(0xFF66BB6A),
-                            modifier = Modifier.size(24.dp)
+                            tint = AccentGuide,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "TV GUIDE & TIMELINE",
-                            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.sp),
+                            text = "TV GUIDE",
+                            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.6.sp),
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF66BB6A)
+                            color = AccentGuide
                         )
                         Spacer(Modifier.weight(1f))
-                        if (progress.stage == RemoteProvisioningProgress.Stage.SYNCING_EPG) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFF66BB6A)
-                            )
-                        } else if (progress.epgProgrammesProcessed > 0) {
-                            Icon(
-                                imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF34D399),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                        ProgressRing(
+                            fraction = progress.epgFraction,
+                            accent = AccentGuide,
+                            label = ringLabel(progress.epgFraction, false),
+                            modifier = Modifier.size(52.dp),
+                        )
                     }
 
                     Spacer(Modifier.height(16.dp))
 
-                    Text(
-                        text = "%,d".format(progress.epgProgrammesProcessed),
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                    StatValue(
+                        value = "%,d".format(progress.epgProgrammesProcessed),
+                        label = "Programs scheduled",
                     )
                     Text(
                         text = when {
@@ -735,100 +656,72 @@ private fun ProvisioningProgressDashboard(
                             progress.epgChannelsMatched > 0 ->
                                 "${progress.epgChannelsMatched} / ${progress.epgChannelsTotal} channels matched"
                             progress.epgFeedsTotal > 0 && progress.epgProgrammesProcessed == 0 ->
-                                "TV guide is up to date — nothing new to download"
+                                "Guide is up to date"
                             progress.epgFeedsTotal > 0 ->
-                                "Getting TV guide feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal}"
-                            else -> "Programs Scheduled"
+                                "Feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal}"
+                            else -> "Waiting for feeds"
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = DashMuted
                     )
 
-                    val epgFraction = progress.epgFraction
-                    if (epgFraction != null) {
-                        Spacer(Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = { epgFraction },
-                            modifier = Modifier.fillMaxWidth().height(3.dp),
-                            color = Color(0xFF66BB6A),
-                            trackColor = Color(0xFF30363D),
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = when {
-                                progress.epgBarIsMatching ->
-                                    "%.0f%% of channels checked".format(epgFraction * 100f)
-                                progress.epgBarIsFeeds ->
-                                    "%.0f%% of the TV guide downloaded".format(epgFraction * 100f)
-                                else -> "%.0f%% matched".format(epgFraction * 100f)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.6f)
-                        )
-                    }
-
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(10.dp))
 
                     if (progress.timelineStartMillis > 0 && progress.timelineEndMillis > 0) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Filled.Schedule,
                                 contentDescription = null,
-                                tint = Color(0xFFFFA726),
-                                modifier = Modifier.size(16.dp)
+                                tint = AccentGuide,
+                                modifier = Modifier.size(14.dp)
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 text = "${dateFormat.format(Date(progress.timelineStartMillis))} → ${dateFormat.format(Date(progress.timelineEndMillis))}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFFFFA726),
-                                fontWeight = FontWeight.Medium
+                                color = DashMuted
                             )
                         }
                     } else {
-                        // Moves as feeds land. This used to read "Awaiting guide parsing…" and never
-                        // change, which on a provider whose feeds take minutes is indistinguishable
-                        // from a hang.
                         Text(
                             text = if (progress.epgFeedsTotal > 0)
-                                "Getting TV guide feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal} — %,d programs so far"
-                                    .format(progress.epgProgrammesProcessed)
+                                "%,d programs so far".format(progress.epgProgrammesProcessed)
                             else
-                                "Waiting for guide feeds…",
+                                "Fetching the guide…",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.5f)
+                            color = DashMuted
                         )
                     }
-                }
             }
         }
 
         Spacer(Modifier.height(24.dp))
 
-        // Status Message Banner
+        // Status: a quiet pill with a state dot. The dot is deliberately not animated — an infinite
+        // transition redraws every frame, and this screen runs while a big import is already loading
+        // the box.
         Box(
             Modifier
-                .widthIn(max = 840.dp)
+                .widthIn(max = 1180.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF1F242C))
-                .border(0.5.dp, Color(0xFF38444D), RoundedCornerShape(10.dp))
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .clip(RoundedCornerShape(14.dp))
+                .background(DashSurface.copy(alpha = 0.8f))
+                .border(1.dp, DashHairline, RoundedCornerShape(14.dp))
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!isComplete) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = Color(0xFF26C6DA)
-                    )
-                    Spacer(Modifier.width(12.dp))
-                }
+                Box(
+                    Modifier
+                        .size(9.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(if (isComplete) AccentGuide else AccentChannels)
+                )
+                Spacer(Modifier.width(12.dp))
                 Text(
-                    text = progress.statusMessage.ifBlank { "Processing configuration…" },
+                    text = progress.statusMessage.ifBlank { "Working…" },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.9f)
+                    color = DashInk.copy(alpha = 0.92f)
                 )
             }
         }
@@ -860,22 +753,153 @@ private fun ProvisioningProgressDashboard(
                 }
             }
         } else {
-            LinearProgressIndicator(
-                modifier = Modifier
-                    .widthIn(max = 480.dp)
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = Color(0xFF26C6DA),
-                trackColor = Color(0xFF21262D)
-            )
-            Spacer(Modifier.height(10.dp))
+            // No indeterminate spinner here: it is an animation that never settles, redrawn every
+            // frame for as long as the sync runs. The dot above already says work is in progress.
             Text(
-                text = "Please keep this screen open while OpenTV downloads channels and guide.",
+                text = "Keep this screen open while OpenTV downloads channels and the guide.",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.5f)
+                color = DashMuted
             )
         }
+    }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dashboard dressing
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The dashboard's palette: three section accents over a near-black gradient.
+ *
+ * Every value is a flat colour on purpose — no elevation, no blur, no shadow anywhere on this screen.
+ * It renders on boxes that execute bytecode interpreted (the ANR trace that led here was all
+ * `art::interpreter` frames doing text layout), where one shadow costs more than the rest of the
+ * screen combined.
+ */
+private val DashBgTop = Color(0xFF0A0E14)
+private val DashBgBottom = Color(0xFF121A24)
+private val DashSurface = Color(0xFF141A22)
+private val DashHairline = Color(0xFF232C38)
+private val DashInk = Color(0xFFF4F7FA)
+private val DashMuted = Color(0xFF9BA8B6)
+private val AccentChannels = Color(0xFF22D3EE)
+private val AccentVod = Color(0xFFC084FC)
+private val AccentGuide = Color(0xFF34D399)
+
+/** "42%", or a dash when there is no figure to show (skipped, or the provider's list is pending). */
+private fun ringLabel(fraction: Float?, skipped: Boolean): String = when {
+    skipped -> "—"
+    fraction == null -> "…"
+    else -> "%.0f%%".format(fraction * 100f)
+}
+
+/**
+ * A card surface: flat fill, hairline outline, and a thin rule in the section's accent along the top
+ * edge. The rule is the only decoration — it reads as deliberate design and costs one rectangle,
+ * which is the trade this screen wants: shape and colour instead of shadows.
+ */
+@Composable
+private fun CardShell(
+    accent: Color,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Box(
+        modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(20.dp))
+            .background(DashSurface)
+            .border(
+                width = 1.dp,
+                color = if (active) accent.copy(alpha = 0.5f) else DashHairline,
+                shape = RoundedCornerShape(20.dp)
+            )
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(accent.copy(alpha = if (active) 0.95f else 0.45f))
+        )
+        Column(
+            Modifier.padding(start = 22.dp, end = 22.dp, top = 24.dp, bottom = 22.dp),
+            content = content,
+        )
+    }
+}
+
+/** A big numeral over a quiet label — the dashboard's unit of information. */
+@Composable
+private fun StatValue(
+    value: String,
+    label: String,
+    accent: Color = DashInk,
+    dimmed: Boolean = false,
+) {
+    Column {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+            color = if (dimmed) DashMuted.copy(alpha = 0.45f) else accent,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = DashMuted,
+        )
+    }
+}
+
+/**
+ * A determinate progress ring, drawn by hand.
+ *
+ * Canvas rather than a Material progress indicator: one draw pass, no animation loop, and it redraws
+ * only when the fraction changes. A Material indicator animates towards its target, which on a screen
+ * whose numbers move every few hundred channels means a recomposition every frame.
+ */
+@Composable
+private fun ProgressRing(
+    fraction: Float?,
+    accent: Color,
+    label: String,
+    modifier: Modifier = Modifier,
+    muted: Boolean = false,
+) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val strokePx = 5.dp.toPx()
+            val inset = strokePx / 2f
+            val arcSize = Size(size.width - strokePx, size.height - strokePx)
+            drawArc(
+                color = DashHairline,
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = Offset(inset, inset),
+                size = arcSize,
+                style = Stroke(width = strokePx, cap = StrokeCap.Round),
+            )
+            if (fraction != null && fraction > 0f) {
+                drawArc(
+                    color = if (muted) accent.copy(alpha = 0.35f) else accent,
+                    startAngle = -90f,
+                    sweepAngle = 360f * fraction.coerceIn(0f, 1f),
+                    useCenter = false,
+                    topLeft = Offset(inset, inset),
+                    size = arcSize,
+                    style = Stroke(width = strokePx, cap = StrokeCap.Round),
+                )
+            }
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = if (muted) DashMuted.copy(alpha = 0.6f) else DashInk,
+        )
     }
 }
 
