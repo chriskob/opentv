@@ -202,7 +202,28 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        return super.dispatchKeyEvent(event)
+        // A Compose bug, not ours, and worth surviving: when a key arrives while the focus tree is
+        // being rebuilt — a focused row scrolling out of a long list, a screen swapping, the main
+        // thread busy enough that frames are being skipped — Compose's two-dimensional focus search
+        // throws "ActiveParent must have a focusedChild" from dispatchKeyEvent and takes the whole app
+        // down. It fired on a box mid-sync with the guide rebuilding under a key press (the log shows
+        // a 2.9s KeyEvent and 249 skipped frames just before it). No key press is worth a crash, so a
+        // failed search just means this one press goes unhandled; anything else still propagates.
+        return try {
+            super.dispatchKeyEvent(event)
+        } catch (e: IllegalStateException) {
+            if (e.message?.contains("focusedChild") == true) {
+                android.util.Log.w(
+                    TAG,
+                    "Compose focus search failed for key ${event.keyCode} (action ${event.action}); " +
+                        "ignoring the key rather than crashing",
+                    e,
+                )
+                false
+            } else {
+                throw e
+            }
+        }
     }
 
     override fun onPause() {
@@ -330,6 +351,9 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** Log tag for the activity's own messages (key dispatch, playback teardown). */
+        private const val TAG = "MainActivity"
+
         const val ACTION_PIP_CLOSE = "app.opentv.action.PIP_CLOSE"
 
         /** A reminder notification carries the channel to tune to in this extra. */
