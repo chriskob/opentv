@@ -98,6 +98,9 @@ data class RemoteProvisioningProgress(
     val epgProgrammesProcessed: Int = 0,
     val epgChannelsMatched: Int = 0,
     val epgChannelsTotal: Int = 0,
+    /** Guide feeds finished / total, so the bar moves while feeds are still downloading. */
+    val epgFeedsDone: Int = 0,
+    val epgFeedsTotal: Int = 0,
     val timelineStartMillis: Long = 0L,
     val timelineEndMillis: Long = 0L,
     val statusMessage: String = "",
@@ -119,12 +122,24 @@ data class RemoteProvisioningProgress(
             return (channelsProcessed.toFloat() / channelsTotal).coerceIn(0f, 1f)
         }
 
-    /** 0..1 across the guide's channel matching, or null before there is anything to match. */
+    /** 0..1 across the guide stage: feed parsing first, then channel matching once it runs. */
     val epgFraction: Float?
         get() {
-            if (epgChannelsTotal <= 0) return null
-            return (epgChannelsMatched.toFloat() / epgChannelsTotal).coerceIn(0f, 1f)
+            // Matching is the more informative bar when it is available, because it is the step that
+            // decides whether channels have a guide at all. Until then, report how much of the feed
+            // download is done — otherwise the bar has nothing to say for the minutes that step takes.
+            if (epgChannelsTotal > 0) {
+                return (epgChannelsMatched.toFloat() / epgChannelsTotal).coerceIn(0f, 1f)
+            }
+            if (epgFeedsTotal > 0) {
+                return (epgFeedsDone.toFloat() / epgFeedsTotal).coerceIn(0f, 1f)
+            }
+            return null
         }
+
+    /** True while the bar is measuring feeds rather than matched channels. */
+    val epgBarIsFeeds: Boolean
+        get() = epgChannelsTotal <= 0 && epgFeedsTotal > 0
 
     enum class Stage {
         IDLE,
@@ -248,7 +263,20 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                     StatusBus.set("Loaded %,d movies and %,d shows.".format(vod.movies, vod.series))
                 }
                 val summary = StatusBus.during("Building the TV guide…") {
-                    graph.epgRepository.syncAll(now)
+                    // Reports per feed, so the status bar shows a real bar and a climbing count
+                    // instead of an indeterminate spinner for the whole guide download.
+                    graph.epgRepository.syncAll(now) { p ->
+                        if (p.feedsTotal > 0) {
+                            StatusBus.set(
+                                "Guide feeds — %,d of %,d done, %,d programmes parsed".format(
+                                    p.feedsDone,
+                                    p.feedsTotal,
+                                    p.programmesWritten,
+                                ),
+                                p.feedsDone.toFloat() / p.feedsTotal,
+                            )
+                        }
+                    }
                 }
                 _ui.value = _ui.value.copy(
                     syncMessage = when {
@@ -457,7 +485,26 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             val timelineEnd = timelineStart + (72 * 60 * 60 * 1000L)
 
             val epgResult = runCatching {
-                val summary = graph.epgRepository.syncAll(now, force = false)
+                // Feed-by-feed progress, so the guide card counts up instead of sitting at zero for
+                // however long the feeds take. The matcher's pass reports through the same state,
+                // which is how the status line switches to "Matching channels…" on its own.
+                val summary = graph.epgRepository.syncAll(now, force = false) { p ->
+                    _provisioningProgress.value = _provisioningProgress.value?.copy(
+                        epgFeedsDone = p.feedsDone,
+                        epgFeedsTotal = p.feedsTotal,
+                        epgProgrammesProcessed = p.programmesWritten,
+                        statusMessage = if (p.feedsTotal > 0) {
+                            "Guide feeds — %,d of %,d done, %,d programmes parsed%s".format(
+                                p.feedsDone,
+                                p.feedsTotal,
+                                p.programmesWritten,
+                                if (p.currentFeed.isBlank()) "" else " (${p.currentFeed})",
+                            )
+                        } else {
+                            "Downloading TV guide feeds…"
+                        },
+                    )
+                }
                 runCatching { graph.recordingEngine.rescanSeriesRules() }
                 summary
             }.getOrNull()

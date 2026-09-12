@@ -289,29 +289,53 @@ class EpgRepository(
 
     // ---- Sync ------------------------------------------------------------------------------
 
+    /**
+     * Live progress for [syncAll], so a long guide sync can be shown counting up.
+     *
+     * A large provider's feeds take minutes, and the provisioning dashboard used to have nothing to
+     * show for that whole stretch: it displayed "Awaiting guide parsing…" over a bar frozen at zero
+     * until the sync returned, which reads as a hang rather than work in progress.
+     */
+    data class SyncProgress(
+        val feedsDone: Int,
+        val feedsTotal: Int,
+        val programmesWritten: Int,
+        /** The feed being worked on, for the "what is it doing" line. */
+        val currentFeed: String = "",
+    )
+
     /** Downloads every enabled feed, merges, prunes, and re-runs the matcher.
      *
      * @param refreshIntervalMillis The minimum time between re-downloads of a single feed.
      *   Defaults to [REFRESH_INTERVAL_MILLIS] (6 h). Pass 0 to force-refresh regardless. The
      *   caller reads [AppSettings.epgRefreshHours] and converts to millis.
+     * @param onProgress Called as each feed finishes (and once before the first, so a caller can
+     *   show "0 of N" immediately). Optional: the background sync ignores it.
      */
     suspend fun syncAll(
         nowUtcMillis: Long,
         force: Boolean = false,
         refreshIntervalMillis: Long = REFRESH_INTERVAL_MILLIS,
+        onProgress: ((SyncProgress) -> Unit)? = null,
     ): SyncSummary =
         withContext(Dispatchers.IO) {
             ensureFeeds()
             maybeAutoEnableRegionalFeed()
 
+            val feeds = feedDao.enabled()
             var succeeded = 0
             var failed = 0
             var written = 0
 
-            for (feed in feedDao.enabled()) {
+            onProgress?.invoke(SyncProgress(feedsDone = 0, feedsTotal = feeds.size, programmesWritten = 0))
+
+            feeds.forEachIndexed { index, feed ->
                 if (!force && nowUtcMillis - feed.lastSyncMillis < refreshIntervalMillis) {
                     succeeded++
-                    continue
+                    onProgress?.invoke(
+                        SyncProgress(index + 1, feeds.size, written, feed.name),
+                    )
+                    return@forEachIndexed
                 }
                 when (val result = syncFeed(feed, nowUtcMillis)) {
                     is FeedResult.Success -> {
@@ -331,6 +355,9 @@ class EpgRepository(
                         Log.w(TAG, "Feed '${feed.name}' failed: ${result.reason}")
                     }
                 }
+                onProgress?.invoke(
+                    SyncProgress(index + 1, feeds.size, written, feed.name),
+                )
             }
 
             if (succeeded > 0) {
@@ -339,6 +366,11 @@ class EpgRepository(
             }
             reclaimDiskSpace()
 
+            // The matcher is its own long stretch on a big catalogue; say so rather than letting the
+            // bar sit at the end of the feeds with no explanation.
+            onProgress?.invoke(
+                SyncProgress(feeds.size, feeds.size, written, "Matching channels…"),
+            )
             val (matched, total) = runMatcher()
             // (The post-sync 6-hour `loadWindow` pre-warm that used to run here is gone: it held
             // every channel's programmes in memory for no reader — see the note by [scope].)

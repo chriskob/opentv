@@ -697,10 +697,13 @@ private fun ProvisioningProgressDashboard(
                         color = Color.White
                     )
                     Text(
-                        text = if (progress.epgChannelsMatched > 0)
-                            "${progress.epgChannelsMatched} / ${progress.epgChannelsTotal} channels matched"
-                        else
-                            "Programs Scheduled",
+                        text = when {
+                            progress.epgChannelsMatched > 0 ->
+                                "${progress.epgChannelsMatched} / ${progress.epgChannelsTotal} channels matched"
+                            progress.epgFeedsTotal > 0 ->
+                                "Parsing guide feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal}"
+                            else -> "Programs Scheduled"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.6f)
                     )
@@ -716,7 +719,10 @@ private fun ProvisioningProgressDashboard(
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "%.0f%% matched".format(epgFraction * 100f),
+                            text = if (progress.epgBarIsFeeds)
+                                "%.0f%% of feeds parsed".format(epgFraction * 100f)
+                            else
+                                "%.0f%% matched".format(epgFraction * 100f),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.6f)
                         )
@@ -741,8 +747,15 @@ private fun ProvisioningProgressDashboard(
                             )
                         }
                     } else {
+                        // Moves as feeds land. This used to read "Awaiting guide parsing…" and never
+                        // change, which on a provider whose feeds take minutes is indistinguishable
+                        // from a hang.
                         Text(
-                            text = "Awaiting guide parsing…",
+                            text = if (progress.epgFeedsTotal > 0)
+                                "Parsing guide feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal} — %,d programmes so far"
+                                    .format(progress.epgProgrammesProcessed)
+                            else
+                                "Waiting for guide feeds…",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.5f)
                         )
