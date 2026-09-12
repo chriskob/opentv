@@ -623,7 +623,15 @@ class CatalogRepository(
         // Already-synced rows are left untouched: turning a type back on and refreshing restores it.
         val live =
             if (SourceGates.live(settings.liveEnabled.value, source)) syncLive(source, nowUtcMillis)
-            else SyncResult.Success(0, 0, 0)
+            else {
+                // Self-healing for a playlist the user excluded from Live TV: if rows (or live
+                // categories) are on disk from before that choice — an earlier add, or a database
+                // written by a version that only skipped the fetch — take them out of the guide now.
+                // Scoped to the per-playlist flag, so switching the app-wide Live TV toggle off does
+                // not throw anyone's channel list away.
+                if (!source.includeLive) runCatching { hideLiveForSource(source.id) }
+                SyncResult.Success(0, 0, 0)
+            }
         // Per-playlist intent: a playlist whose Channels box is unchecked must also stop
         // syncing live HERE, not just at add time — otherwise the next refresh re-listed its
         // channels and they reappeared in the guide with the box still off. Its VOD still
@@ -672,6 +680,21 @@ class CatalogRepository(
      *  rows an earlier add left behind stop appearing in the guide. */
     suspend fun hideChannelsForSource(sourceId: Long) = withContext(Dispatchers.IO) {
         channelDao.forSource(sourceId).forEach { channelDao.setHidden(it.id, true) }
+    }
+
+    /**
+     * Takes a source out of Live TV: its channels stop appearing in the guide **and** its live
+     * categories stop being listed in the rail.
+     *
+     * Hiding the channels alone was not enough. The rail is built from the categories table, and
+     * [Category] carries no hidden flag, so a playlist the user had excluded from Live TV still
+     * contributed its category names to the guide — the rows behind them were gone, the category
+     * itself was not. Categories are removed instead, and a later live sync recreates them if the
+     * box is ticked again.
+     */
+    suspend fun hideLiveForSource(sourceId: Long) = withContext(Dispatchers.IO) {
+        hideChannelsForSource(sourceId)
+        categoryDao.deleteForSourceOfKind(sourceId, StreamKind.LIVE)
     }
 
     /** Movies + series — best-effort, meant to run in the background so a huge VOD list never

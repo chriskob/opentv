@@ -229,7 +229,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                     is CatalogRepository.SyncResult.Success -> Unit
                 }
             } else {
-                runCatching { graph.catalogRepository.hideChannelsForSource(saved.id) }
+                runCatching { graph.catalogRepository.hideLiveForSource(saved.id) }
             }
 
             // Ticking Movies/Shows is the user asking for those sections, so switch them on before
@@ -366,6 +366,9 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                     // Persist the portal's content choices on the source row so they survive
                     // every later refresh and re-add. Previously they were used once at add
                     // time only, which is why an unchecked Channels box came back to life.
+                    // The portal's answer wins when it gave one; otherwise the stored row (an earlier
+                    // add of the same playlist), then the legacy default. An explicit "no" must never
+                    // be overridden by a stale "yes", so the order of this chain matters.
                     includeLive = item.filterOptions?.includeLive ?: existing?.includeLive ?: true,
                     includeVod = item.filterOptions?.includeVod ?: existing?.includeVod ?: true,
                     includeSeries = item.filterOptions?.includeSeries ?: existing?.includeSeries ?: true,
@@ -404,6 +407,10 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                 } else {
+                    // Live TV off for this playlist. Take it out of the guide here, rather than relying
+                    // on applyChannelFilters below: that only runs when the portal sent options, and
+                    // this is exactly the case where the flag may have come from the stored row.
+                    runCatching { graph.catalogRepository.hideLiveForSource(saved.id) }
                     CatalogRepository.SyncResult.Success(0, 0, 0)
                 }
                 channelsExpected += plannedChannels

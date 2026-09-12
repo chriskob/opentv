@@ -400,9 +400,10 @@ class ManagerServer(
                         return@runBlocking AddResultDto(ok = false, error = r.reason)
                 }
             } else {
-                // Live TV switched off for this playlist: hide anything a previous add stored,
-                // so unticking the box actually takes the channels out of the guide.
-                runCatching { catalog.hideChannelsForSource(saved.id) }
+                // Live TV switched off for this playlist: hide anything a previous add stored, and
+                // take its live categories out of the guide too, so unticking the box actually
+                // removes the playlist from Live TV rather than leaving empty categories behind.
+                runCatching { catalog.hideLiveForSource(saved.id) }
             }
 
             // Movies/Shows are pulled here rather than waiting for the periodic worker, so the

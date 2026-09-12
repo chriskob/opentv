@@ -353,6 +353,16 @@ interface CategoryDao {
 
     @Query("DELETE FROM categories WHERE sourceId = :sourceId")
     suspend fun deleteForSource(sourceId: Long)
+
+    /**
+     * Removes one source's categories of a single kind.
+     *
+     * Used when a playlist is excluded from a content type: its live categories are what the guide's
+     * rail lists, so hiding the channels alone left the playlist's category names in Live TV with
+     * nothing behind them. A later sync recreates them if the type is wanted again.
+     */
+    @Query("DELETE FROM categories WHERE sourceId = :sourceId AND kind = :kind")
+    suspend fun deleteForSourceOfKind(sourceId: Long, kind: StreamKind)
 }
 
 /** Projection for [CategoryDao.namesFor]. */

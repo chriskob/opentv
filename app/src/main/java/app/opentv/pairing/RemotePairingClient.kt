@@ -284,11 +284,34 @@ class RemotePairingClient(
                                                 "options=${optObj?.keys()?.asSequence()?.toList() ?: emptyList<String>()}",
                                         )
                                     }
+                                    val content = if (optObj != null) {
+                                        ProvisionOptions.resolve(
+                                            live = optObj.optBooleanStated("includeLive", "include_live", "live", "channels"),
+                                            vod = optObj.optBooleanStated("includeVod", "include_vod", "vod", "movies"),
+                                            series = optObj.optBooleanStated("includeSeries", "include_series", "series", "shows"),
+                                        )
+                                    } else {
+                                        // The portal said nothing about sections. That keeps the
+                                        // historical default (channels on), but it is said out loud:
+                                        // a portal that forgets the flags must not look like the app
+                                        // ignoring the box the user unticked.
+                                        Log.w(
+                                            TAG,
+                                            "provision arrived with no content options — " +
+                                                "defaulting to channels on, movies/shows off",
+                                        )
+                                        ProvisionOptions.resolve(null, null, null)
+                                    }
+                                    Log.i(
+                                        TAG,
+                                        "provision content: live=${content.includeLive} " +
+                                            "vod=${content.includeVod} series=${content.includeSeries}",
+                                    )
                                     val filterOptions = if (optObj != null) {
                                         XtreamFilterOptions(
-                                            includeLive = optObj.optBooleanAny(true, "includeLive", "include_live", "live", "channels"),
-                                            includeVod = optObj.optBooleanAny(false, "includeVod", "include_vod", "vod", "movies"),
-                                            includeSeries = optObj.optBooleanAny(false, "includeSeries", "include_series", "series", "shows"),
+                                            includeLive = content.includeLive,
+                                            includeVod = content.includeVod,
+                                            includeSeries = content.includeSeries,
                                             excludeKeywords = optObj.optString("excludeKeywords")
                                                 .split(',').map { it.trim() }.filter { it.isNotEmpty() },
                                             includeKeywords = optObj.optString("includeKeywords")
@@ -333,12 +356,37 @@ class RemotePairingClient(
 
                             val source = if (isXtream) {
                                 val xObj = json.getJSONObject("xtreamData")
+                                // The portal's boxes can arrive nested (`xtreamData.options`) or at the
+                                // top level, when a JSON API posts the form directly. Reading only the
+                                // nested place made a top-level payload look like "no options at all",
+                                // which fell back to channels-on.
                                 val optObj = xObj.optJSONObject("options")
+                                    ?: json.optJSONObject("options")
+                                    ?: json.optJSONObject("filterOptions")
+                                val content = if (optObj != null) {
+                                    ProvisionOptions.resolve(
+                                        live = optObj.optBooleanStated("includeLive", "include_live", "live", "channels"),
+                                        vod = optObj.optBooleanStated("includeVod", "include_vod", "vod", "movies"),
+                                        series = optObj.optBooleanStated("includeSeries", "include_series", "series", "shows"),
+                                    )
+                                } else {
+                                    Log.w(
+                                        TAG,
+                                        "legacy provision arrived with no content options — " +
+                                            "defaulting to channels on, movies/shows off",
+                                    )
+                                    ProvisionOptions.resolve(null, null, null)
+                                }
+                                Log.i(
+                                    TAG,
+                                    "legacy provision content: live=${content.includeLive} " +
+                                        "vod=${content.includeVod} series=${content.includeSeries}",
+                                )
                                 val filterOptions = if (optObj != null) {
                                     XtreamFilterOptions(
-                                        includeLive = optObj.optBooleanAny(true, "includeLive", "include_live", "live", "channels"),
-                                        includeVod = optObj.optBooleanAny(false, "includeVod", "include_vod", "vod", "movies"),
-                                        includeSeries = optObj.optBooleanAny(false, "includeSeries", "include_series", "series", "shows"),
+                                        includeLive = content.includeLive,
+                                        includeVod = content.includeVod,
+                                        includeSeries = content.includeSeries,
                                         excludeKeywords = optObj.optString("excludeKeywords")
                                             .split(',').map { it.trim() }.filter { it.isNotEmpty() },
                                         includeKeywords = optObj.optString("includeKeywords")
@@ -440,14 +488,16 @@ class RemotePairingClient(
 }
 
 /**
- * Reads a boolean under any of [keys], in order.
+ * Reads a content-section boolean that may simply not be there.
  *
- * Portals spell these differently — `includeLive`, `include_live`, `live`, `channels` — and a miss
- * silently falls back to the default. That is how a playlist the user excluded from Live TV still
- * imported its channels: we asked for `includeLive`, the portal had called it something else, and
- * the default (`true`) won.
+ * `null` means the portal never mentioned it, which is a different answer from `false` and must not
+ * be flattened into one — see [ProvisionOptions]. Portals spell these differently (`includeLive`,
+ * `include_live`, `live`, `channels`), and a miss used to fall back to a default, which is how a
+ * playlist the user excluded from Live TV still imported its channels: we asked for `includeLive`,
+ * the portal had called it something else, and the default (`true`) won. Absence is now reported
+ * rather than filled in.
  */
-private fun JSONObject.optBooleanAny(default: Boolean, vararg keys: String): Boolean {
-    for (key in keys) if (has(key)) return optBoolean(key, default)
-    return default
+private fun JSONObject.optBooleanStated(vararg keys: String): Boolean? {
+    for (key in keys) if (has(key) && !isNull(key)) return optBoolean(key, false)
+    return null
 }
