@@ -200,6 +200,67 @@ async function runTests() {
   console.assert(receivedBatch.playlists[1].options.excludeKeywords === 'Adult, XXX', 'Expected excludeKeywords');
   console.log('✓ Multi-playlist batch with options verified');
 
+  // Test 8: Xtream with Channels unticked must arrive unticked.
+  // The reported bug: a playlist pushed with Live Channels unticked imported its channels anyway,
+  // because an unnamed/omitted includeLive was read as "yes" further down the line. Every hop that
+  // touches this field has to be able to say no, so assert it survives the relay and that the
+  // legacy single-source mirror carries the same answer.
+  console.log('Test 8: Xtream with Channels unticked stays unticked');
+  const init3 = await request({
+    host: 'localhost',
+    port: 3456,
+    path: '/api/pair/init',
+    method: 'POST'
+  });
+  const code3 = init3.data.code;
+  const ws3 = new WebSocket(`ws://localhost:3456/?code=${code3}`);
+  let receivedVodOnly = null;
+  ws3.on('message', data => {
+    const msg = JSON.parse(data.toString());
+    if (msg.type === 'provision') receivedVodOnly = msg;
+  });
+  await delay(200);
+
+  const vodOnlyRes = await request({
+    host: 'localhost',
+    port: 3456,
+    path: '/api/pair/push',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, {
+    code: code3,
+    playlists: [
+      {
+        name: 'VOD',
+        kind: 'xtream',
+        serverUrl: 'http://line.example.com',
+        username: 'user',
+        password: 'pass',
+        options: {
+          includeLive: false,
+          includeVod: true,
+          includeSeries: true
+        }
+      }
+    ]
+  });
+
+  console.assert(vodOnlyRes.status === 200, `Expected 200, got ${vodOnlyRes.status}`);
+  await delay(200);
+  console.assert(receivedVodOnly !== null, 'Expected provision message');
+  console.assert(receivedVodOnly.playlists[0].name === 'VOD', 'Expected playlist name preserved');
+  console.assert(
+    receivedVodOnly.playlists[0].options.includeLive === false,
+    'Expected includeLive false to survive the relay'
+  );
+  console.assert(receivedVodOnly.playlists[0].options.includeVod === true, 'Expected includeVod true');
+  console.assert(receivedVodOnly.playlists[0].options.includeSeries === true, 'Expected includeSeries true');
+  console.assert(
+    receivedVodOnly.xtreamData.options.includeLive === false,
+    'Expected the legacy xtreamData mirror to carry includeLive false'
+  );
+  console.log('✓ Channels unticked is delivered as includeLive:false');
+
   console.log('\n=======================================');
   console.log('ALL INTEGRATION TESTS PASSED SUCCESSFULLY!');
   console.log('=======================================');
