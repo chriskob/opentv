@@ -113,6 +113,14 @@ data class RemoteProvisioningProgress(
      * looked like it had been ignored when it had actually worked.
      */
     val playlistSummaries: List<String> = emptyList(),
+
+    /**
+     * True when no playlist asked for that section — every box was unticked — so the card can say
+     * "Skipped" and move on, instead of showing a zero that reads like something failed.
+     */
+    val channelsSkipped: Boolean = false,
+    val moviesSkipped: Boolean = false,
+    val showsSkipped: Boolean = false,
     val epgFeedsTotal: Int = 0,
     val timelineStartMillis: Long = 0L,
     val timelineEndMillis: Long = 0L,
@@ -365,6 +373,12 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             var totalChannels = 0
             // What each playlist contributed, so the dashboard can name them honestly.
             val playlistSummaries = mutableListOf<String>()
+            // Whether ANY playlist asked for each section. If none did, the card says "Skipped"
+            // rather than a zero — an unticked box should produce a plain answer, not a number that
+            // looks like a failure to fetch.
+            var anyChannelsWanted = false
+            var anyMoviesWanted = false
+            var anyShowsWanted = false
             /** What the providers said they have, so the dashboard's bars are real percentages. */
             var channelsExpected = 0
             // Movies/series across every playlist, plus what the providers said they have — the
@@ -444,6 +458,11 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 // to hide when nothing is stored. Rows left over from an earlier add are hidden
                 // by applyChannelFilters below.
                 val wantsLive = item.filterOptions?.includeLive ?: saved.includeLive
+                // Record the ask before syncing, so the "Skipped" state is never shown while a
+                // playlist that did want that section is still importing.
+                if (wantsLive) anyChannelsWanted = true
+                if (saved.includeVod) anyMoviesWanted = true
+                if (saved.includeSeries) anyShowsWanted = true
                 var plannedChannels = 0
                 val syncResult = if (wantsLive) {
                     // Report while it imports so the Channels card shows "12,000 of 26,979"
@@ -474,13 +493,16 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 // the truth. The summary sits under the Channels card, so it has to name the playlist
                 // that produced the number rather than the one that happened to go last.
                 playlistSummaries += when {
-                    !wantsLive -> "${saved.name} — Channels off"
+                    !wantsLive -> "${saved.name} — Channels skipped"
                     syncResult is CatalogRepository.SyncResult.Success && syncResult.channelCount > 0 ->
                         "${saved.name} — %,d channels".format(syncResult.channelCount)
                     else -> "${saved.name} — no channels"
                 }
                 _provisioningProgress.value = _provisioningProgress.value?.copy(
                     playlistSummaries = playlistSummaries.toList(),
+                    channelsSkipped = !anyChannelsWanted,
+                    moviesSkipped = !anyMoviesWanted,
+                    showsSkipped = !anyShowsWanted,
                 )
                 when (syncResult) {
                     is CatalogRepository.SyncResult.Success -> {

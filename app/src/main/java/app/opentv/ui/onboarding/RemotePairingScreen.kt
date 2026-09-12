@@ -480,7 +480,7 @@ private fun ProvisioningProgressDashboard(
                                 strokeWidth = 2.dp,
                                 color = Color(0xFF29B6F6)
                             )
-                        } else if (progress.channelsProcessed > 0) {
+                        } else if (progress.channelsProcessed > 0 || progress.channelsSkipped) {
                             Icon(
                                 imageVector = Icons.Filled.CheckCircle,
                                 contentDescription = null,
@@ -493,19 +493,19 @@ private fun ProvisioningProgressDashboard(
                     Spacer(Modifier.height(16.dp))
 
                     Text(
-                        text = "%,d".format(progress.channelsProcessed),
+                        text = if (progress.channelsSkipped) "Skipped" else "%,d".format(progress.channelsProcessed),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = if (progress.channelsSkipped) Color.White.copy(alpha = 0.45f) else Color.White
                     )
                     Text(
-                        text = "Channels Imported",
+                        text = if (progress.channelsSkipped) "Channels — unchecked" else "Channels Imported",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.6f)
                     )
 
                     val channelsFraction = progress.channelsFraction
-                    if (channelsFraction != null) {
+                    if (channelsFraction != null && !progress.channelsSkipped) {
                         Spacer(Modifier.height(10.dp))
                         LinearProgressIndicator(
                             progress = { channelsFraction },
@@ -595,13 +595,13 @@ private fun ProvisioningProgressDashboard(
                     Spacer(Modifier.height(16.dp))
 
                     Text(
-                        text = "%,d".format(progress.moviesProcessed),
+                        text = if (progress.moviesSkipped) "Skipped" else "%,d".format(progress.moviesProcessed),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = if (progress.moviesSkipped) Color.White.copy(alpha = 0.45f) else Color.White
                     )
                     Text(
-                        text = "Movies Imported",
+                        text = if (progress.moviesSkipped) "Movies — unchecked" else "Movies Imported",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.6f)
                     )
@@ -609,14 +609,14 @@ private fun ProvisioningProgressDashboard(
                     Spacer(Modifier.height(14.dp))
 
                     Text(
-                        text = "%,d shows".format(progress.seriesProcessed),
+                        text = if (progress.showsSkipped) "Shows — skipped" else "%,d shows".format(progress.seriesProcessed),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFBA68C8)
+                        color = if (progress.showsSkipped) Color.White.copy(alpha = 0.45f) else Color(0xFFBA68C8)
                     )
 
                     val vodFraction = progress.vodFraction
-                    if (vodFraction != null) {
+                    if (vodFraction != null && !progress.moviesSkipped) {
                         Spacer(Modifier.height(10.dp))
                         LinearProgressIndicator(
                             progress = { vodFraction },
@@ -633,6 +633,13 @@ private fun ProvisioningProgressDashboard(
                             ),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.6f)
+                        )
+                    } else if (progress.moviesSkipped) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Skipped — nothing to import",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.5f)
                         )
                     } else {
                         Spacer(Modifier.height(6.dp))
