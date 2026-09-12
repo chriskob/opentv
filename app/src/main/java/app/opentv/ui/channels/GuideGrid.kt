@@ -739,7 +739,10 @@ fun GuideGrid(
             }
         }
 
-        // Live Current Time Indicator Line & Pip running from TimeHeader down through all rows
+        // Live Current Time Indicator Line & Pip running from TimeHeader down through all rows.
+        // Kept deliberately dim: the line crosses every row, so at full strength it competes with
+        // the programme titles it is only meant to annotate. The pip stays brighter than the line,
+        // so "now" is still findable at a glance without the whole column shouting.
         Box(
             Modifier
                 .fillMaxSize()
@@ -758,7 +761,7 @@ fun GuideGrid(
                         .padding(top = 28.dp)
                         .offset(x = lineXDp - 0.75.dp)
                         .width(1.5.dp)
-                        .background(AppTheme.primary.copy(alpha = 0.85f))
+                        .background(AppTheme.primary.copy(alpha = 0.45f))
                 )
                 // Small circular dot / pip on the timeline header divider
                 Box(
@@ -767,8 +770,8 @@ fun GuideGrid(
                         .offset(x = lineXDp - 3.5.dp)
                         .size(7.dp)
                         .clip(CircleShape)
-                        .background(AppTheme.primary)
-                        .border(1.dp, Color.White, CircleShape)
+                        .background(AppTheme.primary.copy(alpha = 0.9f))
+                        .border(1.dp, Color.White.copy(alpha = 0.55f), CircleShape)
                 )
             }
         }
