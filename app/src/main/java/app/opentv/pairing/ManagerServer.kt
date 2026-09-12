@@ -400,10 +400,18 @@ class ManagerServer(
                         return@runBlocking AddResultDto(ok = false, error = r.reason)
                 }
             } else {
-                // Live TV switched off for this playlist: hide anything a previous add stored, and
-                // take its live categories out of the guide too, so unticking the box actually
-                // removes the playlist from Live TV rather than leaving empty categories behind.
-                runCatching { catalog.hideLiveForSource(saved.id) }
+                // The playlist's boxes are enforced against what is on disk: excluded channels are
+                // hidden and their categories dropped, unticked libraries lose their titles. The same
+                // rule the app's own add path and the refresh path apply, so the three flows cannot
+                // drift apart again.
+                runCatching {
+                    catalog.applyContentExclusions(
+                        sourceId = saved.id,
+                        includeLive = saved.includeLive,
+                        includeVod = saved.includeVod,
+                        includeSeries = saved.includeSeries,
+                    )
+                }
             }
 
             // Movies/Shows are pulled here rather than waiting for the periodic worker, so the

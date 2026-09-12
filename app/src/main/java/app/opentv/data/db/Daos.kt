@@ -195,6 +195,17 @@ interface ChannelDao {
     @Query("UPDATE channels SET hidden = :hidden WHERE id = :id")
     suspend fun setHidden(id: Long, hidden: Boolean)
 
+    /**
+     * Hides every channel of one source in a single statement.
+     *
+     * Per-row updates were a trap on a real playlist: hiding 55,766 channels row by row meant
+     * thousands of separate write transactions — minutes of work — and an interruption (a cancelled
+     * sync, the app going away) left the playlist *half* hidden, so most of its channels stayed in
+     * the guide with nothing to explain why. One UPDATE is instant and all-or-nothing.
+     */
+    @Query("UPDATE channels SET hidden = 1 WHERE sourceId = :sourceId")
+    suspend fun hideAllForSource(sourceId: Long): Int
+
     @Query("UPDATE channels SET customName = :name WHERE id = :id")
     suspend fun setCustomName(id: Long, name: String?)
 

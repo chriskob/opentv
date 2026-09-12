@@ -216,8 +216,20 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
 
             val now = System.currentTimeMillis()
 
-            // Channels unticked for this playlist: fetch none at all, and hide whatever an earlier
-            // add of the same playlist left behind — otherwise unticking the box changed nothing.
+            // Enforce this playlist's boxes against what is on disk before fetching: channels of an
+            // excluded Live TV section are hidden and their categories dropped, and an unticked
+            // library loses its titles. Without this, unticking a box only stopped *future* fetches,
+            // so rows from an earlier add stayed on screen with nothing to explain them.
+            runCatching {
+                graph.catalogRepository.applyContentExclusions(
+                    sourceId = saved.id,
+                    includeLive = saved.includeLive,
+                    includeVod = saved.includeVod,
+                    includeSeries = saved.includeSeries,
+                )
+            }
+
+            // Channels unticked for this playlist: fetch none at all.
             if (saved.includeLive) {
                 _ui.value = _ui.value.copy(syncMessage = "Loading channels…")
                 when (val result = graph.catalogRepository.syncLive(saved, now)) {
@@ -229,7 +241,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                     is CatalogRepository.SyncResult.Success -> Unit
                 }
             } else {
-                runCatching { graph.catalogRepository.hideLiveForSource(saved.id) }
+                // Nothing to fetch — the exclusion pass above already cleared anything stored.
             }
 
             // Ticking Movies/Shows is the user asking for those sections, so switch them on before
@@ -383,6 +395,20 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 val id = graph.sourceRepository.save(draft)
                 val saved = graph.sourceRepository.byId(id) ?: continue
 
+                // Reconcile the playlist's boxes with what is on disk before importing anything. This
+                // is what makes an unticked box *remove* content rather than merely stop fetching it:
+                // a playlist re-pushed with Channels off gets its old channels hidden and its live
+                // categories dropped, and an unticked library loses its titles — instead of sitting in
+                // the app until the next refresh, or for good, since nothing else ever removed them.
+                runCatching {
+                    graph.catalogRepository.applyContentExclusions(
+                        sourceId = saved.id,
+                        includeLive = saved.includeLive,
+                        includeVod = saved.includeVod,
+                        includeSeries = saved.includeSeries,
+                    )
+                }
+
                 _provisioningProgress.value = _provisioningProgress.value?.copy(
                     stage = RemoteProvisioningProgress.Stage.SYNCING_CHANNELS,
                     currentPlaylistIndex = idx + 1,
@@ -413,10 +439,10 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                 } else {
-                    // Live TV off for this playlist. Take it out of the guide here, rather than relying
-                    // on applyChannelFilters below: that only runs when the portal sent options, and
-                    // this is exactly the case where the flag may have come from the stored row.
-                    runCatching { graph.catalogRepository.hideLiveForSource(saved.id) }
+                    // Live TV off for this playlist: nothing to import. Its stored channels and live
+                    // categories were already cleared by applyContentExclusions above, which runs
+                    // whatever the portal sent — unlike applyChannelFilters below, which needs an
+                    // options object and so did nothing when the portal said nothing.
                     CatalogRepository.SyncResult.Success(0, 0, 0)
                 }
                 channelsExpected += plannedChannels

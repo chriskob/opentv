@@ -621,17 +621,23 @@ class CatalogRepository(
         // Skip fetching a content type the user has switched off — that's the whole speed-up.
         // Live is gated here (not in syncLive) so onboarding's direct syncLive still loads channels.
         // Already-synced rows are left untouched: turning a type back on and refreshing restores it.
+        // Every pass reconciles the playlist's boxes with what is on disk before fetching, so a
+        // choice made in the portal converges without the user deleting and re-adding the playlist,
+        // and a store written by a version that merely skipped the fetch heals itself. Scoped to the
+        // per-playlist flags, so switching an app-wide toggle off never throws content away.
+        if (!source.includeLive || !source.includeVod || !source.includeSeries) {
+            runCatching {
+                applyContentExclusions(
+                    sourceId = source.id,
+                    includeLive = source.includeLive,
+                    includeVod = source.includeVod,
+                    includeSeries = source.includeSeries,
+                )
+            }
+        }
         val live =
             if (SourceGates.live(settings.liveEnabled.value, source)) syncLive(source, nowUtcMillis)
-            else {
-                // Self-healing for a playlist the user excluded from Live TV: if rows (or live
-                // categories) are on disk from before that choice — an earlier add, or a database
-                // written by a version that only skipped the fetch — take them out of the guide now.
-                // Scoped to the per-playlist flag, so switching the app-wide Live TV toggle off does
-                // not throw anyone's channel list away.
-                if (!source.includeLive) runCatching { hideLiveForSource(source.id) }
-                SyncResult.Success(0, 0, 0)
-            }
+            else SyncResult.Success(0, 0, 0)
         // Per-playlist intent: a playlist whose Channels box is unchecked must also stop
         // syncing live HERE, not just at add time — otherwise the next refresh re-listed its
         // channels and they reappeared in the guide with the box still off. Its VOD still
@@ -676,25 +682,45 @@ class CatalogRepository(
         }
     }
 
-    /** Hides every stored channel for a source. Used when a playlist has Live TV switched off, so
-     *  rows an earlier add left behind stop appearing in the guide. */
+    /** Hides every stored channel for a source, so rows an earlier add left behind stop appearing in
+     *  the guide. One statement rather than a row-by-row loop — see [ChannelDao.hideAllForSource]. */
     suspend fun hideChannelsForSource(sourceId: Long) = withContext(Dispatchers.IO) {
-        channelDao.forSource(sourceId).forEach { channelDao.setHidden(it.id, true) }
+        channelDao.hideAllForSource(sourceId)
     }
 
     /**
-     * Takes a source out of Live TV: its channels stop appearing in the guide **and** its live
-     * categories stop being listed in the rail.
+     * Enforces a playlist's content boxes against what is actually on disk: the types the user
+     * excluded are taken out of the catalog rather than left behind.
      *
-     * Hiding the channels alone was not enough. The rail is built from the categories table, and
-     * [Category] carries no hidden flag, so a playlist the user had excluded from Live TV still
-     * contributed its category names to the guide — the rows behind them were gone, the category
-     * itself was not. Categories are removed instead, and a later live sync recreates them if the
-     * box is ticked again.
+     * Hiding the channels alone was not enough. The rail is built from the categories table and
+     * [Category] carries no hidden flag, so a playlist excluded from Live TV still contributed its
+     * category names to the guide — the rows behind them were gone, the category itself was not.
+     * Movies and series have no hidden flag either, so an excluded library is removed; the flags are
+     * stored on the source, so a later sync re-imports whatever is allowed and ticking the box again
+     * undoes this.
+     *
+     * Every path that respects the boxes calls this — add, re-add, refresh — which is what makes the
+     * choice stick instead of being applied once and forgotten.
      */
-    suspend fun hideLiveForSource(sourceId: Long) = withContext(Dispatchers.IO) {
-        hideChannelsForSource(sourceId)
-        categoryDao.deleteForSourceOfKind(sourceId, StreamKind.LIVE)
+    suspend fun applyContentExclusions(
+        sourceId: Long,
+        includeLive: Boolean,
+        includeVod: Boolean,
+        includeSeries: Boolean,
+    ) = withContext(Dispatchers.IO) {
+        if (!includeLive) {
+            channelDao.hideAllForSource(sourceId)
+            categoryDao.deleteForSourceOfKind(sourceId, StreamKind.LIVE)
+        }
+        if (!includeVod) {
+            movieDao.deleteForSource(sourceId)
+            categoryDao.deleteForSourceOfKind(sourceId, StreamKind.MOVIE)
+        }
+        if (!includeSeries) {
+            episodeDao.deleteForSource(sourceId)
+            seriesDao.deleteForSource(sourceId)
+            categoryDao.deleteForSourceOfKind(sourceId, StreamKind.SERIES)
+        }
     }
 
     /** Movies + series — best-effort, meant to run in the background so a huge VOD list never
