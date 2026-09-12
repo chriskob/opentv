@@ -128,6 +128,11 @@ class OpenTvApp : Application(), ImageLoaderFactory {
                 graph.catalogRepository.renormalizeAll()
                 prefs.edit().putInt("normalizer_version", CatalogRepository.NORMALIZER_VERSION).apply()
             }
+            // Sweep rows belonging to playlists that no longer exist. A delete that overlapped an
+            // import still writing leaves the tail of that import behind, owned by nobody — and since
+            // the guide lists channels without joining the sources table, those rows never leave the
+            // screen on their own. Cheap (five indexed deletes) and it runs on every process start.
+            runCatching { graph.catalogRepository.purgeOrphans() }
             // Runs on every launch. It is cheap when nothing is stale (feeds within their
             // refresh window are skipped), but it is what makes the free regional guide turn
             // itself on and download the first time — without waiting for the user to find

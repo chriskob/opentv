@@ -270,6 +270,19 @@ interface ChannelDao {
     suspend fun deleteForSource(sourceId: Long)
 
     /**
+     * Deletes channels belonging to a playlist that no longer exists.
+     *
+     * Rows end up like this when a delete overlaps an import that is still writing — a large provider
+     * takes minutes — and then the tail of that import lands after the purge. They matter because
+     * [observe] lists channels without joining `sources`, so an orphaned row is indistinguishable
+     * from a real one: it sits in the guide, with its category, and the user cannot remove it by
+     * unticking a box or deleting the playlist, because the playlist is already gone. Run from the
+     * launch and import paths so damage from any cause repairs itself. Returns the rows removed.
+     */
+    @Query("DELETE FROM channels WHERE sourceId NOT IN (SELECT id FROM sources)")
+    suspend fun purgeOrphans(): Int
+
+    /**
      * Preserves user state (favourites, hidden, manual order, custom names, EPG overrides) across a
      * catalogue refresh. Upsert would otherwise overwrite them with the defaults from the
      * freshly parsed rows.
@@ -363,6 +376,11 @@ interface CategoryDao {
      */
     @Query("DELETE FROM categories WHERE sourceId = :sourceId AND kind = :kind")
     suspend fun deleteForSourceOfKind(sourceId: Long, kind: StreamKind)
+
+    /** Categories of deleted playlists — see [ChannelDao.purgeOrphans]. The rail is built from this
+     *  table, so a stranded category is visible even with no channels behind it. */
+    @Query("DELETE FROM categories WHERE sourceId NOT IN (SELECT id FROM sources)")
+    suspend fun purgeOrphans(): Int
 }
 
 /** Projection for [CategoryDao.namesFor]. */
@@ -659,6 +677,10 @@ interface MovieDao {
 
     @Query("DELETE FROM movies WHERE sourceId = :sourceId")
     suspend fun deleteForSource(sourceId: Long)
+
+    /** Films of deleted playlists — see [ChannelDao.purgeOrphans]. */
+    @Query("DELETE FROM movies WHERE sourceId NOT IN (SELECT id FROM sources)")
+    suspend fun purgeOrphans(): Int
 }
 
 @Dao
@@ -729,6 +751,10 @@ interface SeriesDao {
 
     @Query("DELETE FROM series WHERE sourceId = :sourceId")
     suspend fun deleteForSource(sourceId: Long)
+
+    /** Shows of deleted playlists — see [ChannelDao.purgeOrphans]. */
+    @Query("DELETE FROM series WHERE sourceId NOT IN (SELECT id FROM sources)")
+    suspend fun purgeOrphans(): Int
 }
 
 @Dao
@@ -747,6 +773,10 @@ interface EpisodeDao {
 
     @Query("DELETE FROM episodes WHERE sourceId = :sourceId")
     suspend fun deleteForSource(sourceId: Long)
+
+    /** Episodes of deleted playlists — see [ChannelDao.purgeOrphans]. */
+    @Query("DELETE FROM episodes WHERE sourceId NOT IN (SELECT id FROM sources)")
+    suspend fun purgeOrphans(): Int
 }
 
 @Dao

@@ -323,6 +323,12 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
+            // Sweep rows left behind by playlists that no longer exist, before anything is imported.
+            // A delete that overlapped an import still writing leaves the tail of that import owned by
+            // nobody; the guide lists channels without joining the sources table, so those rows are
+            // indistinguishable from real ones and no amount of unticking or deleting removes them.
+            runCatching { graph.catalogRepository.purgeOrphans() }
+
             var totalChannels = 0
             /** What the providers said they have, so the dashboard's bars are real percentages. */
             var channelsExpected = 0

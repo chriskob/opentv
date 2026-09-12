@@ -1067,6 +1067,31 @@ class CatalogRepository(
         sourceDao.delete(sourceId)
     }
 
+    /**
+     * Removes every row belonging to a playlist that no longer exists.
+     *
+     * [deleteSource] clears everything a playlist owns, so this should find nothing — but a delete can
+     * land while an import is still writing (a provider with tens of thousands of channels and titles
+     * takes minutes), and then the tail of that import arrives after the purge, owned by a playlist
+     * that is already gone. The guide lists channels without joining `sources` and the rail is built
+     * from the categories table, so those rows stay on screen, and no user action can clear them:
+     * the box is unticked, the playlist is deleted, and they are still there.
+     *
+     * Called on launch and before a provisioning import, so damage from any cause heals itself.
+     * Returns the number of rows removed.
+     */
+    suspend fun purgeOrphans(): Int = withContext(Dispatchers.IO) {
+        val removed = channelDao.purgeOrphans() +
+            categoryDao.purgeOrphans() +
+            movieDao.purgeOrphans() +
+            seriesDao.purgeOrphans() +
+            episodeDao.purgeOrphans()
+        if (removed > 0) {
+            Log.i(TAG, "Purged $removed row(s) left behind by deleted playlists")
+        }
+        removed
+    }
+
     companion object {
         private const val TAG = "CatalogRepository"
 
