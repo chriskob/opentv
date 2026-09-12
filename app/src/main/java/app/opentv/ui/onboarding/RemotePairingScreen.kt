@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -442,13 +444,17 @@ private fun ProvisioningProgressDashboard(
 
         // Progress Cards Grid
         Row(
-            Modifier.fillMaxWidth().widthIn(max = 1180.dp),
+            // The row takes the tallest card's height and every card fills it, so all three match
+            // exactly — whatever each one's contents are, and without a hardcoded height that could
+            // clip on a smaller screen.
+            Modifier.fillMaxWidth().widthIn(max = 1180.dp).height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // Card 1: Playlists & Channels
             Box(
                 Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color(0xFF161B22))
                     .border(
@@ -551,6 +557,7 @@ private fun ProvisioningProgressDashboard(
             Box(
                 Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color(0xFF161B22))
                     .border(
@@ -594,26 +601,37 @@ private fun ProvisioningProgressDashboard(
 
                     Spacer(Modifier.height(16.dp))
 
-                    Text(
-                        text = if (progress.moviesSkipped) "Skipped" else "%,d".format(progress.moviesProcessed),
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (progress.moviesSkipped) Color.White.copy(alpha = 0.45f) else Color.White
-                    )
-                    Text(
-                        text = if (progress.moviesSkipped) "Movies — unchecked" else "Movies Imported",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-
-                    Spacer(Modifier.height(14.dp))
-
-                    Text(
-                        text = if (progress.showsSkipped) "Shows — skipped" else "%,d shows".format(progress.seriesProcessed),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (progress.showsSkipped) Color.White.copy(alpha = 0.45f) else Color(0xFFBA68C8)
-                    )
+                    // Movies and Shows side by side, the same size: on a TV box the shows count is
+                    // the one people care about, and it used to be a small footnote under the movies
+                    // number.
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = if (progress.moviesSkipped) "Skipped" else "%,d".format(progress.moviesProcessed),
+                                style = MaterialTheme.typography.displaySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (progress.moviesSkipped) Color.White.copy(alpha = 0.45f) else Color.White
+                            )
+                            Text(
+                                text = if (progress.moviesSkipped) "Movies — unchecked" else "Movies",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = if (progress.showsSkipped) "Skipped" else "%,d".format(progress.seriesProcessed),
+                                style = MaterialTheme.typography.displaySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (progress.showsSkipped) Color.White.copy(alpha = 0.45f) else Color(0xFFBA68C8)
+                            )
+                            Text(
+                                text = if (progress.showsSkipped) "Shows — unchecked" else "Shows",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
 
                     val vodFraction = progress.vodFraction
                     if (vodFraction != null && !progress.moviesSkipped) {
@@ -657,6 +675,7 @@ private fun ProvisioningProgressDashboard(
             Box(
                 Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color(0xFF161B22))
                     .border(
