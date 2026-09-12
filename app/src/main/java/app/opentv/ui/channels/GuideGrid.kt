@@ -761,7 +761,7 @@ fun GuideGrid(
                         .padding(top = 28.dp)
                         .offset(x = lineXDp - 0.75.dp)
                         .width(1.5.dp)
-                        .background(AppTheme.primary.copy(alpha = 0.45f))
+                        .background(AppTheme.primary.copy(alpha = 0.20f))
                 )
                 // Small circular dot / pip on the timeline header divider
                 Box(
@@ -770,8 +770,8 @@ fun GuideGrid(
                         .offset(x = lineXDp - 3.5.dp)
                         .size(7.dp)
                         .clip(CircleShape)
-                        .background(AppTheme.primary.copy(alpha = 0.9f))
-                        .border(1.dp, Color.White.copy(alpha = 0.55f), CircleShape)
+                        .background(AppTheme.primary.copy(alpha = 0.65f))
+                        .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
                 )
             }
         }
