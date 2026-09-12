@@ -409,10 +409,20 @@ private fun OpenTvApp(isTelevision: Boolean) {
     // First run goes straight to setup — an empty channel list with no explanation is the
     // worst possible first impression. When "Resume last channel" is enabled, boot directly into
     // the player to begin video playback in ~1-2 seconds with zero intermediate screens or EPG contention.
-    val start = when {
-        sourcesUi.sources.isEmpty() -> Routes.ADD_SOURCE
-        bootSettings.resumeLastChannel.value && bootSettings.lastChannelId > 0L -> Routes.player(bootSettings.lastChannelId)
-        else -> Routes.HOME
+    //
+    // Resolved ONCE, and deliberately so. A NavHost's start destination is a boot decision, not a
+    // live value: changing it rebuilds the graph and replaces whatever the user is looking at.
+    // It used to be recomputed on every recomposition, so the very first source saved by a
+    // provisioning run — written about a second after the progress dashboard appeared — flipped
+    // this from ADD_SOURCE to HOME and yanked the dashboard out from under the user, leaving the
+    // guide's own loading state in its place while the sync was still running. Leaving setup now
+    // happens only where it is asked for: `onFinished` from the flow itself.
+    val start = remember {
+        when {
+            sourcesUi.sources.isEmpty() -> Routes.ADD_SOURCE
+            bootSettings.resumeLastChannel.value && bootSettings.lastChannelId > 0L -> Routes.player(bootSettings.lastChannelId)
+            else -> Routes.HOME
+        }
     }
 
     var activeReminderPrompt by remember { mutableStateOf<app.opentv.core.ReminderSignal?>(null) }
