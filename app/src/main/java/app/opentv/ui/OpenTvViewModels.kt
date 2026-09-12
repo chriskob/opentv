@@ -601,6 +601,13 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                                     p.channelsToScan,
                                 )
                             p.matching -> "TV guide received — matching channels to programs…"
+                            // Feeds still coming: name the count, and do not claim "up to date"
+                            // while a feed is outstanding (the same mistake the card made).
+                            p.feedsTotal > 0 && p.feedsDone < p.feedsTotal ->
+                                "Fetching TV guide feeds — %,d of %,d done".format(
+                                    p.feedsDone,
+                                    p.feedsTotal,
+                                )
                             p.feedsTotal > 0 -> if (p.programmesWritten == 0) {
                                 // Feeds inside their refresh window are skipped, so "0 programmes"
                                 // means "nothing new to fetch", not "the guide failed".

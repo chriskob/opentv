@@ -655,6 +655,15 @@ private fun ProvisioningProgressDashboard(
                                 )
                             progress.epgChannelsMatched > 0 ->
                                 "${progress.epgChannelsMatched} / ${progress.epgChannelsTotal} channels matched"
+                            // "Up to date" is only true once every feed has been through. Said while
+                            // one feed of two was still coming it read as "nothing to do" next to a
+                            // ring sitting at 50%, and never named the fact that actually explained
+                            // the ring: how many feeds had finished.
+                            progress.epgFeedsTotal > 0 && progress.epgFeedsDone < progress.epgFeedsTotal ->
+                                "Fetching feeds — %,d of %,d done".format(
+                                    progress.epgFeedsDone,
+                                    progress.epgFeedsTotal,
+                                )
                             progress.epgFeedsTotal > 0 && progress.epgProgrammesProcessed == 0 ->
                                 "Guide is up to date"
                             progress.epgFeedsTotal > 0 ->
@@ -682,12 +691,17 @@ private fun ProvisioningProgressDashboard(
                                 color = DashMuted
                             )
                         }
-                    } else {
+                    } else if (progress.epgProgrammesProcessed > 0) {
+                        // Only when it adds information: with zero programs arriving the big number
+                        // above already says zero, so this line used to be the same figure twice.
                         Text(
-                            text = if (progress.epgFeedsTotal > 0)
-                                "%,d programs so far".format(progress.epgProgrammesProcessed)
-                            else
-                                "Fetching the guide…",
+                            text = "%,d programs so far".format(progress.epgProgrammesProcessed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DashMuted
+                        )
+                    } else if (progress.epgFeedsTotal == 0) {
+                        Text(
+                            text = "Fetching the guide…",
                             style = MaterialTheme.typography.bodySmall,
                             color = DashMuted
                         )
