@@ -527,10 +527,13 @@ private fun ProvisioningProgressDashboard(
 
                     Spacer(Modifier.height(14.dp))
 
-                    if (progress.currentPlaylistName.isNotBlank()) {
+                    // Per-playlist attribution. This used to read "Source: <playlist processed last>"
+                    // beside the running total, which credited one playlist's channels to another — a
+                    // playlist whose Channels box was unticked appeared to have imported them anyway.
+                    if (progress.playlistSummaries.isNotEmpty()) {
                         Text(
-                            text = "Source: ${progress.currentPlaylistName}",
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = progress.playlistSummaries.joinToString("  ·  "),
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFF26C6DA)
                         )

@@ -103,6 +103,16 @@ data class RemoteProvisioningProgress(
     val epgChannelsToScan: Int = 0,
     /** Guide feeds finished / total, so the bar moves while feeds are still downloading. */
     val epgFeedsDone: Int = 0,
+    /**
+     * What each playlist actually contributed, in the order they were processed — "Test — 26,996
+     * channels", "Xtream Provider — Channels off".
+     *
+     * The Channels card used to show the running total beside whichever playlist was processed
+     * *last*, which credited one playlist's channels to another: a playlist whose Channels box was
+     * unticked got named as the source of the other playlist's 26,996 channels, so the exclusion
+     * looked like it had been ignored when it had actually worked.
+     */
+    val playlistSummaries: List<String> = emptyList(),
     val epgFeedsTotal: Int = 0,
     val timelineStartMillis: Long = 0L,
     val timelineEndMillis: Long = 0L,
@@ -353,6 +363,8 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { graph.catalogRepository.purgeOrphans() }
 
             var totalChannels = 0
+            // What each playlist contributed, so the dashboard can name them honestly.
+            val playlistSummaries = mutableListOf<String>()
             /** What the providers said they have, so the dashboard's bars are real percentages. */
             var channelsExpected = 0
             // Movies/series across every playlist, plus what the providers said they have — the
@@ -457,6 +469,19 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                     CatalogRepository.SyncResult.Success(0, 0, 0)
                 }
                 channelsExpected += plannedChannels
+
+                // Record what this playlist actually contributed, and say "Channels off" when that is
+                // the truth. The summary sits under the Channels card, so it has to name the playlist
+                // that produced the number rather than the one that happened to go last.
+                playlistSummaries += when {
+                    !wantsLive -> "${saved.name} — Channels off"
+                    syncResult is CatalogRepository.SyncResult.Success && syncResult.channelCount > 0 ->
+                        "${saved.name} — %,d channels".format(syncResult.channelCount)
+                    else -> "${saved.name} — no channels"
+                }
+                _provisioningProgress.value = _provisioningProgress.value?.copy(
+                    playlistSummaries = playlistSummaries.toList(),
+                )
                 when (syncResult) {
                     is CatalogRepository.SyncResult.Success -> {
                         anySuccess = true
