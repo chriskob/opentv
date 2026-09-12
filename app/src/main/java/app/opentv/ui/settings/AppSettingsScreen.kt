@@ -265,7 +265,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
             DropdownPickerRow(
                 title = stringResource(R.string.settings_guide_refresh),
-                subtitle = "Frequency to fetch fresh TV guide and programme data",
+                subtitle = "Frequency to fetch fresh TV guide and program data",
                 options = playlistRefreshOptions,
                 selectedValue = epgRefreshHours,
             ) { hours -> settings.setEpgRefreshHours(hours) }

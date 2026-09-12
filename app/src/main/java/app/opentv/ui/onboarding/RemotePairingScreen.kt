@@ -706,9 +706,9 @@ private fun ProvisioningProgressDashboard(
                             progress.epgChannelsMatched > 0 ->
                                 "${progress.epgChannelsMatched} / ${progress.epgChannelsTotal} channels matched"
                             progress.epgFeedsTotal > 0 && progress.epgProgrammesProcessed == 0 ->
-                                "Guide feeds up to date — no new programs to fetch"
+                                "TV guide is up to date — nothing new to download"
                             progress.epgFeedsTotal > 0 ->
-                                "Parsing guide feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal}"
+                                "Getting TV guide feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal}"
                             else -> "Programs Scheduled"
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -730,7 +730,7 @@ private fun ProvisioningProgressDashboard(
                                 progress.epgBarIsMatching ->
                                     "%.0f%% of channels checked".format(epgFraction * 100f)
                                 progress.epgBarIsFeeds ->
-                                    "%.0f%% of feeds parsed".format(epgFraction * 100f)
+                                    "%.0f%% of the TV guide downloaded".format(epgFraction * 100f)
                                 else -> "%.0f%% matched".format(epgFraction * 100f)
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -762,7 +762,7 @@ private fun ProvisioningProgressDashboard(
                         // from a hang.
                         Text(
                             text = if (progress.epgFeedsTotal > 0)
-                                "Parsing guide feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal} — %,d programmes so far"
+                                "Getting TV guide feed ${progress.epgFeedsDone} of ${progress.epgFeedsTotal} — %,d programs so far"
                                     .format(progress.epgProgrammesProcessed)
                             else
                                 "Waiting for guide feeds…",

@@ -211,7 +211,7 @@ class RemotePairingClient(
                         connectWebSocket(wsUrl)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error parsing pairing init response", e)
-                        _state.value = State.Failed("Failed to parse server response.")
+                        _state.value = State.Failed("The pairing server sent something we could not read.")
                     }
                 }
             }

@@ -354,7 +354,7 @@ class EpgRepository(
                         feedDao.markSynced(
                             feed.id,
                             nowUtcMillis,
-                            "${result.programmes} programmes, ${result.channels} channels",
+                            "${result.programmes} programs, ${result.channels} channels",
                         )
                     }
                     is FeedResult.Failed -> {
@@ -505,7 +505,7 @@ class EpgRepository(
                 }
 
                 if (written == 0 && stats.programmeCount == 0) {
-                    return FeedResult.Failed("Downloaded, but contained no programmes.")
+                    return FeedResult.Failed("Downloaded, but it contained no programs.")
                 }
                 return FeedResult.Success(written, stats.channelCount)
             }

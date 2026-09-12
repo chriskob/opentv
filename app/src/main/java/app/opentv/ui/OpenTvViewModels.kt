@@ -291,7 +291,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                     graph.epgRepository.syncAll(now) { p ->
                         if (p.feedsTotal > 0) {
                             StatusBus.set(
-                                "Guide feeds — %,d of %,d done, %,d programmes parsed".format(
+                                "TV guide — %,d of %,d feeds done, %,d programs added".format(
                                     p.feedsDone,
                                     p.feedsTotal,
                                     p.programmesWritten,
@@ -528,7 +528,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             _provisioningProgress.value = _provisioningProgress.value?.copy(
                 stage = RemoteProvisioningProgress.Stage.SYNCING_EPG,
                 channelsProcessed = totalChannels,
-                statusMessage = "Downloading TV guide feeds and matching programs…"
+                statusMessage = "Getting the TV guide and matching programs…"
             )
 
             val timelineStart = now - (now % (30 * 60 * 1000L))
@@ -553,13 +553,13 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                                     p.channelsScanned,
                                     p.channelsToScan,
                                 )
-                            p.matching -> "Guide feeds done — matching channels to programmes…"
+                            p.matching -> "TV guide received — matching channels to programs…"
                             p.feedsTotal > 0 -> if (p.programmesWritten == 0) {
                                 // Feeds inside their refresh window are skipped, so "0 programmes"
                                 // means "nothing new to fetch", not "the guide failed".
-                                "Guide feeds up to date — checking channels against programs…"
+                                "TV guide is up to date — checking channels against programs…"
                             } else {
-                                "Guide feeds — %,d of %,d done, %,d programmes parsed%s".format(
+                                "TV guide — %,d of %,d feeds done, %,d programs added%s".format(
                                     p.feedsDone,
                                     p.feedsTotal,
                                     p.programmesWritten,
