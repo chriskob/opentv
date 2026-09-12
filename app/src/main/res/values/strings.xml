@@ -190,6 +190,8 @@
     <string name="settings_section_submenu_buttons">Player Sub Menu Buttons</string>
     <string name="settings_submenu_buttons_note">Choose which quick action buttons appear on the bottom sub menu while playing live TV.</string>
     <string name="settings_submenu_enable_all">Enable all</string>
+    <string name="settings_catchup_lookup_title">Detect catch-up from the provider</string>
+    <string name="settings_catchup_lookup_subtitle">Most playlists are a panel export that omits catch-up, so ask the panel behind the playlist which channels really have it. One request per sync; skipped when the playlist says so itself.</string>
     <string name="settings_section_vod_buttons">Movie &amp; show player buttons</string>
     <string name="settings_vod_buttons_note">Choose which buttons appear along the bottom of the movie and show player.</string>
     <string name="settings_submenu_disable_all">Disable all</string>

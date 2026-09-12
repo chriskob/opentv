@@ -721,6 +721,26 @@ class AppSettings private constructor(context: Context) {
         _matchRefreshRate.value = value
     }
 
+    /**
+     * Whether to look for the Xtream panel behind an M3U playlist and ask it which channels have
+     * archive.
+     *
+     * On by default, because the alternative is worse in both directions. Most playlists are a
+     * panel export that simply omits the catch-up attributes, so a playlist-only client can either
+     * guess (and badge channels that have no archive) or stay silent (and hide the ones that do).
+     * Asking the panel once per sync answers it properly.
+     *
+     * See [app.opentv.data.remote.XtreamPanelDiscovery]: a panel that cannot be found, or that does
+     * not answer, leaves the playlist's own flags exactly as they were.
+     */
+    private val _catchupDiscovery = MutableStateFlow(prefs.getBoolean(KEY_CATCHUP_DISCOVERY, true))
+    val catchupDiscovery: StateFlow<Boolean> = _catchupDiscovery.asStateFlow()
+
+    fun setCatchupDiscovery(value: Boolean) {
+        prefs.edit().putBoolean(KEY_CATCHUP_DISCOVERY, value).apply()
+        _catchupDiscovery.value = value
+    }
+
     var requestedHomeTab: String? = null
 
     companion object {
@@ -730,6 +750,7 @@ class AppSettings private constructor(context: Context) {
     private const val KEY_VOD_BUTTONS = "vod_player_buttons"
         private const val KEY_AUDIO_DELAY_MS = "audio_delay_ms"
         private const val KEY_MATCH_REFRESH_RATE = "match_refresh_rate"
+    private const val KEY_CATCHUP_DISCOVERY = "catchup_m3u_discovery"
         private const val KEY_CHANNEL_LAYOUT = "channel_layout"
         private const val KEY_SUBTITLES = "subtitles_enabled"
         private const val KEY_PREVIEW_VIDEO = "guide_preview_video"

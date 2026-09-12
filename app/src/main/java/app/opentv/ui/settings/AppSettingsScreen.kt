@@ -112,6 +112,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val previewVideo by settings.guidePreviewVideo.collectAsState()
     val showFavouritesCategory by settings.showFavouritesCategory.collectAsState()
     val showAllChannelsCategory by settings.showAllChannelsCategory.collectAsState()
+    val catchupLookup by settings.catchupDiscovery.collectAsState()
     val previewSound by settings.guidePreviewSound.collectAsState()
     val guideResetOnOpen by settings.guideResetOnOpen.collectAsState()
     val captions by settings.subtitlesEnabled.collectAsState()
@@ -347,6 +348,12 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 subtitle = stringResource(R.string.settings_show_all_category_subtitle),
                 checked = showAllChannelsCategory,
                 onToggle = settings::setShowAllChannelsCategory,
+            )
+            ToggleRow(
+                title = stringResource(R.string.settings_catchup_lookup_title),
+                subtitle = stringResource(R.string.settings_catchup_lookup_subtitle),
+                checked = catchupLookup,
+                onToggle = settings::setCatchupDiscovery,
             )
         }
 

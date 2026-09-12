@@ -29,6 +29,7 @@ import app.opentv.data.parser.VodTitleCleaner
 import app.opentv.data.remote.StalkerApi
 import app.opentv.data.remote.TmdbClient
 import app.opentv.data.remote.XtreamApi
+import app.opentv.data.remote.XtreamPanelDiscovery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -839,8 +840,34 @@ class CatalogRepository(
             )
         }
 
+        // Most playlists are an Xtream panel's export, and the export drops the catch-up
+        // attributes — so a playlist-only client can either guess (badging channels with no
+        // archive) or stay silent (hiding the channels that have it). The panel's address and
+        // credentials are sitting in the playlist's own stream URLs, so ask it directly. Skipped
+        // when the playlist already answered for itself, and entirely best-effort: any failure
+        // leaves the playlist's flags exactly as they were.
+        val channels = if (settings.catchupDiscovery.value &&
+            parsed.channels.none { it.tvArchive || !it.cmd.isNullOrBlank() }
+        ) {
+            runCatching {
+                XtreamPanelDiscovery.enrich(parsed.channels, http, source.userAgent)
+            }
+                .onFailure { Log.w(TAG, "Catch-up discovery failed for source ${source.id}", it) }
+                .getOrNull()
+                ?.also { (enriched, added) ->
+                    Log.i(
+                        TAG,
+                        "Catch-up discovery: $added of ${enriched.size} channels report archive",
+                    )
+                }
+                ?.first
+                ?: parsed.channels
+        } else {
+            parsed.channels
+        }
+
         // Synthesise categories from group-title in the order they appear in the playlist.
-        val categories = parsed.channels
+        val categories = channels
             .mapNotNull { it.categoryId }
             .distinct()
             .mapIndexed { index, name ->
@@ -855,9 +882,9 @@ class CatalogRepository(
 
         categoryDao.upsertAll(categories)
         val categoryNames = categories.associate { it.id to it.name }
-        onProgress?.invoke(0, parsed.channels.size)
-        channelDao.replaceCatalogue(source.id, normalized(parsed.channels, categoryNames), nowUtcMillis)
-        onProgress?.invoke(parsed.channels.size, parsed.channels.size)
+        onProgress?.invoke(0, channels.size)
+        channelDao.replaceCatalogue(source.id, normalized(channels, categoryNames), nowUtcMillis)
+        onProgress?.invoke(channels.size, channels.size)
 
         // If the playlist declared its own guide URL and the user did not set one, adopt it.
         if (source.epgUrl.isNullOrBlank() && !parsed.declaredEpgUrl.isNullOrBlank()) {
@@ -865,7 +892,7 @@ class CatalogRepository(
         }
 
         sourceDao.markCatalogSynced(source.id, nowUtcMillis)
-        return SyncResult.Success(parsed.channels.size, 0, 0)
+        return SyncResult.Success(channels.size, 0, 0)
     }
 
     /**

@@ -417,6 +417,8 @@
     <string name="vod_director">Reżyser</string>
     <string name="vod_season">Sezon %1$d</string>
     <string name="vod_episode">Odcinek %1$d</string>
+    <string name="settings_catchup_lookup_title">Wykrywaj catch-up u dostawcy</string>
+    <string name="settings_catchup_lookup_subtitle">Większość playlist to eksport panelu bez informacji o catch-up, więc zapytaj panel ukryty za playlistą, które kanały naprawdę go mają. Jedno zapytanie na synchronizację; pomijane, gdy playlista podaje to sama.</string>
     <string name="settings_section_vod_buttons">Przyciski odtwarzacza filmów i seriali</string>
     <string name="settings_vod_buttons_note">Wybierz, które przyciski pojawiają się na dole odtwarzacza filmów i seriali.</string>
     <string name="vod_detail_loading">Wczytywanie…</string>
