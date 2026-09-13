@@ -24,7 +24,6 @@
     <string name="nav_settings">Ustawienia</string>
     <string name="guide_search_channels">🔍  Szukaj kanałów</string>
     <string name="guide_favourites">★ Ulubione</string>
-    <string name="guide_all_channels">Wszystkie kanały</string>
     <string name="guide_watch_from_start">▶  Oglądaj od początku (catch-up)</string>
     <string name="guide_catchup_link_failed">Nie udało się utworzyć łącza catch-up</string>
     <string name="guide_cancel_reminder">🔔  Anuluj przypomnienie</string>
@@ -398,7 +397,6 @@
     <string name="vod_no_shows_provider">Ten dostawca nie zwrócił żadnych seriali.</string>
     <string name="vod_no_shows_add">Dodaj dostawcę, aby zobaczyć tutaj jego seriale.</string>
     <string name="vod_loading_episodes">Wczytywanie odcinków…</string>
-    <string name="vod_all">Wszystkie</string>
     <string name="vod_search_hint">Szukaj filmów i seriali</string>
     <string name="vod_continue_watching">Kontynuuj oglądanie</string>
     <string name="vod_large_provider_note">W przypadku dużego dostawcy może to potrwać kilka minut za pierwszym razem.</string>

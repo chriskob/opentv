@@ -30,6 +30,7 @@ import app.opentv.data.repo.EpgRepository
 import app.opentv.data.repo.GenreGroup
 import app.opentv.data.repo.MovieVariantGroup
 import app.opentv.data.repo.PersonTitle
+import app.opentv.data.repo.SourceGates
 import app.opentv.data.repo.distinctByQuality
 import app.opentv.R
 import app.opentv.pairing.ManagerServer
@@ -783,6 +784,28 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
     fun blankDraft() = Source(name = "", kind = SourceKind.XTREAM, url = "")
 }
 
+/**
+ * Narrows raw category rows to one catalogue: optionally to a single provider, and always to the
+ * playlists that actually contribute [contentType].
+ *
+ * Every category list in the app goes through this — the guide's, the channel manager's, Movies and
+ * Shows — so a playlist can only ever appear in the lists of the content it was added for. It is a
+ * file-level function rather than a member of either view model because both need it, and it exists
+ * at all because that rule was previously written out inline at each call site: the channel
+ * manager's list simply did not have it, so a playlist the user had added for its films still
+ * showed its categories in the TV lists.
+ */
+private fun scopeToContentType(
+    raw: List<Category>,
+    sources: List<Source>,
+    contentType: SourceGates.ContentType,
+    sourceId: Long? = null,
+): List<Category> {
+    val allowed = SourceGates.contributingSourceIds(contentType, sources)
+    return (if (sourceId == null) raw else raw.filter { it.sourceId == sourceId })
+        .filter { it.sourceId in allowed }
+}
+
 class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = ServiceLocator.get(app)
     private val settings = graph.settings
@@ -814,13 +837,10 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             // Scope the category rail to the chosen provider, so a second playlist's categories show
             // on their own (cardiodoc's "keep sources separate"); null folds across every provider.
             //
-            // A playlist whose Channels box is unchecked contributes no LIVE categories at all —
-            // without this the TV section still listed that playlist's categories after the user
-            // had switched its Channels off.
-            val noLiveIds = sources.filter { !it.includeLive }.map { it.id }.toSet()
-            val scoped = (if (sourceId == null) raw else raw.filter { it.sourceId == sourceId })
-                .filter { it.sourceId !in noLiveIds }
-            foldCategories(scoped)
+            // Then keep only the playlists that are actually made of live channels: a playlist whose
+            // Channels box is unchecked contributes no LIVE categories at all, and one added for its
+            // films must not put its categories — or its name — in the TV lists.
+            foldCategories(scopeToContentType(raw, sources, SourceGates.ContentType.LIVE, sourceId))
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
@@ -855,6 +875,66 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         combine(categoryGroups, settings.hiddenCategories, settings.hiddenUnlocked) { groups, hidden, unlocked ->
             if (unlocked) groups else groups.filter { it.key !in hidden }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * The rail has no "All" entry, so a null selection is not a state the user can be shown: once
+     * the groups are known, land on the first one.
+     *
+     * Favourites is a shortlist rather than "everything", so a favourites selection is left alone —
+     * it sets a null category on purpose. A saved key that no longer exists (its playlist was
+     * removed, or its category was renamed) is replaced rather than left as a selection nothing
+     * highlights, which is what the removed "All" entry used to look like.
+     */
+    init {
+        viewModelScope.launch {
+            visibleCategoryGroups.collect { groups ->
+                if (groups.isEmpty() || favouritesOnly.value) return@collect
+                val current = selectedCategory.value
+                if (current == null || groups.none { it.key == current }) {
+                    selectCategory(groups.first().key)
+                }
+            }
+        }
+    }
+
+    /** One playlist's slice of the sidebar: the source, and the category groups it contributes. */
+    data class CategorySection(val source: Source, val groups: List<CategoryGroup>)
+
+    /**
+     * The sidebar as a tree: every playlist that carries live channels, with its categories beneath.
+     *
+     * Built from [visibleCategoryGroups] rather than from the raw categories table, so the
+     * content-type scope and the adult-category hiding are applied exactly once and in the same
+     * place the flat list applies them — a second derivation here is precisely how the manager's
+     * rail ended up disagreeing with the guide's.
+     *
+     * A group is attributed to a playlist by which playlist owns the underlying category rows. The
+     * folding is still across playlists, so the same category name in two playlists is one entry
+     * under each of them and keeps its existing meaning when selected (it filters across both).
+     */
+    val categorySections: StateFlow<List<CategorySection>> =
+        combine(
+            visibleCategoryGroups,
+            graph.catalogRepository.observeCategories(StreamKind.LIVE),
+            graph.sourceRepository.observeAll(),
+        ) { groups, raw, sources ->
+            if (groups.isEmpty()) return@combine emptyList()
+            val idsBySource = raw.groupBy({ it.sourceId }, { it.id })
+            sources
+                .filter { SourceGates.contributes(SourceGates.ContentType.LIVE, it) }
+                .mapNotNull { source ->
+                    val ids = idsBySource[source.id]?.toSet() ?: return@mapNotNull null
+                    val mine = groups.filter { group -> group.ids.any { it in ids } }
+                    if (mine.isEmpty()) null else CategorySection(source, mine)
+                }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Collapse or expand one playlist's group in the sidebar. */
+    fun toggleSourceCollapsed(sourceId: Long) {
+        val key = sourceId.toString()
+        val current = settings.collapsedSources.value
+        settings.setCollapsedSources(if (key in current) current - key else current + key)
+    }
 
     /**
      * One row on screen = one *logical* channel.
@@ -1396,23 +1476,33 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     /** The [CategoryGroup.key] whose channels fill the manager's right pane; null = none picked. */
     val managerSelectedCategory = MutableStateFlow<String?>(null)
 
-    /** Providers, so the manager can offer a source filter (shown only when there's more than one). */
+    /**
+     * Providers, so the manager can offer a source filter (shown only when there's more than one).
+     *
+     * Only the playlists made of live channels: a playlist the user added for its films has nothing
+     * to manage here, so listing it would offer a filter whose pane can only ever be empty.
+     */
     val sources: StateFlow<List<Source>> =
         graph.sourceRepository.observeAll()
+            .map { list -> list.filter { SourceGates.contributes(SourceGates.ContentType.LIVE, it) } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * The manager's category rail: like [categoryGroups] but scoped to [managerSelectedSource], and
      * NOT filtered by the adult/hidden-category setting — the manager shows every category so a
      * hidden one's channels can still be reached and un-hidden.
+     *
+     * It *is* still scoped by content type, and that exception is about the adult filter only. A
+     * playlist added for its films contributes no live categories at all, but this list had no
+     * content-type check while the guide's did, so it kept showing that playlist's categories.
      */
     val managerCategoryGroups: StateFlow<List<CategoryGroup>> =
         combine(
             graph.catalogRepository.observeCategories(StreamKind.LIVE),
             managerSelectedSource,
-        ) { raw, sourceId ->
-            val scoped = if (sourceId == null) raw else raw.filter { it.sourceId == sourceId }
-            foldCategories(scoped)
+            graph.sourceRepository.observeAll(),
+        ) { raw, sourceId, allSources ->
+            foldCategories(scopeToContentType(raw, allSources, SourceGates.ContentType.LIVE, sourceId))
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
@@ -1655,36 +1745,65 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     /** Provider filter for Movies/Shows. null = every source. Surfaced only when there's >1 source. */
     val selectedVodSource = MutableStateFlow<Long?>(null)
 
-    /** Providers, so Movies/Shows can offer a source filter (shown only when there's more than one). */
-    val sources: StateFlow<List<Source>> =
+    /**
+     * Providers that actually carry films, so the Movies rail can offer a filter over real
+     * providers only. A playlist added for live TV alone must not be listed: it contributes no film
+     * categories, so picking it could only ever empty the grid.
+     */
+    val movieSources: StateFlow<List<Source>> =
         graph.sourceRepository.observeAll()
+            .map { list -> list.filter { SourceGates.contributes(SourceGates.ContentType.MOVIES, it) } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    // Category chips scoped to the chosen provider: pick a provider and you see only its categories,
+    /** Providers that actually carry shows — the same rule as [movieSources], for the other half. */
+    val seriesSources: StateFlow<List<Source>> =
+        graph.sourceRepository.observeAll()
+            .map { list -> list.filter { SourceGates.contributes(SourceGates.ContentType.SERIES, it) } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Category lists scoped to the chosen provider: pick a provider and you see only its categories,
     // and since a category id belongs to one provider, the grid you then open is already that
-    // provider's titles. null folds categories across every provider ("All sources").
+    // provider's titles. null folds categories across every provider that carries this content type.
+    //
+    // The content-type scope is the load-bearing half. A category row outlives the box that put it
+    // there — an exclusion pass that ran before the row was written, an interrupted import, a
+    // library fetched before the box was cleared — so filtering by kind alone let a playlist added
+    // for live TV contribute its film categories to Movies. The playlist's own Movies box decides
+    // whether it belongs in this list.
     val movieCategories: StateFlow<List<Category>> =
         combine(
             graph.catalogRepository.observeCategories(StreamKind.MOVIE),
             selectedVodSource,
-        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            graph.sourceRepository.observeAll(),
+        ) { raw, sourceId, allSources ->
+            scopeToContentType(raw, allSources, SourceGates.ContentType.MOVIES, sourceId)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val seriesCategories: StateFlow<List<Category>> =
         combine(
             graph.catalogRepository.observeCategories(StreamKind.SERIES),
             selectedVodSource,
-        ) { raw, sourceId -> if (sourceId == null) raw else raw.filter { it.sourceId == sourceId } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            graph.sourceRepository.observeAll(),
+        ) { raw, sourceId, allSources ->
+            scopeToContentType(raw, allSources, SourceGates.ContentType.SERIES, sourceId)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    // No category selected = no title list at all, and no way to ask for one: the rail has no "All"
+    // entry. That is both the correctness and the performance fix — the unfiltered query behind the
+    // old "All" selection returned every film of every provider as one list, which is what made the
+    // box crawl for a view that only ever showed the curated shelves.
     @OptIn(ExperimentalCoroutinesApi::class)
     val movies: StateFlow<List<Movie>> = movieCategory
-        .flatMapLatest { graph.catalogRepository.observeMovies(it) }
+        .flatMapLatest { id ->
+            if (id == null) flowOf(emptyList()) else graph.catalogRepository.observeMovies(id)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val series: StateFlow<List<Series>> = seriesCategory
-        .flatMapLatest { graph.catalogRepository.observeSeries(it) }
+        .flatMapLatest { id ->
+            if (id == null) flowOf(emptyList()) else graph.catalogRepository.observeSeries(id)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun selectMovieCategory(id: String?) { movieCategory.value = id }

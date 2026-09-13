@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -157,13 +158,15 @@ fun HomeScreen(
     val guideResetOnOpen by settings.guideResetOnOpen.collectAsState()
 
     val categories by viewModel.visibleCategoryGroups.collectAsState()
+    val sections by viewModel.categorySections.collectAsState()
     val rows by viewModel.rows.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
+    // Kept for the playback-URL and record-picker lookups — no longer drives the sidebar, which is
+    // a tree of playlists now rather than a provider filter plus a flat category list.
     val sources by viewModel.sources.collectAsState()
-    val selectedSource by viewModel.selectedSource.collectAsState()
     val showFavouritesCategory by settings.showFavouritesCategory.collectAsState()
-    val showAllChannelsCategory by settings.showAllChannelsCategory.collectAsState()
+    val collapsedSources by settings.collapsedSources.collectAsState()
 
     // Rail open targets — declared before the index helpers below, which read them. Set at the
     // moment LEFT/Back opens the rail: the entry the rail should scroll to and focus, and the
@@ -171,44 +174,50 @@ fun HomeScreen(
     var railScrollToIndex by remember { mutableStateOf(-1) }
     var railOpenFocusKey by remember { mutableStateOf<String?>(null) }
 
-    // Rail index for a category key (accounts for the provider section, shown only when there
-    // is more than one source). Used to open the rail on the playing channel's category.
+    // The sidebar flattened into exactly the rows it draws — favourites, then one header per
+    // playlist with its categories beneath — so scroll and focus indices are read off the real list
+    // instead of being recomputed from counts. That arithmetic had to add three rows for the
+    // provider section, and a collapsed group changes the row count again; deriving the rows once
+    // and indexing them cannot drift the way a hand-maintained offset does.
+    val railRows: List<RailRow> = buildList {
+        if (showFavouritesCategory) add(RailRow.Favourites)
+        sections.forEach { section ->
+            val expanded = section.source.id.toString() !in collapsedSources
+            add(RailRow.SourceHeader(section.source.id, section.source.name, expanded))
+            if (expanded) section.groups.forEach { add(RailRow.Category(section.source.id, it)) }
+        }
+    }
+
+    /** Index of the row carrying a category key, or -1 when it is not currently drawn. */
     fun railIndexForCategoryKey(key: String?): Int {
-        var idx = if (sources.size > 1) 3 + sources.size else 0
-        if (showFavouritesCategory) idx += 1
-        if (showAllChannelsCategory) idx += 1
-        if (key == null) return idx
-        val groupIdx = categories.indexOfFirst { it.key == key }
-        return if (groupIdx >= 0) idx + groupIdx else idx
+        if (key == null) return -1
+        return railRows.indexOfFirst { it is RailRow.Category && it.group.key == key }
     }
 
     /**
-     * Index of the rail entry that currently carries [railFocusRequester] — mirroring the
-     * attachment rules on the rail items below. Opening the rail scrolls here BEFORE focus is
-     * requested, so focus lands on a real, composed entry instead of drifting onto the first
+     * Index of the rail row that should carry [railFocusRequester] and be scrolled to when the rail
+     * opens — mirroring the attachment rule on the rows below. Opening the rail scrolls here BEFORE
+     * focus is requested, so focus lands on a real, composed entry instead of drifting onto the first
      * visible one (Favourites) and committing a selection change the user never made.
-     * The explicit open target ([railOpenFocusKey], set by LEFT/Back) wins over the guide's
-     * current selection — they differ whenever the guide sits on another category.
+     *
+     * The explicit open target ([railOpenFocusKey], set by LEFT/Back) wins over the guide's current
+     * selection — they differ whenever the guide sits on another category, which is exactly the
+     * "rail opens on Favourites" bug.
      */
     fun railFocusTargetIndex(): Int {
-        val favBase = if (sources.size > 1) 3 + sources.size else 0
-        when (railOpenFocusKey) {
-            RAIL_KEY_FAVOURITES -> if (showFavouritesCategory) return favBase
-            RAIL_KEY_ALL_CHANNELS -> if (showAllChannelsCategory) return favBase + if (showFavouritesCategory) 1 else 0
+        when (val target = railOpenFocusKey) {
             null -> {}
-            else -> if (categories.any { it.key == railOpenFocusKey }) return railIndexForCategoryKey(railOpenFocusKey)
+            RAIL_KEY_FAVOURITES -> railRows.indexOfFirst { it is RailRow.Favourites }
+                .takeIf { it >= 0 }?.let { return it }
+            else -> railRows.indexOfFirst { it is RailRow.Category && it.group.key == target }
+                .takeIf { it >= 0 }?.let { return it }
         }
-        val selectedOnFavourites = favouritesOnly && showFavouritesCategory
-        val selectedOnAll = !favouritesOnly && selectedCategory == null && showAllChannelsCategory
-        val selectionHasRailEntry = selectedOnFavourites || selectedOnAll || selectedCategory != null
-        return when {
-            selectedOnFavourites -> favBase
-            selectedOnAll -> favBase + if (showFavouritesCategory) 1 else 0
-            selectionHasRailEntry -> railIndexForCategoryKey(selectedCategory)
-            showFavouritesCategory -> favBase
-            showAllChannelsCategory -> favBase + 1
-            else -> railIndexForCategoryKey(selectedCategory)
+        val selected = railRows.indexOfFirst { it is RailRow.Category && it.group.key == selectedCategory }
+        if (selected >= 0) return selected
+        if (favouritesOnly) {
+            railRows.indexOfFirst { it is RailRow.Favourites }.takeIf { it >= 0 }?.let { return it }
         }
+        return 0
     }
     val windowStart by viewModel.windowStartMillis.collectAsState()
     // How many hours into the past the guide is scrolled (0 = live now).
@@ -959,77 +968,16 @@ fun HomeScreen(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                // Provider switch — only when there's more than one source. Lets the user keep
-                // several playlists and flip between them (cardiodoc's request); "All" folds them.
-                if (sources.size > 1) {
-                    item(key = "provider-header") {
-                        Text(
-                            stringResource(R.string.channels_manager_source_header),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        )
-                    }
-                    item(key = "provider-all") {
-                        RailEntry(
-                            label = stringResource(R.string.channels_manager_all_sources),
-                            selected = selectedSource == null,
-                            onFocused = {
-                                viewModel.selectSource(null)
-                                railPreviewing = true
-                            },
-                            onClick = {
-                                viewModel.selectSource(null)
-                                railPreviewing = false
-                                railExpanded = false
-                                suppressRailPreviewSelection = false
-                                guideRestoreTick++
-                                runCatching { guideFocusRequester.requestFocus() }
-                                pendingGuideFocus = true
-                            },
-                        )
-                    }
-                    items(sources, key = { "src-${it.id}" }) { source ->
-                        RailEntry(
-                            label = source.name,
-                            selected = selectedSource == source.id,
-                            onFocused = {
-                                viewModel.selectSource(source.id)
-                                railPreviewing = true
-                            },
-                            onClick = {
-                                viewModel.selectSource(source.id)
-                                railPreviewing = false
-                                railExpanded = false
-                                suppressRailPreviewSelection = false
-                                guideRestoreTick++
-                                runCatching { guideFocusRequester.requestFocus() }
-                                pendingGuideFocus = true
-                            },
-                        )
-                    }
-                    item(key = "provider-divider") { Spacer(Modifier.height(10.dp)) }
-                }
-                // The rail's FocusRequester is attached by [railOpenFocusKey] — the entry the
-                // open handler chose (the playing channel's category) — NOT by the guide's
-                // current selection: the two differ whenever the guide sits on Favourites/All/
-                // another category, which is exactly the "rail opens on Favourites" bug. Falls
-                // back to the selected entry only when no open target is set or it isn't visible.
-                val selectedOnFavourites = favouritesOnly && showFavouritesCategory
-                val selectedOnAll = !favouritesOnly && selectedCategory == null && showAllChannelsCategory
-                val selectionHasRailEntry = selectedOnFavourites || selectedOnAll || selectedCategory != null
-                val focusFirstFavourites = !selectionHasRailEntry && showFavouritesCategory
-                val focusFirstAll = !selectionHasRailEntry && !showFavouritesCategory && showAllChannelsCategory
-                val effectiveOpenKey = railOpenFocusKey?.takeIf { key ->
-                    (key == RAIL_KEY_FAVOURITES && showFavouritesCategory) ||
-                        (key == RAIL_KEY_ALL_CHANNELS && showAllChannelsCategory) ||
-                        categories.any { it.key == key }
-                }
-                val favouritesIsTarget = effectiveOpenKey == RAIL_KEY_FAVOURITES
-                val allIsTarget = effectiveOpenKey == RAIL_KEY_ALL_CHANNELS
-                if (showFavouritesCategory) {
-                    item {
-                        RailEntry(
+                // The rail's FocusRequester goes on the row [railFocusTargetIndex] names — the entry
+                // the open handler chose (the playing channel's category) — and not on the guide's
+                // current selection: the two differ whenever the guide sits on Favourites or another
+                // category, which is exactly the "rail opens on Favourites" bug.
+                val railTargetIndex = railFocusTargetIndex()
+                itemsIndexed(railRows, key = { _, row -> row.key }) { index, row ->
+                    val entryModifier =
+                        if (index == railTargetIndex) Modifier.focusRequester(railFocusRequester) else Modifier
+                    when (row) {
+                        is RailRow.Favourites -> RailEntry(
                             label = stringResource(R.string.guide_favourites),
                             selected = favouritesOnly,
                             onFocused = {
@@ -1049,26 +997,30 @@ fun HomeScreen(
                                 runCatching { guideFocusRequester.requestFocus() }
                                 pendingGuideFocus = true
                             },
-                            modifier = if (favouritesIsTarget || (effectiveOpenKey == null && (selectedOnFavourites || focusFirstFavourites))) Modifier.focusRequester(railFocusRequester) else Modifier,
+                            modifier = entryModifier,
                         )
-                    }
-                }
-                if (showAllChannelsCategory) {
-                    item {
-                        val allSelected = !favouritesOnly && selectedCategory == null
-                        RailEntry(
-                            label = stringResource(R.string.guide_all_channels),
-                            selected = allSelected,
+                        is RailRow.SourceHeader -> RailEntry(
+                            label = row.name,
+                            selected = false,
+                            // Collapsing a group must not close the rail or move the guide: the user
+                            // is tidying the sidebar, not choosing something to watch.
+                            onClick = { viewModel.toggleSourceCollapsed(row.sourceId) },
+                            modifier = entryModifier,
+                            expanded = row.expanded,
+                        )
+                        is RailRow.Category -> RailEntry(
+                            label = row.group.label,
+                            selected = !favouritesOnly && selectedCategory == row.group.key,
                             onFocused = {
-                                if (suppressRailPreviewSelection && railOpenFocusKey != RAIL_KEY_ALL_CHANNELS) {
+                                if (suppressRailPreviewSelection && railOpenFocusKey != row.group.key) {
                                     return@RailEntry
                                 }
-                                viewModel.selectCategory(null)
+                                viewModel.selectCategory(row.group.key)
                                 suppressRailPreviewSelection = false
                                 railPreviewing = true
                             },
                             onClick = {
-                                viewModel.selectCategory(null)
+                                viewModel.selectCategory(row.group.key)
                                 railPreviewing = false
                                 railExpanded = false
                                 suppressRailPreviewSelection = false
@@ -1076,34 +1028,10 @@ fun HomeScreen(
                                 runCatching { guideFocusRequester.requestFocus() }
                                 pendingGuideFocus = true
                             },
-                            modifier = if (allIsTarget || (effectiveOpenKey == null && (selectedOnAll || focusFirstAll))) Modifier.focusRequester(railFocusRequester) else Modifier,
+                            modifier = entryModifier,
+                            nested = true,
                         )
                     }
-                }
-                items(categories, key = { it.key }) { group ->
-                    val groupSelected = !favouritesOnly && selectedCategory == group.key
-                    RailEntry(
-                        label = group.label,
-                        selected = groupSelected,
-                        onFocused = {
-                            if (suppressRailPreviewSelection && railOpenFocusKey != group.key) {
-                                return@RailEntry
-                            }
-                            viewModel.selectCategory(group.key)
-                            suppressRailPreviewSelection = false
-                            railPreviewing = true
-                        },
-                        onClick = {
-                            viewModel.selectCategory(group.key)
-                            railPreviewing = false
-                            railExpanded = false
-                            suppressRailPreviewSelection = false
-                            guideRestoreTick++
-                            runCatching { guideFocusRequester.requestFocus() }
-                            pendingGuideFocus = true
-                        },
-                        modifier = if (effectiveOpenKey == group.key || (effectiveOpenKey == null && (groupSelected || (!selectionHasRailEntry && !focusFirstFavourites && !focusFirstAll && categories.firstOrNull()?.key == group.key)))) Modifier.focusRequester(railFocusRequester) else Modifier,
-                    )
                 }
             }
         }
@@ -1818,10 +1746,42 @@ private fun QualityChip(label: String, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
-// Stable rail-entry keys: category groups use their non-empty group key; favourites and the
-// all-channels pseudo entries use these sentinels while preview suppression is active.
+/**
+ * One row of the guide's sidebar, in the order it is drawn.
+ *
+ * The sidebar is a tree — a header per playlist with its categories under it — but a LazyColumn needs
+ * a flat list, and the scroll/focus indices are only right if that flat list is the single source of
+ * truth. Building it once and indexing it replaces the arithmetic that used to add a fixed number of
+ * rows for the provider section, which was wrong the moment a collapsed group changed the row count.
+ */
+private sealed interface RailRow {
+    /** Stable identity for LazyColumn's keying; the focus/scroll code matches on it too. */
+    val key: String
+
+    /** The Favourites shortlist, drawn first when the setting is on. */
+    data object Favourites : RailRow {
+        override val key: String = RAIL_KEY_FAVOURITES
+    }
+
+    /** One playlist; [expanded] decides whether its categories are drawn beneath it. */
+    data class SourceHeader(
+        val sourceId: Long,
+        val name: String,
+        val expanded: Boolean,
+    ) : RailRow {
+        override val key: String = "rail:source:$sourceId"
+    }
+
+    /** A category that [sourceId] contributes. */
+    data class Category(val sourceId: Long, val group: ChannelsViewModel.CategoryGroup) : RailRow {
+        override val key: String = "rail:category:$sourceId:${group.key}"
+    }
+}
+
+// Stable rail-entry keys: category groups use their non-empty group key; favourites uses this
+// sentinel while preview suppression is active. There is no all-channels sentinel: the rail has no
+// such entry.
 private const val RAIL_KEY_FAVOURITES = "rail:favourites"
-private const val RAIL_KEY_ALL_CHANNELS = "rail:all-channels"
 
 @Composable
 private fun RailEntry(
@@ -1830,17 +1790,18 @@ private fun RailEntry(
     onClick: () -> Unit,
     onFocused: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    /**
+     * null = a plain entry. Otherwise this row is a playlist group header, and the value says whether
+     * its categories are drawn — a chevron at the end, so a collapsed group is still visible as one
+     * even though its children are gone.
+     */
+    expanded: Boolean? = null,
+    /** Drawn beneath a group header — indented so the sidebar reads as a tree. */
+    nested: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
-    Text(
-        text = label,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Medium,
-        color = if (focused) Color(0xFF10171E)
-        else if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
             .onFocusChanged {
@@ -1859,8 +1820,34 @@ private fun RailEntry(
             )
             .focusable()
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    )
+            .padding(
+                start = if (nested) 24.dp else 12.dp,
+                end = 12.dp,
+                top = 10.dp,
+                bottom = 10.dp,
+            ),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (focused) Color(0xFF10171E)
+            else if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (expanded != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (expanded) "▾" else "▸",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (focused) Color(0xFF10171E)
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable

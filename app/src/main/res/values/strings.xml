@@ -33,7 +33,6 @@
     <!-- ============================ Live TV guide / home ============================ -->
     <string name="guide_search_channels">🔍  Search channels</string>
     <string name="guide_favourites">★ Favorites</string>
-    <string name="guide_all_channels">All channels</string>
     <string name="guide_watch_from_start">▶  Watch from start (catch-up)</string>
     <string name="guide_catchup_link_failed">Couldn\'t build the catch-up link</string>
     <string name="guide_cancel_reminder">🔔  Cancel reminder</string>
@@ -224,8 +223,6 @@
     <string name="settings_about_subtitle">Version, updates, licence and links</string>
     <string name="settings_show_fav_category_title">Favourites category</string>
     <string name="settings_show_fav_category_subtitle">Show the Favourites entry in the guide\'s category list</string>
-    <string name="settings_show_all_category_title">All channels category</string>
-    <string name="settings_show_all_category_subtitle">Show the All Channels entry in the guide\'s category list</string>
     <string name="settings_pick_from_menu">Choose a section from the menu on the left</string>
 
     <!-- ============================ Display & playback settings ============================ -->
@@ -521,7 +518,6 @@
     <string name="vod_no_shows_provider">This provider didn\'t return any shows.</string>
     <string name="vod_no_shows_add">Add a provider to see its shows here.</string>
     <string name="vod_loading_episodes">Loading episodes…</string>
-    <string name="vod_all">All</string>
     <string name="vod_search_hint">Search movies &amp; shows</string>
     <string name="vod_continue_watching">Continue watching</string>
     <string name="vod_large_provider_note">A large provider can take a couple of minutes the first time.</string>

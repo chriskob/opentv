@@ -5,6 +5,7 @@
  */
 package app.opentv.ui.vod
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -90,7 +91,9 @@ fun MoviesScreen(
     val genreRows by viewModel.movieGenreRows.collectAsState()
     val categoryMovies by viewModel.movies.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
-    val sources by viewModel.sources.collectAsState()
+    // Only the providers made of films: a playlist added for live TV alone has nothing to browse
+    // here, so it must not appear in this rail's filter.
+    val providers by viewModel.movieSources.collectAsState()
     val selectedSource by viewModel.selectedVodSource.collectAsState()
 
     // Pull the movie library the first time this tab is opened, not at login; refresh the computed
@@ -102,6 +105,12 @@ fun MoviesScreen(
 
     // null = the curated home rows; a category id = that category's full grid.
     var browseCategory by remember { mutableStateOf<String?>(null) }
+
+    // BACK returns from a category to the shelves. The rail has no "All" row to do it — that entry
+    // was removed because the unfiltered list behind it pulled the whole library in one go — so the
+    // way out has to be explicit. Declared here so it takes precedence over MainScreen's handler
+    // only while a category is actually open.
+    BackHandler(enabled = browseCategory != null) { browseCategory = null }
 
     val hasContent = resume.isNotEmpty() || recommended.isNotEmpty() ||
         recentlyAdded.isNotEmpty() || genreRows.isNotEmpty()
@@ -140,14 +149,13 @@ fun MoviesScreen(
             // The category side menu — the same rail the Live TV guide uses, so whole-category
             // browsing looks and behaves identically in every section.
             VodCategoryRail(
-                providers = if (sources.size > 1) sources else emptyList(),
+                providers = if (providers.size > 1) providers else emptyList(),
                 selectedProvider = selectedSource,
                 onSelectProviderAll = { browseCategory = null; viewModel.selectVodSource(null) },
                 onSelectProvider = { id -> browseCategory = null; viewModel.selectVodSource(id) },
                 categories = categories.map { it.id to it.name },
                 categoryCounts = categoryCounts,
                 selectedCategory = browseCategory,
-                onSelectHome = { browseCategory = null },
                 onSelectCategory = { id -> browseCategory = id; viewModel.selectMovieCategory(id) },
                 modifier = Modifier.align(Alignment.TopStart),
             )
@@ -177,7 +185,9 @@ fun SeriesScreen(
     val genreRows by viewModel.seriesGenreRows.collectAsState()
     val categorySeries by viewModel.series.collectAsState()
     val vodLoading by viewModel.vodLoading.collectAsState()
-    val sources by viewModel.sources.collectAsState()
+    // Only the providers made of shows: a playlist added for live TV, or for its films alone, has
+    // nothing to browse here, so it must not appear in this rail's filter.
+    val providers by viewModel.seriesSources.collectAsState()
     val selectedSource by viewModel.selectedVodSource.collectAsState()
 
     LaunchedEffect(Unit) {
@@ -186,6 +196,9 @@ fun SeriesScreen(
     }
 
     var browseCategory by remember { mutableStateOf<String?>(null) }
+
+    // BACK returns from a category to the shelves — see MoviesScreen: there is no "All" row to do it.
+    BackHandler(enabled = browseCategory != null) { browseCategory = null }
 
     val hasContent = resume.isNotEmpty() || recentlyAdded.isNotEmpty() || genreRows.isNotEmpty()
 
@@ -218,14 +231,13 @@ fun SeriesScreen(
                 }
             }
             VodCategoryRail(
-                providers = if (sources.size > 1) sources else emptyList(),
+                providers = if (providers.size > 1) providers else emptyList(),
                 selectedProvider = selectedSource,
                 onSelectProviderAll = { browseCategory = null; viewModel.selectVodSource(null) },
                 onSelectProvider = { id -> browseCategory = null; viewModel.selectVodSource(id) },
                 categories = categories.map { it.id to it.name },
                 categoryCounts = categoryCounts,
                 selectedCategory = browseCategory,
-                onSelectHome = { browseCategory = null },
                 onSelectCategory = { id -> browseCategory = id; viewModel.selectSeriesCategory(id) },
                 modifier = Modifier.align(Alignment.TopStart),
             )
@@ -543,11 +555,16 @@ private val VOD_RAIL_WIDTH = 240.dp
 /**
  * The Movies/Shows category list as a LEFT SIDE MENU, mirroring the Live TV guide's rail:
  * the same 240dp column, the same rounded row styling and focus treatment, and the same order —
- * providers first (only when more than one is configured), then "All" and one row per category.
+ * providers first (only when more than one is configured), then one row per category.
+ *
+ * There is deliberately no "All" row. It existed, and selecting it ran an unfiltered query that
+ * returned every title of every provider as a single list — tens of thousands of rows — which is
+ * what made the box crawl. With it gone a grid is always exactly one category's worth of titles.
  *
  * The guide's rail is hidden until LEFT is pressed; here it stays visible so whole-category
- * browsing is one press away from the shelves. The content beside it is declared before this in
- * the composition, so it keeps the d-pad on entry — the rail never steals focus.
+ * browsing is one press away from the shelves — and BACK from an open category returns there. The
+ * content beside the rail is declared before this in the composition, so it keeps the d-pad on
+ * entry — the rail never steals focus.
  *
  * Each category carries its title count ("Action · 1,234") so the size of a category is visible
  * before opening it — the number a viewer actually picks a category by. [categoryCounts] is keyed
@@ -562,7 +579,6 @@ private fun VodCategoryRail(
     categories: List<Pair<String, String>>,
     categoryCounts: Map<String, Int>,
     selectedCategory: String?,
-    onSelectHome: () -> Unit,
     onSelectCategory: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -595,15 +611,6 @@ private fun VodCategoryRail(
             item(key = "rail-provider-divider") { Spacer(Modifier.height(10.dp)) }
         }
         item(key = "rail-categories") { RailSectionLabel(stringResource(R.string.vod_categories)) }
-        item(key = "rail-category-all") {
-            VodRailEntry(
-                label = stringResource(R.string.vod_all),
-                // The whole library, so the "All" row answers "how much is there" without opening it.
-                count = categoryCounts.values.sum().takeIf { categoryCounts.isNotEmpty() },
-                selected = selectedCategory == null,
-                onClick = onSelectHome,
-            )
-        }
         items(categories, key = { "rail-category:${it.first}" }) { (id, name) ->
             VodRailEntry(
                 label = name,

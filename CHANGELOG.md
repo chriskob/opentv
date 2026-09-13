@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.12.91
+
+- **Category lists are strictly scoped by content type.** A playlist added as Movies or Shows — with
+  TV channels unticked — could still put its categories, and its name, in the TV lists. The rule
+  existed in exactly one list (the guide's) and was simply missing from the channel manager's and
+  from both VOD category lists, so they disagreed about what belonged in them. All four lists now
+  share one rule, keyed on each playlist's own Channels/Movies/Shows boxes, and each provider filter
+  offers only the playlists that actually carry that content.
+- **The "All" entry is gone from every category list** — TV, Movies and Shows. Selecting it ran an
+  unfiltered query that returned every title of every provider as a single list, which is what made
+  the box crawl. Movies and Shows now load nothing until a category is picked, and the guide lands
+  on its first category instead of an unfiltered state. BACK out of an open category returns to the
+  Movies/Shows shelves.
+- **The TV sidebar groups each playlist's categories under it, collapsible.** Each source is a header
+  with a chevron; clicking it folds or unfolds its categories without changing what the guide shows,
+  and the collapsed state persists. The old provider filter block is gone — the playlists are the
+  groups now. Scroll and focus positions are read off the list that is actually drawn, so opening
+  the rail on the playing channel's category stays exact however many groups are folded.
+
 ## 0.12.90
 
 - **Thirty translations became two.** OpenTV now ships English and Polish only. Thirty

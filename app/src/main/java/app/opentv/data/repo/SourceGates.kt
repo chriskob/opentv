@@ -32,4 +32,40 @@ object SourceGates {
     /** True when either VOD half is wanted for this playlist — i.e. a VOD pass is worth running. */
     fun anyVod(moviesEnabled: Boolean, seriesEnabled: Boolean, source: Source): Boolean =
         movies(moviesEnabled, source) || series(seriesEnabled, source)
+
+    /**
+     * Which of the three catalogues a list is being built for.
+     *
+     * Distinct from the global toggles: [live]/[movies]/[series] answer "may we *fetch* this?",
+     * while this answers "may this playlist's name appear in *this* list?". A playlist the user
+     * added for its films only must not put its name or its categories into the TV lists — the
+     * picker is per-catalogue, so its membership has to be too.
+     */
+    enum class ContentType { LIVE, MOVIES, SERIES }
+
+    /**
+     * Whether [source] contributes anything to the [contentType] catalogue, by the playlist's own
+     * boxes alone.
+     *
+     * Deliberately ignores the app-wide Content toggles. Those decide what the app fetches; this
+     * decides what a playlist is *made of*. Folding the global toggle in here would make switching
+     * the Movies section off empty the Movies provider list, and switching it back on refill it —
+     * a list whose membership depends on an unrelated switch.
+     */
+    fun contributes(contentType: ContentType, source: Source): Boolean = when (contentType) {
+        ContentType.LIVE -> source.includeLive
+        ContentType.MOVIES -> source.includeVod
+        ContentType.SERIES -> source.includeSeries
+    }
+
+    /**
+     * The ids of the playlists allowed to contribute to [contentType].
+     *
+     * The callers scope category rows by membership in this set rather than by re-deriving the
+     * rule: "exclude the playlists whose Channels box is off" was written out inline in one list
+     * and simply omitted from another (the channel manager), so that list kept showing a
+     * films-only playlist's categories. One rule, one place.
+     */
+    fun contributingSourceIds(contentType: ContentType, sources: List<Source>): Set<Long> =
+        sources.filter { contributes(contentType, it) }.map { it.id }.toSet()
 }

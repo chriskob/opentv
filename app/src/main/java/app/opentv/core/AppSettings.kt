@@ -63,10 +63,6 @@ class AppSettings private constructor(context: Context) {
     private val _showFavouritesCategory = MutableStateFlow(prefs.getBoolean(KEY_SHOW_FAV_CATEGORY, true))
     val showFavouritesCategory: StateFlow<Boolean> = _showFavouritesCategory.asStateFlow()
 
-    /** Whether the guide's category rail shows the All Channels entry (hidden by default). */
-    private val _showAllChannelsCategory = MutableStateFlow(prefs.getBoolean(KEY_SHOW_ALL_CATEGORY, false))
-    val showAllChannelsCategory: StateFlow<Boolean> = _showAllChannelsCategory.asStateFlow()
-
     /** Whether the guide preview plays sound (on by default so audio continues playing). */
     private val _guidePreviewSound = MutableStateFlow(prefs.getBoolean(KEY_PREVIEW_SOUND, true))
     val guidePreviewSound: StateFlow<Boolean> = _guidePreviewSound.asStateFlow()
@@ -178,6 +174,22 @@ class AppSettings private constructor(context: Context) {
     val hiddenCategories: StateFlow<Set<String>> = _hiddenCategories.asStateFlow()
 
     /**
+     * Playlists whose group the user has collapsed in the guide's sidebar, as source ids.
+     *
+     * Stored collapsed rather than expanded on purpose: the empty set — every playlist expanded —
+     * is both the default and the behaviour the sidebar had before groups existed, so an existing
+     * install and a fresh one look the same until the user collapses something.
+     */
+    private val _collapsedSources =
+        MutableStateFlow(prefs.getStringSet(KEY_COLLAPSED_SOURCES, emptySet())!!.toSet())
+    val collapsedSources: StateFlow<Set<String>> = _collapsedSources.asStateFlow()
+
+    fun setCollapsedSources(ids: Set<String>) {
+        prefs.edit().putStringSet(KEY_COLLAPSED_SOURCES, ids).apply()
+        _collapsedSources.value = ids.toSet()
+    }
+
+    /**
      * Session unlock. Deliberately *not* persisted: revealing hidden categories lasts until the
      * app is next launched, so a child restarting the app is back behind the lock.
      */
@@ -243,11 +255,6 @@ class AppSettings private constructor(context: Context) {
     fun setShowFavouritesCategory(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_FAV_CATEGORY, enabled).apply()
         _showFavouritesCategory.value = enabled
-    }
-
-    fun setShowAllChannelsCategory(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_SHOW_ALL_CATEGORY, enabled).apply()
-        _showAllChannelsCategory.value = enabled
     }
 
     fun setGuidePreviewSound(enabled: Boolean) {
@@ -800,7 +807,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_SUBTITLES = "subtitles_enabled"
         private const val KEY_PREVIEW_VIDEO = "guide_preview_video"
         private const val KEY_SHOW_FAV_CATEGORY = "guide_show_fav_category"
-        private const val KEY_SHOW_ALL_CATEGORY = "guide_show_all_category"
+        private const val KEY_COLLAPSED_SOURCES = "guide_collapsed_sources"
         private const val KEY_PREVIEW_SOUND = "guide_preview_sound"
         private const val KEY_GUIDE_RESET_ON_OPEN = "guide_reset_on_open"
         private const val KEY_PIN_HASH = "parental_pin_hash"
