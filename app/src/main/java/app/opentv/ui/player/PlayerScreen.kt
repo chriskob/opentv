@@ -58,7 +58,6 @@ import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.HighQuality
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LiveTv
@@ -136,6 +135,8 @@ import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.core.CatchupResolver
 import app.opentv.core.DisplayRefresh
+import app.opentv.core.RecentChannelRef
+import app.opentv.core.RecentChannels
 import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
@@ -260,7 +261,7 @@ fun PlayerScreen(
     var currentProg by remember { mutableStateOf<Programme?>(null) }
     var nextProg by remember { mutableStateOf<Programme?>(null) }
     var queueProgrammes by remember { mutableStateOf<Map<Long, Programme>>(emptyMap()) }
-    val recentChannelIds by settings.recentChannelIds.collectAsState()
+    val recentChannelRefs by settings.recentChannelRefs.collectAsState()
     var recentChannels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -467,7 +468,7 @@ fun PlayerScreen(
         currentChannel = channel
         paused = false
         settings.lastChannelId = channel.id
-        settings.recordChannelWatched(channel.id)
+        settings.recordChannelWatched(channel.sourceId, channel.streamId)
         onChannelChange?.invoke(channel.id)
         scope.launch {
             val (source, url) = withContext(Dispatchers.IO) {
@@ -523,7 +524,7 @@ fun PlayerScreen(
             currentChannel = target
             paused = false
             settings.lastChannelId = target.id
-            settings.recordChannelWatched(target.id)
+            settings.recordChannelWatched(target.sourceId, target.streamId)
             onChannelChange?.invoke(target.id)
 
             controller.play(
@@ -677,16 +678,38 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(recentChannelIds, currentId) {
+    LaunchedEffect(recentChannelRefs, currentId) {
         withContext(Dispatchers.IO) {
-            val ids = (listOfNotNull(currentId) + recentChannelIds).distinct()
-            val loaded = ids.mapNotNull { graph.catalogRepository.channel(it) }
-            // Ids that resolve to nothing are channels the database no longer holds — pruned by a
-            // sync, or rebuilt under new ids. They can never come back, so forget them rather than
-            // let them hold a slot in the history for good.
-            val resolved = loaded.mapTo(mutableSetOf()) { it.id }
-            val dead = recentChannelIds.filterNot { it in resolved }
+            // Bring the history across from the row ids older versions stored, once. Ids a sync has
+            // already invalidated cannot be converted to refs and are dropped — they were lost
+            // already, and there is nothing left to point at.
+            val legacyIds = settings.legacyRecentChannelIds()
+            if (legacyIds.isNotEmpty()) {
+                val byId = graph.catalogRepository.channelsByIds(legacyIds).associateBy { it.id }
+                settings.adoptRecentChannelRefs(
+                    legacyIds.mapNotNull { id ->
+                        byId[id]?.let { RecentChannelRef(it.sourceId, it.streamId) }
+                    },
+                )
+            }
+
+            // The channel playing now leads the bar even when it is not in the history yet: opened
+            // straight from the guide, or the history was cleared while it played.
+            val current = currentId?.let { graph.catalogRepository.channel(it) }
+            val currentRef = current?.let { RecentChannelRef(it.sourceId, it.streamId) }
+            val refs = (listOfNotNull(currentRef) + recentChannelRefs).distinct()
+            val loaded = graph.catalogRepository.channelsForRefs(refs)
+
+            // Only entries whose playlist has been deleted are retired. A channel the catalogue does
+            // not hold this instant is not gone — the next sync brings it back, and a ref resolves
+            // it there just as well because a ref is not the row id. Sweeping on absence, which is
+            // what this used to do, is what emptied this bar of channels that were still there.
+            val dead = RecentChannels.refsToForget(
+                recentChannelRefs,
+                graph.catalogRepository.existingSourceIds(),
+            )
             if (dead.isNotEmpty()) settings.forgetRecentChannels(dead)
+
             withContext(Dispatchers.Main) {
                 recentChannels = loaded
             }
@@ -969,8 +992,11 @@ fun PlayerScreen(
                         // instances before reaching for the watch history.
                         val targetId = previousId
                             ?: PlaybackQueue.previousChannelId.takeIf { it > 0L && it != currentId }
+                            // Resolved channels only. This used to fall back to a raw stored id when
+                            // the bar had not resolved yet — the very kind of id that goes stale when
+                            // a sync rebuilds a row, so the fallback could only fail when it mattered
+                            // (see core/RecentChannels.kt).
                             ?: recentChannels.firstOrNull { it.id != currentId }?.id
-                            ?: recentChannelIds.firstOrNull { it != currentId }
                         if (targetId != null && targetId != currentId) {
                             playChannelId(targetId)
                         }
@@ -1471,19 +1497,10 @@ fun PlayerScreen(
                                 )
                             }
 
-                            // Card 2: History (Last channel)
-                            item(key = "quick-history") {
-                                QuickActionCard(
-                                    icon = Icons.Filled.History,
-                                    label = stringResource(R.string.player_history),
-                                    onClick = {
-                                        val targetId = previousId ?: recentChannels.firstOrNull { it.id != currentId }?.id
-                                        if (targetId != null) playChannelId(targetId)
-                                    },
-                                )
-                            }
-
-                            // Cards 3+: Watched Channels History (newest first)
+                            // Cards 2+: Watched Channels History (newest first). The "History" card
+                            // that used to open with this one jumped to the previous channel; the
+                            // carousel already lists every channel in that history, and left/right
+                            // on the remote still tunes to the previous one.
                             itemsIndexed(recentChannels, key = { _, ch -> "recent-ch-${ch.id}" }) { _, ch ->
                                 QuickChannelCard(
                                     channel = ch,
@@ -1491,7 +1508,9 @@ fun PlayerScreen(
                                     isCurrent = ch.id == currentId,
                                     onClick = { playChannelId(ch.id) },
                                     onLongClick = {
-                                        settings.forgetRecentChannels(listOf(ch.id))
+                                        settings.forgetRecentChannels(
+                                            listOf(RecentChannelRef(ch.sourceId, ch.streamId)),
+                                        )
                                         Toast.makeText(
                                             context,
                                             context.getString(R.string.history_removed, ch.shownName),

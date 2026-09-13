@@ -115,7 +115,6 @@
 
     <!-- ============================ Player controls ============================ -->
     <string name="player_tv_guide">TV guide</string>
-    <string name="player_history">History</string>
     <string name="player_rewind">Rewind</string>
     <string name="player_play">Play</string>
     <string name="player_pause">Pause</string>

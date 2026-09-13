@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.util.Log
 import app.opentv.core.AppSettings
 import app.opentv.core.HeavyWork
+import app.opentv.core.RecentChannelRef
 import app.opentv.data.db.CategoryDao
 import app.opentv.data.db.ChannelDao
 import app.opentv.data.db.EpisodeDao
@@ -199,6 +200,30 @@ class CatalogRepository(
     fun searchSeries(query: String): Flow<List<Series>> = seriesDao.search(query)
 
     suspend fun channel(id: Long): Channel? = channelDao.byId(id)
+
+    /**
+     * The channels behind the player's watched-channel history, in the order the refs are given
+     * (newest first), skipping any that the catalogue does not currently hold.
+     *
+     * A skipped ref is not forgotten here — see [app.opentv.core.RecentChannels.refsToForget] for
+     * why a channel being absent right now is not the same as it being gone.
+     */
+    suspend fun channelsForRefs(refs: List<RecentChannelRef>): List<Channel> {
+        if (refs.isEmpty()) return emptyList()
+        val rows = channelDao.byRefs(
+            sourceIds = refs.map { it.sourceId }.distinct(),
+            streamIds = refs.map { it.streamId }.distinct(),
+        )
+        val byRef = rows.associateBy { RecentChannelRef(it.sourceId, it.streamId) }
+        return refs.mapNotNull { byRef[it] }
+    }
+
+    /** Several channels at once, for the one-time upgrade of an id-based history to refs. */
+    suspend fun channelsByIds(ids: List<Long>): List<Channel> =
+        if (ids.isEmpty()) emptyList() else channelDao.byIds(ids)
+
+    /** Every source id on disk, for telling a deleted playlist apart from a missing channel. */
+    suspend fun existingSourceIds(): Set<Long> = sourceDao.allIds().toSet()
 
     suspend fun movie(id: Long): Movie? = movieDao.byId(id)
 

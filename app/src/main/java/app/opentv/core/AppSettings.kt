@@ -94,57 +94,76 @@ class AppSettings private constructor(context: Context) {
         get() = prefs.getBoolean(KEY_LAST_FAVOURITES_ONLY, false)
         set(value) = prefs.edit().putBoolean(KEY_LAST_FAVOURITES_ONLY, value).apply()
 
-    /** Channel watch history, ordered newest first. */
-    private val _recentChannelIds = MutableStateFlow(readRecentChannelIds())
-    val recentChannelIds: StateFlow<List<Long>> = _recentChannelIds.asStateFlow()
+    /** Channel watch history, ordered newest first. See [RecentChannels] for why these are refs. */
+    private val _recentChannelRefs = MutableStateFlow(readRecentChannelRefs())
+    val recentChannelRefs: StateFlow<List<RecentChannelRef>> = _recentChannelRefs.asStateFlow()
 
-    private fun readRecentChannelIds(): List<Long> {
-        val raw = prefs.getString(KEY_RECENT_CHANNELS, null) ?: return emptyList()
-        return raw.split(",").mapNotNull { it.trim().toLongOrNull() }
-    }
+    private fun readRecentChannelRefs(): List<RecentChannelRef> =
+        RecentChannels.decode(prefs.getString(KEY_RECENT_CHANNEL_REFS, null))
 
-    fun recordChannelWatched(channelId: Long) {
-        val current = readRecentChannelIds().toMutableList()
-        current.remove(channelId)
-        current.add(0, channelId)
-        val trimmed = current.take(30)
-        prefs.edit().putString(KEY_RECENT_CHANNELS, trimmed.joinToString(",")).apply()
-        _recentChannelIds.value = trimmed
+    fun recordChannelWatched(sourceId: Long, streamId: String) {
+        val ref = RecentChannelRef(sourceId, streamId)
+        val current = readRecentChannelRefs().toMutableList()
+        current.remove(ref)
+        current.add(0, ref)
+        val trimmed = current.take(RecentChannels.LIMIT)
+        prefs.edit().putString(KEY_RECENT_CHANNEL_REFS, RecentChannels.encode(trimmed)).apply()
+        _recentChannelRefs.value = trimmed
     }
 
     fun clearRecentChannels() {
-        prefs.edit().remove(KEY_RECENT_CHANNELS).apply()
-        _recentChannelIds.value = emptyList()
+        prefs.edit().remove(KEY_RECENT_CHANNEL_REFS).remove(KEY_RECENT_CHANNELS_LEGACY).apply()
+        _recentChannelRefs.value = emptyList()
     }
 
     /**
-     * Drops one channel from the history: the long-press "forget this" in the player.
-     * See [forgetRecentChannels] for why removal exists at all.
+     * Row ids left in prefs by the versions that stored them, newest first, for the one-time upgrade
+     * to [RecentChannelRef]. Empty as soon as the new key exists, so calling it is always safe.
+     *
+     * Turning an id into a ref needs the database, so that half happens at the call site (see
+     * PlayerScreen). An id that no longer resolves is simply dropped: it cannot be turned into a ref
+     * and was already lost.
      */
-    fun forgetRecentChannel(channelId: Long) = forgetRecentChannels(listOf(channelId))
+    fun legacyRecentChannelIds(): List<Long> {
+        if (prefs.contains(KEY_RECENT_CHANNEL_REFS)) return emptyList()
+        val raw = prefs.getString(KEY_RECENT_CHANNELS_LEGACY, null) ?: return emptyList()
+        return raw.split(",").mapNotNull { it.trim().toLongOrNull() }
+    }
+
+    /** Finishes the upgrade started by [legacyRecentChannelIds] and retires the old key. */
+    fun adoptRecentChannelRefs(refs: List<RecentChannelRef>) {
+        val trimmed = refs.distinct().take(RecentChannels.LIMIT)
+        prefs.edit()
+            .putString(KEY_RECENT_CHANNEL_REFS, RecentChannels.encode(trimmed))
+            .remove(KEY_RECENT_CHANNELS_LEGACY)
+            .apply()
+        _recentChannelRefs.value = trimmed
+    }
 
     /**
-     * Drops several channels at once, in a single write.
+     * Drops channels from the history, in a single write: the long-press "forget this" in the
+     * player, and the sweep that retires entries belonging to a playlist that has been deleted.
      *
-     * History stores channel *row ids*, and a guide sync can delete those rows — `lastSeenMillis
-     * < syncStamp` prunes channels the provider dropped, and re-syncing a source clears the table
-     * outright while `id` is `autoGenerate`. An id that survives such a sync can therefore resolve
-     * to nothing. Those dead ids used to sit in the list forever, still counting against the
-     * 30-entry cap, so they slowly pushed watchable channels off the end of the bar. Sweeping them
-     * out is what keeps the bar showing channels that are actually still there.
+     * Note what this is *not* for. The id-based history this replaced also swept every entry whose
+     * channel failed to resolve at that instant, on the premise that such an id could "never come
+     * back". It can. `id` is `autoGenerate`, and a channel the provider omits for one sync is
+     * re-inserted under a new id when it returns, so that sweep destroyed the history of channels
+     * which were still in the catalogue — which is why channels used to vanish from the bar.
+     * Refs removed the cause; what is left retires only what is provably gone (see
+     * [RecentChannels.refsToForget]).
      */
-    fun forgetRecentChannels(channelIds: Collection<Long>) {
-        val drop = channelIds.toSet()
+    fun forgetRecentChannels(refs: Collection<RecentChannelRef>) {
+        val drop = refs.toSet()
         if (drop.isEmpty()) return
-        val current = readRecentChannelIds()
+        val current = readRecentChannelRefs()
         val kept = current.filterNot { it in drop }
         if (kept.size == current.size) return
         if (kept.isEmpty()) {
-            prefs.edit().remove(KEY_RECENT_CHANNELS).apply()
+            prefs.edit().remove(KEY_RECENT_CHANNEL_REFS).apply()
         } else {
-            prefs.edit().putString(KEY_RECENT_CHANNELS, kept.joinToString(",")).apply()
+            prefs.edit().putString(KEY_RECENT_CHANNEL_REFS, RecentChannels.encode(kept)).apply()
         }
-        _recentChannelIds.value = kept
+        _recentChannelRefs.value = kept
     }
 
     // ---- Parental controls -------------------------------------------------------------------
@@ -801,7 +820,10 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_PAD_END = "rec_pad_end_min"
         private const val KEY_REC_AUTOSWITCH = "rec_auto_switch"
         private const val KEY_LIVE_PAUSE = "live_pause_enabled"
-        private const val KEY_RECENT_CHANNELS = "recent_watched_channels"
+        private const val KEY_RECENT_CHANNEL_REFS = "recent_watched_channel_refs"
+
+        /** The id list written by versions that stored row ids. Read once to upgrade, then removed. */
+        private const val KEY_RECENT_CHANNELS_LEGACY = "recent_watched_channels"
         private const val KEY_PLAYLIST_REFRESH_HOURS = "playlist_refresh_hours"
         private const val KEY_EPG_REFRESH_HOURS = "epg_refresh_hours"
         private const val KEY_LAST_GUIDE_UPDATED = "last_guide_updated_millis"

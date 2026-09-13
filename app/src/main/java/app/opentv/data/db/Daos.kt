@@ -44,6 +44,14 @@ interface SourceDao {
     @Query("SELECT * FROM sources WHERE id = :id")
     suspend fun byId(id: Long): Source?
 
+    /**
+     * Every source id on disk. Lets the player tell a history entry whose playlist has been deleted
+     * (gone for good) apart from one whose channel the provider merely left out of a sync (coming
+     * back). See [app.opentv.core.RecentChannels.refsToForget].
+     */
+    @Query("SELECT id FROM sources")
+    suspend fun allIds(): List<Long>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(source: Source): Long
 
@@ -164,6 +172,20 @@ interface ChannelDao {
 
     @Query("SELECT * FROM channels WHERE id = :id")
     suspend fun byId(id: Long): Channel?
+
+    /** Several channels at once: upgrades the old id-based history to refs in one round trip. */
+    @Query("SELECT * FROM channels WHERE id IN (:ids)")
+    suspend fun byIds(ids: List<Long>): List<Channel>
+
+    /**
+     * The channels behind a set of history refs (see [app.opentv.core.RecentChannelRef]).
+     *
+     * SQL can only be asked for "these sources and these stream ids", not for the *pairs*, so the
+     * caller matches exact pairs afterwards. Still one indexed query per resolve rather than one per
+     * entry, and stream ids are only unique within a source, so sourceId has to be part of it.
+     */
+    @Query("SELECT * FROM channels WHERE sourceId IN (:sourceIds) AND streamId IN (:streamIds)")
+    suspend fun byRefs(sourceIds: List<Long>, streamIds: List<String>): List<Channel>
 
     /** Every quality variant of one logical channel, best first. */
     @Query(
