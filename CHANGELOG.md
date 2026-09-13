@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.92
+
+- **About → Update now updates in place instead of refusing.** The download was handed to whatever
+  package screen the device has, and Fire OS treated it as a brand-new install — "app already
+  installed". The APK is now committed through the platform's install session, which is an update by
+  definition: it replaces the installed app and leaves every setting, playlist, favourite and profile
+  exactly where it was. The old screen route remains as a fallback, now explicitly asking to replace.
+
 ## 0.12.91
 
 - **Category lists are strictly scoped by content type.** A playlist added as Movies or Shows — with

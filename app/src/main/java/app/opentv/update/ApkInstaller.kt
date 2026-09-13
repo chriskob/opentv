@@ -5,11 +5,16 @@
  */
 package app.opentv.update
 
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -122,25 +127,40 @@ class ApkInstaller(private val http: OkHttpClient) {
             return Outcome.NeedsUnknownSourcesPermission
         }
 
-        val uri: Uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            apk,
-        )
+        // Commit through the platform's PackageInstaller first. An install session is an
+        // *update* by definition: it replaces the installed package in place and leaves its
+        // data — settings, playlists, profile — untouched. The launcher-intent path below hands
+        // the APK to whatever package screen the device has, and several of those (Fire OS's
+        // in particular) treat the download as a brand-new install and refuse with
+        // "app already installed" unless the caller asked to replace. Committing through a
+        // session is what makes About → Update actually update in place.
+        val session = runCatching { installThroughSession(context, apk) }
+        if (session.isSuccess) return Outcome.InstallerShown
+        Log.w(TAG, "Package session install unavailable, falling back to the installer intent", session.exceptionOrNull())
 
         // ACTION_VIEW is the action that actually has a handler on Android TV and Fire OS;
         // the older ACTION_INSTALL_PACKAGE is only honoured on some phone builds. Try the
         // one that works first and keep the other as a fallback rather than betting on it.
         val intents = listOf(Intent.ACTION_VIEW, Intent.ACTION_INSTALL_PACKAGE).map { action ->
             Intent(action).apply {
-                setDataAndType(uri, APK_MIME)
+                setDataAndType(
+                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk),
+                    APK_MIME,
+                )
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
-                // Deliberately *no* EXTRA_RETURN_RESULT. That extra asks the installer to
-                // report back to a startActivityForResult caller; set on an intent that was
-                // never started for result, the platform cancels the install and finishes
-                // the activity with no UI — the original "install does nothing" bug.
+                // Ask for a replace. Without this the same APK that a session updates cleanly
+                // is treated as a fresh install by the package screen and answers
+                // "app already exists" — the original report. Deliberately *no*
+                // EXTRA_RETURN_RESULT. That extra asks the installer to report back to a
+                // startActivityForResult caller; set on an intent that was never started for
+                // result, the platform cancels the install and finishes the activity with no
+                // UI — the original "install does nothing" bug.
+                // "android.intent.extra.REPLACE" — the platform never gave this extra a public
+                // constant, which is why it is spelled out: it is what a package screen reads to
+                // install over the existing app instead of refusing with "app already exists".
+                putExtra("android.intent.extra.REPLACE", true)
             }
         }
 
@@ -154,6 +174,67 @@ class ApkInstaller(private val http: OkHttpClient) {
             lastError = started.exceptionOrNull() as? Exception
         }
         throw IllegalStateException("No app on this device can install an APK", lastError)
+    }
+
+    /**
+     * Streams [apk] into an install session and commits it.
+     *
+     * The device shows its own confirm screen once the session is committed; nothing is installed
+     * silently. The result arrives as a broadcast on [STATUS_ACTION] — registered just for this
+     * install — which cleans the downloaded APK up after either outcome, since the cache copy is
+     * worthless once the installer has streamed its own copy in.
+     */
+    private fun installThroughSession(context: Context, apk: File) {
+        val installer = context.packageManager.packageInstaller
+        val sessionId = installer.createSession(PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL))
+        val session = installer.openSession(sessionId)
+        try {
+            apk.inputStream().use { source ->
+                session.openWrite("opentv-update.apk", 0, apk.length()).use { sink ->
+                    source.copyTo(sink, STREAM_BUFFER_BYTES)
+                    sink.flush()
+                    session.fsync(sink)
+                }
+            }
+
+            // The status broadcast needs a PendingIntent, and FLAG_MUTABLE to have the status
+            // extras attached to it at all on Android 12+; the platform sets the failure/success
+            // fields in place rather than sending a new intent.
+            val mutableFlag =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+            context.registerReceiver(
+                object : BroadcastReceiver() {
+                    override fun onReceive(receiverContext: Context, intent: Intent) {
+                        runCatching { receiverContext.unregisterReceiver(this) }
+                        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+                        if (status == PackageInstaller.STATUS_SUCCESS) {
+                            apk.delete()
+                        } else {
+                            Log.w(
+                                TAG,
+                                "Install session finished with status $status: " +
+                                    intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE),
+                            )
+                        }
+                    }
+                },
+                IntentFilter(STATUS_ACTION),
+            )
+
+            session.commit(
+                PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    Intent(STATUS_ACTION).setPackage(context.packageName),
+                    PendingIntent.FLAG_UPDATE_CURRENT or mutableFlag,
+                ).intentSender,
+            )
+        } finally {
+            // abandon() is harmless after a commit: it discards a session that was never
+            // committed, and is rejected (caught here) for one that was.
+            runCatching { session.abandon() }
+            session.close()
+        }
     }
 
     /**
@@ -187,5 +268,13 @@ class ApkInstaller(private val http: OkHttpClient) {
     private companion object {
         /** The MIME type the platform's package installer registers itself against. */
         const val APK_MIME = "application/vnd.android.package-archive"
+
+        /** One-shot status broadcast action for a single committed install session. */
+        const val STATUS_ACTION = "app.opentv.update.SESSION_STATUS"
+
+        /** Chunk size for streaming the APK into the install session. */
+        const val STREAM_BUFFER_BYTES = 64 * 1024
+
+        const val TAG = "ApkInstaller"
     }
 }
