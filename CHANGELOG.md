@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.93
+
+- **Releases are now signed with the project's own keystore, which is what makes updates install
+  at all.** Until now the release workflow silently fell back to the debug key of whichever
+  machine happened to build the APK, and GitHub gives every runner a fresh one — so every release
+  came out with a different signature and Android refused each update over the one before it with
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. The app's updater was never the whole story: the installer
+  underneath was rejecting on signature alone. Releases now carry a stable signature, so About →
+  Update replaces the installed app and keeps settings, playlists and profile.
+
 ## 0.12.92
 
 - **About → Update now updates in place instead of refusing.** The download was handed to whatever
