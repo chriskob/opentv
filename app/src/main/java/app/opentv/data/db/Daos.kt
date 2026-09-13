@@ -400,6 +400,13 @@ data class CategoryName(val id: String, val name: String)
 /** Projection for [ChannelDao.channelCountsByCategory]. */
 data class CategoryChannelCount(val sourceId: Long, val categoryId: String, val count: Int)
 
+/**
+ * Projection for the movies/series category counts ([MovieDao.observeCountsByCategory],
+ * [SeriesDao.observeCountsByCategory]). Grouped per source so the Movies/Shows rail can total
+ * across providers, or narrow to the one the user picked.
+ */
+data class CategoryCount(val sourceId: Long, val categoryId: String, val count: Int)
+
 @Dao
 interface EpgFeedDao {
     @Query("SELECT * FROM epg_feeds ORDER BY builtIn DESC, id")
@@ -625,6 +632,23 @@ interface MovieDao {
     suspend fun count(): Int
 
     /**
+     * How many titles each category holds, per source — the Movies rail's "Action · 1,234".
+     *
+     * A grouped COUNT, not the rows: labelling the rail used to require having the whole library in
+     * memory, which on a 20,000-title provider is exactly the cost this screen cannot afford. Rows
+     * with no category (some panels leave `category_id` off) are excluded — they belong to no rail
+     * entry, so counting them would only add a number nothing can be opened from.
+     */
+    @Query(
+        """
+        SELECT sourceId, categoryId, COUNT(*) AS count FROM movies
+        WHERE categoryId IS NOT NULL
+        GROUP BY sourceId, categoryId
+        """
+    )
+    fun observeCountsByCategory(): Flow<List<CategoryCount>>
+
+    /**
      * Fallback for More-Like-This when a movie has no genre to match on: other titles from the same
      * source (and category, when it has one), best-rated first. Never returns the movie itself.
      */
@@ -719,6 +743,16 @@ interface SeriesDao {
     /** How many series are on disk — the cheap "did the library grow" check for the home feeds. */
     @Query("SELECT COUNT(*) FROM series")
     suspend fun count(): Int
+
+    /** How many shows each category holds — see [MovieDao.observeCountsByCategory]. */
+    @Query(
+        """
+        SELECT sourceId, categoryId, COUNT(*) AS count FROM series
+        WHERE categoryId IS NOT NULL
+        GROUP BY sourceId, categoryId
+        """
+    )
+    fun observeCountsByCategory(): Flow<List<CategoryCount>>
 
     /** Fallback for More-Like-This when a series has no genre: same source/category, best-rated first. */
     @Query(

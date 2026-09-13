@@ -83,6 +83,7 @@ fun MoviesScreen(
     viewModel: VodViewModel = viewModel(),
 ) {
     val categories by viewModel.movieCategories.collectAsState()
+    val categoryCounts by viewModel.movieCategoryCounts.collectAsState()
     val resume by viewModel.continueWatching.collectAsState()
     val recommended by viewModel.recommendedMovies.collectAsState()
     val recentlyAdded by viewModel.recentlyAddedMovies.collectAsState()
@@ -144,6 +145,7 @@ fun MoviesScreen(
                 onSelectProviderAll = { browseCategory = null; viewModel.selectVodSource(null) },
                 onSelectProvider = { id -> browseCategory = null; viewModel.selectVodSource(id) },
                 categories = categories.map { it.id to it.name },
+                categoryCounts = categoryCounts,
                 selectedCategory = browseCategory,
                 onSelectHome = { browseCategory = null },
                 onSelectCategory = { id -> browseCategory = id; viewModel.selectMovieCategory(id) },
@@ -169,6 +171,7 @@ fun SeriesScreen(
     viewModel: VodViewModel = viewModel(),
 ) {
     val categories by viewModel.seriesCategories.collectAsState()
+    val categoryCounts by viewModel.seriesCategoryCounts.collectAsState()
     val resume by viewModel.continueWatching.collectAsState()
     val recentlyAdded by viewModel.recentlyAddedSeries.collectAsState()
     val genreRows by viewModel.seriesGenreRows.collectAsState()
@@ -220,6 +223,7 @@ fun SeriesScreen(
                 onSelectProviderAll = { browseCategory = null; viewModel.selectVodSource(null) },
                 onSelectProvider = { id -> browseCategory = null; viewModel.selectVodSource(id) },
                 categories = categories.map { it.id to it.name },
+                categoryCounts = categoryCounts,
                 selectedCategory = browseCategory,
                 onSelectHome = { browseCategory = null },
                 onSelectCategory = { id -> browseCategory = id; viewModel.selectSeriesCategory(id) },
@@ -544,6 +548,10 @@ private val VOD_RAIL_WIDTH = 240.dp
  * The guide's rail is hidden until LEFT is pressed; here it stays visible so whole-category
  * browsing is one press away from the shelves. The content beside it is declared before this in
  * the composition, so it keeps the d-pad on entry — the rail never steals focus.
+ *
+ * Each category carries its title count ("Action · 1,234") so the size of a category is visible
+ * before opening it — the number a viewer actually picks a category by. [categoryCounts] is keyed
+ * by category id; a category the map does not know yet (still importing) simply shows no count.
  */
 @Composable
 private fun VodCategoryRail(
@@ -552,6 +560,7 @@ private fun VodCategoryRail(
     onSelectProviderAll: () -> Unit,
     onSelectProvider: (Long) -> Unit,
     categories: List<Pair<String, String>>,
+    categoryCounts: Map<String, Int>,
     selectedCategory: String?,
     onSelectHome: () -> Unit,
     onSelectCategory: (String) -> Unit,
@@ -589,6 +598,8 @@ private fun VodCategoryRail(
         item(key = "rail-category-all") {
             VodRailEntry(
                 label = stringResource(R.string.vod_all),
+                // The whole library, so the "All" row answers "how much is there" without opening it.
+                count = categoryCounts.values.sum().takeIf { categoryCounts.isNotEmpty() },
                 selected = selectedCategory == null,
                 onClick = onSelectHome,
             )
@@ -596,6 +607,7 @@ private fun VodCategoryRail(
         items(categories, key = { "rail-category:${it.first}" }) { (id, name) ->
             VodRailEntry(
                 label = name,
+                count = categoryCounts[id],
                 selected = selectedCategory == id,
                 onClick = { onSelectCategory(id) },
             )
@@ -618,6 +630,9 @@ private fun RailSectionLabel(text: String) {
 /**
  * One rail row — the guide's RailEntry styling verbatim: bold when focused or selected, a light
  * fill plus a white ring on focus, and the container tint when merely selected.
+ *
+ * [count] is the row's title count, right-aligned and muted so it reads as a fact about the
+ * category rather than a second label. Omitted (null) when there is no number worth showing.
  */
 @Composable
 private fun VodRailEntry(
@@ -625,17 +640,14 @@ private fun VodRailEntry(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    count: Int? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    Text(
-        text = label,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Medium,
-        color = if (focused) Color(0xFF10171E)
-        else if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    val labelColor = if (focused) Color(0xFF10171E)
+    else if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+    else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
@@ -652,7 +664,26 @@ private fun VodRailEntry(
             .focusable()
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
-    )
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Medium,
+            color = labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (count != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "%,d".format(count),
+                style = MaterialTheme.typography.labelMedium,
+                color = labelColor.copy(alpha = 0.7f),
+                maxLines = 1,
+            )
+        }
+    }
 }
 
 // ---- Search / loading / empty ------------------------------------------------------------------

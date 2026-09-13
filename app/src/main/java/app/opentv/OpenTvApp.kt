@@ -138,10 +138,16 @@ class OpenTvApp : Application(), ImageLoaderFactory {
             // itself on and download the first time — without waiting for the user to find
             // the refresh button. ensureFeeds + auto-enable-by-region + matcher all live here.
             // The refresh interval now comes from the user's setting instead of a hardcoded 6h.
+            //
+            // IfIdle, not syncAll: this is nobody's request, so when the user is already importing
+            // a playlist (or the periodic worker is mid-guide) it stands down instead of queueing
+            // behind that import and then starting its own catalogue-wide scan the moment the user
+            // thinks they are finished. Nothing is lost — the next launch, or the worker, picks it
+            // up — and the box never ends up running two of these at once.
             val epgIntervalMillis = java.util.concurrent.TimeUnit.HOURS.toMillis(
                 settings.epgRefreshHours.value.toLong().coerceAtLeast(1)
             )
-            graph.epgRepository.syncAll(
+            graph.epgRepository.syncAllIfIdle(
                 System.currentTimeMillis(),
                 force = false,
                 refreshIntervalMillis = epgIntervalMillis,

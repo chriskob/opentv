@@ -5,8 +5,10 @@
  */
 package app.opentv.data.repo
 
+import android.os.SystemClock
 import android.util.Log
 import app.opentv.core.AppSettings
+import app.opentv.core.HeavyWork
 import app.opentv.data.db.CategoryDao
 import app.opentv.data.db.ChannelDao
 import app.opentv.data.db.EpisodeDao
@@ -173,6 +175,16 @@ class CatalogRepository(
     fun observeMovies(categoryId: String? = null): Flow<List<Movie>> = movieDao.observe(categoryId)
 
     fun observeSeries(categoryId: String? = null): Flow<List<Series>> = seriesDao.observe(categoryId)
+
+    /**
+     * Category id → how many titles it holds, per source. The Movies/Shows rail's counts: a grouped
+     * COUNT rather than the rows behind it, so labelling a 12,000-title category costs one query.
+     */
+    fun observeMovieCountsByCategory(): Flow<List<app.opentv.data.db.CategoryCount>> =
+        movieDao.observeCountsByCategory()
+
+    fun observeSeriesCountsByCategory(): Flow<List<app.opentv.data.db.CategoryCount>> =
+        seriesDao.observeCountsByCategory()
 
     fun observeEpisodes(sourceId: Long, seriesId: String): Flow<List<Episode>> =
         episodeDao.observeForSeries(sourceId, seriesId)
@@ -660,6 +672,16 @@ class CatalogRepository(
         source: Source,
         nowUtcMillis: Long,
         onProgress: ((Int, Int) -> Unit)? = null,
+    ): SyncResult = HeavyWork.run { syncLiveLocked(source, nowUtcMillis, onProgress) }
+
+    /**
+     * [syncLive]'s body, run with the gate held: a channel import is one of the jobs that must not
+     * be racing the movies/series import or the guide's matcher. See [HeavyWork].
+     */
+    private suspend fun syncLiveLocked(
+        source: Source,
+        nowUtcMillis: Long,
+        onProgress: ((Int, Int) -> Unit)?,
     ): SyncResult = withContext(Dispatchers.IO) {
         try {
             when (source.kind) {
@@ -815,6 +837,17 @@ class CatalogRepository(
         source: Source,
         nowUtcMillis: Long,
         onProgress: ((Int, Int, Int, Int) -> Unit)? = null,
+    ): VodSyncResult = HeavyWork.run { syncXtreamVodLocked(source, nowUtcMillis, onProgress) }
+
+    /**
+     * [syncXtreamVod]'s body, run with the gate held — a titles import is the single heaviest job
+     * the app does, and running it alongside a channel import or the guide's matcher is what made a
+     * playlist add on a Fire Stick unusable. See [HeavyWork].
+     */
+    private suspend fun syncXtreamVodLocked(
+        source: Source,
+        nowUtcMillis: Long,
+        onProgress: ((Int, Int, Int, Int) -> Unit)?,
     ): VodSyncResult {
         // VOD is optional: plenty of accounts have live TV only, and a 404 on get_vod_streams
         // must not cost the user their channel list. Movies and series are gated independently so
@@ -826,42 +859,86 @@ class CatalogRepository(
         val seriesOn = SourceGates.series(settings.seriesEnabled.value, source)
         if (!moviesOn && !seriesOn) return VodSyncResult.NONE
 
+        val startedAt = SystemClock.elapsedRealtime()
         var moviesWritten = 0
         var seriesWritten = 0
         var moviesTotal = 0
         var seriesTotal = 0
 
-        // Fetch → write → release, ONE CONTENT TYPE AT A TIME, in 500-row chunks.
+        // Fetch → write → release, ONE CONTENT TYPE AT A TIME, in [VOD_UPSERT_CHUNK]-row batches.
         // The old shape built the entire movie list and the entire series list, then held both
         // (plus their parsed JSON) alive while writing — the peak that tipped a big provider over
-        // the 384MB heap on TV boxes. Each list here is tens of thousands of rows.
+        // the heap on TV boxes. Each list here is tens of thousands of rows, so each one is handed
+        // to [importBatches] and dropped when that call returns, before the next is fetched.
         if (moviesOn) {
             runCatching { api.movieCategories(source) }.getOrDefault(emptyList())
                 .takeIf { it.isNotEmpty() }?.let { categoryDao.upsertAll(it) }
-            val movies = runCatching { api.movies(source) }.getOrDefault(emptyList())
-            moviesTotal = movies.size
-            onProgress?.invoke(moviesWritten, moviesTotal, seriesWritten, seriesTotal)
-            movies.chunked(VOD_UPSERT_CHUNK).forEach { chunk ->
-                movieDao.upsertAll(chunk)
-                moviesWritten += chunk.size
-                onProgress?.invoke(moviesWritten, moviesTotal, seriesWritten, seriesTotal)
-            }
+            moviesTotal = importBatches(
+                fetch = { api.movies(source) },
+                upsert = { movieDao.upsertAll(it) },
+                onProgress = { written, total -> onProgress?.invoke(written, total, seriesWritten, seriesTotal) },
+            )
+            moviesWritten = moviesTotal
         }
         if (seriesOn) {
             runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
                 .takeIf { it.isNotEmpty() }?.let { categoryDao.upsertAll(it) }
-            val series = runCatching { api.series(source) }.getOrDefault(emptyList())
-            seriesTotal = series.size
-            onProgress?.invoke(moviesWritten, moviesTotal, seriesWritten, seriesTotal)
-            series.chunked(VOD_UPSERT_CHUNK).forEach { chunk ->
-                seriesDao.upsertAll(chunk)
-                seriesWritten += chunk.size
-                onProgress?.invoke(moviesWritten, moviesTotal, seriesWritten, seriesTotal)
-            }
+            seriesTotal = importBatches(
+                fetch = { api.series(source) },
+                upsert = { seriesDao.upsertAll(it) },
+                onProgress = { written, total -> onProgress?.invoke(moviesWritten, moviesTotal, written, total) },
+            )
+            seriesWritten = seriesTotal
         }
         sourceDao.markCatalogSynced(source.id, nowUtcMillis)
+
+        // What one import actually cost, for the next "the stick crawled when I added a playlist"
+        // report: the row counts, the wall time, and the heap left in use. Read it with
+        // `adb logcat -s VodPerf`.
+        val runtime = Runtime.getRuntime()
+        Log.i(
+            VOD_PERF_TAG,
+            "imported %,d movies + %,d series for %s in %,d ms (heap %,d of %,d KB)".format(
+                moviesWritten,
+                seriesWritten,
+                source.name,
+                SystemClock.elapsedRealtime() - startedAt,
+                (runtime.totalMemory() - runtime.freeMemory()) / 1024,
+                runtime.maxMemory() / 1024,
+            ),
+        )
         return VodSyncResult(moviesWritten, seriesWritten)
     }
+
+    /**
+     * Fetches one content type, writes it in [VOD_UPSERT_CHUNK]-row batches, and lets the parsed
+     * list go out of scope before the caller fetches the next one.
+     *
+     * The list is a local here on purpose. Held in the caller's frame instead — which is what a
+     * `val movies = …` followed by `val series = …` amounts to — both lists stay reachable at once,
+     * because interpreted ART frames keep their slots alive to the end of the method. That doubled
+     * peak is the difference between a 20,000-title playlist importing and the app dying.
+     *
+     * @param onProgress receives `(written, listed)`; the provider's own count arrives before the
+     *   first write, so a caller can show a real percentage rather than a spinner.
+     * @return how many rows the provider listed, whether or not the fetch succeeded.
+     */
+    private suspend fun <T> importBatches(
+        fetch: suspend () -> List<T>,
+        upsert: suspend (List<T>) -> Unit,
+        onProgress: ((Int, Int) -> Unit)?,
+    ): Int {
+        val listed = runCatching { fetch() }.getOrDefault(emptyList())
+        var written = 0
+        onProgress?.invoke(written, listed.size)
+        listed.chunked(VOD_UPSERT_CHUNK).forEach { chunk ->
+            upsert(chunk)
+            written += chunk.size
+            onProgress?.invoke(written, listed.size)
+        }
+        return listed.size
+    }
+
 
     private suspend fun syncM3u(
         source: Source,
@@ -1120,6 +1197,9 @@ class CatalogRepository(
 
     companion object {
         private const val TAG = "CatalogRepository"
+
+        /** Import cost reporting — `adb logcat -s VodPerf` (see [syncXtreamVodLocked]). */
+        private const val VOD_PERF_TAG = "VodPerf"
 
         /**
          * Rows per VOD write batch. A provider with tens of thousands of titles is written in

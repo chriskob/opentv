@@ -45,6 +45,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import android.util.Log
 import app.opentv.core.StatusBus
+import app.opentv.core.HeavyWork
+import app.opentv.data.db.CategoryCount
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -537,7 +539,12 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 if (wantsVod || wantsSeries) {
                     _provisioningProgress.value = _provisioningProgress.value?.copy(
                         stage = RemoteProvisioningProgress.Stage.SYNCING_VOD,
-                        statusMessage = "Loading movies and shows for ${saved.name}…"
+                        // One heavy job at a time (see HeavyWork): if a guide sync is already inside
+                        // the gate, this import waits for it rather than fighting it for the box.
+                        // Say so — a dashboard that shows no movement for minutes reads as a hang.
+                        statusMessage = if (HeavyWork.isBusy)
+                            "Waiting for the guide sync to finish before loading movies and shows…"
+                        else "Loading movies and shows for ${saved.name}…"
                     )
                     // Report as we write: the counts come from the provider's own list, so the
                     // dashboard shows "12,345 of 19,802" and a percentage rather than a spinner
@@ -575,7 +582,9 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             _provisioningProgress.value = _provisioningProgress.value?.copy(
                 stage = RemoteProvisioningProgress.Stage.SYNCING_EPG,
                 channelsProcessed = totalChannels,
-                statusMessage = "Getting the TV guide and matching programs…"
+                statusMessage = if (HeavyWork.isBusy)
+                    "Waiting for the import to finish before the guide…"
+                else "Getting the TV guide and matching programs…"
             )
 
             val timelineStart = now - (now % (30 * 60 * 1000L))
@@ -1681,6 +1690,31 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     fun selectMovieCategory(id: String?) { movieCategory.value = id }
 
     fun selectSeriesCategory(id: String?) { seriesCategory.value = id }
+
+    /**
+     * Category id → how many titles it holds, for the rail's counts ("Action · 1,234").
+     *
+     * Totalled across providers when "All sources" is picked and narrowed to the chosen one
+     * otherwise, matching how the category list itself behaves. A grouped COUNT in SQL: labelling
+     * the rail costs one query, not the library.
+     */
+    val movieCategoryCounts: StateFlow<Map<String, Int>> = combine(
+        graph.catalogRepository.observeMovieCountsByCategory(),
+        selectedVodSource,
+    ) { rows, sourceId -> countsByCategory(rows, sourceId) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    val seriesCategoryCounts: StateFlow<Map<String, Int>> = combine(
+        graph.catalogRepository.observeSeriesCountsByCategory(),
+        selectedVodSource,
+    ) { rows, sourceId -> countsByCategory(rows, sourceId) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Sums the per-source rows for each category, optionally keeping only one provider's. */
+    private fun countsByCategory(rows: List<CategoryCount>, sourceId: Long?): Map<String, Int> = rows
+        .filter { sourceId == null || it.sourceId == sourceId }
+        .groupBy { it.categoryId }
+        .mapValues { (_, perSource) -> perSource.sumOf { it.count } }
 
     /** True when at least one Stremio add-on is configured — gates the "add-on sources" button. */
     val hasAddons: StateFlow<Boolean> =

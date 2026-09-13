@@ -17,6 +17,7 @@ import app.opentv.data.model.EpgChannelAlias
 import app.opentv.data.model.EpgFeed
 import app.opentv.data.model.Programme
 import app.opentv.data.model.Source
+import app.opentv.core.HeavyWork
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.parser.XmltvParser
 import app.opentv.data.remote.XtreamApi
@@ -327,6 +328,30 @@ class EpgRepository(
         force: Boolean = false,
         refreshIntervalMillis: Long = REFRESH_INTERVAL_MILLIS,
         onProgress: ((SyncProgress) -> Unit)? = null,
+    ): SyncSummary = HeavyWork.run {
+        syncAllLocked(nowUtcMillis, force, refreshIntervalMillis, onProgress)
+    }
+
+    /**
+     * Guide sync that yields instead of waiting when another heavy job holds the gate — for the
+     * opportunistic refresh the app runs on launch, where the next launch or the periodic worker
+     * will pick it up anyway. Returns null when it stood down.
+     */
+    suspend fun syncAllIfIdle(
+        nowUtcMillis: Long,
+        force: Boolean = false,
+        refreshIntervalMillis: Long = REFRESH_INTERVAL_MILLIS,
+        onProgress: ((SyncProgress) -> Unit)? = null,
+    ): SyncSummary? = HeavyWork.runIfIdle {
+        syncAllLocked(nowUtcMillis, force, refreshIntervalMillis, onProgress)
+    }
+
+    /** [syncAll]'s body. Runs with the gate already held — see [HeavyWork]. */
+    private suspend fun syncAllLocked(
+        nowUtcMillis: Long,
+        force: Boolean,
+        refreshIntervalMillis: Long,
+        onProgress: ((SyncProgress) -> Unit)?,
     ): SyncSummary =
         withContext(Dispatchers.IO) {
             ensureFeeds()

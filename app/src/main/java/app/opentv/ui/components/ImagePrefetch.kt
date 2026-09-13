@@ -18,6 +18,24 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 private const val PREFETCH_AHEAD = 12
 
 /**
+ * The size posters are decoded at, in pixels — a poster card is 140dp wide (2:3 art), so at the
+ * 320dpi a TV box reports that is 280x420, and this leaves headroom for the focused card's scale
+ * and for a denser panel.
+ *
+ * Without an explicit size, an enqueued request has no target to measure and Coil decodes at the
+ * poster's *original* resolution — a 1500x2250 panel thumbnail is 6.7MB even in RGB_565. Against a
+ * memory cache sized at a few percent of the heap that is three or four posters, so scrolling
+ * evicted and re-downloaded everything it had just shown (the "posters take forever to appear"
+ * report), and the decode work itself is what makes a Fire Stick stutter. At 480x720 a poster is
+ * 0.7MB — ten times as many fit in cache, and every appearance after the first is a memory hit.
+ *
+ * The same request builds the UI's image and the prefetch, so they share one cache key and one
+ * decode; getting the two out of step would have them decoding the same art twice at two sizes.
+ */
+private const val POSTER_ART_WIDTH_PX = 480
+private const val POSTER_ART_HEIGHT_PX = 720
+
+/**
  * Builds a poster request with a stable cache key.
  *
  * Coil's default memory key varies with the requested size, so the same poster shown at rail size
@@ -31,6 +49,7 @@ fun posterRequest(context: Context, url: String?): ImageRequest? {
         .data(url)
         .memoryCacheKey(url)
         .diskCacheKey(url)
+        .size(POSTER_ART_WIDTH_PX, POSTER_ART_HEIGHT_PX)
         .crossfade(false)
         .build()
 }
