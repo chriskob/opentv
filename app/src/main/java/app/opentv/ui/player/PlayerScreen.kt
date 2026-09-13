@@ -513,13 +513,35 @@ fun PlayerScreen(
         currentId = id
         scope.launch {
             val (target, source, url) = withContext(Dispatchers.IO) {
-                val ch = graph.catalogRepository.channel(id) ?: return@withContext null
+                // A stored id can outlive the row it names. ChannelDao.deleteStale drops every
+                // channel a provider did not list in the latest sync, and one that comes back is
+                // INSERTED, so it returns under a *new* id; deleting and re-adding a playlist
+                // reassigns them all at once. Resolving strictly by id therefore finds nothing while
+                // the channel itself is alive — and because the previous stream was already cut
+                // above, the player would sit on a blank screen with no error to explain it.
+                //
+                // This is the path boot-to-last-channel takes, since it resumes settings
+                // .lastChannelId, a bare row id. Fall back to the newest watched ref instead: it is
+                // the same channel (watch history is written on every tune right beside the id), and
+                // its source+stream key is precisely what survives a re-sync — see RecentChannels.
+                // The id is repaired further down on success, so the next launch resolves first try.
+                val ch = graph.catalogRepository.channel(id)
+                    ?: graph.catalogRepository.channelsForRefs(settings.recentChannelRefs.value).firstOrNull()
+                    ?: return@withContext null
                 val vars = graph.catalogRepository.variants(ch)
                 val tgt = vars.firstOrNull { it.id == ch.id } ?: ch
                 val src = graph.sourceRepository.byId(tgt.sourceId)
                 val resolvedUrl = graph.catalogRepository.resolvePlaybackUrl(tgt, src)
                 Triple(tgt, src, resolvedUrl)
-            } ?: return@launch
+            } ?: run {
+                // Nothing to tune: the id is gone and the history holds nothing the catalogue can
+                // still resolve. Say so, rather than leaving a silently black screen. Guarded on the
+                // id so a channel the user has zapped to meanwhile keeps the player to itself.
+                if (currentId == id) {
+                    Toast.makeText(context, "That channel is no longer available", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
 
             currentChannel = target
             paused = false
