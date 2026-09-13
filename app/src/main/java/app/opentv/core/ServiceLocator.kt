@@ -164,7 +164,18 @@ object ServiceLocator {
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
                 httpClient = streamingHttpClient,
                 subtitlesEnabled = true,
-                dvr = false,
+                // Honour Settings > Recording > "Pause & rewind live TV". This was hard-coded false,
+                // which left that switch completely dead: it was written to prefs and read back into
+                // the settings UI, but nothing consumed it, so the live player never kept a
+                // back-buffer and rewind on live TV had nothing to seek into.
+                //
+                // Read here rather than at each use because the flag configures the player's
+                // LoadControl at construction (see PlayerController.dvr). The shared live player is
+                // built lazily on first playback and lives for the run of the process, so toggling
+                // the switch takes effect from the next launch — which is also why it is a snapshot
+                // and not a collector: swapping the player to apply it mid-stream would drop the
+                // channel being watched.
+                dvr = settings.livePauseEnabled.value,
             )
         }
 

@@ -147,21 +147,25 @@ fun MainScreen(
         if (tab !in visibleTabs) tab = homeTab
     }
 
-    LaunchedEffect(settings.requestedHomeTab) {
-        val req = settings.requestedHomeTab
-        if (req != null) {
-            settings.requestedHomeTab = null
-            val targetTab = when (req) {
-                "movies" -> Tab.MOVIES
-                "shows" -> Tab.SHOWS
-                "recordings" -> Tab.RECORDINGS
-                "live" -> Tab.LIVE
-                else -> null
-            }
-            if (targetTab != null && targetTab in visibleTabs) {
-                tab = targetTab
-                liveNavRailVisible = false
-            }
+    // A shortcut pressed inside the player (Movies / Shows / Recordings) asks for a tab here.
+    // Observed as state rather than polled: the request is made while this shell is still composed
+    // behind the live player, so nothing else would recompose to notice a plain field changing.
+    val requestedHomeTab by settings.requestedHomeTab.collectAsState()
+    LaunchedEffect(requestedHomeTab) {
+        val req = requestedHomeTab ?: return@LaunchedEffect
+        settings.consumeRequestedHomeTab()
+        val targetTab = when (req) {
+            "movies" -> Tab.MOVIES
+            "shows" -> Tab.SHOWS
+            "recordings" -> Tab.RECORDINGS
+            "live" -> Tab.LIVE
+            else -> null
+        }
+        // A type switched off in settings has no tab to open, so the request is dropped and the
+        // viewer stays where they are — better than a blank content area.
+        if (targetTab != null && targetTab in visibleTabs) {
+            tab = targetTab
+            liveNavRailVisible = false
         }
     }
 

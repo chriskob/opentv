@@ -592,6 +592,24 @@ fun HomeScreen(
     }
 
 
+    /**
+     * Hands the viewer over to another content type from one of the player's OSD shortcuts.
+     *
+     * The shared live player has to be silenced and paused first. It is a process-wide singleton
+     * that outlives this screen, so just switching the tab would leave it playing: with guide-preview
+     * sound on — which is the default — live TV audio would carry on over the Movies grid, with no
+     * video anywhere on screen to explain it. Pausing is safe rather than destructive: coming back to
+     * the Live tab resumes the same stream, and the preview only re-tunes if the channel changed.
+     */
+    fun leaveLiveForTab(tab: String) {
+        isFullScreen = false
+        graph.livePlayer.player.apply {
+            volume = 0f
+            pause()
+        }
+        settings.requestHomeTab(tab)
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -849,9 +867,16 @@ fun HomeScreen(
                     isFullScreen = false
                 },
                 onOpenSearch = onOpenSearch,
-                onOpenMovies = { isFullScreen = false; onOpenMainMenu() },
-                onOpenShows = { isFullScreen = false; onOpenMainMenu() },
-                onOpenRecordings = { isFullScreen = false; onOpenMainMenu() },
+                // These three leave the live player for another content type. Asking the tab
+                // shell for its tab is what actually takes the viewer there — these used to call
+                // onOpenMainMenu(), which only slides the nav rail in and leaves the Live tab
+                // selected, so pressing Movies or Shows appeared to do nothing. The pressed tab is
+                // requested rather than navigated to because this player renders *inside* the tab
+                // shell; the shell is still composed and picks the request up as soon as it lands
+                // (see AppSettings.requestHomeTab). leaveLiveForTab also silences the shared player.
+                onOpenMovies = { leaveLiveForTab("movies") },
+                onOpenShows = { leaveLiveForTab("shows") },
+                onOpenRecordings = { leaveLiveForTab("recordings") },
                 onOpenSettings = onOpenSettings,
                 onPlayCatchup = onPlayCatchup,
                 renderPlayerView = false,

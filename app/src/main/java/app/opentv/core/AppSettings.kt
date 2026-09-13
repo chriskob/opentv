@@ -760,7 +760,33 @@ class AppSettings private constructor(context: Context) {
         _catchupDiscovery.value = value
     }
 
-    var requestedHomeTab: String? = null
+    /**
+     * A one-shot request for which Home tab to open, made by a screen outside the tab shell — the
+     * Movies / Shows / Recordings shortcuts on the player's OSD.
+     *
+     * A [StateFlow] rather than a plain field on purpose. The shortcut is pressed while the tab
+     * shell is still composed *behind* the live player, and a plain field is invisible to Compose:
+     * nothing would recompose to notice the write, so the request would sit there unread until some
+     * unrelated recomposition finally read it — which, for a press that changes nothing else on
+     * screen, may be never. That is exactly the "Movies does nothing" bug. As state, the shell sees
+     * it the moment it changes. The shell consumes it (clearing it) so it fires once, never again
+     * on a later recomposition.
+     */
+    private val _requestedHomeTab = MutableStateFlow<String?>(null)
+    val requestedHomeTab: StateFlow<String?> = _requestedHomeTab.asStateFlow()
+
+    /**
+     * Ask the tab shell to open [tab]: "movies", "shows", "recordings" or "live". A type that is
+     * switched off in settings has no tab, so the request is dropped rather than opening nothing.
+     */
+    fun requestHomeTab(tab: String) {
+        _requestedHomeTab.value = tab
+    }
+
+    /** Clear a [requestedHomeTab] once the shell has acted on it. */
+    fun consumeRequestedHomeTab() {
+        _requestedHomeTab.value = null
+    }
 
     companion object {
         private const val KEY_THEME = "theme_mode"

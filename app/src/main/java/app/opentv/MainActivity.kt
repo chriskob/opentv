@@ -695,19 +695,19 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     },
                     onOpenSearch = { navController.navigate(Routes.SEARCH) },
                     onOpenMovies = {
-                        bootSettings.requestedHomeTab = "movies"
+                        bootSettings.requestHomeTab("movies")
                         if (!navController.popBackStack()) {
                             navController.navigate(Routes.HOME)
                         }
                     },
                     onOpenShows = {
-                        bootSettings.requestedHomeTab = "shows"
+                        bootSettings.requestHomeTab("shows")
                         if (!navController.popBackStack()) {
                             navController.navigate(Routes.HOME)
                         }
                     },
                     onOpenRecordings = {
-                        bootSettings.requestedHomeTab = "recordings"
+                        bootSettings.requestHomeTab("recordings")
                         if (!navController.popBackStack()) {
                             navController.navigate(Routes.HOME)
                         }

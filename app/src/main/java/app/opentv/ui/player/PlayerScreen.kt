@@ -619,6 +619,116 @@ fun PlayerScreen(
         return true
     }
 
+    /**
+     * Steps the viewer back [stepMillis], reporting whether the press was handled.
+     *
+     * Two ways back, tried in order:
+     *
+     *  1. Inside the stream already open — the whole story for VOD, for a catch-up item already
+     *     playing, and for live HLS whose playlist reaches back far enough. See [seekBackBy].
+     *  2. Through the provider's catch-up archive. A plain live stream sits at the live edge, so
+     *     there is no window behind it to step into and the local seek is refused — but a catch-up
+     *     channel can be asked for *any* past minute as its own timeshift stream. That is what makes
+     *     "back 10 seconds" work on live TV, and it is what TiviMate does: the timeshift URL for the
+     *     programme covering the target time, opened at the offset inside that programme. The player
+     *     is not recreated — the same instance swaps media item the way a channel change does — and
+     *     because a timeshift stream is a finished recording, the timeline becomes real, so the
+     *     skip buttons and the timeline pip work properly from then on too.
+     *
+     * False means no attempt was made at all, so the caller can keep the key's old meaning. A
+     * channel that looks catch-up capable but whose URL cannot be built reports through a toast
+     * instead of falling back, because by then the press has already been claimed.
+     */
+    fun stepBack(stepMillis: Long): Boolean {
+        if (seekBackBy(stepMillis)) return true
+
+        val ch = currentChannel ?: return false
+        val source = currentSource
+        val now = System.currentTimeMillis()
+        val target = now - stepMillis
+        // Stepping past the provider's retention only earns a 404, so refuse locally rather than
+        // spending a request on it.
+        val archiveStart = if (ch.tvArchiveDays > 0) now - ch.tvArchiveDays * 86_400_000L else Long.MIN_VALUE
+        if (target < archiveStart) return false
+        // Trust the channel's own flags, its catch-up template, or a portal source — whose channels
+        // routinely do catch-up without ever saying so in the playlist. This is the same rule the
+        // guide's badge uses before offering a finished programme.
+        val capable = CatchupResolver.isSupported(source, ch) ||
+            (source != null && CatchupResolver.isSourceCapable(source))
+        if (!capable) return false
+
+        scope.launch {
+            val prog = withContext(Dispatchers.IO) {
+                val candidates = ch.epgCandidates.ifEmpty { listOfNotNull(ch.epgChannelId ?: ch.streamId) }
+                // One millisecond wide, so this returns the single programme covering the target.
+                graph.epgRepository.windowForChannels(candidates, target, target + 1L)
+                    .values.firstOrNull()?.firstOrNull()
+                    ?: currentProg?.takeIf { target in it.startUtcMillis until it.endUtcMillis }
+            }
+            val resolveSource = source ?: withContext(Dispatchers.IO) {
+                graph.sourceRepository.byId(ch.sourceId)
+            }
+            val url = if (prog == null || resolveSource == null) null else {
+                withContext(Dispatchers.IO) { CatchupResolver.resolve(resolveSource, ch, prog) }
+            }
+            if (prog == null || resolveSource == null || url == null) {
+                Toast.makeText(context, "No catch-up for this channel", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            // The offset is what puts the viewer exactly [stepMillis] back instead of at the top of
+            // the programme, which is what "Watch from start" (Replay) is for.
+            controller.play(
+                PlayerController.Request(
+                    url = url,
+                    title = ch.shownName,
+                    userAgent = resolveSource.userAgent ?: "OpenTV/0.1 (Android)",
+                    startPositionMillis = (target - prog.startUtcMillis).coerceAtLeast(0L),
+                    isLive = false,
+                ),
+                debounce = false,
+            )
+            paused = false
+            Toast.makeText(context, "Rewind ${stepMillis / 1000}s", Toast.LENGTH_SHORT).show()
+        }
+        return true
+    }
+
+    /**
+     * Back to the live edge.
+     *
+     * Usually that is just the end of the open stream. After [stepBack] has moved into the archive,
+     * though, the player is holding a *catch-up* item whose end is the end of that programme rather
+     * than now, so the live edge is a re-tune of the live URL, not a seek. The media item is swapped
+     * on the same player, so it costs one connection — the same as changing channel.
+     */
+    fun goLive() {
+        val ch = currentChannel
+        val inArchive = controller.currentRequest?.isLive == false
+        if (inArchive && ch != null) {
+            scope.launch {
+                val (source, url) = withContext(Dispatchers.IO) {
+                    val src = graph.sourceRepository.byId(ch.sourceId)
+                    src to graph.catalogRepository.resolvePlaybackUrl(ch, src)
+                }
+                controller.play(
+                    PlayerController.Request(
+                        url = url,
+                        title = ch.shownName,
+                        userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
+                        isLive = true,
+                    ),
+                    debounce = false,
+                )
+            }
+        } else {
+            controller.player.seekToDefaultPosition()
+            controller.player.playWhenReady = true
+        }
+        paused = false
+        Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
+        interaction++
+    }
+
     fun toggleRecord() {
         val active = activeRecordings.firstOrNull { it.channelId == currentId }
         if (active != null) {
@@ -865,11 +975,10 @@ fun PlayerScreen(
                                         true
                                     }
                                     Key.DirectionLeft -> {
-                                        val cur = controller.player.currentPosition
-                                        val step = scrubStepMillis(event.nativeKeyEvent.repeatCount)
-                                        val dur = controller.player.duration
-                                        val target = if (dur > 0) (cur - step).coerceIn(0L, dur) else (cur - step).coerceAtLeast(0L)
-                                        controller.player.seekTo(target)
+                                        // Same two-stage step as the D-pad-left handler below, so
+                                        // rewinding with the timeline focused works on live TV too
+                                        // rather than only where the player already has a window.
+                                        stepBack(scrubStepMillis(event.nativeKeyEvent.repeatCount))
                                         interaction++
                                         true
                                     }
@@ -973,8 +1082,11 @@ fun PlayerScreen(
                     // further. With the bar showing, left/right belong to the history carousel
                     // instead — that branch is handled above this one.
                     event.key == Key.DirectionLeft -> {
-                        if (!seekBackBy(scrubStepMillis(event.nativeKeyEvent.repeatCount))) {
-                            // No DVR window to step back through: keep left's old meaning.
+                        // stepBack covers both cases: the DVR/playlist window when the stream has one,
+                        // and the provider's catch-up archive when it does not — which is the norm for
+                        // live TV. Only when neither is available does left keep its old meaning of
+                        // opening the channel list.
+                        if (!stepBack(scrubStepMillis(event.nativeKeyEvent.repeatCount))) {
                             if (queue.isNotEmpty()) channelListVisible = true
                         }
                         true
@@ -1364,8 +1476,11 @@ fun PlayerScreen(
                                 size = 38.dp,
                                 iconSize = 20.dp,
                                 onClick = {
-                                    val cur = controller.player.currentPosition
-                                    controller.player.seekTo((cur - 10_000L).coerceAtLeast(0L))
+                                    // stepBack, not a blind seek: on a live stream there is often
+                                    // nothing behind the playhead to seek into, and stepBack is what
+                                    // reaches into the provider's archive in that case. See it for
+                                    // the two-stage rule.
+                                    stepBack(10_000L)
                                     interaction++
                                 },
                             )
@@ -1411,10 +1526,10 @@ fun PlayerScreen(
                                 size = 38.dp,
                                 iconSize = 20.dp,
                                 onClick = {
-                                    controller.player.seekToDefaultPosition()
-                                    controller.player.playWhenReady = true
-                                    paused = false
-                                    interaction++
+                                    // goLive, not a bare seekToDefaultPosition: after a rewind the
+                                    // open item is a catch-up stream, and its end is the end of that
+                                    // programme, not now.
+                                    goLive()
                                 },
                             )
                         }
@@ -1440,11 +1555,7 @@ fun PlayerScreen(
                             // LIVE Badge Button
                             LiveBadgeButton(
                                 onClick = {
-                                    controller.player.seekToDefaultPosition()
-                                    controller.player.playWhenReady = true
-                                    paused = false
-                                    Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
-                                    interaction++
+                                    goLive()
                                 },
                             )
 
