@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.12.89
+## 0.12.90
 
 - **Thirty translations became two.** OpenTV now ships English and Polish only. Thirty
   half-maintained translations meant every new string added English text to twenty-nine of them, so
@@ -26,6 +26,107 @@
   recordings survive a force-stop or an update exactly as before. The work simply waits for the UI to
   be up now, instead of making a per-booking alarm call each while the guide was drawing its first
   frame and competing for the same disk.
+- **The catch-up badge now means what it says.** The guide marked every channel of an Xtream source as
+  catch-up capable, because the rule treated the source being Xtream — and its stream URLs being
+  shaped like an Xtream panel's — as evidence of an archive. Neither is evidence: the panel answers
+  per channel, so a provider that reports no archive for a channel had that answer overridden, and
+  the badge appeared on channels with nothing to replay. The rule now reads only the per-channel
+  facts the provider itself gave, and a badged channel is one you can actually go back on.
+- **A playlist that declares no catch-up can still find it.** An M3U exported from an Xtream panel
+  carries the panel's address and credentials inside the URL of every stream, so OpenTV lifts them,
+  confirms the host really is a panel by making it answer, and reads the per-channel archive answer
+  once per sync. Best effort throughout: no panel found, stale credentials or a captive portal all
+  leave the playlist's own flags exactly as they were. Against the provider this was written for,
+  the playlist declared catch-up on 0 of 26,950 channels while the panel reports archive on 2,195 of
+  them. Settings → Guide turns the lookup off.
+- **Channel up and down no longer throw the on-screen bar up.** A zap changed channel and then
+  revealed the history carousel and the shortcut row over the picture, so on some remotes a channel
+  key read as a menu key. Zapping is silent again — the bar is still on OK.
+- **The movie and show player tells you what you are watching.** The five bare circles are gone. The
+  player reads the stream's own facts from the decoder — resolution, frame rate, video and audio
+  codec, channel layout, bitrate, dynamic range — and puts them on the buttons themselves: the format
+  button reads FHD or 4K, the speed button 1.5x, the audio button AAC 5.1. A provider that claims 4K
+  on a 720p stream is shown the measurement beside the claim rather than instead of it, and anything
+  the stream does not report is left out rather than printed as a dash or a zero. New speed
+  (0.5x–2x) and aspect-ratio panels, and a settings section to trim the button row.
+- **Next episode, with a 10-second countdown when one ends.** The episode queue is followed in place
+  — no trip back to the grid — with an up-next card when an episode finishes, and BACK declines the
+  hand-over without closing the controls. The header now carries the poster and a
+  season/episode/runtime line.
+- **The guide stage reports its progress.** The card sat at zero on "Awaiting guide parsing…" for the
+  whole guide stage, which on a large provider is minutes and indistinguishable from a hang. It now
+  counts feeds as each one finishes, then switches to counting channels as they are matched against
+  the guide ("Matching channels — 12,000 of 82,761 checked"), and a feed that was already current
+  says so instead of showing a zero that looks like a failure.
+- **Adding a playlist is no longer interrupted half a second in.** On a first run the start
+  destination was recomputed on every recomposition, so the first source saved flipped it from the
+  add-source screen to HOME and replaced the progress dashboard while the sync was still writing
+  channels — so adding a playlist looked finished when it had barely started. Setup now stays until
+  it is complete and you open the guide.
+- **An unticked box is honoured — on the portal and on disk.** Adding an Xtream playlist from the
+  phone portal with Channels unticked imported the channel list anyway: the portal described only
+  the ticked boxes, and a missing box was read as its default of *on*, so the one instruction the
+  user gave was the one the payload could not express. Stated and unstated are now different
+  answers, and an explicit value wins either way. Unticking a box also removes what is already
+  imported, movies and shows included — those were only skipped at fetch time, so 57,204 films could
+  stay in the app for good after the box was cleared — and re-ticking re-imports on the next sync.
+- **A playlist's name typed into the portal reaches the TV.** The portal polled every 2.5 seconds and
+  rebuilt its form the moment the box connected, throwing away the name and credentials typed in the
+  meantime, which is why the device's old name is what arrived. The form now keeps what was typed,
+  and says so instead of silently discarding it.
+- **Rows left behind by a deleted playlist are swept up.** A delete overlapping an import that is
+  still writing can leave channels, categories, films and series belonging to a playlist that no
+  longer exists: the test box held 55,617 channels for a source id that had been deleted. Nothing the
+  user could do cleared them, because the guide does not join to the source table and the playlist
+  was already gone. Orphans are now purged at every start and before each import.
+- **A key press mid-sync can no longer kill the app.** Compose's own focus search throws when a key
+  arrives while the focus tree is being rebuilt, which is exactly what a busy box does — the log
+  showed a key taking 2.9 seconds to process and 249 dropped frames. That specific failure is now
+  caught and the key goes unhandled; anything else still propagates.
+- **The dashboard says what actually happened.** A section nobody asked for reads "Skipped" rather
+  than "0 Imported", the counts name the playlist they came from ("Test — 26,996 channels | Xtream
+  Provider — Channels skipped"), and Shows is a real number beside Movies instead of a footnote. The
+  screen was rebuilt as a ten-foot layout that costs less to draw: flat colour and hairlines instead
+  of shadows, and a canvas ring that redraws only when the number changes rather than animating
+  forever on a box that executes bytecode interpreted. The wording is plainer too — no "parsing", and
+  "programs", not "programmes".
+- **The guide's now-line is dimmer** — 0.20 instead of 0.85, with the header pip to match, so the
+  column annotates the guide instead of competing with the titles it crosses.
+- **Adding a playlist on a Fire Stick no longer makes the box unusable.** The live import, the
+  movies/series import and the guide sync each saturate the box on their own and nothing coordinated
+  them, so the periodic worker, the launch-time guide refresh and a portal run could all be inside one
+  SQLite writer at once; they now queue behind one gate, and the dashboard says it is waiting rather
+  than showing progress that is not moving. Peak memory halves, because the movie and series lists
+  are no longer alive at the same time. Posters are fetched at 480x720 instead of the provider's
+  original — a 6.7 MB thumbnail against a memory cache of a few percent of the heap meant scrolling
+  evicted and re-downloaded everything it had just shown. Category rows now carry their title counts
+  (Action — 1,234).
+- **The watched-channel bar no longer erases itself.** History was stored against channel row ids,
+  and a guide sync re-inserts channels under new ids, so a channel missing from a single sync was
+  swept out of the bar for good — and re-adding a playlist took the lot. History is now keyed on the
+  pair that survives a resync, exactly as favourites and manual order already are, so a channel that
+  comes back comes back with its place intact. Existing histories convert on first open. The
+  carousel's History card is gone: it only jumped to the previous channel, which the carousel lists
+  and left/right on the remote already did.
+- **The OSD's Movies / Shows / Recordings buttons navigate.** On the embedded live player all three
+  only slid the nav rail in and left the Live tab selected, so the press looked like a no-op. They
+  now switch tab, which meant muting and pausing live playback first — otherwise live audio would have
+  carried on over the Movies grid with no video anywhere on screen. Returning to Live resumes the same
+  stream.
+- **Rewinding live TV works.** -10s did nothing for three separate reasons: the rewind button seeked
+  without checking whether the stream can seek, the d-pad only tried a local DVR window that a live
+  transport stream never has, and the "Pause & rewind live TV" setting was dead — nothing consumed it,
+  so there was never a back-buffer to seek into. The setting is wired now, and the step back falls
+  through to the provider's catch-up archive when the stream has nothing behind the live edge: the
+  timeshift URL for the program covering the target time, opened at the offset inside it, which is how
+  rewinding live TV works on a stream that does not support it natively.
+- **Booting to your last channel no longer lands on a black screen.** Resume read a channel row id and
+  resolved it strictly; a sync that drops and re-adds a channel gives it a new id, and re-adding a
+  playlist reassigns every id at once, so a stored id can name nothing while the channel itself is
+  alive and well. The miss was silent — the old stream had already been stopped, so the screen simply
+  stayed black. Resume now falls back to the newest entry in the watch history, which is the same
+  channel and cannot be orphaned by a sync, and repairs the stored id as it tunes. If the channel
+  really is gone, it says so instead of sitting black.
 
 ## 0.12.88
 
