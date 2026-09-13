@@ -10,6 +10,7 @@ captures/
 *.apk
 *.aab
 *.keystore
+*.jks
 !debug.keystore
 
 .claude/
