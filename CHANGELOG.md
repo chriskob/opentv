@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.95
+
+- **BACK in the guide opens the category sidebar on the playing channel's category again.** It used
+  to land on Favourites instead. The sidebar had already picked the right entry, but preview
+  selection was re-armed on a fixed timer while the rail was still sliding in — focus drifted across
+  entries and each drift selected that category, so the guide ended up on Favourites. Selection now
+  waits until you actually move in the rail, so opening it can never change the category by itself.
+  When the playing channel is a favourite, the sidebar opens on Favourites, as it should.
+
 ## 0.12.94
 
 - **The main menu is hidden on Movies, Shows and Recordings until you ask for it.** The icon strip
