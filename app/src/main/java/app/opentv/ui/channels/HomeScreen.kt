@@ -987,11 +987,6 @@ fun HomeScreen(
             Spacer(Modifier.height(12.dp))
             // The top "Search channels" bar was removed — Search now lives in the global nav rail.
 
-            // Only composed while the rail is open. A collapsed (0-width) rail must not be
-            // reachable by the d-pad: otherwise LEFT at the guide's leftmost column runs off the
-            // edge of the grid into this still-composed list and lands on the first entry
-            // (Favourites) — the "LEFT opens the favourites category" bug.
-            if (railExpanded) {
             LazyColumn(
                 state = railListState,
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -1060,7 +1055,6 @@ fun HomeScreen(
                         )
                     }
                 }
-            }
             }
         }
 
