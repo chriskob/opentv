@@ -139,7 +139,7 @@ fun MainScreen(
     val homeTab = visibleTabs.first()
 
     var tab by remember { mutableStateOf(homeTab) }
-    var liveNavRailVisible by remember { mutableStateOf(false) }
+    var navRailVisible by remember { mutableStateOf(false) }
 
     // If the selected tab gets hidden (its type toggled off while it's open), drop back to the
     // home tab so the content area never tries to show a tab that's no longer there.
@@ -165,7 +165,7 @@ fun MainScreen(
         // viewer stays where they are — better than a blank content area.
         if (targetTab != null && targetTab in visibleTabs) {
             tab = targetTab
-            liveNavRailVisible = false
+            navRailVisible = false
         }
     }
 
@@ -174,15 +174,22 @@ fun MainScreen(
     val fullScreenReq by app.opentv.core.PlayRequests.fullScreenRequest.collectAsState()
     LaunchedEffect(fullScreenReq) {
         if (fullScreenReq != null) {
-            liveNavRailVisible = false
+            navRailVisible = false
         }
+    }
+
+    // Every content tab starts with the main rail hidden — the Live TV guide and the Movies/Shows
+    // shelves show only their own category rail. Back summons the main menu, the way the Live TV
+    // shell reveals its nav rail.
+    BackHandler(enabled = tab != Tab.LIVE && !navRailVisible) {
+        navRailVisible = true
     }
 
     // Double-press Back at the root (when on the main menu / nav rail) shows the exit dialog
     var lastBackPressMillis by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     var showExit by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = (tab == Tab.LIVE && liveNavRailVisible && !isLiveFullScreen) || (tab != Tab.LIVE && tab == homeTab)) {
+    BackHandler(enabled = tab == homeTab && navRailVisible && !(tab == Tab.LIVE && isLiveFullScreen)) {
         val now = System.currentTimeMillis()
         if (now - lastBackPressMillis <= 2000L) {
             showExit = true
@@ -192,10 +199,10 @@ fun MainScreen(
         }
     }
 
-    // Back from a non-home tab returns to the home tab with the main menu open
-    BackHandler(enabled = tab != homeTab) {
+    // Back from a non-home tab (with the main menu already open) returns to the home tab
+    BackHandler(enabled = tab != homeTab && navRailVisible) {
         tab = homeTab
-        liveNavRailVisible = true
+        navRailVisible = true
     }
 
     if (showExit) {
@@ -219,25 +226,21 @@ fun MainScreen(
     // of it and leave a sliver poking out — so they live side by side and never collide.
     Column(Modifier.fillMaxSize()) {
       Row(Modifier.weight(1f).fillMaxWidth()) {
-        val showNavRail = if (tab == Tab.LIVE) (liveNavRailVisible && !isLiveFullScreen) else true
+        val showNavRail = navRailVisible && !isLiveFullScreen
         if (showNavRail) {
             NavRail(
                 tabs = visibleTabs,
                 current = tab,
                 onSelect = {
                     tab = it
-                    liveNavRailVisible = false
+                    navRailVisible = false
                 },
                 onOpenSearch = onOpenSearch,
                 onOpenSettings = onOpenSettings,
                 onOpenProfiles = onOpenProfiles,
                 activeProfileName = activeProfileName,
-                requestFocusOnStart = (tab == Tab.LIVE && liveNavRailVisible),
-                onExitRight = {
-                    if (tab == Tab.LIVE) {
-                        liveNavRailVisible = false
-                    }
-                },
+                requestFocusOnStart = navRailVisible,
+                onExitRight = { navRailVisible = false },
             )
         }
 
@@ -252,12 +255,12 @@ fun MainScreen(
                     onAddSource = onAddSource,
                     onRefresh = onRefresh,
                     onPlayCatchup = onPlayCatchup,
-                    onOpenMainMenu = { liveNavRailVisible = true },
-                    onDismissMainMenu = { liveNavRailVisible = false },
+                    onOpenMainMenu = { navRailVisible = true },
+                    onDismissMainMenu = { navRailVisible = false },
                     onFullScreenChanged = { fs ->
                         isLiveFullScreen = fs
                         if (fs) {
-                            liveNavRailVisible = false
+                            navRailVisible = false
                         }
                     },
                     onOpenSearch = onOpenSearch,
