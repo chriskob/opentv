@@ -315,12 +315,26 @@ fun HomeScreen(
                 delay(60)
             }
             delay(300)
-            // Clear suppression unconditionally once the open window is over: focus landing on
-            // an unintended entry was already blocked from selecting by the per-entry guard, and
-            // leaving suppression stuck on would freeze rail preview navigation if requestFocus
-            // "succeeded" on a requester that didn't actually win focus.
-            suppressRailPreviewSelection = false
+            // Suppression stays on until the viewer actually navigates the rail — it is cleared by
+            // the rail's own key handler. Clearing it on a timer let focus drift while the rail was
+            // still settling (the list re-laying out moved focus onto other entries, often
+            // Favourites) select a category the viewer never chose: the "rail opens on Favourites"
+            // bug. The opened category itself is applied below, not by a focus preview.
             pendingRailFocus = false
+        }
+    }
+    // Apply the category the rail opened on, off the key dispatch that requested it. The open
+    // handlers deliberately avoid calling selectCategory() inside a key event (it disposes the
+    // focused guide node mid-dispatch and caused an ANR storm); the switch happens here, after
+    // composition has settled, and only while suppression is still armed — so a later focus drift
+    // or preview navigation never re-applies a stale target.
+    LaunchedEffect(railExpanded, railOpenFocusKey) {
+        if (railExpanded && suppressRailPreviewSelection) {
+            when (val target = railOpenFocusKey) {
+                null -> {}
+                RAIL_KEY_FAVOURITES -> viewModel.selectFavourites()
+                else -> viewModel.selectCategory(target)
+            }
         }
     }
     LaunchedEffect(railExpanded) {
@@ -440,16 +454,20 @@ fun HomeScreen(
             val playingGroup = playingChannel?.categoryId?.let { catId ->
                 categories.firstOrNull { catId in it.ids }
             }
-            railOpenFocusKey = playingGroup?.key
-                ?: if (favouritesOnly) RAIL_KEY_FAVOURITES else selectedCategory
+            // Open where the playing channel lives: its own category, or Favourites when the
+            // channel is a favourite and that entry is shown — never the last-previewed entry.
+            railOpenFocusKey = when {
+                playingChannel?.favourite == true && showFavouritesCategory -> RAIL_KEY_FAVOURITES
+                playingGroup != null -> playingGroup.key
+                favouritesOnly -> RAIL_KEY_FAVOURITES
+                else -> selectedCategory
+            }
             suppressRailPreviewSelection = true
-            if (playingGroup != null) {
-                railScrollToIndex = railIndexForCategoryKey(playingGroup.key)
-            } else if (railScrollToIndex < 0) {
-                // Open handlers didn't pick a target: fall back to the CURRENT selection so a
-                // hidden/resolved-later selection still focuses a real entry on the first pass.
-                railScrollToIndex = railFocusTargetIndex()
-                railOpenFocusKey = if (favouritesOnly) RAIL_KEY_FAVOURITES else selectedCategory
+            railScrollToIndex = when {
+                railOpenFocusKey == RAIL_KEY_FAVOURITES ->
+                    railRows.indexOfFirst { it is RailRow.Favourites }
+                playingGroup != null -> railIndexForCategoryKey(playingGroup.key)
+                else -> railFocusTargetIndex()
             }
             railExpanded = true
             pendingRailFocus = true
@@ -950,6 +968,12 @@ fun HomeScreen(
                                 onOpenMainMenu()
                                 true
                             }
+                            // The first deliberate up/down move ends the "just opened" guard:
+                            // from here focus previews select exactly as the viewer asks.
+                            Key.DirectionUp, Key.DirectionDown -> {
+                                suppressRailPreviewSelection = false
+                                false
+                            }
                             else -> false
                         }
                     } else false
@@ -1176,17 +1200,20 @@ fun HomeScreen(
                             val playingGroup = playingChannel?.categoryId?.let { catId ->
                                 categories.firstOrNull { catId in it.ids }
                             }
-                            railOpenFocusKey = playingGroup?.key
-                                ?: if (favouritesOnly) RAIL_KEY_FAVOURITES else selectedCategory
+                            // Open where the playing channel lives — its category, or Favourites
+                            // when it is a favourite and that entry is shown. Never a stale target.
+                            railOpenFocusKey = when {
+                                playingChannel?.favourite == true && showFavouritesCategory -> RAIL_KEY_FAVOURITES
+                                playingGroup != null -> playingGroup.key
+                                favouritesOnly -> RAIL_KEY_FAVOURITES
+                                else -> selectedCategory
+                            }
                             suppressRailPreviewSelection = true
-                            if (playingGroup != null) {
-                                railScrollToIndex = railIndexForCategoryKey(playingGroup.key)
-                            } else if (railScrollToIndex < 0) {
-                                // Open handlers didn't pick a target: fall back to the CURRENT
-                                // selection so a hidden/resolved-later selection still focuses a
-                                // real entry on the first pass.
-                                railScrollToIndex = railFocusTargetIndex()
-                                railOpenFocusKey = if (favouritesOnly) RAIL_KEY_FAVOURITES else selectedCategory
+                            railScrollToIndex = when {
+                                railOpenFocusKey == RAIL_KEY_FAVOURITES ->
+                                    railRows.indexOfFirst { it is RailRow.Favourites }
+                                playingGroup != null -> railIndexForCategoryKey(playingGroup.key)
+                                else -> railFocusTargetIndex()
                             }
                             railExpanded = true
                             pendingRailFocus = true
