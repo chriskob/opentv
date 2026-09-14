@@ -137,6 +137,8 @@ fun HomeScreen(
     onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit = { _, _, _, _ -> },
     onOpenMainMenu: () -> Unit = {},
     onDismissMainMenu: () -> Unit = {},
+    /** Whether the main nav rail (Movies/Shows/Recordings/Settings) is currently open. */
+    mainMenuVisible: Boolean = false,
     onFullScreenChanged: (Boolean) -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
@@ -359,6 +361,23 @@ fun HomeScreen(
             runCatching { guideFocusRequester.requestFocus() }
             pendingGuideFocus = false
         }
+    }
+    // When the main menu closes, put the guide cursor back on the playing channel. Closing the
+    // category rail already restores it (its RIGHT handler requests guide focus); the main menu is
+    // a separate component, so without this the guide simply takes its first focusable row.
+    var wasMainMenuVisible by remember { mutableStateOf(mainMenuVisible) }
+    LaunchedEffect(mainMenuVisible) {
+        if (wasMainMenuVisible && !mainMenuVisible) {
+            val active = selectedRow ?: highlightedRow
+            if (active != null) {
+                highlightedRow = active
+                val now = System.currentTimeMillis()
+                highlightedProgramme = active.programmes.firstOrNull { now in it.startUtcMillis until it.endUtcMillis } ?: active.now
+            }
+            guideRestoreTick++
+            pendingGuideFocus = true
+        }
+        wasMainMenuVisible = mainMenuVisible
     }
 
     // ---- Back button navigation flow ---------------------------------------------------------

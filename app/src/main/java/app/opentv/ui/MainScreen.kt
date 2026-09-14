@@ -257,6 +257,7 @@ fun MainScreen(
                     onPlayCatchup = onPlayCatchup,
                     onOpenMainMenu = { navRailVisible = true },
                     onDismissMainMenu = { navRailVisible = false },
+                    mainMenuVisible = navRailVisible,
                     onFullScreenChanged = { fs ->
                         isLiveFullScreen = fs
                         if (fs) {
