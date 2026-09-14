@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.94
+
+- **The main menu is hidden on Movies, Shows and Recordings until you ask for it.** The icon strip
+  used to sit permanently down the left of every content tab, leaving a sliver pinned next to the
+  category rail. Those tabs now show only their category rail; BACK reveals the main menu, and BACK
+  again returns to Live TV — the same way the guide already behaved.
+- **Releases now really do carry the project's stable signature.** The signing secrets are set, so
+  every release from here on is signed with the same key. That is what lets About → Update replace
+  the installed app in place and keep every playlist, favourite, setting and profile. Installs made
+  before this release were signed with throwaway keys and need one reinstall; after that, updates
+  are seamless.
+
 ## 0.12.93
 
 - **Releases are now signed with the project's own keystore, which is what makes updates install
