@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.96
+
+- **LEFT on the guide's leftmost column opens the category sidebar, not Favourites.** LEFT used to
+  be treated as a no-op on the first programme block, so the d-pad ran off the edge of the grid
+  into the collapsed category rail — still composed at zero width, so still reachable — and landed
+  on the first entry, Favourites. The collapsed rail is no longer composed, and LEFT at the edge now
+  opens the rail. The open callback also read stale state (a keyless `remember`), which is why it
+  always resolved to Favourites regardless of what was playing; it now reads live state and opens on
+  the playing channel's category.
+
 ## 0.12.95
 
 - **BACK in the guide opens the category sidebar on the playing channel's category again.** It used
