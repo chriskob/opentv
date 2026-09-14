@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.98
+
+- **Coming back from the main menu lands on the channel you were watching.** When the main menu
+  closed, focus fell to the guide's first row, so the cursor came back on channel 1 instead of the
+  playing channel. The guide now recentres on the playing channel when the main menu closes, the
+  same way it already did when the category sidebar closed.
+
 ## 0.12.97
 
 - **The main menu is reachable again.** 0.12.96 stopped composing the category sidebar while it was
