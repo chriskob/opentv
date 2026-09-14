@@ -179,6 +179,8 @@ fun GuideGrid(
     highlightedProgramme: Programme? = null,
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
+    /** Fired when LEFT is pressed on the leftmost programme block — opens the category rail. */
+    onExitLeft: () -> Boolean = { false },
     dayOffset: Int = 0,
     /** Channel ids whose catch-up the resolver can actually build (per-channel capability) —
      *  the guide's catch-up badge shows exactly for these, never for the rest. */
@@ -733,6 +735,7 @@ fun GuideGrid(
                             onNavigateVertical = { isDown -> handleNavigateVertical(isDown, index) },
                             onWrapToBottom = { handleWrapToBottom() },
                             onWrapToTop = { handleWrapToTop() },
+                            onExitLeft = onExitLeft,
                         )
                     }
                 }
@@ -1150,6 +1153,7 @@ private fun GuideRow(
     onNavigateVertical: (isDown: Boolean) -> Boolean = { false },
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
+    onExitLeft: () -> Boolean = { false },
 ) {
     Row(
         Modifier
@@ -1398,7 +1402,11 @@ private fun GuideRow(
                             onNavigateVertical = onNavigateVertical,
                             onMoveLeft = if (!isFirst) {
                                 { runCatching { blockFocusRequesters[pOrder - 1].requestFocus() } }
-                            } else null,
+                            } else {
+                                // Leftmost block: open the category rail instead of letting focus
+                                // run off the edge (and into the collapsed rail).
+                                { onExitLeft() }
+                            },
                             onMoveRight = if (!isLast) {
                                 { runCatching { blockFocusRequesters[pOrder + 1].requestFocus() } }
                             } else null,
@@ -1427,9 +1435,13 @@ private fun GuideRow(
                             onFocus = { onFocus(null) },
                             onClick = onSelect,
                             onNavigateVertical = onNavigateVertical,
-                            onMoveLeft = {
-                                blockFocusRequesters.lastOrNull()?.let { req ->
-                                    runCatching { req.requestFocus() }
+                            onMoveLeft = if (blockLayouts.isEmpty()) {
+                                { onExitLeft() }
+                            } else {
+                                {
+                                    blockFocusRequesters.lastOrNull()?.let { req ->
+                                        runCatching { req.requestFocus() }
+                                    }
                                 }
                             },
                         )

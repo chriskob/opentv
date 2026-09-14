@@ -987,6 +987,11 @@ fun HomeScreen(
             Spacer(Modifier.height(12.dp))
             // The top "Search channels" bar was removed — Search now lives in the global nav rail.
 
+            // Only composed while the rail is open. A collapsed (0-width) rail must not be
+            // reachable by the d-pad: otherwise LEFT at the guide's leftmost column runs off the
+            // edge of the grid into this still-composed list and lands on the first entry
+            // (Favourites) — the "LEFT opens the favourites category" bug.
+            if (railExpanded) {
             LazyColumn(
                 state = railListState,
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -1009,7 +1014,6 @@ fun HomeScreen(
                                     return@RailEntry
                                 }
                                 viewModel.selectFavourites()
-                                suppressRailPreviewSelection = false
                                 railPreviewing = true
                             },
                             onClick = {
@@ -1040,7 +1044,6 @@ fun HomeScreen(
                                     return@RailEntry
                                 }
                                 viewModel.selectCategory(row.group.key)
-                                suppressRailPreviewSelection = false
                                 railPreviewing = true
                             },
                             onClick = {
@@ -1057,6 +1060,7 @@ fun HomeScreen(
                         )
                     }
                 }
+            }
             }
         }
 
@@ -1188,39 +1192,40 @@ fun HomeScreen(
                         onDismissMainMenu()
                     }
                 }
-                val onExitLeftChannel: () -> Boolean = remember {
-                    {
-                        backScrollActive = false
-                        if (!railExpanded) {
-                            // LEFT reopens the rail on the playing channel's category too.
-                            // Do NOT call selectCategory() here (see the Back-open path): the row
-                            // swap must not happen inside the key dispatch. The target entry's
-                            // onFocused handler performs the switch after focus lands in the rail.
-                            val playingChannel = (selectedRow ?: highlightedRow)?.primary
-                            val playingGroup = playingChannel?.categoryId?.let { catId ->
-                                categories.firstOrNull { catId in it.ids }
-                            }
-                            // Open where the playing channel lives — its category, or Favourites
-                            // when it is a favourite and that entry is shown. Never a stale target.
-                            railOpenFocusKey = when {
-                                playingChannel?.favourite == true && showFavouritesCategory -> RAIL_KEY_FAVOURITES
-                                playingGroup != null -> playingGroup.key
-                                favouritesOnly -> RAIL_KEY_FAVOURITES
-                                else -> selectedCategory
-                            }
-                            suppressRailPreviewSelection = true
-                            railScrollToIndex = when {
-                                railOpenFocusKey == RAIL_KEY_FAVOURITES ->
-                                    railRows.indexOfFirst { it is RailRow.Favourites }
-                                playingGroup != null -> railIndexForCategoryKey(playingGroup.key)
-                                else -> railFocusTargetIndex()
-                            }
-                            railExpanded = true
-                            pendingRailFocus = true
-                            true
-                        } else {
-                            false
+                // Deliberately not remembered: this reads the live playing channel, categories and
+                // selection. A keyless remember{} captured the first composition's empty state and
+                // kept opening the rail on Favourites no matter what was playing.
+                val onExitLeftChannel: () -> Boolean = {
+                    backScrollActive = false
+                    if (!railExpanded) {
+                        // LEFT reopens the rail on the playing channel's category too.
+                        // Do NOT call selectCategory() here (see the Back-open path): the row
+                        // swap must not happen inside the key dispatch. The target entry's
+                        // onFocused handler performs the switch after focus lands in the rail.
+                        val playingChannel = (selectedRow ?: highlightedRow)?.primary
+                        val playingGroup = playingChannel?.categoryId?.let { catId ->
+                            categories.firstOrNull { catId in it.ids }
                         }
+                        // Open where the playing channel lives — its category, or Favourites
+                        // when it is a favourite and that entry is shown. Never a stale target.
+                        railOpenFocusKey = when {
+                            playingChannel?.favourite == true && showFavouritesCategory -> RAIL_KEY_FAVOURITES
+                            playingGroup != null -> playingGroup.key
+                            favouritesOnly -> RAIL_KEY_FAVOURITES
+                            else -> selectedCategory
+                        }
+                        suppressRailPreviewSelection = true
+                        railScrollToIndex = when {
+                            railOpenFocusKey == RAIL_KEY_FAVOURITES ->
+                                railRows.indexOfFirst { it is RailRow.Favourites }
+                            playingGroup != null -> railIndexForCategoryKey(playingGroup.key)
+                            else -> railFocusTargetIndex()
+                        }
+                        railExpanded = true
+                        pendingRailFocus = true
+                        true
+                    } else {
+                        false
                     }
                 }
                 if (channelLayout == AppSettings.ChannelLayout.LIST) {
@@ -1317,6 +1322,7 @@ fun HomeScreen(
                             highlightedRow = first
                             highlightedProgramme = first?.now
                         },
+                        onExitLeft = onExitLeftChannel,
                         nowMillis = nowMillis,
                         backScrollActive = backScrollActive,
                         modifier = Modifier.weight(1f),
