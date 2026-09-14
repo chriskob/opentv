@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.97
+
+- **The main menu is reachable again.** 0.12.96 stopped composing the category sidebar while it was
+  collapsed, so that LEFT off the guide's edge could not leak into it. But that also meant that when
+  the sidebar closed its focused entry was discarded and focus fell back to the guide, which closes
+  the main menu — so the menu with Movies, Shows, Recordings and Settings opened and immediately
+  vanished. The sidebar is composed again; LEFT off the guide's edge is instead consumed by the guide
+  and opens the sidebar, so the Favourites leak stays fixed.
+
 ## 0.12.96
 
 - **LEFT on the guide's leftmost column opens the category sidebar, not Favourites.** LEFT used to
