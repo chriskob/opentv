@@ -197,8 +197,9 @@ fun HomeScreen(
     }
 
     /**
-     * Index of the rail row that should carry [railFocusRequester] and be scrolled to when the rail
-     * opens — mirroring the attachment rule on the rows below. Opening the rail scrolls here BEFORE
+     * Index of the rail row whose [railFocusRequesters] entry should take focus and be scrolled to
+     * when the rail opens — mirroring the attachment rule on the rows below. Opening the rail
+     * scrolls here BEFORE
      * focus is requested, so focus lands on a real, composed entry instead of drifting onto the first
      * visible one (Favourites) and committing a selection change the user never made.
      *
@@ -278,7 +279,16 @@ fun HomeScreen(
         targetValue = if (railExpanded) 240.dp else 0.dp,
         label = "railWidth",
     )
-    val railFocusRequester = remember { FocusRequester() }
+    // One FocusRequester per rail entry, keyed by row, so d-pad up/down can be driven by index
+    // (see moveRailFocus below). A single shared requester could only ever point at the entry the
+    // open handler chose, so vertical moves fell through to Compose's 2D focus search; when the
+    // next entry wasn't composed yet (list scrolling, a group collapsing) that search walked off
+    // the bottom of the LazyColumn into the guide, which collapsed the rail mid-scroll and dropped
+    // the viewer back on the guide.
+    val railFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
+    // The rail entry that currently holds focus — the origin for the next up/down move.
+    var railFocusedKey by remember { mutableStateOf<String?>(null) }
+    var railNavJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val railListState = rememberLazyListState()
     // Suppresses rail-entry focus previews while the rail is expanding but the intended
     // entry has not yet taken focus. Without this, rows changing while the guide rebuilds can
@@ -290,6 +300,43 @@ fun HomeScreen(
     // moving focus onto it — a just-revealed node isn't focusable on the very same frame.
     var pendingRailFocus by remember { mutableStateOf(false) }
     var pendingGuideFocus by remember { mutableStateOf(false) }
+
+    /**
+     * Steps d-pad focus through the rail by index, wrapping at both ends, instead of leaving
+     * up/down to Compose's 2D focus search. That search is what made the rail "randomly exit to
+     * the guide": pressing down when the following entry had not been composed (it sat just past
+     * the viewport, or a group had just collapsed) found no focusable below within the rail, so it
+     * picked the nearest node in the guide column instead. Every guide row's focus closes the rail
+     * (onFocusChannel), so the viewer was thrown out of the category list mid-scroll. Consuming the
+     * move and requesting the neighbour ourselves keeps focus in the rail and loops top↔bottom.
+     */
+    fun moveRailFocus(isDown: Boolean) {
+        if (railRows.isEmpty()) return
+        val current = railRows.indexOfFirst { it.key == railFocusedKey }
+        val from = if (current >= 0) current else railFocusTargetIndex().coerceIn(0, railRows.size - 1)
+        val targetIndex = if (isDown) (from + 1) % railRows.size else (from - 1 + railRows.size) % railRows.size
+        val targetKey = railRows[targetIndex].key
+        // Move optimistically so a held key keeps stepping even before focus lands.
+        railFocusedKey = targetKey
+        railNavJob?.cancel()
+        railNavJob = scope.launch {
+            fun requestTarget(): Boolean {
+                val req = railFocusRequesters[targetKey] ?: return false
+                return runCatching { req.requestFocus() }.isSuccess
+            }
+            // When the target is off-screen it isn't composed yet, so its requester can't take
+            // focus: scroll it into range first, then retry (same order GuideGrid uses).
+            if (!requestTarget()) {
+                runCatching { railListState.scrollToItem(targetIndex) }
+                delay(30)
+                for (attempt in 0..5) {
+                    if (requestTarget()) break
+                    delay(40)
+                }
+            }
+        }
+    }
+
     // Scroll the rail list to the target entry BEFORE focus lands on it (a just-revealed
     // off-screen row can't take focus).
     LaunchedEffect(railExpanded, railScrollToIndex) {
@@ -312,7 +359,14 @@ fun HomeScreen(
                 runCatching { railListState.scrollToItem(railScrollToIndex) }
             }
             for (attempt in 0..9) {
-                val res = runCatching { railFocusRequester.requestFocus() }
+                val targetKey = railRows.getOrNull(railScrollToIndex)?.key
+                    ?: railRows.getOrNull(railFocusTargetIndex())?.key
+                val req = targetKey?.let { railFocusRequesters[it] }
+                val res = if (req != null) {
+                    runCatching { req.requestFocus() }
+                } else {
+                    Result.failure(IllegalStateException("rail entry not composed yet"))
+                }
                 if (res.isSuccess) break
                 delay(60)
             }
@@ -988,10 +1042,13 @@ fun HomeScreen(
                                 true
                             }
                             // The first deliberate up/down move ends the "just opened" guard:
-                            // from here focus previews select exactly as the viewer asks.
+                            // from here focus previews select exactly as the viewer asks. The move
+                            // itself is driven by index (and wraps) so focus can never fall off the
+                            // rail into the guide, which would close the category list.
                             Key.DirectionUp, Key.DirectionDown -> {
                                 suppressRailPreviewSelection = false
-                                false
+                                moveRailFocus(e.key == Key.DirectionDown)
+                                true
                             }
                             else -> false
                         }
@@ -1011,14 +1068,14 @@ fun HomeScreen(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                // The rail's FocusRequester goes on the row [railFocusTargetIndex] names — the entry
-                // the open handler chose (the playing channel's category) — and not on the guide's
-                // current selection: the two differ whenever the guide sits on Favourites or another
-                // category, which is exactly the "rail opens on Favourites" bug.
-                val railTargetIndex = railFocusTargetIndex()
-                itemsIndexed(railRows, key = { _, row -> row.key }) { index, row ->
-                    val entryModifier =
-                        if (index == railTargetIndex) Modifier.focusRequester(railFocusRequester) else Modifier
+                // Every rail entry carries its own FocusRequester so [moveRailFocus] can step to
+                // any neighbour by key — including one scrolled out of view, which the old single
+                // requester ([railFocusTargetIndex]'s entry) could never reach. The open handler
+                // still decides where focus goes on open via [railFocusTargetIndex].
+                itemsIndexed(railRows, key = { _, row -> row.key }) { _, row ->
+                    val entryModifier = Modifier
+                        .focusRequester(railFocusRequesters.getOrPut(row.key) { FocusRequester() })
+                        .onFocusChanged { if (it.isFocused) railFocusedKey = row.key }
                     when (row) {
                         is RailRow.Favourites -> RailEntry(
                             label = stringResource(R.string.guide_favourites),
