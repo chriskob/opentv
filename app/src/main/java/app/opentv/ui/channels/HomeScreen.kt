@@ -46,12 +46,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -112,7 +115,9 @@ import androidx.activity.compose.BackHandler
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -184,12 +189,14 @@ fun HomeScreen(
     // instead of being recomputed from counts. That arithmetic had to add three rows for the
     // provider section, and a collapsed group changes the row count again; deriving the rows once
     // and indexing them cannot drift the way a hand-maintained offset does.
-    val railRows: List<RailRow> = buildList {
-        if (showFavouritesCategory) add(RailRow.Favourites)
-        sections.forEach { section ->
-            val expanded = section.source.id.toString() !in collapsedSources
-            add(RailRow.SourceHeader(section.source.id, section.source.name, expanded))
-            if (expanded) section.groups.forEach { add(RailRow.Category(section.source.id, it)) }
+    val railRows: List<RailRow> = remember(showFavouritesCategory, sections, collapsedSources) {
+        buildList {
+            if (showFavouritesCategory) add(RailRow.Favourites)
+            sections.forEach { section ->
+                val expanded = section.source.id.toString() !in collapsedSources
+                add(RailRow.SourceHeader(section.source.id, section.source.name, expanded))
+                if (expanded) section.groups.forEach { add(RailRow.Category(section.source.id, it)) }
+            }
         }
     }
 
@@ -236,8 +243,13 @@ fun HomeScreen(
     //  - highlightedRow: where the d-pad is in the grid. Moves freely with up/down.
     //  - selectedRow: what the preview pane plays. Only changes when you press OK, so scrolling
     //    the list is calm and silent instead of re-tuning a stream on every keypress.
-    var highlightedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
-    var highlightedProgramme by remember { mutableStateOf<Programme?>(null) }
+    // Held as explicit State objects so the highlight can be passed DOWN to the preview and the
+    // grid without this screen reading the value during composition. Reading it here recomposed
+    // the whole screen on every d-pad step; now only the preview card and the affected rows do.
+    val highlightedRowState = remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
+    var highlightedRow by highlightedRowState
+    val highlightedProgrammeState = remember { mutableStateOf<Programme?>(null) }
+    var highlightedProgramme by highlightedProgrammeState
     var selectedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
     val previewSound by settings.guidePreviewSound.collectAsState()
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -278,6 +290,12 @@ fun HomeScreen(
     var guideScrollTopTick by remember { mutableStateOf(0) }
     // True while the rail previews a category: the grid tints its first row as the visible cursor.
     var railPreviewing by remember { mutableStateOf(false) }
+    // Category previews are DEBOUNCED through a plain Job holder, deliberately NOT a state read
+    // during composition: a state key here recomposed this whole (very large) screen on every
+    // focused rail entry, so walking the list still stuttered even with the rebuild itself
+    // debounced. Each preview restarts the guide pipeline, so only the entry the user settles on
+    // is previewed; fast walking just moves the cursor.
+    var railPreviewJob by remember { mutableStateOf<Job?>(null) }
     // One FocusRequester per rail entry, keyed by row, so d-pad up/down can be driven by index
     // (see moveRailFocus below). A single shared requester could only ever point at the entry the
     // open handler chose, so vertical moves fell through to Compose's 2D focus search; when the
@@ -406,6 +424,16 @@ fun HomeScreen(
             // the "two highlighted blocks" bug: the pseudo-cursor + the real focused row's
             // cursor both rendered.
             railPreviewing = false
+            railPreviewJob?.cancel()
+        }
+    }
+    // Debounced category preview: restarts on every focused entry, so a fast walk through the
+    // rail coalesces into a single guide rebuild once focus settles on an entry.
+    fun scheduleRailPreview(key: String) {
+        railPreviewJob?.cancel()
+        railPreviewJob = scope.launch {
+            delay(RAIL_PREVIEW_DEBOUNCE_MILLIS)
+            if (key == RAIL_KEY_FAVOURITES) viewModel.selectFavourites() else viewModel.selectCategory(key)
         }
     }
     LaunchedEffect(pendingGuideFocus) {
@@ -498,7 +526,7 @@ fun HomeScreen(
     }
 
     val browsingAwayFromLive = backScrollActive || timeShifted || guideHourOffset != 0
-    BackHandler(enabled = !isFullScreen && !railExpanded && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
+    BackHandler(enabled = !isFullScreen && !railExpanded && !mainMenuVisible && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
         if (browsingAwayFromLive) {
             nowMillis = System.currentTimeMillis()
             viewModel.tick()
@@ -546,7 +574,7 @@ fun HomeScreen(
         }
     }
 
-    BackHandler(enabled = !isFullScreen && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && railExpanded) {
+    BackHandler(enabled = !isFullScreen && !mainMenuVisible && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null && railExpanded) {
         railExpanded = false
         suppressRailPreviewSelection = false
         onOpenMainMenu()
@@ -629,10 +657,21 @@ fun HomeScreen(
         }
     }
     val activeSelectedRow = selectedRow ?: initialRow
-    val activeHighlightedRow = if (highlightedRow != null && rows.any { it.key == highlightedRow?.key }) {
-        highlightedRow
-    } else {
-        initialRow ?: activeSelectedRow
+    // Membership test is O(1) via a key set built once per rows change. It used to be a full
+    // `rows.any { it.key == highlightedRow?.key }` scan that ran on EVERY d-pad focus change —
+    // for a large category that linear scan was the bulk of the guide's UI-thread cost.
+    val rowKeySet = remember(rows) { rows.mapTo(HashSet(rows.size)) { it.key } }
+    // State, not value: this is handed to the preview and grid, so they read it themselves and
+    // only they recompose when the highlight moves.
+    val activeHighlightedRowState = remember(rowKeySet, initialRow, activeSelectedRow) {
+        derivedStateOf {
+            highlightedRowState.value?.takeIf { it.key in rowKeySet }
+                ?: initialRow
+                ?: activeSelectedRow
+        }
+    }
+    val selectedKeyState = remember(activeHighlightedRowState) {
+        derivedStateOf { activeHighlightedRowState.value?.key }
     }
 
     // While rail-previewing a category, land the guide cursor on the PLAYING channel when the
@@ -853,13 +892,21 @@ fun HomeScreen(
         }
     }
 
-    var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    val lastInteractionState = remember { mutableStateOf(System.currentTimeMillis()) }
+    var lastInteractionTime by lastInteractionState
 
-    // Auto-return to full screen after 1 minute of inactivity in the TV guide
-    LaunchedEffect(isFullScreen, channelMenu, recordTarget, showBackgroundPrompt, pendingLiveChannel, lastInteractionTime) {
+    // Auto-return to full screen after 1 minute of inactivity in the TV guide.
+    //
+    // Observed via snapshotFlow instead of keying the effect on lastInteractionTime: that value is
+    // refreshed on EVERY guide focus, so keying on it recomposed this whole screen on every d-pad
+    // step. Watching it as a flow restarts the countdown without any recomposition.
+    LaunchedEffect(isFullScreen, channelMenu, recordTarget, showBackgroundPrompt, pendingLiveChannel) {
         if (!isFullScreen && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
-            delay(60_000L)
-            isFullScreen = true
+            snapshotFlow { lastInteractionState.value }
+                .collectLatest {
+                    delay(60_000L)
+                    isFullScreen = true
+                }
         }
     }
 
@@ -920,7 +967,7 @@ fun HomeScreen(
 
         if (isFullScreen) {
             PlayerScreen(
-                channelId = (selectedRow ?: highlightedRow ?: activeSelectedRow ?: activeHighlightedRow)?.primary?.id ?: (if (settings.lastChannelId > 0L) settings.lastChannelId else null),
+                channelId = (selectedRow ?: highlightedRow ?: activeSelectedRow ?: activeHighlightedRowState.value)?.primary?.id ?: (if (settings.lastChannelId > 0L) settings.lastChannelId else null),
                 onBack = {
                     // Mirror of the BackHandler above: the guide returns to the channel that was
                     // actually playing fullscreen (selectedRow is synced via onChannelChange).
@@ -1095,10 +1142,11 @@ fun HomeScreen(
                                 if (suppressRailPreviewSelection && railOpenFocusKey != RAIL_KEY_FAVOURITES) {
                                     return@RailEntry
                                 }
-                                viewModel.selectFavourites()
+                                scheduleRailPreview(RAIL_KEY_FAVOURITES)
                                 railPreviewing = true
                             },
                             onClick = {
+                                railPreviewJob?.cancel()
                                 viewModel.selectFavourites()
                                 railPreviewing = false
                                 railExpanded = false
@@ -1125,10 +1173,11 @@ fun HomeScreen(
                                 if (suppressRailPreviewSelection && railOpenFocusKey != row.group.key) {
                                     return@RailEntry
                                 }
-                                viewModel.selectCategory(row.group.key)
+                                scheduleRailPreview(row.group.key)
                                 railPreviewing = true
                             },
                             onClick = {
+                                railPreviewJob?.cancel()
                                 viewModel.selectCategory(row.group.key)
                                 railPreviewing = false
                                 railExpanded = false
@@ -1207,17 +1256,13 @@ fun HomeScreen(
                     else -> "${-guideHourOffset}h ago"
                 }
                 GuidePreview(
-                    row = highlightedRow,
-                    programme = highlightedProgramme,
+                    rowState = highlightedRowState,
+                    programmeState = highlightedProgrammeState,
                     nowMillis = nowMillis,
                     onWatch = { (selectedRow ?: highlightedRow)?.let { goFullscreen(it.primary) } },
                     onRefresh = onRefresh,
                     onAddSource = onAddSource,
                     previewPlayer = if (previewEnabled && screenResumed && !recordingActive) previewController.player else null,
-                    isRecording = highlightedRow?.primary?.id?.let { id ->
-                        activeRecordings.any { it.channelId == id }
-                    } == true,
-                    onRecord = { recordSelected() },
                     dayLabel = dayLabel,
                     // Bound derived from EPG retention (see MAX_PAGE_BACK_HOURS): the deepest
                     // page's left edge is exactly the retention boundary — never a blank day.
@@ -1313,7 +1358,7 @@ fun HomeScreen(
                 if (channelLayout == AppSettings.ChannelLayout.LIST) {
                     ChannelList(
                         rows = rows,
-                        selectedKey = activeHighlightedRow?.key,
+                        selectedKeyState = selectedKeyState,
                         playingKey = activeSelectedRow?.key,
                         focusRequester = guideFocusRequester,
                         onSelectRow = { row -> tuneOrFullscreen(row) },
@@ -1345,7 +1390,7 @@ fun HomeScreen(
                         onTimeShifted = { timeShifted = it },
                         scrollTopTick = guideScrollTopTick,
                         previewTopRow = railPreviewing,
-                        selectedKey = activeHighlightedRow?.key,
+                        selectedKeyState = selectedKeyState,
                         playingKey = activeSelectedRow?.key,
                         focusRequester = guideFocusRequester,
                         onSelectRow = { row -> tuneOrFullscreen(row) },
@@ -1393,7 +1438,6 @@ fun HomeScreen(
                                 pendingGuideFocus = true
                             }
                         },
-                        highlightedProgramme = highlightedProgramme,
                         onWrapToBottom = {
                             val last = rows.lastOrNull()
                             highlightedRow = last
@@ -1897,6 +1941,9 @@ private sealed interface RailRow {
 // sentinel while preview suppression is active. There is no all-channels sentinel: the rail has no
 // such entry.
 private const val RAIL_KEY_FAVOURITES = "rail:favourites"
+
+/** How long focus must rest on a rail entry before its category is previewed (see pendingPreviewKey). */
+private const val RAIL_PREVIEW_DEBOUNCE_MILLIS = 400L
 
 @Composable
 private fun RailEntry(

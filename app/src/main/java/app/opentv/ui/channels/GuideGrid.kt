@@ -174,7 +174,7 @@ internal fun formatChannelNameForDisplay(name: String): String {
 fun GuideGrid(
     rows: List<ChannelsViewModel.Row>,
     windowStartMillis: Long,
-    selectedKey: Any?,
+    selectedKeyState: State<Any?>,
     playingKey: Any? = null,
     focusRequester: FocusRequester? = null,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
@@ -184,7 +184,6 @@ fun GuideGrid(
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onEnableBackScroll: () -> Unit = {},
     onJumpToLive: () -> Unit = {},
-    highlightedProgramme: Programme? = null,
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
     /** Fired when LEFT is pressed on the leftmost programme block — opens the category rail. */
@@ -207,8 +206,11 @@ fun GuideGrid(
     backScrollActive: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    // The caller's highlight is read through its State only from key handlers and effects (via
+    // selectedKeyState.value), never during composition. Reading it here would recompose the
+    // whole grid on every d-pad step — and the grid is the source of that very value.
     val density = LocalDensity.current
-    val focusTargetKey = playingKey ?: selectedKey ?: rows.firstOrNull()?.key
+    val focusTargetKey = playingKey ?: rows.firstOrNull()?.key
     // Rail-preview pseudo-cursor anchor: the playing channel's row when visible, else the first.
     // Computed once here instead of once per visible row (the old in-item lookup scanned the
     // whole list for every row on every recomposition).
@@ -248,7 +250,9 @@ fun GuideGrid(
         }
     }
     val scroll = rememberScrollState(initial = initialNowScrollPx)
-    val initialFirstVisible = remember(focusTargetKey, rows) {
+    // Keyed on rows/key, NOT on the focused key: this only seeds the list's initial scroll, yet
+    // it used to rescan every row on each d-pad focus change (an O(n) pass per step).
+    val initialFirstVisible = remember(rows, playingKey) {
         val idx = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
         if (idx < 6) 0 else (idx - 2).coerceAtLeast(0)
     }
@@ -258,7 +262,14 @@ fun GuideGrid(
     )
 
     // Width of the horizontally-scrollable timeline (guide area minus the fixed channel column).
-    val timelineViewportPx = (guideWidthPx - with(density) { CHANNEL_COLUMN.roundToPx() }).coerceAtLeast(0)
+    // Exposed as state and read lazily (inside the compose window below and in the keep-visible
+    // callback), so an outer layout change — e.g. the main menu sliding in and widening the guide
+    // — updates the viewport without recomposing every guide row on each animation frame.
+    val timelineViewportPxState = remember {
+        derivedStateOf {
+            (guideWidthPx - with(density) { CHANNEL_COLUMN.roundToPx() }).coerceAtLeast(0)
+        }
+    }
 
     // Time span of programme blocks each row needs to compose: the viewport plus a buffer on
     // each side (so d-pad stepping and fast scrubs never outrun the built cells). Derived from
@@ -266,8 +277,9 @@ fun GuideGrid(
     // a step and rows recompose only when the window advances a step — not on every scrolled
     // pixel. A null pair means "not measured yet"; rows then compose everything so the guide is
     // never blank on the first frame.
-    val composeWindow by remember(timelineViewportPx, effectiveStartMillis) {
+    val composeWindow by remember(effectiveStartMillis) {
         derivedStateOf {
+            val timelineViewportPx = timelineViewportPxState.value
             val densityF = density.density
             if (timelineViewportPx <= 0 || densityF <= 0f) {
                 null
@@ -296,7 +308,7 @@ fun GuideGrid(
     // derivedStateOf. The LazyColumn item lambda no longer reads the values directly, so a
     // d-pad move no longer recomposes every visible row — only the rows whose highlight or
     // target block actually changed.
-    val activeFocusedKeyState = remember { mutableStateOf<Any?>(playingKey ?: selectedKey ?: rows.firstOrNull()?.key) }
+    val activeFocusedKeyState = remember { mutableStateOf<Any?>(playingKey ?: rows.firstOrNull()?.key) }
     var activeFocusedKey by activeFocusedKeyState
     val targetProgKeyState = remember { mutableStateOf<Long?>(null) }
     var targetProgKey by targetProgKeyState
@@ -394,7 +406,7 @@ fun GuideGrid(
             // programme, which can sit far right of the scrub position — without this, focus
             // jumps there and keep-visible animates the whole timeline back (cursor "vanishes",
             // guide keeps moving).
-            val key = activeFocusedKey ?: playingKey ?: selectedKey ?: rows.firstOrNull()?.key
+            val key = activeFocusedKey ?: playingKey ?: selectedKeyState.value ?: rows.firstOrNull()?.key
             val row = rows.firstOrNull { it.key == key }
             val scrollDp = with(density) { scroll.value.toDp() }
             val anchorMillis = effectiveStartMillis + (scrollDp.value / MINUTE_DP).toLong() * 60_000L
@@ -429,7 +441,7 @@ fun GuideGrid(
 
     val focusAndCenterRow = { targetKey: Any?, animate: Boolean ->
         if (rows.isNotEmpty()) {
-            val k = targetKey ?: playingKey ?: selectedKey ?: rows.first().key
+            val k = targetKey ?: playingKey ?: selectedKeyState.value ?: rows.first().key
             val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
             val matchedRow = rows[index]
             val now = System.currentTimeMillis()
@@ -488,7 +500,7 @@ fun GuideGrid(
     var initializedKey by remember { mutableStateOf<Any?>(null) }
     LaunchedEffect(focusTargetKey, rows.isNotEmpty()) {
         if (rows.isNotEmpty()) {
-            val targetKey = playingKey ?: selectedKey ?: rows.first().key
+            val targetKey = playingKey ?: selectedKeyState.value ?: rows.first().key
             if (initializedKey != targetKey) {
                 initializedKey = targetKey
                 focusAndCenterRow(targetKey, false)
@@ -521,7 +533,7 @@ fun GuideGrid(
                 if (rows.isNotEmpty()) {
                     // Anchor on the playing channel when the previewed category contains it, else
                     // the first row — never a key that matches no drawn row, or the cursor vanishes.
-                    val k = rows.firstOrNull { it.key == (playingKey ?: selectedKey) }?.key
+                    val k = rows.firstOrNull { it.key == (playingKey ?: selectedKeyState.value) }?.key
                         ?: rows.first().key
                     val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
                     val targetVisible = when {
@@ -535,7 +547,7 @@ fun GuideGrid(
                     activeFocusedKey = k
                 }
             } else {
-                focusAndCenterRow(playingKey ?: selectedKey, false)
+                focusAndCenterRow(playingKey ?: selectedKeyState.value, false)
             }
         }
     }
@@ -579,7 +591,7 @@ fun GuideGrid(
     }
 
     val handleJumpToLive = {
-        val targetKey = playingKey ?: selectedKey ?: activeFocusedKey ?: rows.firstOrNull()?.key
+        val targetKey = playingKey ?: selectedKeyState.value ?: activeFocusedKey ?: rows.firstOrNull()?.key
         focusAndCenterRow(targetKey, true)
         onJumpToLive()
     }
@@ -751,7 +763,6 @@ fun GuideGrid(
                             windowStartMillis = effectiveStartMillis,
                             composeStartMillis = composeWindow?.first ?: Long.MIN_VALUE,
                             composeEndMillis = composeWindow?.second ?: Long.MAX_VALUE,
-                            viewportWidthPx = timelineViewportPx,
                             nowMillis = currentTickMillis,
                             activeKeyState = activeFocusedKeyState,
                             fallbackKey = focusTargetKey,
@@ -789,8 +800,9 @@ fun GuideGrid(
                                     // Use the measured timeline width (fallback to a sane estimate
                                     // before the first layout) so a focused block at the right
                                     // edge is scrolled in by the exact amount, not a guess.
-                                    val viewportWidthDp = if (timelineViewportPx > 0) {
-                                        with(density) { timelineViewportPx.toDp() }
+                                    val viewportPx = timelineViewportPxState.value
+                                    val viewportWidthDp = if (viewportPx > 0) {
+                                        with(density) { viewportPx.toDp() }
                                     } else {
                                         800.dp
                                     }
@@ -865,7 +877,7 @@ fun GuideGrid(
 @Composable
 fun ChannelList(
     rows: List<ChannelsViewModel.Row>,
-    selectedKey: Any?,
+    selectedKeyState: State<Any?>,
     playingKey: Any? = null,
     focusRequester: FocusRequester? = null,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
@@ -878,8 +890,10 @@ fun ChannelList(
     nowMillis: Long = System.currentTimeMillis(),
     modifier: Modifier = Modifier,
 ) {
+    val selectedKey = selectedKeyState.value
     val focusTargetKey = playingKey ?: selectedKey ?: rows.firstOrNull()?.key
-    val initialFirstVisible = remember(focusTargetKey, rows) {
+    // See GuideGrid: seed-only, so it must not rescan on every focus change.
+    val initialFirstVisible = remember(rows, playingKey) {
         val idx = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
         if (idx < 6) 0 else (idx - 2).coerceAtLeast(0)
     }
@@ -1036,11 +1050,11 @@ private fun ChannelListRow(
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .fillMaxWidth()
             .height(ROW_HEIGHT)
-            .clip(GuideCellShape)
             .background(
                 if (focused) Color(0xFFF0F4F8)
                 else if (isSelected) Color(0xFF1E2F3E)
                 else Color(0xFF18222C),
+                GuideCellShape,
             )
             .then(
                 if (focused) Modifier.border(2.dp, Color.White, GuideCellShape)
@@ -1215,8 +1229,6 @@ private fun GuideRow(
     /** Visible timeline span (plus buffer) that decided which programme blocks get composed. */
     composeStartMillis: Long = Long.MIN_VALUE,
     composeEndMillis: Long = Long.MAX_VALUE,
-    /** Pixel width of the scrolling timeline, used to keep the focused block on screen. */
-    viewportWidthPx: Int = 0,
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     catchUpChannelIds: Set<Long> = emptySet(),
@@ -1366,10 +1378,10 @@ private fun GuideRow(
                         .then(if (extReq != null) Modifier.focusRequester(extReq) else Modifier)
                         .width(widthFor(windowStartMillis, windowEndMillis))
                         .fillMaxSize()
-                        .clip(GuideCellShape)
                         .background(
                             if (emptyHighlighted) Color.White
                             else Color(0xFF222C36),
+                            GuideCellShape,
                         )
                         .then(
                             if (emptyHighlighted) Modifier.border(1.5.dp, Color.White, GuideCellShape)
@@ -1653,10 +1665,14 @@ private fun ProgrammeBlock(
             .width(width)
             .fillMaxSize()
             .padding(end = 1.5.dp)
-            .clip(GuideCellShape)
+            // Rounded corners come from the background/border shapes, NOT Modifier.clip: a clip
+            // on every cell forced a GPU clip/saveLayer per programme block (~100+ per screen),
+            // which is the bulk of the scrub/scroll render cost. A shaped background draws the
+            // same rounded rect with no layer.
             .background(
                 if (highlighted) Color.White
-                else Color(0xFF222C36)
+                else Color(0xFF222C36),
+                GuideCellShape,
             )
             .then(
                 if (highlighted) Modifier.border(1.5.dp, Color.White, GuideCellShape)

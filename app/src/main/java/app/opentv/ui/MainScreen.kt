@@ -6,9 +6,6 @@
 package app.opentv.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import app.opentv.R
 import app.opentv.core.findActivity
 import app.opentv.core.StatusBus
@@ -75,7 +72,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import app.opentv.data.model.Channel
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Recording
@@ -99,7 +95,6 @@ enum class Tab(val labelRes: Int, val icon: ImageVector) {
     RECORDINGS(R.string.nav_recordings, Icons.Filled.FiberManualRecord),
 }
 
-private val RAIL_COLLAPSED = 76.dp
 private val RAIL_EXPANDED = 236.dp
 
 @Composable
@@ -224,12 +219,30 @@ fun MainScreen(
         )
     }
 
-    // The rail overlays the content and slides in from the left, so opening the main menu no
-    // longer re-measures the screen behind it. (Animating its width re-laid-out the whole guide
-    // on every frame.) The rail's own icon↔label width change stays internal to the overlay.
+    // The rail sits beside the content and pushes it, rather than floating over it. The Live TV
+    // screen has its own category rail down its left edge, and an overlaying menu would land on top
+    // of it and leave a sliver poking out — so they live side by side and never collide.
     Column(Modifier.fillMaxSize()) {
-      Box(Modifier.weight(1f).fillMaxWidth()) {
-        Box(Modifier.fillMaxSize()) {
+      Row(Modifier.weight(1f).fillMaxWidth()) {
+        val showNavRail = navRailVisible && !isLiveFullScreen
+        if (showNavRail) {
+            NavRail(
+                tabs = visibleTabs,
+                current = tab,
+                onSelect = {
+                    tab = it
+                    navRailVisible = false
+                },
+                onOpenSearch = onOpenSearch,
+                onOpenSettings = onOpenSettings,
+                onOpenProfiles = onOpenProfiles,
+                activeProfileName = activeProfileName,
+                requestFocusOnStart = navRailVisible,
+                onExitRight = { navRailVisible = false },
+            )
+        }
+
+        Box(Modifier.weight(1f).fillMaxHeight()) {
             when (tab) {
                 Tab.LIVE -> HomeScreen(
                     isTelevision = isTelevision,
@@ -268,31 +281,6 @@ fun MainScreen(
                 )
                 Tab.RECORDINGS -> RecordingsScreen(onPlay = onPlayRecording)
             }
-        }
-
-        androidx.compose.animation.AnimatedVisibility(
-            visible = navRailVisible && !isLiveFullScreen,
-            enter = slideInHorizontally(initialOffsetX = { -it }),
-            exit = slideOutHorizontally(targetOffsetX = { -it }),
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .zIndex(10f),
-        ) {
-            NavRail(
-                tabs = visibleTabs,
-                current = tab,
-                onSelect = {
-                    tab = it
-                    navRailVisible = false
-                },
-                onOpenSearch = onOpenSearch,
-                onOpenSettings = onOpenSettings,
-                onOpenProfiles = onOpenProfiles,
-                activeProfileName = activeProfileName,
-                requestFocusOnStart = navRailVisible,
-                onExitRight = { navRailVisible = false },
-            )
         }
       }
       StatusBar()
@@ -369,12 +357,11 @@ private fun NavRail(
         }
     }
 
-    // Expand whenever focus is anywhere inside the rail; collapse back to icons when it leaves.
-    var expanded by remember { mutableStateOf(false) }
-    val width by animateDpAsState(
-        targetValue = if (expanded) RAIL_EXPANDED else RAIL_COLLAPSED,
-        label = "railWidth",
-    )
+    // The menu is always shown fully — labels visible — for as long as it is open. There is
+    // deliberately no icon-only collapsed state: it used to appear whenever focus was not inside
+    // the rail, which read as a stray strip of icons sitting over the guide.
+    val expanded = true
+    val width = RAIL_EXPANDED
 
     Column(
         modifier
@@ -382,7 +369,6 @@ private fun NavRail(
             .fillMaxHeight()
             .background(MaterialTheme.colorScheme.surface)
             .focusGroup()
-            .onFocusChanged { expanded = it.hasFocus }
             .onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
                     onExitRight()
@@ -392,8 +378,8 @@ private fun NavRail(
             .padding(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        // Brand: the logo mark alone when collapsed, the mark + "OpenTV" wordmark when open. The
-        // name stays on purpose — it's what people search for.
+        // Brand: the logo mark and the "OpenTV" wordmark. The name stays on purpose — it's what
+        // people search for.
         Row(
             Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -403,17 +389,15 @@ private fun NavRail(
                 contentDescription = "OpenTV",
                 modifier = Modifier.size(34.dp),
             )
-            if (expanded) {
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    "OpenTV",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "OpenTV",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         Spacer(Modifier.height(8.dp))
 

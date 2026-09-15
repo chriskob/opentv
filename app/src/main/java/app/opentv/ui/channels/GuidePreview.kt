@@ -39,6 +39,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,15 +88,13 @@ import java.util.Locale
 @OptIn(UnstableApi::class)
 @Composable
 fun GuidePreview(
-    row: ChannelsViewModel.Row?,
-    programme: Programme? = null,
+    rowState: State<ChannelsViewModel.Row?>,
+    programmeState: State<Programme?>,
     nowMillis: Long,
     onWatch: () -> Unit,
     onRefresh: () -> Unit,
     onAddSource: () -> Unit,
     previewPlayer: ExoPlayer?,
-    isRecording: Boolean = false,
-    onRecord: () -> Unit = {},
     dayLabel: String = "",
     canGoPrevDay: Boolean = false,
     onPrevDay: () -> Unit = {},
@@ -103,6 +102,10 @@ fun GuidePreview(
     modifier: Modifier = Modifier,
     onPreviewBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
+    // Read the caller's highlight here rather than receiving its value, so a d-pad step only
+    // recomposes this card, not the whole Live TV screen behind it.
+    val row = rowState.value
+    val programme = programmeState.value
     val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     Row(
