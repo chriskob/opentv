@@ -463,7 +463,10 @@ fun GuideGrid(
         if (restoreTick > 0) {
             if (previewTopRow) {
                 if (rows.isNotEmpty()) {
-                    val k = playingKey ?: selectedKey ?: rows.first().key
+                    // Anchor on the playing channel when the previewed category contains it, else
+                    // the first row — never a key that matches no drawn row, or the cursor vanishes.
+                    val k = rows.firstOrNull { it.key == (playingKey ?: selectedKey) }?.key
+                        ?: rows.first().key
                     val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
                     val targetVisible = when {
                         rows.size <= 6 -> 0
@@ -677,8 +680,12 @@ fun GuideGrid(
                         // During a rail preview the pseudo-cursor must sit on the ANCHOR row (the
                         // playing channel when visible, else the first row) — NOT hard-bound to
                         // index 0. Hard-binding it made the cursor jump to the top block whenever
-                        // the rail opened, even when the playing channel sat mid-list.
-                        val previewAnchorKey = playingKey ?: rows.firstOrNull()?.key
+                        // the rail opened, even when the playing channel sat mid-list. When the
+                        // previewed category does not contain the playing channel there is no
+                        // matching row, so fall back to the first row — otherwise the guide showed
+                        // no cursor at all in that category.
+                        val previewAnchorKey =
+                            rows.firstOrNull { it.key == playingKey }?.key ?: rows.firstOrNull()?.key
                         val isPreviewAnchor = previewTopRow && row.key == previewAnchorKey
                         GuideRow(
                             row = row,
