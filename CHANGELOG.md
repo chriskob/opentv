@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.1
+
+- **The main menu always shows its labels.** It used to fall back to a bare strip of icons
+  whenever focus was not on it, which read as a stray icon column sitting over the guide. There
+  is no icon-only state any more.
+- **Back now steps out through the menus instead of opening one underneath another.** From the
+  guide: Back opens the category menu, Back again opens the main menu, and Back in the main menu
+  prompts to exit — it no longer slides the category menu open beneath the main menu.
+- **The guide is smoother.** A d-pad step used to recompose the entire Live TV screen (the
+  highlight state was read at the screen's top level, and a focus-keyed effect forced a redraw on
+  every move); only the preview card and the affected rows update now. Two per-step full-list
+  scans were removed, per-cell GPU clip layers were dropped, and category previews are debounced
+  so walking the category sidebar no longer rebuilds a whole category on every entry.
+
 ## 0.13.0
 
 - **The guide is much smoother to scroll and scrub.** Each channel row used to build every
