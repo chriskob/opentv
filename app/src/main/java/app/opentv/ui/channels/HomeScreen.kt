@@ -5,7 +5,9 @@
  */
 package app.opentv.ui.channels
 
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -70,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -275,10 +278,6 @@ fun HomeScreen(
     var guideScrollTopTick by remember { mutableStateOf(0) }
     // True while the rail previews a category: the grid tints its first row as the visible cursor.
     var railPreviewing by remember { mutableStateOf(false) }
-    val railWidth by animateDpAsState(
-        targetValue = if (railExpanded) 240.dp else 0.dp,
-        label = "railWidth",
-    )
     // One FocusRequester per rail entry, keyed by row, so d-pad up/down can be driven by index
     // (see moveRailFocus below). A single shared requester could only ever point at the entry the
     // open handler chose, so vertical moves fell through to Compose's 2D focus search; when the
@@ -1007,19 +1006,31 @@ fun HomeScreen(
                 },
             )
         } else {
-            Row(
+            // The guide is full width; the category rail overlays it (and exactly covers the
+            // channel column while open). Sliding it in with AnimatedVisibility means the guide
+            // is never re-measured while the menu opens/closes — the old width animation
+            // re-laid-out the whole grid every frame.
+            Box(
                 Modifier
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-
+        AnimatedVisibility(
+            visible = railExpanded,
+            enter = slideInHorizontally(initialOffsetX = { -it }),
+            exit = slideOutHorizontally(targetOffsetX = { -it }),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .width(240.dp)
+                .fillMaxHeight()
+                .zIndex(10f),
+        ) {
         // ---- Category rail -----------------------------------------------------------------
-        // Width animates to 0 while focus is in the guide (see onFocusRow) so the grid gets the
-        // whole screen; d-pad LEFT from the guide's channel column slides it back (onExitLeft…).
+        // d-pad LEFT from the guide's channel column slides it in (onExitLeft…); it collapses
+        // once focus moves back into the guide.
         Column(
             Modifier
-                .width(railWidth)
-                .fillMaxHeight()
+                .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
                 .clipToBounds()
                 .padding(vertical = 16.dp)
@@ -1133,9 +1144,10 @@ fun HomeScreen(
                 }
             }
         }
+        }
 
         // ---- Preview + guide ---------------------------------------------------------------
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.fillMaxSize()) {
             if (rows.isEmpty()) {
                 when {
                     favouritesOnly -> NoFavouritesState()

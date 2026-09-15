@@ -42,11 +42,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +69,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
@@ -88,6 +95,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -199,8 +207,19 @@ fun GuideGrid(
     backScrollActive: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
+    val density = LocalDensity.current
     val focusTargetKey = playingKey ?: selectedKey ?: rows.firstOrNull()?.key
+    // Rail-preview pseudo-cursor anchor: the playing channel's row when visible, else the first.
+    // Computed once here instead of once per visible row (the old in-item lookup scanned the
+    // whole list for every row on every recomposition).
+    val previewAnchorKey = remember(rows, playingKey) {
+        rows.firstOrNull { it.key == playingKey }?.key ?: rows.firstOrNull()?.key
+    }
+
+    // Measured width of the guide area (channel column + timeline). Used to window the
+    // programme blocks each row composes: only cells near the horizontal viewport are built,
+    // so a 48-hour guide no longer composes hundreds of off-screen blocks per visible row.
+    var guideWidthPx by remember { mutableIntStateOf(0) }
 
     // Recurring 30s ticker to keep nowMillis accurate and line advancing
     var currentTickMillis by remember { mutableLongStateOf(nowMillis) }
@@ -238,14 +257,51 @@ fun GuideGrid(
         initialFirstVisibleItemScrollOffset = 0,
     )
 
+    // Width of the horizontally-scrollable timeline (guide area minus the fixed channel column).
+    val timelineViewportPx = (guideWidthPx - with(density) { CHANNEL_COLUMN.roundToPx() }).coerceAtLeast(0)
+
+    // Time span of programme blocks each row needs to compose: the viewport plus a buffer on
+    // each side (so d-pad stepping and fast scrubs never outrun the built cells). Derived from
+    // scroll.value but QUANTISED to a coarse step, so the value is stable while scrolling within
+    // a step and rows recompose only when the window advances a step — not on every scrolled
+    // pixel. A null pair means "not measured yet"; rows then compose everything so the guide is
+    // never blank on the first frame.
+    val composeWindow by remember(timelineViewportPx, effectiveStartMillis) {
+        derivedStateOf {
+            val densityF = density.density
+            if (timelineViewportPx <= 0 || densityF <= 0f) {
+                null
+            } else {
+                val pxPerMinute = MINUTE_DP * densityF
+                val firstMinute = scroll.value / pxPerMinute
+                val lastMinute = firstMinute + timelineViewportPx / pxPerMinute
+                val startMillis = effectiveStartMillis +
+                    (firstMinute * 60_000L).toLong() - COMPOSE_WINDOW_PAST_MILLIS
+                val endMillis = effectiveStartMillis +
+                    (lastMinute * 60_000L).toLong() + COMPOSE_WINDOW_FUTURE_MILLIS
+                // Snap outward to the quantum: the composed set then changes at most once per
+                // step rather than continuously, while the buffer keeps it safely conservative.
+                val q = COMPOSE_QUANTUM_MILLIS
+                (startMillis / q * q) to ((endMillis / q + 1) * q)
+            }
+        }
+    }
+
     val internalFocusRequester = remember { FocusRequester() }
     val activeCellFocusRequester = focusRequester ?: internalFocusRequester
     val rowFocusRequesters = remember { mutableMapOf<Any, FocusRequester>() }
 
     var activeFocusedIndex by remember { mutableStateOf<Int?>(null) }
-    var activeFocusedKey by remember { mutableStateOf<Any?>(playingKey ?: selectedKey ?: rows.firstOrNull()?.key) }
-    var targetProgKey by remember { mutableStateOf<Long?>(null) }
-    var temporalAnchorMillis by remember { mutableLongStateOf(nowMillis) }
+    // Focus/anchor state is exposed as State objects and read by each row through a
+    // derivedStateOf. The LazyColumn item lambda no longer reads the values directly, so a
+    // d-pad move no longer recomposes every visible row — only the rows whose highlight or
+    // target block actually changed.
+    val activeFocusedKeyState = remember { mutableStateOf<Any?>(playingKey ?: selectedKey ?: rows.firstOrNull()?.key) }
+    var activeFocusedKey by activeFocusedKeyState
+    val targetProgKeyState = remember { mutableStateOf<Long?>(null) }
+    var targetProgKey by targetProgKeyState
+    val temporalAnchorState = remember { mutableLongStateOf(nowMillis) }
+    var temporalAnchorMillis by temporalAnchorState
     var isNavigatingVertically by remember { mutableStateOf(false) }
     var verticalNavJob by remember { mutableStateOf<Job?>(null) }
     var focusCenterJob by remember { mutableStateOf<Job?>(null) }
@@ -486,8 +542,16 @@ fun GuideGrid(
 
     // Report timeline displacement so HomeScreen's Back handler knows the user is browsing
     // away from "now" (scrubbed, day-paged, or panned forward) versus sitting on live.
-    LaunchedEffect(backScrollActive, scroll.value) {
-        onTimeShifted(backScrollActive || scroll.value > 4)
+    //
+    // Observed with snapshotFlow + distinctUntilChanged rather than keyed on `scroll.value`.
+    // Keying a LaunchedEffect on the scroll position restarted (cancelled + relaunched) this
+    // coroutine on EVERY scrolled pixel, and each restart pushed a state write up to HomeScreen
+    // — a whole-screen recomposition per frame. Now it fires only when the threshold flips.
+    val currentOnTimeShifted by rememberUpdatedState(onTimeShifted)
+    LaunchedEffect(backScrollActive) {
+        snapshotFlow { backScrollActive || scroll.value > 4 }
+            .distinctUntilChanged()
+            .collect { currentOnTimeShifted(it) }
     }
 
     // Rail category focus-preview: snap the grid to the top (channel 1) and clear any stale
@@ -640,7 +704,7 @@ fun GuideGrid(
             )
             Spacer(Modifier.height(2.dp))
 
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            Box(Modifier.weight(1f).fillMaxWidth().onSizeChanged { guideWidthPx = it.width }) {
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(top = 2.dp, bottom = 2.dp),
@@ -673,35 +737,32 @@ fun GuideGrid(
                         key = { _, row -> row.key },
                         contentType = { _, _ -> "guide_row" },
                     ) { index, row ->
-                        val currentActiveKey = activeFocusedKey ?: focusTargetKey ?: rows.firstOrNull()?.key
                         val isPlaying = row.key == playingKey
-                        val isHighlighted = row.key == currentActiveKey
                         val rowRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() }
                         // During a rail preview the pseudo-cursor must sit on the ANCHOR row (the
                         // playing channel when visible, else the first row) — NOT hard-bound to
                         // index 0. Hard-binding it made the cursor jump to the top block whenever
-                        // the rail opened, even when the playing channel sat mid-list. When the
-                        // previewed category does not contain the playing channel there is no
-                        // matching row, so fall back to the first row — otherwise the guide showed
-                        // no cursor at all in that category.
-                        val previewAnchorKey =
-                            rows.firstOrNull { it.key == playingKey }?.key ?: rows.firstOrNull()?.key
+                        // the rail opened, even when the playing channel sat mid-list.
                         val isPreviewAnchor = previewTopRow && row.key == previewAnchorKey
                         GuideRow(
                             row = row,
                             rowIndex = index,
                             totalRows = rows.size,
                             windowStartMillis = effectiveStartMillis,
+                            composeStartMillis = composeWindow?.first ?: Long.MIN_VALUE,
+                            composeEndMillis = composeWindow?.second ?: Long.MAX_VALUE,
+                            viewportWidthPx = timelineViewportPx,
                             nowMillis = currentTickMillis,
-                            temporalAnchorMillis = temporalAnchorMillis,
+                            activeKeyState = activeFocusedKeyState,
+                            fallbackKey = focusTargetKey,
+                            targetProgKeyState = targetProgKeyState,
+                            anchorState = temporalAnchorState,
                             scroll = scroll,
                             catchUpChannelIds = catchUpChannelIds,
                             isSelected = isPlaying,
-                            isRowHighlighted = isHighlighted || isPreviewAnchor,
                             previewHighlight = isPreviewAnchor,
-                            targetProgKey = if (isHighlighted) targetProgKey else null,
                             rowFocusRequester = rowRequester,
-                            externalFocusRequester = if (isHighlighted) activeCellFocusRequester else null,
+                            externalFocusRequester = activeCellFocusRequester,
                             onSelect = { onSelectRow(row) },
                             onLongSelect = { onLongSelectRow(row) },
                             onFocus = { prog ->
@@ -725,7 +786,14 @@ fun GuideGrid(
                                     val progStartX = widthFor(effectiveStartMillis, prog.startUtcMillis)
                                     val progEndX = widthFor(effectiveStartMillis, prog.endUtcMillis)
                                     val currentScrollDp = with(density) { scroll.value.toDp() }
-                                    val viewportWidthDp = 800.dp
+                                    // Use the measured timeline width (fallback to a sane estimate
+                                    // before the first layout) so a focused block at the right
+                                    // edge is scrolled in by the exact amount, not a guess.
+                                    val viewportWidthDp = if (timelineViewportPx > 0) {
+                                        with(density) { timelineViewportPx.toDp() }
+                                    } else {
+                                        800.dp
+                                    }
                                     if (progEndX <= currentScrollDp) {
                                         val targetPx = with(density) { (progStartX - 10.dp).coerceAtLeast(0.dp).roundToPx() }
                                         horizontalScrollJob?.cancel()
@@ -760,30 +828,32 @@ fun GuideGrid(
                 .clipToBounds()
                 .zIndex(15f)
         ) {
-            val scrollOffsetDp = with(density) { scroll.value.toDp() }
+            // The horizontal pan is applied with graphicsLayer{translationX}, which reads
+            // scroll.value at draw time, so the "now" line and pip track the scroll without
+            // recomposing this overlay on every scrolled pixel. clipToBounds hides them once
+            // they leave the timeline.
             val nowOffsetDp = widthFor(effectiveStartMillis, currentTickMillis)
-            val lineXDp = nowOffsetDp - scrollOffsetDp
-            if (lineXDp >= 0.dp) {
-                // Continuous vertical line running from header divider down through all rows
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .padding(top = 28.dp)
-                        .offset(x = lineXDp - 0.75.dp)
-                        .width(1.5.dp)
-                        .background(AppTheme.primary.copy(alpha = 0.20f))
-                )
-                // Small circular dot / pip on the timeline header divider
-                Box(
-                    Modifier
-                        .padding(top = 25.dp)
-                        .offset(x = lineXDp - 3.5.dp)
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(AppTheme.primary.copy(alpha = 0.65f))
-                        .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
-                )
-            }
+            // Continuous vertical line running from header divider down through all rows
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .padding(top = 28.dp)
+                    .offset(x = nowOffsetDp - 0.75.dp)
+                    .graphicsLayer { translationX = -scroll.value.toFloat() }
+                    .width(1.5.dp)
+                    .background(AppTheme.primary.copy(alpha = 0.20f))
+            )
+            // Small circular dot / pip on the timeline header divider
+            Box(
+                Modifier
+                    .padding(top = 25.dp)
+                    .offset(x = nowOffsetDp - 3.5.dp)
+                    .graphicsLayer { translationX = -scroll.value.toFloat() }
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(AppTheme.primary.copy(alpha = 0.65f))
+                    .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
+            )
         }
     }
 }
@@ -1142,14 +1212,21 @@ private fun GuideRow(
     rowIndex: Int = 0,
     totalRows: Int = 1,
     windowStartMillis: Long,
+    /** Visible timeline span (plus buffer) that decided which programme blocks get composed. */
+    composeStartMillis: Long = Long.MIN_VALUE,
+    composeEndMillis: Long = Long.MAX_VALUE,
+    /** Pixel width of the scrolling timeline, used to keep the focused block on screen. */
+    viewportWidthPx: Int = 0,
     nowMillis: Long,
-    temporalAnchorMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     catchUpChannelIds: Set<Long> = emptySet(),
     previewHighlight: Boolean = false,
     isSelected: Boolean,
-    isRowHighlighted: Boolean = false,
-    targetProgKey: Long? = null,
+    /** Focused row key, read through a derivedStateOf so focus moves only recompose changed rows. */
+    activeKeyState: State<Any?>,
+    fallbackKey: Any? = null,
+    targetProgKeyState: State<Long?>,
+    anchorState: State<Long>,
     rowFocusRequester: FocusRequester,
     externalFocusRequester: FocusRequester? = null,
     onSelect: () -> Unit,
@@ -1162,6 +1239,18 @@ private fun GuideRow(
     onWrapToTop: () -> Unit = {},
     onExitLeft: () -> Boolean = { false },
 ) {
+    // Read focus/anchor state through derivedStateOf: this row recomposes only when ITS
+    // highlight or target block changes, not whenever focus moves anywhere in the grid.
+    val isFocused by remember(row.key, activeKeyState, fallbackKey) {
+        derivedStateOf { (activeKeyState.value ?: fallbackKey) == row.key }
+    }
+    val isRowHighlighted = isFocused || previewHighlight
+    val rowTargetProgKey by remember(row.key, activeKeyState, fallbackKey, targetProgKeyState) {
+        derivedStateOf {
+            if ((activeKeyState.value ?: fallbackKey) == row.key) targetProgKeyState.value else null
+        }
+    }
+
     Row(
         Modifier
             .fillMaxWidth()
@@ -1268,7 +1357,9 @@ private fun GuideRow(
                 var emptyFocused by remember { mutableStateOf(false) }
                 // Pseudo-cursor while the rail previews this category (no focus stolen).
                 val emptyHighlighted = emptyFocused || previewHighlight
-                val extReq = if (isRowHighlighted) externalFocusRequester else null
+                // The shared cell FocusRequester is only attached on the truly-focused row, never
+                // on the rail-preview anchor (attaching it twice would break the focus system).
+                val extReq = if (isFocused) externalFocusRequester else null
                 Box(
                     Modifier
                         .then(Modifier.focusRequester(rowFocusRequester))
@@ -1325,13 +1416,13 @@ private fun GuideRow(
                         if (start >= windowEndMillis) break
                         val end = maxOf(start, rawEnd)
 
-                        val spacer = widthFor(cursor, start)
                         val blockWidth = widthFor(start, end)
 
                         if (blockWidth > 0.dp) {
                             layouts.add(
                                 BlockLayout(
-                                    spacerWidth = spacer,
+                                    startMillis = start,
+                                    endMillis = end,
                                     blockWidth = blockWidth,
                                     programmeIndex = pIdx,
                                 )
@@ -1342,32 +1433,39 @@ private fun GuideRow(
                     layouts
                 }
 
-                // Determine target block index for focus: matches targetProgKey, or closest to temporalAnchorMillis, or live show, or first block
-                val targetBlockIdx = remember(programmes, targetProgKey, temporalAnchorMillis, nowMillis) {
-                    val targetMatch = if (targetProgKey != null) {
-                        blockLayouts.indexOfFirst { layout ->
-                            programmes.getOrNull(layout.programmeIndex)?.id == targetProgKey
-                        }
-                    } else -1
-
-                    if (targetMatch >= 0) {
-                        targetMatch
-                    } else {
-                        val anchorProg = getVerticalTargetProgram(programmes, temporalAnchorMillis)
-                        val anchorMatch = if (anchorProg != null) {
+                // Determine target block index for focus: matches the focused programme, or
+                // closest to the temporal anchor, or live show, or first block. Computed in a
+                // derivedStateOf that reads the anchor lazily, so moving focus elsewhere does not
+                // recompose this row unless the resulting target block index actually changes.
+                val targetBlockIdx by remember(blockLayouts, nowMillis) {
+                    derivedStateOf {
+                        val targetProgKey = rowTargetProgKey
+                        val temporalAnchorMillis = anchorState.value
+                        val targetMatch = if (targetProgKey != null) {
                             blockLayouts.indexOfFirst { layout ->
-                                programmes.getOrNull(layout.programmeIndex)?.id == anchorProg.id
+                                programmes.getOrNull(layout.programmeIndex)?.id == targetProgKey
                             }
                         } else -1
 
-                        if (anchorMatch >= 0) {
-                            anchorMatch
+                        if (targetMatch >= 0) {
+                            targetMatch
                         } else {
-                            val liveIdx = blockLayouts.indexOfFirst { layout ->
-                                val prog = programmes[layout.programmeIndex]
-                                nowMillis in prog.startUtcMillis until prog.endUtcMillis
+                            val anchorProg = getVerticalTargetProgram(programmes, temporalAnchorMillis)
+                            val anchorMatch = if (anchorProg != null) {
+                                blockLayouts.indexOfFirst { layout ->
+                                    programmes.getOrNull(layout.programmeIndex)?.id == anchorProg.id
+                                }
+                            } else -1
+
+                            if (anchorMatch >= 0) {
+                                anchorMatch
+                            } else {
+                                val liveIdx = blockLayouts.indexOfFirst { layout ->
+                                    val prog = programmes[layout.programmeIndex]
+                                    nowMillis in prog.startUtcMillis until prog.endUtcMillis
+                                }
+                                if (liveIdx >= 0) liveIdx else 0
                             }
-                            if (liveIdx >= 0) liveIdx else 0
                         }
                     }
                 }
@@ -1376,21 +1474,55 @@ private fun GuideRow(
                     List(blockLayouts.size) { FocusRequester() }
                 }
 
-                // Blocks are composed POSITIONALLY here, so a block that keeps its slot index
-                // across a data change (the two-phase EPG load swapping the quick 8h window for
-                // the full 48h one inserts blocks, shifting everything after them) would inherit
-                // ProgrammeBlock's remembered `focused` state from an UNRELATED programme — a
-                // stale white "double cursor" on a cell that isn't selected. key()ing each block
-                // by its programme id discards that state when the block's content changes.
-                for ((pOrder, layout) in blockLayouts.withIndex()) {
-                    if (layout.spacerWidth > 0.dp) Spacer(Modifier.width(layout.spacerWidth))
+                // ---- Windowed composition --------------------------------------------------
+                // Only build the blocks that are on (or just off) the horizontal viewport, plus
+                // the focus target. Positions stay exact because layout x is linear in time
+                // (every width goes through widthFor), so a single Spacer covers every skipped
+                // block and the row's total width — and therefore the shared ScrollState's
+                // maxValue — is identical to a full render. The set changes only when the
+                // viewport crosses a block boundary, so scrolling does not recompose rows.
+                val composedIndices by remember(
+                    blockLayouts,
+                    targetBlockIdx,
+                    composeStartMillis,
+                    composeEndMillis,
+                ) {
+                    derivedStateOf {
+                        if (blockLayouts.isEmpty() ||
+                            composeEndMillis <= composeStartMillis
+                        ) {
+                            blockLayouts.indices.toList()
+                        } else {
+                            val visible = ArrayList<Int>()
+                            for (i in blockLayouts.indices) {
+                                val b = blockLayouts[i]
+                                if (b.endMillis > composeStartMillis && b.startMillis < composeEndMillis) {
+                                    visible.add(i)
+                                }
+                            }
+                            if (targetBlockIdx in blockLayouts.indices && targetBlockIdx !in visible) {
+                                visible.add(targetBlockIdx)
+                                visible.sort()
+                            }
+                            visible
+                        }
+                    }
+                }
+
+                // x is emitted as an explicit cursor so skipped (off-screen) blocks are absorbed
+                // into the gap spacer before the next composed block.
+                var cursorMillis = windowStartMillis
+                for (pOrder in composedIndices) {
+                    val layout = blockLayouts[pOrder]
+                    val gap = widthFor(cursorMillis, layout.startMillis)
+                    if (gap > 0.dp) Spacer(Modifier.width(gap))
                     val prog = programmes[layout.programmeIndex]
                     val isNow = nowMillis in prog.startUtcMillis until prog.endUtcMillis
                     val isFirst = pOrder == 0
                     val isLast = pOrder == blockLayouts.size - 1
                     val isTarget = pOrder == targetBlockIdx
                     val blockRequester = blockFocusRequesters.getOrNull(pOrder)
-                    val extReq = if (isTarget && isRowHighlighted) externalFocusRequester else null
+                    val extReq = if (isTarget && isFocused) externalFocusRequester else null
 
                     key(prog.id) {
                         ProgrammeBlock(
@@ -1419,39 +1551,47 @@ private fun GuideRow(
                             } else null,
                         )
                     }
+                    cursorMillis = layout.endMillis
                 }
 
-                // Trailing filler block to guarantee 100% focus coverage across the entire window
+                // Trailing filler block to guarantee 100% focus coverage across the entire window.
+                // It is a single node, so it stays composed even when it is far off-screen.
                 val lastCursor = if (blockLayouts.isEmpty()) windowStartMillis else {
                     val lastLayout = blockLayouts.last()
                     val lastProg = programmes.getOrNull(lastLayout.programmeIndex)
                     lastProg?.endUtcMillis?.coerceAtMost(windowEndMillis) ?: windowStartMillis
                 }
                 if (lastCursor < windowEndMillis) {
+                    if (lastCursor > cursorMillis) {
+                        Spacer(Modifier.width(widthFor(cursorMillis, lastCursor)))
+                    }
                     val remainingWidth = widthFor(lastCursor, windowEndMillis)
-                        val isFillerTarget = blockLayouts.isEmpty() || targetBlockIdx < 0
-                        val extReq = if (isFillerTarget && isRowHighlighted) externalFocusRequester else null
-                        ProgrammeBlock(
-                            title = stringResource(R.string.guide_no_info),
-                            width = remainingWidth,
-                            isNow = false,
-                            progress = 0f,
-                            isRowHighlighted = isRowHighlighted,
-                            rowFocusRequester = if (isFillerTarget) rowFocusRequester else null,
-                            externalFocusRequester = extReq,
-                            onFocus = { onFocus(null) },
-                            onClick = onSelect,
-                            onNavigateVertical = onNavigateVertical,
-                            onMoveLeft = if (blockLayouts.isEmpty()) {
-                                { onExitLeft() }
-                            } else {
-                                {
-                                    blockFocusRequesters.lastOrNull()?.let { req ->
-                                        runCatching { req.requestFocus() }
-                                    }
+                    val isFillerTarget = blockLayouts.isEmpty() || targetBlockIdx < 0
+                    val extReq = if (isFillerTarget && isFocused) externalFocusRequester else null
+                    ProgrammeBlock(
+                        title = stringResource(R.string.guide_no_info),
+                        width = remainingWidth,
+                        isNow = false,
+                        progress = 0f,
+                        isRowHighlighted = isRowHighlighted,
+                        rowFocusRequester = if (isFillerTarget) rowFocusRequester else null,
+                        externalFocusRequester = extReq,
+                        onFocus = { onFocus(null) },
+                        onClick = onSelect,
+                        onNavigateVertical = onNavigateVertical,
+                        onMoveLeft = if (blockLayouts.isEmpty()) {
+                            { onExitLeft() }
+                        } else {
+                            {
+                                val target = composedIndices.lastOrNull() ?: blockLayouts.lastIndex
+                                blockFocusRequesters.getOrNull(target)?.let { req ->
+                                    runCatching { req.requestFocus() }
                                 }
-                            },
-                        )
+                            }
+                        },
+                    )
+                } else if (windowEndMillis > cursorMillis) {
+                    Spacer(Modifier.width(widthFor(cursorMillis, windowEndMillis)))
                 }
             }
         }
@@ -1630,8 +1770,18 @@ private val CHANNEL_COLUMN = 240.dp
 private val ROW_HEIGHT = 48.dp
 private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 
+/**
+ * Extra timeline millis composed on each side of the visible viewport, so d-pad stepping and
+ * fast scrubs never outrun the built cells (and the focused block is never decomposed).
+ */
+private const val COMPOSE_WINDOW_PAST_MILLIS = 60 * 60 * 1000L
+private const val COMPOSE_WINDOW_FUTURE_MILLIS = 60 * 60 * 1000L
+/** Coarse step the composed window snaps to, so scrolling does not recompose rows per pixel. */
+private const val COMPOSE_QUANTUM_MILLIS = 15 * 60 * 1000L
+
 private data class BlockLayout(
-    val spacerWidth: Dp,
+    val startMillis: Long,
+    val endMillis: Long,
     val blockWidth: Dp,
     val programmeIndex: Int,
 )
