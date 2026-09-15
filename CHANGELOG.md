@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.99
+
+- **Browsing to a category without the playing channel keeps a cursor.** While moving through the
+  category sidebar, the guide's preview cursor was anchored on the playing channel even when that
+  channel was not in the previewed category — no row matched, so the guide showed no cursor at all.
+  The cursor now falls back to the first channel of the category, so every category you preview has
+  a visible cursor.
+
 ## 0.12.98
 
 - **Coming back from the main menu lands on the channel you were watching.** When the main menu
