@@ -222,6 +222,11 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Moves a playlist up (delta = -1) or down (delta = +1) in the displayed order. */
+    fun moveSource(id: Long, delta: Int) {
+        viewModelScope.launch { graph.sourceRepository.move(id, delta) }
+    }
+
     fun test(draft: Source) {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(testing = true, testResult = null, testError = null)

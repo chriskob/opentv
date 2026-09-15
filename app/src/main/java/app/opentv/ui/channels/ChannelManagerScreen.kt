@@ -7,7 +7,7 @@ package app.opentv.ui.channels
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,10 +29,7 @@ import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
-import app.opentv.ui.theme.AppTheme
-import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,8 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -60,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
 import app.opentv.data.model.shownName
 import app.opentv.ui.ChannelsViewModel
+import app.opentv.ui.settings.components.*
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 
@@ -124,33 +122,34 @@ fun ChannelManagerScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        // Top bar: title + Done (Back also exits via BackHandler). Kept out of the two panes so
-        // pressing RIGHT from a category lands in the channel list, not on this button.
+    SettingsPage(
+        title = stringResource(R.string.channels_manager_title),
+        onBack = onBack,
+        scrollable = false,
+    ) {
+        // This is a master/detail, not a scrolling settings list, so the page must not scroll: the
+        // two panes fill the remaining height and bring their own lazy lists. The content column is
+        // a fixed frame, so the panes take `weight(1f)` rather than a hard-coded height.
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier
+                .fillMaxWidth()
+                .weight(1f),
         ) {
-            Text(stringResource(R.string.channels_manager_title), style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.common_done)) }
-        }
-
-        Row(Modifier.weight(1f).fillMaxWidth()) {
             // ---- LEFT pane: Search, an optional source filter, and the category list ----------
             LazyColumn(
                 modifier = Modifier
                     .width(280.dp)
                     .fillMaxHeight()
                     .background(MaterialTheme.colorScheme.surface),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 item {
-                    RailEntry(
-                        label = stringResource(R.string.nav_search),
+                    SettingsNavRow(
+                        title = stringResource(R.string.nav_search),
                         selected = searchMode,
                         onClick = { searchMode = true },
+                        trailing = {},
                         modifier = if (searchMode) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
@@ -160,17 +159,19 @@ fun ChannelManagerScreen(
                 if (sources.size > 1) {
                     item { SectionLabel(stringResource(R.string.channels_manager_source_header)) }
                     item {
-                        RailEntry(
-                            label = stringResource(R.string.channels_manager_all_sources),
+                        SettingsNavRow(
+                            title = stringResource(R.string.channels_manager_all_sources),
                             selected = selectedSource == null,
                             onClick = { searchMode = false; viewModel.selectManagerSource(null) },
+                            trailing = {},
                         )
                     }
                     items(sources, key = { "src-${it.id}" }) { source ->
-                        RailEntry(
-                            label = source.name,
+                        SettingsNavRow(
+                            title = source.name,
                             selected = selectedSource == source.id,
                             onClick = { searchMode = false; viewModel.selectManagerSource(source.id) },
+                            trailing = {},
                         )
                     }
                 }
@@ -178,10 +179,11 @@ fun ChannelManagerScreen(
                 item { SectionLabel(stringResource(R.string.channels_manager_categories_header)) }
                 items(categoryGroups, key = { "cat-${it.key}" }) { group ->
                     val groupSelected = !searchMode && selectedCategory == group.key
-                    RailEntry(
-                        label = group.label,
+                    SettingsNavRow(
+                        title = group.label,
                         selected = groupSelected,
                         onClick = { searchMode = false; viewModel.selectManagerCategory(group.key) },
+                        trailing = {},
                         modifier = if (groupSelected) Modifier.focusRequester(railFocusRequester) else Modifier,
                     )
                 }
@@ -192,7 +194,7 @@ fun ChannelManagerScreen(
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
                 if (searchMode) {
                     SearchPane(
@@ -294,41 +296,6 @@ private fun BrowsePane(
 }
 
 @Composable
-private fun RailEntry(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var focused by remember { mutableStateOf(false) }
-    val bg = when {
-        focused -> MaterialTheme.colorScheme.primary
-        selected -> MaterialTheme.colorScheme.primaryContainer
-        else -> MaterialTheme.colorScheme.surface
-    }
-    val fg = when {
-        focused -> MaterialTheme.colorScheme.onPrimary
-        selected -> MaterialTheme.colorScheme.onPrimaryContainer
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Text(
-        text = label,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = fg,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = modifier
-            .fillMaxWidth()
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(8.dp))
-            .background(bg)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    )
-}
-
-@Composable
 private fun SectionLabel(text: String) {
     Text(
         text = text.uppercase(),
@@ -357,8 +324,8 @@ private fun ManagerRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surface)
+            .settingsFocus(shape = SettingsShape.Row)
+            .focusable()
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -398,12 +365,8 @@ private fun ManagerRow(
             Switch(
                 checked = !hidden,
                 onCheckedChange = { onToggleHidden() },
-                colors = androidx.compose.material3.SwitchDefaults.colors(
-                    checkedThumbColor = AppTheme.primary,
-                    checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
-                    uncheckedThumbColor = Color(0xFFB0BEC5),
-                    uncheckedTrackColor = Color(0xFF37474F),
-                ),
+                colors = settingsSwitchColors(),
+                modifier = Modifier.focusProperties { canFocus = false },
             )
         }
     }

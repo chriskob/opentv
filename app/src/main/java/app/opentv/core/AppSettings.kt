@@ -29,14 +29,8 @@ class AppSettings private constructor(context: Context) {
 
     private val addonJson = Json { ignoreUnknownKeys = true }
 
-    /** How the app chooses light vs dark. TV defaults to dark under [ThemeMode.SYSTEM]. */
-    enum class ThemeMode { SYSTEM, DARK, LIGHT }
-
-    private val _themeMode = MutableStateFlow(readThemeMode())
-    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
-
     /** Accent color used throughout the app for highlights, focus rings, progress, and badges. */
-    enum class AccentColor { CYAN, SAPPHIRE, VIOLET, EMERALD, LIME, GOLD, ORANGE, CRIMSON, ROSE, AMETHYST, AMBER }
+    enum class AccentColor { CYAN, AZURE, IRIS, JADE, EMBER }
 
     private val _accentColor = MutableStateFlow(readAccentColor())
     val accentColor: StateFlow<AccentColor> = _accentColor.asStateFlow()
@@ -227,11 +221,6 @@ class AppSettings private constructor(context: Context) {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    fun setThemeMode(mode: ThemeMode) {
-        prefs.edit().putString(KEY_THEME, mode.name).apply()
-        _themeMode.value = mode
-    }
-
     fun setAccentColor(accent: AccentColor) {
         prefs.edit().putString(KEY_ACCENT_COLOR, accent.name).apply()
         _accentColor.value = accent
@@ -420,10 +409,6 @@ class AppSettings private constructor(context: Context) {
         prefs.edit().putInt(KEY_RESIZE_MODE, mode).apply()
         _playerResizeMode.value = mode
     }
-
-    private fun readThemeMode(): ThemeMode =
-        runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "") }
-            .getOrDefault(ThemeMode.SYSTEM)
 
     private fun readAccentColor(): AccentColor =
         runCatching { AccentColor.valueOf(prefs.getString(KEY_ACCENT_COLOR, null) ?: "") }
@@ -796,7 +781,6 @@ class AppSettings private constructor(context: Context) {
     }
 
     companion object {
-        private const val KEY_THEME = "theme_mode"
         private const val KEY_ACCENT_COLOR = "accent_color"
         private const val KEY_SUBMENU_BUTTONS = "submenu_buttons"
     private const val KEY_VOD_BUTTONS = "vod_player_buttons"

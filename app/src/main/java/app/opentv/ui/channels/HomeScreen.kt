@@ -71,6 +71,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -871,17 +873,26 @@ fun HomeScreen(
     }
 
     var previewBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    // Where this screen's own root sits inside the Compose root. The live player is positioned from
+    // the preview card's bounds, which are measured in ROOT space (boundsInRoot). The player itself
+    // lives inside the guide's root, so when the main nav rail pushes the guide across, the rail's
+    // width was counted twice and the video landed over the programme info. Subtracting this origin
+    // converts the card bounds back into the guide's own space.
+    var homeOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    // The preview row's measured height, so the category rail can start below it instead of sliding
+    // over the live video (which left the card half-hidden behind the rail).
+    var previewRowHeight by remember { mutableStateOf(0) }
     val density = androidx.compose.ui.platform.LocalDensity.current
 
-    val playerModifier = remember(isFullScreen, previewBounds) {
+    val playerModifier = remember(isFullScreen, previewBounds, homeOrigin) {
         if (isFullScreen || previewBounds.isEmpty) {
             Modifier.fillMaxSize()
         } else {
             with(density) {
                 Modifier
                     .offset(
-                        x = previewBounds.left.toDp(),
-                        y = previewBounds.top.toDp(),
+                        x = (previewBounds.left - homeOrigin.x).toDp(),
+                        y = (previewBounds.top - homeOrigin.y).toDp(),
                     )
                     .size(
                         width = previewBounds.width.toDp(),
@@ -914,6 +925,7 @@ fun HomeScreen(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .onGloballyPositioned { homeOrigin = it.boundsInRoot().topLeft }
             .onPreviewKeyEvent { e ->
                 lastInteractionTime = System.currentTimeMillis()
                 if (!isFullScreen && e.type == KeyEventType.KeyDown) {
@@ -1068,6 +1080,9 @@ fun HomeScreen(
             exit = slideOutHorizontally(targetOffsetX = { -it }),
             modifier = Modifier
                 .align(Alignment.TopStart)
+                // Start below the preview row so the rail covers the channel column and guide, not
+                // the live video above it. Measured rather than hard-coded, so it tracks the card.
+                .padding(top = with(density) { previewRowHeight.toDp() })
                 .width(240.dp)
                 .fillMaxHeight()
                 .zIndex(10f),
@@ -1269,6 +1284,7 @@ fun HomeScreen(
                     canGoPrevDay = guideHourOffset > -viewModel.maxPageBackHours,
                     onPrevDay = { viewModel.nudgeGuideDay(-1) },
                     onNextDay = { viewModel.nudgeGuideDay(1) },
+                    modifier = Modifier.onGloballyPositioned { previewRowHeight = it.size.height },
                     onPreviewBoundsChanged = { rect ->
                         if (rect.width > 0 && rect.height > 0 && previewBounds != rect) {
                             previewBounds = rect

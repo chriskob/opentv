@@ -91,6 +91,12 @@ data class Source(
     val includeVod: Boolean = true,
     val includeSeries: Boolean = true,
     val lastCatalogSyncMillis: Long = 0,
+    /**
+     * User-controlled display order. Playlists are listed — and their channel groups ordered —
+     * by this, so the viewer can move the source they use most to the top. Defaults to 0; ties
+     * fall back to `id`, which is the historical order.
+     */
+    @ColumnInfo(defaultValue = "0") val sortIndex: Int = 0,
 ) {
     companion object {
         const val DEFAULT_USER_AGENT: String = "OpenTV/0.1 (Android)"

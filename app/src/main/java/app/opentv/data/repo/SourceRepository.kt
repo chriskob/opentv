@@ -29,6 +29,25 @@ class SourceRepository(
         dao.setEnabled(id, enabled)
     }
 
+    /**
+     * Moves a playlist one slot up (delta = -1) or down (delta = +1) in the user's order.
+     *
+     * The stored indices are normalised to their list positions first, so an unset or duplicated
+     * index (all rows default to 0 until the viewer reorders) cannot produce a wrong swap.
+     */
+    suspend fun move(id: Long, delta: Int) = withContext(Dispatchers.IO) {
+        val list = dao.all()
+        val from = list.indexOfFirst { it.id == id }
+        if (from < 0) return@withContext
+        val to = from + delta
+        if (to !in list.indices) return@withContext
+        list.forEachIndexed { index, source ->
+            if (source.sortIndex != index) dao.setSortIndex(source.id, index)
+        }
+        dao.setSortIndex(list[from].id, to)
+        dao.setSortIndex(list[to].id, from)
+    }
+
     suspend fun save(source: Source): Long = withContext(Dispatchers.IO) {
         val normalised = source.copy(url = normaliseUrl(source.url, source.kind))
         if (source.id == 0L) dao.insert(normalised)

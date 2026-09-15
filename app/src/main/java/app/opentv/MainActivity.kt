@@ -128,14 +128,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settings = remember { ServiceLocator.get(this).settings }
             val accentColor by settings.accentColor.collectAsState()
-            val themeMode by settings.themeMode.collectAsState()
-            val darkTheme = when (themeMode) {
-                AppSettings.ThemeMode.DARK -> true
-                AppSettings.ThemeMode.LIGHT -> false
-                // A living-room screen defaults to dark; a phone/tablet follows the system.
-                AppSettings.ThemeMode.SYSTEM -> isTelevision || isSystemInDarkTheme()
-            }
-            OpenTvTheme(accent = accentColor, darkTheme = darkTheme) {
+            // Always dark. A light theme read poorly on a living-room panel, so OpenTV is dark-only
+            // and the choice was removed rather than left as a setting nobody should pick.
+            OpenTvTheme(accent = accentColor) {
                 // Tells startup maintenance it may begin: the first frame is about to be on screen.
                 // Those jobs wait on this instead of guessing a delay — see OpenTvApp — so they start
                 // the moment the UI is up and never compete with it for the disk beforehand.

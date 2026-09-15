@@ -224,6 +224,32 @@
     <string name="settings_show_fav_category_title">Favourites category</string>
     <string name="settings_show_fav_category_subtitle">Show the Favourites entry in the guide\'s category list</string>
     <string name="settings_pick_from_menu">Choose a section from the menu on the left</string>
+    <string name="settings_menu_heading">Settings</string>
+    <string name="settings_search_nav">Search settings</string>
+    <string name="settings_search_nav_subtitle">Find any setting by name</string>
+    <string name="settings_search_title">Search settings</string>
+    <string name="settings_search_hint">Type to narrow the list, then pick a section.</string>
+    <string name="settings_search_placeholder">Find a setting</string>
+    <string name="settings_search_empty">No settings match that search.</string>
+    <string name="settings_group_content">Content &amp; sources</string>
+    <string name="settings_group_playback">Playback</string>
+    <string name="settings_group_network">Network &amp; sharing</string>
+    <string name="settings_group_system">System</string>
+    <string name="settings_profiles_title">Profiles</string>
+    <string name="settings_profiles_subtitle">Watch history and favourites per person</string>
+    <string name="profiles_empty_title">No profiles yet</string>
+    <string name="profiles_empty_message">Add a profile so each person keeps their own watch history and favourites.</string>
+    <string name="settings_remote_title">Remote support &amp; pairing</string>
+    <string name="settings_remote_subtitle">Edit, add or troubleshoot playlists remotely</string>
+    <string name="settings_providers_page_subtitle">Manage connected IPTV playlists, Xtream codes servers and portals</string>
+    <string name="settings_guide_page_subtitle">Manage XMLTV guide feeds, auto-matching and sync status</string>
+    <string name="settings_display_page_subtitle">Themes, layouts, playback preferences and data intervals</string>
+    <string name="settings_recording_page_subtitle">Configure DVR storage, network shares (SMB), padding and the background engine</string>
+    <string name="settings_sync_page_subtitle">Sync watch progress across devices on your local network</string>
+    <string name="settings_addons_page_subtitle">Configure movie and series stream providers and Stremio manifests</string>
+    <string name="settings_profiles_page_subtitle">Manage multi-user watch history and personalised favourites</string>
+    <string name="settings_parental_page_subtitle">Manage PIN protection and hide sensitive channel categories</string>
+    <string name="settings_about_page_subtitle">OpenTV application details, updates and open-source licences</string>
 
     <!-- ============================ Display & playback settings ============================ -->
     <string name="settings_appearance">Appearance</string>
@@ -272,6 +298,10 @@
     <string name="settings_section_data_refresh">Data Refresh</string>
     <string name="settings_data_refresh_note">How often the playlist and guide are re-downloaded in the background. Data is saved and cached — it only reloads when stale.</string>
     <string name="settings_playlist_refresh">Playlist refresh</string>
+    <string name="settings_playlist_refresh_hint">How often to check playlists for channel and VOD updates</string>
+    <string name="settings_guide_refresh_hint">How often to fetch fresh TV guide and programme data</string>
+    <string name="settings_guide_last_updated">Guide updated %1$s · %2$d channels</string>
+    <string name="settings_guide_not_synced">Guide has not synced yet</string>
     <string name="settings_guide_refresh">Guide refresh</string>
     <string name="settings_refresh_2h">Every 2 hours</string>
     <string name="settings_refresh_4h">Every 4 hours</string>

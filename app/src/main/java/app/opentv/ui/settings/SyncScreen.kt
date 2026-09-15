@@ -6,32 +6,20 @@
 package app.opentv.ui.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
-import app.opentv.ui.theme.AppTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -41,17 +29,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
 import app.opentv.sync.SyncServer
 import app.opentv.ui.SyncViewModel
+import app.opentv.ui.components.TvOutlinedTextField
+import app.opentv.ui.settings.components.*
+import app.opentv.ui.theme.AppTheme
 
 /**
  * Local watch-history sync between two OpenTV devices on the same wifi.
@@ -63,42 +50,20 @@ fun SyncScreen(
 ) {
     var mode by remember { mutableStateOf(Mode.SHARE) }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0xFF10171E))
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 40.dp, vertical = 28.dp),
+    SettingsPage(
+        title = stringResource(R.string.settings_sync_title),
+        subtitle = stringResource(R.string.settings_sync_page_subtitle),
+        onBack = onBack,
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.settings_sync_title),
-                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 26.sp),
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "Sync watch-progress across devices on your local network",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.65f),
-                )
-            }
-
-            SyncBackButton(onBack)
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ModeChip(stringResource(R.string.sync_share_from_here), mode == Mode.SHARE) { mode = Mode.SHARE }
-            ModeChip(stringResource(R.string.sync_receive), mode == Mode.RECEIVE) { mode = Mode.RECEIVE }
-            ModeChip(stringResource(R.string.sync_nas), mode == Mode.NAS) { mode = Mode.NAS }
-        }
+        SettingsSegmented(
+            options = listOf(
+                stringResource(R.string.sync_share_from_here),
+                stringResource(R.string.sync_receive),
+                stringResource(R.string.sync_nas),
+            ),
+            selectedIndex = mode.ordinal,
+            onSelect = { index -> mode = Mode.entries[index] },
+        )
 
         Spacer(Modifier.height(20.dp))
 
@@ -115,20 +80,18 @@ private enum class Mode { SHARE, RECEIVE, NAS }
 @Composable
 private fun SharePane(viewModel: SyncViewModel) {
     val state by viewModel.serverState.collectAsState()
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF18222C))
-            .border(0.5.dp, Color(0xFF263442), RoundedCornerShape(14.dp))
-            .padding(24.dp),
-    ) {
+    SettingsCard {
         Column(Modifier.widthIn(max = 640.dp)) {
             when (val s = state) {
                 is SyncServer.State.Sharing -> {
-                    Text(stringResource(R.string.sync_ready_to_share), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF26C6DA))
+                    Text(
+                        stringResource(R.string.sync_ready_to_share),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = AppTheme.primary,
+                    )
                     Spacer(Modifier.height(12.dp))
-                    Text(stringResource(R.string.sync_on_other_device), color = Color.White)
+                    Text(stringResource(R.string.sync_on_other_device), color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(12.dp))
                     Field(stringResource(R.string.sync_address), s.session.address)
                     Spacer(Modifier.height(8.dp))
@@ -137,20 +100,32 @@ private fun SharePane(viewModel: SyncViewModel) {
                     Text(
                         stringResource(R.string.sync_type_in_one_go, s.session.address, s.session.code),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.65f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(16.dp))
-                    OutlinedButton(onClick = { viewModel.stopSharing() }) { Text(stringResource(R.string.sync_stop_sharing)) }
+                    SettingsButton(
+                        text = stringResource(R.string.sync_stop_sharing),
+                        onClick = { viewModel.stopSharing() },
+                        style = SettingsButtonStyle.Secondary,
+                    )
                 }
                 is SyncServer.State.Failed -> {
-                    Text(s.reason, color = Color(0xFFEF5350))
+                    Text(s.reason, color = SettingsDanger)
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = { viewModel.startSharing() }) { Text(stringResource(R.string.common_try_again)) }
+                    SettingsButton(
+                        text = stringResource(R.string.common_try_again),
+                        onClick = { viewModel.startSharing() },
+                        style = SettingsButtonStyle.Primary,
+                    )
                 }
                 else -> {
-                    Text(stringResource(R.string.sync_will_share), color = Color.White)
+                    Text(stringResource(R.string.sync_will_share), color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = { viewModel.startSharing() }) { Text(stringResource(R.string.sync_start_sharing)) }
+                    SettingsButton(
+                        text = stringResource(R.string.sync_start_sharing),
+                        onClick = { viewModel.startSharing() },
+                        style = SettingsButtonStyle.Primary,
+                    )
                 }
             }
         }
@@ -162,68 +137,67 @@ private fun ReceivePane(viewModel: SyncViewModel) {
     val state by viewModel.receiveState.collectAsState()
     var entry by remember { mutableStateOf("") }
 
-    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        Box(
-            Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF18222C))
-                .border(0.5.dp, Color(0xFF263442), RoundedCornerShape(14.dp))
-                .padding(24.dp),
-        ) {
-            Column(Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.sync_type_what_shows), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF26C6DA))
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        SettingsCard(Modifier.weight(1f)) {
+            Column(Modifier.widthIn(max = 640.dp)) {
+                Text(
+                    stringResource(R.string.sync_type_what_shows),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = AppTheme.primary,
+                )
                 Spacer(Modifier.height(12.dp))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF10171E))
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                ) {
-                    Text(
-                        if (entry.isEmpty()) "e.g. 192.168.1.50:4242#ABCD" else entry,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (entry.isEmpty()) Color.White.copy(alpha = 0.35f) else Color.White,
-                    )
-                }
+                TvOutlinedTextField(
+                    value = entry,
+                    onValueChange = { entry = it },
+                    placeholder = { Text("e.g. 192.168.1.50:4242#ABCD") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        enabled = entry.contains('#') && state !is SyncViewModel.ReceiveState.Connecting,
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SettingsButton(
+                        text = stringResource(R.string.sync_connect),
                         onClick = {
                             val address = entry.substringBefore('#')
                             val code = entry.substringAfter('#')
                             viewModel.receive(address, code)
                         },
-                    ) { Text(stringResource(R.string.sync_connect)) }
-                    OutlinedButton(onClick = { entry = ""; viewModel.resetReceive() }) { Text(stringResource(R.string.common_cancel)) }
+                        style = SettingsButtonStyle.Primary,
+                        enabled = entry.contains('#') && state !is SyncViewModel.ReceiveState.Connecting,
+                    )
+                    SettingsButton(
+                        text = stringResource(R.string.common_cancel),
+                        onClick = { entry = ""; viewModel.resetReceive() },
+                        style = SettingsButtonStyle.Secondary,
+                    )
                 }
                 Spacer(Modifier.height(12.dp))
                 when (val s = state) {
-                    is SyncViewModel.ReceiveState.Connecting -> Text(stringResource(R.string.sync_connecting), color = Color.White)
+                    is SyncViewModel.ReceiveState.Connecting ->
+                        Text(stringResource(R.string.sync_connecting), color = MaterialTheme.colorScheme.onSurface)
                     is SyncViewModel.ReceiveState.Done -> Text(
                         stringResource(R.string.sync_synced_items, s.merged),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF26C6DA),
+                        color = AppTheme.primary,
                     )
                     is SyncViewModel.ReceiveState.Failed -> Text(
                         s.message,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFFEF5350),
+                        color = SettingsDanger,
                     )
                     else -> Unit
                 }
             }
         }
 
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF18222C))
-                .border(0.5.dp, Color(0xFF263442), RoundedCornerShape(14.dp))
-                .padding(20.dp),
-        ) {
+        SettingsCard(Modifier.width(IntrinsicSize.Min)) {
             NumPad(
                 onKey = { if (entry.length < 40) entry += it },
                 onBackspace = { if (entry.isNotEmpty()) entry = entry.dropLast(1) },
@@ -239,67 +213,57 @@ private fun NasPane(viewModel: SyncViewModel) {
     val smbHost by viewModel.smbHost.collectAsState()
     val configured = smbHost.isNotBlank()
 
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF18222C))
-            .border(0.5.dp, Color(0xFF263442), RoundedCornerShape(14.dp))
-            .padding(24.dp),
-    ) {
+    SettingsCard {
         Column(Modifier.widthIn(max = 640.dp)) {
-            Text(stringResource(R.string.sync_nas_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF26C6DA))
+            Text(
+                stringResource(R.string.sync_nas_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = AppTheme.primary,
+            )
             Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.sync_nas_desc), style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.75f))
+            Text(
+                stringResource(R.string.sync_nas_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(16.dp))
 
             if (!configured) {
                 Text(
                     stringResource(R.string.sync_nas_needs_setup),
-                    color = Color(0xFFEF5350),
+                    color = SettingsDanger,
                 )
             } else {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Button(
-                        enabled = nasState !is SyncViewModel.NasState.Syncing,
+                    SettingsButton(
+                        text = stringResource(R.string.sync_nas_sync_now),
                         onClick = { viewModel.syncNas() },
-                    ) { Text(stringResource(R.string.sync_nas_sync_now)) }
+                        style = SettingsButtonStyle.Primary,
+                        enabled = nasState !is SyncViewModel.NasState.Syncing,
+                    )
 
                     when (val s = nasState) {
                         is SyncViewModel.NasState.Syncing ->
-                            Text(stringResource(R.string.sync_nas_syncing), color = Color.White)
+                            Text(stringResource(R.string.sync_nas_syncing), color = MaterialTheme.colorScheme.onSurface)
                         is SyncViewModel.NasState.Done ->
-                            Text(s.message, color = Color(0xFF26C6DA))
+                            Text(s.message, color = AppTheme.primary)
                         is SyncViewModel.NasState.Failed ->
-                            Text(s.message, color = Color(0xFFEF5350))
+                            Text(s.message, color = SettingsDanger)
                         else -> Unit
                     }
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.sync_nas_auto),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(
-                    checked = autoSync,
-                    onCheckedChange = { viewModel.setNasAutoSync(it) },
-                    colors = androidx.compose.material3.SwitchDefaults.colors(
-                        checkedThumbColor = AppTheme.primary,
-                        checkedTrackColor = AppTheme.dark.copy(alpha = 0.55f),
-                        uncheckedThumbColor = Color(0xFFB0BEC5),
-                        uncheckedTrackColor = Color(0xFF37474F),
-                    ),
-                )
-            }
+            Spacer(Modifier.height(16.dp))
+            SettingsToggleRow(
+                title = stringResource(R.string.sync_nas_auto),
+                checked = autoSync,
+                onToggle = { viewModel.setNasAutoSync(it) },
+            )
         }
     }
 }
@@ -307,49 +271,38 @@ private fun NasPane(viewModel: SyncViewModel) {
 @Composable
 private fun Field(label: String, value: String) {
     Row {
-        Text("$label:  ", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium, color = Color.White)
-        Text(value, style = MaterialTheme.typography.titleMedium, color = Color(0xFF26C6DA), fontWeight = FontWeight.Bold)
+        Text(
+            "$label:  ",
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            color = AppTheme.primary,
+            fontWeight = FontWeight.Bold,
+        )
     }
-}
-
-@Composable
-private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    val bg = when {
-        focused -> Color(0xFFF0F4F8)
-        selected -> Color(0xFF1E2F3E)
-        else -> Color(0xFF18222C)
-    }
-    val fg = if (focused) Color(0xFF10171E) else if (selected) Color(0xFF26C6DA) else Color.White
-    Text(
-        text = label,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Medium,
-        color = fg,
-        modifier = Modifier
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(10.dp))
-            .background(bg)
-            .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp))
-                else if (selected) Modifier.border(1.dp, Color(0xFF26C6DA), RoundedCornerShape(10.dp))
-                else Modifier.border(0.5.dp, Color(0xFF263442), RoundedCornerShape(10.dp)),
-            )
-            .focusable()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-    )
 }
 
 @Composable
 private fun NumPad(onKey: (String) -> Unit, onBackspace: () -> Unit) {
-    val rows = listOf("123", "456", "789", ".0:", "#⌫")
+    val rows = listOf(
+        listOf<String?>("1", "2", "3"),
+        listOf<String?>("4", "5", "6"),
+        listOf<String?>("7", "8", "9"),
+        listOf<String?>(".", "0", ":"),
+        listOf<String?>("#", "⌫", null),
+    )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rows.forEach { line ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                line.forEach { ch ->
-                    NumKey(ch.toString()) {
-                        if (ch == '⌫') onBackspace() else onKey(ch.toString())
+                line.forEach { key ->
+                    if (key == null) {
+                        Spacer(Modifier.size(54.dp))
+                    } else {
+                        NumKey(key) { if (key == "⌫") onBackspace() else onKey(key) }
                     }
                 }
             }
@@ -359,59 +312,20 @@ private fun NumPad(onKey: (String) -> Unit, onBackspace: () -> Unit) {
 
 @Composable
 private fun NumKey(label: String, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    val bg = if (focused) Color(0xFFF0F4F8) else Color(0xFF10171E)
-    val fg = if (focused) Color(0xFF10171E) else Color.White
     Box(
         Modifier
             .size(54.dp)
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(8.dp))
-            .background(bg)
-            .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                else Modifier.border(0.5.dp, Color(0xFF263442), RoundedCornerShape(8.dp)),
-            )
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f), SettingsShape.Control)
+            .settingsFocus(shape = SettingsShape.Control, focusScale = 1.06f)
             .focusable()
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = fg)
-    }
-}
-
-@Composable
-private fun SyncBackButton(onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    Row(
-        Modifier
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (focused) Color(0xFFF0F4F8)
-                else Color(0xFF1E2833),
-            )
-            .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(10.dp))
-                else Modifier.border(1.dp, Color(0xFF2C3E50), RoundedCornerShape(10.dp)),
-            )
-            .focusable()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = null,
-            tint = if (focused) Color(0xFF10171E) else Color.White,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(8.dp))
         Text(
-            text = stringResource(R.string.common_done),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = if (focused) Color(0xFF10171E) else Color.White,
+            label,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

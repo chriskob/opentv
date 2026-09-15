@@ -35,14 +35,20 @@ private const val UPSERT_CHUNK = 500
 
 @Dao
 interface SourceDao {
-    @Query("SELECT * FROM sources ORDER BY id")
+    @Query("SELECT * FROM sources ORDER BY sortIndex, id")
     fun observeAll(): Flow<List<Source>>
 
-    @Query("SELECT * FROM sources WHERE enabled = 1 ORDER BY id")
+    @Query("SELECT * FROM sources WHERE enabled = 1 ORDER BY sortIndex, id")
     suspend fun enabled(): List<Source>
+
+    @Query("SELECT * FROM sources ORDER BY sortIndex, id")
+    suspend fun all(): List<Source>
 
     @Query("SELECT * FROM sources WHERE id = :id")
     suspend fun byId(id: Long): Source?
+
+    @Query("UPDATE sources SET sortIndex = :index WHERE id = :id")
+    suspend fun setSortIndex(id: Long, index: Int)
 
     /**
      * Every source id on disk. Lets the player tell a history entry whose playlist has been deleted

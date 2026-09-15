@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.14.0
+
+- **Settings has been redesigned end to end.** Every page now shares one design language: a single
+  focus treatment (an accent ring and a faint wash, instead of an opaque block that hid the content
+  underneath), real elevated cards, one button style and one switch palette. The old per-screen
+  palettes and the ten near-identical back buttons are gone.
+- **The settings menu is grouped and collapses to a slim icon rail** as focus moves into a page,
+  and it now also reaches Sync, Add-ons and Web Manager, which had no entry before.
+- **A curated accent palette.** The eleven accents are reduced to the default Cyan plus four
+  tuned ones — Azure, Iris, Jade and Ember — and every one drives rings, labels, switches and
+  buttons consistently.
+- **Search settings.** A new search finds any setting by name and jumps to its section.
+- **Collapsible sections.** Display & playback is now a scannable list of sections you expand,
+  instead of one very long scroll.
+- **Live sync info.** The guide-refresh row reports when the guide last updated and how many
+  channels it holds.
+- **Reorder playlists.** Providers gains up/down controls, so the playlist you use most can sit
+  first. This adds a `sortIndex` column (database v16 → v17, non-destructive).
+- **Player buttons are chip grids.** The two button-picker sections went from twenty-three
+  full-width rows to two compact chip grids.
+- **A nicer option picker.** Drop-downs now show the current value, open scrolled to it, and put
+  focus on it.
+- **Dark only.** The light / follow-system theme option was removed; OpenTV is a living-room app
+  and stays dark.
+- **Guide preview fixes.** The live preview no longer lands over the programme info when the main
+  menu is open, and the category rail no longer covers the preview video.
+
 ## 0.13.1
 
 - **The main menu always shows its labels.** It used to fall back to a bare strip of icons

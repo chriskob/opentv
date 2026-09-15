@@ -22,91 +22,55 @@ import app.opentv.core.AppSettings.AccentColor
 val AccentColor.primary: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFF22D3EE)
-        AccentColor.SAPPHIRE -> Color(0xFF60A5FA)
-        AccentColor.VIOLET -> Color(0xFFA76FFC)
-        AccentColor.EMERALD -> Color(0xFF34D399)
-        AccentColor.LIME -> Color(0xFFA0F933)
-        AccentColor.GOLD -> Color(0xFFF6D72C)
-        AccentColor.ORANGE -> Color(0xFFEC971E)
-        AccentColor.CRIMSON -> Color(0xFFE43935)
-        AccentColor.ROSE -> Color(0xFFE65680)
-        AccentColor.AMETHYST -> Color(0xFFA78BFA)
-        AccentColor.AMBER -> Color(0xFFFBBF24)
+        AccentColor.AZURE -> Color(0xFF4D9FFF)
+        AccentColor.IRIS -> Color(0xFFA98BFF)
+        AccentColor.JADE -> Color(0xFF34D399)
+        AccentColor.EMBER -> Color(0xFFFFA23A)
     }
 
 val AccentColor.dark: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFF0891B2)
-        AccentColor.SAPPHIRE -> Color(0xFF2563EB)
-        AccentColor.VIOLET -> Color(0xFF7C3AED)
-        AccentColor.EMERALD -> Color(0xFF059669)
-        AccentColor.LIME -> Color(0xFF65A30D)
-        AccentColor.GOLD -> Color(0xFFCA8A04)
-        AccentColor.ORANGE -> Color(0xFFC2410C)
-        AccentColor.CRIMSON -> Color(0xFFB91C1C)
-        AccentColor.ROSE -> Color(0xFFBE123C)
-        AccentColor.AMETHYST -> Color(0xFF7C3AED)
-        AccentColor.AMBER -> Color(0xFFD97706)
+        AccentColor.AZURE -> Color(0xFF2563EB)
+        AccentColor.IRIS -> Color(0xFF7C3AED)
+        AccentColor.JADE -> Color(0xFF059669)
+        AccentColor.EMBER -> Color(0xFFC2620E)
     }
 
 val AccentColor.light: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFFA5F3FC)
-        AccentColor.SAPPHIRE -> Color(0xFFBFDBFE)
-        AccentColor.VIOLET -> Color(0xFFE9D5FF)
-        AccentColor.EMERALD -> Color(0xFFA7F3D0)
-        AccentColor.LIME -> Color(0xFFECFCCB)
-        AccentColor.GOLD -> Color(0xFFFDE68A)
-        AccentColor.ORANGE -> Color(0xFFFED7AA)
-        AccentColor.CRIMSON -> Color(0xFFFECACA)
-        AccentColor.ROSE -> Color(0xFFFECDD3)
-        AccentColor.AMETHYST -> Color(0xFFDDD6FE)
-        AccentColor.AMBER -> Color(0xFFFDE68A)
+        AccentColor.AZURE -> Color(0xFFBFDBFE)
+        AccentColor.IRIS -> Color(0xFFDDD6FE)
+        AccentColor.JADE -> Color(0xFFA7F3D0)
+        AccentColor.EMBER -> Color(0xFFFED7AA)
     }
 
 val AccentColor.highlightGlow: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFF67E8F9)
-        AccentColor.SAPPHIRE -> Color(0xFF93C5FD)
-        AccentColor.VIOLET -> Color(0xFFC4B5FD)
-        AccentColor.EMERALD -> Color(0xFF6EE7B7)
-        AccentColor.LIME -> Color(0xFFD9F99D)
-        AccentColor.GOLD -> Color(0xFFFDE047)
-        AccentColor.ORANGE -> Color(0xFFFDBA74)
-        AccentColor.CRIMSON -> Color(0xFFFCA5A5)
-        AccentColor.ROSE -> Color(0xFFFDA4AF)
-        AccentColor.AMETHYST -> Color(0xFFC4B5FD)
-        AccentColor.AMBER -> Color(0xFFFCD34D)
+        AccentColor.AZURE -> Color(0xFF93C5FD)
+        AccentColor.IRIS -> Color(0xFFC4B5FD)
+        AccentColor.JADE -> Color(0xFF6EE7B7)
+        AccentColor.EMBER -> Color(0xFFFDBA74)
     }
 
 val AccentColor.cardFocusBg: Color
     get() = when (this) {
         AccentColor.CYAN -> Color(0xFF12262E)
-        AccentColor.SAPPHIRE -> Color(0xFF131D2F)
-        AccentColor.VIOLET -> Color(0xFF221536)
-        AccentColor.EMERALD -> Color(0xFF12261E)
-        AccentColor.LIME -> Color(0xFF1F2A0F)
-        AccentColor.GOLD -> Color(0xFF2B230E)
-        AccentColor.ORANGE -> Color(0xFF2D1C0E)
-        AccentColor.CRIMSON -> Color(0xFF2E1414)
-        AccentColor.ROSE -> Color(0xFF2E151B)
-        AccentColor.AMETHYST -> Color(0xFF231B31)
-        AccentColor.AMBER -> Color(0xFF2A2110)
+        AccentColor.AZURE -> Color(0xFF131F36)
+        AccentColor.IRIS -> Color(0xFF211536)
+        AccentColor.JADE -> Color(0xFF12261E)
+        AccentColor.EMBER -> Color(0xFF2D1C0E)
     }
 
 val AccentColor.displayName: String
     get() = when (this) {
         AccentColor.CYAN -> "Cyan"
-        AccentColor.SAPPHIRE -> "Sapphire"
-        AccentColor.VIOLET -> "Violet"
-        AccentColor.EMERALD -> "Emerald"
-        AccentColor.LIME -> "Lime"
-        AccentColor.GOLD -> "Gold"
-        AccentColor.ORANGE -> "Orange"
-        AccentColor.CRIMSON -> "Crimson"
-        AccentColor.ROSE -> "Rose"
-        AccentColor.AMETHYST -> "Amethyst"
-        AccentColor.AMBER -> "Amber"
+        AccentColor.AZURE -> "Azure"
+        AccentColor.IRIS -> "Iris"
+        AccentColor.JADE -> "Jade"
+        AccentColor.EMBER -> "Ember"
     }
 
 val LocalAccentColor = staticCompositionLocalOf { AccentColor.CYAN }
@@ -138,44 +102,46 @@ object AppTheme {
 }
 
 /**
- * A deliberately dark, low-chroma palette.
+ * A deliberately dark, low-chroma palette with a real elevation ramp.
  *
  * This is a living-room app: it is looked at in a dark room, from three metres away, often
  * for hours. Bright surfaces and saturated accents that read well on a phone in daylight are
  * actively unpleasant on a 55" panel at night, so everything here is anchored near-black with
  * a single restrained accent used only for focus and selection.
+ *
+ * The old scheme packed background, surface and surfaceVariant into a few steps and made
+ * `outline` *darker* than the surface it bordered, so nothing read as raised. The roles below
+ * form a proper ladder — page (darkest) → surface → surfaceContainer…Highest (lightest) — and
+ * `outline`/`outlineVariant` are now lighter than the fills they sit on, which is what lets a
+ * card read as a card. Existing call sites that used `surface`/`surfaceVariant` keep working;
+ * only the tonal spacing changed.
  */
 private fun buildDarkScheme(accent: AccentColor) = darkColorScheme(
     primary = accent.primary,
-    onPrimary = Color(0xFF0D141C),
+    onPrimary = Color(0xFF04121A),
     primaryContainer = accent.dark,
     onPrimaryContainer = accent.light,
     secondary = accent.light,
-    background = Color(0xFF131A22),
-    onBackground = Color(0xFFECEFF1),
-    surface = Color(0xFF19222B),
-    onSurface = Color(0xFFECEFF1),
-    surfaceVariant = Color(0xFF232D37),
-    onSurfaceVariant = Color(0xFF90A4AE),
-    outline = Color(0xFF171F27),
-    error = Color(0xFFFF5252),
-    onError = Color(0xFF1A0505),
-)
-
-/**
- * Light mode for anyone who wants it.
- */
-private fun buildLightScheme(accent: AccentColor) = lightColorScheme(
-    primary = accent.primary,
-    onPrimary = Color.White,
-    secondary = accent.light,
-    background = Color(0xFFFBFBFE),
-    onBackground = Color(0xFF13141A),
-    surface = Color.White,
-    onSurface = Color(0xFF13141A),
-    surfaceVariant = Color(0xFFEEF0F6),
-    onSurfaceVariant = Color(0xFF4A4F60),
-    outline = Color(0xFFD3D7E2),
+    onSecondary = Color(0xFF04121A),
+    secondaryContainer = accent.cardFocusBg,
+    onSecondaryContainer = accent.light,
+    background = Color(0xFF0A0F15),
+    onBackground = Color(0xFFE8EEF4),
+    surface = Color(0xFF10171E),
+    onSurface = Color(0xFFE8EEF4),
+    surfaceVariant = Color(0xFF1B2530),
+    onSurfaceVariant = Color(0xFF9FB0BE),
+    surfaceContainerLowest = Color(0xFF0A0F15),
+    surfaceContainerLow = Color(0xFF111922),
+    surfaceContainer = Color(0xFF141E27),
+    surfaceContainerHigh = Color(0xFF18222C),
+    surfaceContainerHighest = Color(0xFF1F2B36),
+    outline = Color(0xFF4A5B6C),
+    outlineVariant = Color(0xFF263442),
+    error = Color(0xFFFF6B6B),
+    onError = Color(0xFF2A0A0A),
+    errorContainer = Color(0xFF3A1416),
+    onErrorContainer = Color(0xFFFFDAD8),
 )
 
 /** Scaled for TV viewing, adjusted one size smaller for sleekness and clarity. */
@@ -197,14 +163,13 @@ private val OpenTvTypography = Typography(
 @Composable
 fun OpenTvTheme(
     accent: AccentColor = AccentColor.CYAN,
-    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(
         LocalAccentColor provides accent,
     ) {
         MaterialTheme(
-            colorScheme = if (darkTheme) buildDarkScheme(accent) else buildLightScheme(accent),
+            colorScheme = buildDarkScheme(accent),
             typography = OpenTvTypography,
             content = content,
         )
