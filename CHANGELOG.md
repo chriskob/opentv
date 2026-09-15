@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.0
+
+- **The guide is much smoother to scroll and scrub.** Each channel row used to build every
+  programme block across the whole 48-hour window, so a screenful of guide was hundreds of cells
+  with logos, focus handlers and accessibility nodes. Rows now build only the blocks near the
+  timeline you can actually see (plus a buffer), which is where most of the stutter went.
+- **Scrolling the timeline no longer does per-frame work behind the scenes.** Moving the timeline
+  restarted a routine on every scrolled pixel and pushed a screen-wide redraw, and the "now" line
+  was re-laid-out every frame; both now update only when the value they depend on actually changes.
+- **Moving through the guide only redraws the rows that changed.** A d-pad move used to redraw
+  every visible channel row; now a row redraws only when its own cursor or target programme changes.
+- **The category sidebar and the main menu no longer re-lay-out the guide while they open and
+  close.** They slide in over the content instead of animating their width, so the guide stays put.
+
 ## 0.12.100
 
 - **The category sidebar no longer drops you back on the guide while scrolling.** Moving down the
