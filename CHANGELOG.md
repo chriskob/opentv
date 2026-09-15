@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.100
+
+- **The category sidebar no longer drops you back on the guide while scrolling.** Moving down the
+  sidebar by d-pad could jump focus into the guide when the next category was not composed yet (it
+  sat just past the viewport, or a playlist had just collapsed). Focusing any guide row closes the
+  sidebar, so the list appeared to randomly exit to the guide mid-scroll. The sidebar now moves its
+  own focus entry by entry, which also makes it loop — up from the top wraps to the bottom, and down
+  from the bottom wraps back to the top.
+
 ## 0.12.99
 
 - **Browsing to a category without the playing channel keeps a cursor.** While moving through the
