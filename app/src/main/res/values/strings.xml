@@ -465,8 +465,8 @@
     <string name="about_sponsor_github">GitHub Sponsors</string>
     <string name="about_donate_paypal">Donate via PayPal</string>
     <string name="about_scan_to_donate">Scan to donate</string>
-    <string name="about_licence_links_title">Licence &amp; links</string>
-    <string name="about_licence_label">Licence</string>
+    <string name="about_licence_links_title">License &amp; links</string>
+    <string name="about_licence_label">License</string>
     <string name="about_source_code">Source code</string>
     <string name="about_report_bug">Report a bug / request a feature</string>
     <string name="about_install_page">Install page</string>

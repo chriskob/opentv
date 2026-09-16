@@ -8,8 +8,10 @@ package app.opentv.ui.settings
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +24,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -44,81 +49,98 @@ fun AboutScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var updateLine by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
+    // The cursor lands on "Check for updates" the first time focus enters the page. The sections
+    // below are not collapsible, so this button is the page's first control.
+    val checkFocus = remember { FocusRequester() }
+    var grabbedFocus by remember { mutableStateOf(false) }
 
-    SettingsPage(
-        title = stringResource(R.string.about_title),
-        subtitle = stringResource(R.string.settings_about_page_subtitle),
-        onBack = onBack,
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onFocusChanged { state ->
+                if (!state.hasFocus) {
+                    grabbedFocus = false
+                } else if (!grabbedFocus) {
+                    grabbedFocus = true
+                    runCatching { checkFocus.requestFocus() }
+                }
+            },
     ) {
-        SettingsSection(title = stringResource(R.string.about_version)) {
-            Text(
-                text = "OpenTV ${BuildConfig.VERSION_NAME}",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SettingsButton(
-                    text = if (checking) stringResource(R.string.about_checking)
-                    else stringResource(R.string.about_check_updates),
-                    onClick = {
-                        checking = true
-                        updateLine = null
-                        scope.launch {
-                            val graph = ServiceLocator.get(context)
-                            val update = runCatching {
-                                UpdateChecker(graph.httpClient, BuildConfig.VERSION_NAME).check()
-                            }.getOrNull()
-                            updateLine = when {
-                                update != null -> context.getString(R.string.about_update_available, update.versionName)
-                                else -> context.getString(R.string.about_up_to_date)
-                            }
-                            if (update != null) {
-                                app.opentv.update.UpdateHub.state.value =
-                                    app.opentv.update.UpdateUiState.Available(update)
-                            }
-                            checking = false
-                        }
-                    },
-                    style = SettingsButtonStyle.Secondary,
-                    enabled = !checking,
+        SettingsPage(
+            title = stringResource(R.string.about_title),
+            subtitle = stringResource(R.string.settings_about_page_subtitle),
+            onBack = onBack,
+        ) {
+            SettingsSection(title = stringResource(R.string.about_version), collapsible = false) {
+                Text(
+                    text = "OpenTV ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
-                updateLine?.let {
-                    Spacer(Modifier.width(16.dp))
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = AppTheme.primary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsButton(
+                        text = if (checking) stringResource(R.string.about_checking)
+                        else stringResource(R.string.about_check_updates),
+                        onClick = {
+                            checking = true
+                            updateLine = null
+                            scope.launch {
+                                val graph = ServiceLocator.get(context)
+                                val update = runCatching {
+                                    UpdateChecker(graph.httpClient, BuildConfig.VERSION_NAME).check()
+                                }.getOrNull()
+                                updateLine = when {
+                                    update != null -> context.getString(R.string.about_update_available, update.versionName)
+                                    else -> context.getString(R.string.about_up_to_date)
+                                }
+                                if (update != null) {
+                                    app.opentv.update.UpdateHub.state.value =
+                                        app.opentv.update.UpdateUiState.Available(update)
+                                }
+                                checking = false
+                            }
+                        },
+                        style = SettingsButtonStyle.Secondary,
+                        enabled = !checking,
+                        modifier = Modifier.focusRequester(checkFocus),
                     )
+                    updateLine?.let {
+                        Spacer(Modifier.width(16.dp))
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = AppTheme.primary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
-        }
 
-        Spacer(Modifier.height(SettingsSpacing.SectionGap))
+            Spacer(Modifier.height(SettingsSpacing.SectionGap))
 
-        SettingsSection(title = stringResource(R.string.about_what_is_title)) {
-            Text(
-                text = stringResource(R.string.about_what_is_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+            SettingsSection(title = stringResource(R.string.about_what_is_title), collapsible = false) {
+                Text(
+                    text = stringResource(R.string.about_what_is_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
-        Spacer(Modifier.height(SettingsSpacing.SectionGap))
+            Spacer(Modifier.height(SettingsSpacing.SectionGap))
 
-        SettingsSection(title = stringResource(R.string.about_licence_links_title)) {
-            LinkRow(
-                label = stringResource(R.string.about_licence_label),
-                value = "GNU General Public License v3.0",
-                url = "https://www.gnu.org/licenses/gpl-3.0.html",
-            )
-            LinkRow(stringResource(R.string.about_source_code), "github.com/chriskob/opentv")
-            LinkRow(stringResource(R.string.about_report_bug), "github.com/chriskob/opentv/issues")
-            LinkRow(stringResource(R.string.about_install_page), "chriskob.github.io/opentv")
+            SettingsSection(title = stringResource(R.string.about_licence_links_title), collapsible = false) {
+                LinkRow(
+                    label = stringResource(R.string.about_licence_label),
+                    value = "GNU General Public License v3.0",
+                    url = "https://www.gnu.org/licenses/gpl-3.0.html",
+                )
+                LinkRow(stringResource(R.string.about_source_code), "github.com/chriskob/opentv")
+                LinkRow(stringResource(R.string.about_report_bug), "github.com/chriskob/opentv/issues")
+            }
         }
     }
 }
