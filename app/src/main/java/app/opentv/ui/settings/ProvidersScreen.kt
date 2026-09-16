@@ -66,6 +66,7 @@ import app.opentv.data.model.SourceKind
 import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.components.TvOutlinedTextField
 import app.opentv.ui.settings.components.*
+import app.opentv.ui.theme.AppTheme
 import kotlinx.coroutines.launch
 
 /**
@@ -103,7 +104,7 @@ fun ProvidersScreen(
                 Text(
                     text = "Delete Playlist",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             },
@@ -299,9 +300,9 @@ private fun ProviderRow(
             ) {
                 // Kind Badge — genuinely semantic hues per provider kind.
                 val kindColor = when (source.kind) {
-                    SourceKind.XTREAM -> Color(0xFF29B6F6)
-                    SourceKind.M3U -> Color(0xFF66BB6A)
-                    SourceKind.STALKER -> Color(0xFFFFA726)
+                    SourceKind.XTREAM -> AppTheme.palette.info
+                    SourceKind.M3U -> AppTheme.palette.success
+                    SourceKind.STALKER -> AppTheme.palette.warning
                 }
                 Box(
                     Modifier
@@ -312,7 +313,7 @@ private fun ProviderRow(
                     Text(
                         text = source.kind.name,
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Medium,
                         color = kindColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -324,8 +325,8 @@ private fun ProviderRow(
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = source.name,
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                        fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -359,7 +360,7 @@ private fun ProviderRow(
                     Spacer(Modifier.width(4.dp))
                     Text(
                         text = "Edit",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -412,7 +413,7 @@ private fun ProviderRow(
                     text = stringResource(R.string.common_delete),
                     color = SettingsDanger,
                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

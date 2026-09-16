@@ -190,6 +190,8 @@
     <string name="settings_parental_page_subtitle">Zarządzaj ochroną PIN i ukrywaj wrażliwe kategorie kanałów</string>
     <string name="settings_about_page_subtitle">Informacje o aplikacji OpenTV, aktualizacje i licencje open source</string>
     <string name="settings_appearance">Wygląd</string>
+    <string name="settings_palette_title">Motyw</string>
+    <string name="settings_palette_desc">Wybierz jedną z ciemnych palet OpenChamber. Każdy ekran ją przejmuje — przewodnik, odtwarzacz i menu — wraz z akcentem.</string>
     <string name="settings_theme_system">Zgodnie z systemem</string>
     <string name="settings_theme_dark">Ciemny</string>
     <string name="settings_theme_light">Jasny</string>

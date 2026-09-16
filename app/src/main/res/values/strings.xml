@@ -209,7 +209,7 @@
     <string name="settings_guide_title">TV guide</string>
     <string name="settings_guide_subtitle">Guide sources and free XMLTV feeds</string>
     <string name="settings_channels_subtitle">Hide or favorite individual channels</string>
-    <string name="settings_webmanager_title">Manage on phone or laptop</string>
+    <string name="settings_webmanager_title">Manage on Phone</string>
     <string name="settings_webmanager_subtitle">Organize channels in a browser, with a keyboard and mouse</string>
     <string name="settings_display_title">Display &amp; playback</string>
     <string name="settings_display_subtitle">Theme, subtitles, live guide preview</string>
@@ -239,7 +239,7 @@
     <string name="settings_profiles_subtitle">Watch history and favourites per person</string>
     <string name="profiles_empty_title">No profiles yet</string>
     <string name="profiles_empty_message">Add a profile so each person keeps their own watch history and favourites.</string>
-    <string name="settings_remote_title">Remote support &amp; pairing</string>
+    <string name="settings_remote_title">Remote Support</string>
     <string name="settings_remote_subtitle">Edit, add or troubleshoot playlists remotely</string>
     <string name="settings_providers_page_subtitle">Manage connected IPTV playlists, Xtream codes servers and portals</string>
     <string name="settings_guide_page_subtitle">Manage XMLTV guide feeds, auto-matching and sync status</string>
@@ -253,6 +253,11 @@
 
     <!-- ============================ Display & playback settings ============================ -->
     <string name="settings_appearance">Appearance</string>
+    <string name="settings_palette_title">Theme</string>
+    <string name="settings_palette_desc">Pick one of the OpenChamber dark palettes. Every screen follows it — guide, player, and menus — accent included.</string>
+<string name="settings_ui_transparency">Interface transparency</string>
+<string name="settings_ui_transparency_value">%1$d%%</string>
+<string name="settings_ui_transparency_desc">How see-through the guide\'s own panels are. 0 is a solid slab; 30 matches TiviMate.</string>
     <string name="settings_theme_system">Follow system</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_theme_light">Light</string>

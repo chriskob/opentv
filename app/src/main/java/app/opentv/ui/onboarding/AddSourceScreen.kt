@@ -1,4 +1,4 @@
-/*
+﻿/*
  * This file is part of OpenTV.
  * Copyright (C) 2026 The OpenTV Contributors
  * Licensed under the GNU General Public License v3.0 or later.
@@ -20,15 +20,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.Text
@@ -51,6 +46,7 @@ import app.opentv.data.model.SourceKind
 import app.opentv.isRunningOnTelevision
 import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.channels.readClipboardText
+import app.opentv.ui.settings.components.SettingsIconButton
 
 /**
  * First-run setup.
@@ -69,9 +65,9 @@ fun AddSourceScreen(
     onFinished: () -> Unit,
 ) {
     val context = LocalContext.current
-    // The QR "set it up from your phone" flow only makes sense on a TV — it serves a setup page
+    // The QR "set it up from your phone" flow only makes sense on a TV â€” it serves a setup page
     // FROM this device for a phone to fill in. On a phone that same screen shows a QR meant to be
-    // scanned BY a phone, which is nonsensical and traps the user — so a non-TV device defaults
+    // scanned BY a phone, which is nonsensical and traps the user â€” so a non-TV device defaults
     // straight to the direct entry form. On a TV the QR is still offered first, because typing a
     // server address and password with a d-pad is the worst moment in every app of this kind.
     val isTelevision = remember(context) { isRunningOnTelevision(context) }
@@ -91,7 +87,7 @@ fun AddSourceScreen(
         PhonePairingScreen(
             // Even on a failed sync, leave the pairing screen: the source is already saved, so the
             // home screen shows either the guide (success) or a recoverable error (failure) rather
-            // than stranding the user on an endless "Got it — connecting…" spinner.
+            // than stranding the user on an endless "Got it â€” connectingâ€¦" spinner.
             onReceived = { draft -> viewModel.saveAndSync(draft) { onFinished() } },
             onCancel = { usePhone = false },
             onSwitchToRemote = { usePhone = false; useRemote = true },
@@ -112,7 +108,7 @@ fun AddSourceScreen(
     var userAgent by remember { mutableStateOf(Source.DEFAULT_USER_AGENT) }
 
     // What to load from this playlist. Unticking TV channels leaves the guide empty for this
-    // provider — the same choice the phone page offers, and the reason a playlist added for its
+    // provider â€” the same choice the phone page offers, and the reason a playlist added for its
     // VOD must not dump its channel list into the guide. Ticking Movies/Shows fills those
     // sections straight away instead of waiting for a background refresh.
     var includeLive by remember { mutableStateOf(true) }
@@ -253,9 +249,10 @@ fun AddSourceScreen(
             }
 
             Spacer(Modifier.height(12.dp))
-            OutlinedButton(onClick = { showAdvanced = !showAdvanced }) {
-                Text(if (showAdvanced) stringResource(R.string.onboarding_hide_advanced) else stringResource(R.string.onboarding_advanced))
-            }
+            OnboardingButton(
+                text = if (showAdvanced) stringResource(R.string.onboarding_hide_advanced) else stringResource(R.string.onboarding_advanced),
+                onClick = { showAdvanced = !showAdvanced },
+            )
 
             if (showAdvanced) {
                 Spacer(Modifier.height(12.dp))
@@ -319,35 +316,33 @@ fun AddSourceScreen(
             Spacer(Modifier.height(12.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
+                OnboardingButton(
+                    text = stringResource(R.string.recset_test_connection),
                     onClick = { viewModel.test(draft()) },
                     enabled = canSubmit && !ui.testing && !ui.syncing,
-                ) {
-                    if (ui.testing) {
-                        CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text(stringResource(R.string.recset_test_connection))
-                    }
-                }
-                Button(
+                    loading = ui.testing,
+                )
+                OnboardingButton(
+                    text = if (ui.syncing) stringResource(R.string.onboarding_working) else stringResource(R.string.onboarding_save_load),
                     onClick = { viewModel.saveAndSync(draft()) { ok -> if (ok) onFinished() } },
                     enabled = canSubmit && !ui.testing && !ui.syncing,
-                ) {
-                    Text(if (ui.syncing) stringResource(R.string.onboarding_working) else stringResource(R.string.onboarding_save_load))
-                }
+                    primary = true,
+                )
             }
 
-            // "Set up from your phone" (the QR pairing flow) is offered only on a TV — see the
+            // "Set up from your phone" (the QR pairing flow) is offered only on a TV â€” see the
             // isTelevision note above. On a phone it would just show a QR to nowhere.
             if (isTelevision) {
                 Spacer(Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = { usePhone = true }) {
-                        Text(stringResource(R.string.onboarding_use_phone))
-                    }
-                    OutlinedButton(onClick = { useRemote = true }) {
-                        Text("Remote Setup (NAS)")
-                    }
+                    OnboardingButton(
+                        text = stringResource(R.string.onboarding_use_phone),
+                        onClick = { usePhone = true },
+                    )
+                    OnboardingButton(
+                        text = "Remote Setup (NAS)",
+                        onClick = { useRemote = true },
+                    )
                 }
             }
 
@@ -370,20 +365,20 @@ fun AddSourceScreen(
 @Composable
 private fun PasteButton(onPaste: (String) -> Unit) {
     val context = LocalContext.current
-    IconButton(
+    SettingsIconButton(
+        icon = Icons.Filled.ContentPaste,
         onClick = {
             val pasted = readClipboardText(context)
             if (pasted != null) onPaste(pasted)
             else Toast.makeText(context, context.getString(R.string.kbd_clipboard_empty), Toast.LENGTH_SHORT).show()
         },
-    ) {
-        Icon(Icons.Filled.ContentPaste, contentDescription = stringResource(R.string.kbd_paste))
-    }
+        contentDescription = stringResource(R.string.kbd_paste),
+    )
 }
 
 /**
  * One "load this section?" tick on the add-source screen. TV channels off means the playlist
- * contributes nothing to the guide — no channels and no live categories — which is what the
+ * contributes nothing to the guide â€” no channels and no live categories â€” which is what the
  * checkbox promises.
  */
 @Composable

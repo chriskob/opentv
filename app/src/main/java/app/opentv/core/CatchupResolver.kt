@@ -66,6 +66,12 @@ object CatchupResolver {
      * Xtream URL auto-detection from M3U stream URLs, and append mode.
      */
     fun resolve(source: Source, channel: Channel, programme: Programme): String? {
+        val url = resolveInternal(source, channel, programme)
+        android.util.Log.i("OpenTV-Catchup", "resolved ${url ?: "null"} (base=${channel.streamUrl})")
+        return url
+    }
+
+    private fun resolveInternal(source: Source, channel: Channel, programme: Programme): String? {
         val startUtcMillis = programme.startUtcMillis
         val endUtcMillis = programme.endUtcMillis
         val nowMillis = System.currentTimeMillis()

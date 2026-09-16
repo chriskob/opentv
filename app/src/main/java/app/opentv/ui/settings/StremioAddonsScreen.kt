@@ -160,7 +160,7 @@ fun StremioAddonsScreen(onBack: () -> Unit) {
                         Text(
                             stringResource(R.string.addons_added, s.name),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF66BB6A),
+                            color = AppTheme.palette.success,
                         )
                     is StremioAddonsViewModel.Status.Invalid ->
                         Text(
@@ -206,8 +206,8 @@ private fun AddonRow(addon: StremioAddon, onRemove: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(
                 text = addon.name,
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(2.dp))

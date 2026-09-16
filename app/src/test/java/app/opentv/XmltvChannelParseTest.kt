@@ -118,6 +118,37 @@ class XmltvChannelParseTest {
         assertThat(result.programmes.single().description).isEqualTo("The latest news.")
     }
 
+    /**
+     * `<live/>` rides alongside `<new/>` and `<premiere/>`. The guide badges NEW and LIVE from
+     * these flags, so a dropped `<live/>` silently loses the LIVE chip on every live broadcast.
+     */
+    @Test
+    fun `reads new and live flags from programme markers`() = runTest {
+        val result = parse(
+            """
+            <tv>
+              <channel id="bbc1.uk"><display-name>BBC One</display-name></channel>
+              <programme channel="bbc1.uk" start="20260727183000 +0100" stop="20260727190000 +0100">
+                <title>Match of the Day</title>
+                <live/>
+                <new/>
+              </programme>
+              <programme channel="bbc1.uk" start="20260727190000 +0100" stop="20260727193000 +0100">
+                <title>The Six O'Clock News</title>
+              </programme>
+            </tv>
+            """.trimIndent(),
+        )
+
+        val live = result.programmes[0]
+        assertThat(live.isLive).isTrue()
+        assertThat(live.isNew).isTrue()
+
+        val plain = result.programmes[1]
+        assertThat(plain.isLive).isFalse()
+        assertThat(plain.isNew).isFalse()
+    }
+
     /** A self-closing channel with no display-name still has to produce an alias. */
     @Test
     fun `falls back to the id when there is no display name`() = runTest {

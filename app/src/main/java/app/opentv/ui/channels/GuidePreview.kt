@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import app.opentv.R
+import app.opentv.ui.theme.AppTheme
 import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Programme
 import app.opentv.data.model.shownName
@@ -155,13 +156,13 @@ fun GuidePreview(
                         Box(
                             Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFFE65100))
+                                .background(AppTheme.palette.live)
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 text = "NEW",
-                                color = Color.White,
+                                color = AppTheme.palette.onPrimary,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 lineHeight = 12.sp,
@@ -174,7 +175,7 @@ fun GuidePreview(
                         text = titleText,
                         style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = AppTheme.palette.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -184,7 +185,7 @@ fun GuidePreview(
                     Icon(
                         imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
                         contentDescription = null,
-                        tint = if (row.primary.favourite) Color(0xFFFFD54F) else Color(0xFF90A4AE),
+                        tint = if (row.primary.favourite) AppTheme.palette.favourite else AppTheme.palette.onSurfaceVariant,
                         modifier = Modifier.size(18.dp).padding(top = 2.dp),
                     )
                 }
@@ -206,7 +207,7 @@ fun GuidePreview(
                         Text(
                             text = "$startStr – $endStr",
                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                            color = Color(0xFFCFD8DC),
+                            color = AppTheme.palette.onSurface,
                             fontWeight = FontWeight.Normal,
                         )
                         if (isLiveShow) {
@@ -217,13 +218,13 @@ fun GuidePreview(
                                     .width(44.dp)
                                     .height(3.dp)
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(Color(0xFF455A64)),
+                                    .background(AppTheme.palette.outline),
                             ) {
                                 Box(
                                     Modifier
                                         .fillMaxWidth(progress.coerceIn(0f, 1f))
                                         .height(3.dp)
-                                        .background(Color.White),
+                                        .background(AppTheme.primary),
                                 )
                             }
                             Spacer(Modifier.width(10.dp))
@@ -231,13 +232,13 @@ fun GuidePreview(
                             Text(
                                 text = "  —  ",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                                color = Color(0xFF78909C),
+                                color = AppTheme.palette.textMuted,
                             )
                         }
                         Text(
                             text = "$durationMins min",
                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                            color = Color(0xFFCFD8DC),
+                            color = AppTheme.palette.onSurface,
                             fontWeight = FontWeight.Normal,
                         )
                     }
@@ -247,7 +248,7 @@ fun GuidePreview(
                         Text(
                             text = categoryTag,
                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                            color = Color(0xFF90A4AE),
+                            color = AppTheme.palette.onSurfaceVariant,
                             fontWeight = FontWeight.Normal,
                             maxLines = 1,
                         )
@@ -260,7 +261,7 @@ fun GuidePreview(
                     Text(
                         text = synopsis,
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 18.sp),
-                        color = Color(0xFFB0BEC5),
+                        color = AppTheme.palette.onSurfaceVariant,
                         maxLines = 5,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -269,7 +270,7 @@ fun GuidePreview(
                 Text(
                     text = row.primary.shownName,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF90A4AE),
+                    color = AppTheme.palette.onSurfaceVariant,
                 )
             }
         }

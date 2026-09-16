@@ -128,7 +128,7 @@ private fun PinSection(
             Text(
                 text = stringResource(R.string.parental_pin_is_set),
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(14.dp))
@@ -148,7 +148,7 @@ private fun PinSection(
             Text(
                 text = if (pinIsSet) stringResource(R.string.parental_pin_enter_new) else stringResource(R.string.parental_pin_set),
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(14.dp))
@@ -226,7 +226,7 @@ private fun PinGate(onCancel: () -> Unit, onSubmit: (String) -> Boolean) {
                 Text(
                     text = stringResource(R.string.parental_enter_pin),
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(16.dp))

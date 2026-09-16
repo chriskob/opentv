@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import app.opentv.R
 import app.opentv.core.isIgnoringBatteryOptimizations
+import app.opentv.ui.settings.components.SettingsButton
+import app.opentv.ui.settings.components.SettingsButtonStyle
 
 /**
  * A once-per-session nudge shown the first time the user records or schedules while OpenTV still
@@ -86,13 +88,18 @@ fun RecordingBackgroundDialog(onAllow: () -> Unit, onDismiss: () -> Unit) {
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.rec_background_prompt_not_now))
-                }
+                SettingsButton(
+                    text = stringResource(R.string.rec_background_prompt_not_now),
+                    onClick = onDismiss,
+                    style = SettingsButtonStyle.Secondary,
+                )
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = onAllow, modifier = Modifier.focusRequester(allowFocus)) {
-                    Text(stringResource(R.string.rec_background_prompt_allow))
-                }
+                SettingsButton(
+                    text = stringResource(R.string.rec_background_prompt_allow),
+                    onClick = onAllow,
+                    style = SettingsButtonStyle.Primary,
+                    modifier = Modifier.focusRequester(allowFocus),
+                )
             }
         }
     }

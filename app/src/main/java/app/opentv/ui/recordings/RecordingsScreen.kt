@@ -61,6 +61,8 @@ import app.opentv.data.model.Reminder
 import app.opentv.data.model.SeriesRule
 import app.opentv.recording.RecordingStorage
 import app.opentv.reminders.ReminderScheduler
+import app.opentv.ui.components.tvFocus
+import app.opentv.ui.theme.AppTheme
 import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -292,11 +294,11 @@ private fun SeriesRuleRow(rule: SeriesRule, upcomingCount: Int, nextAtMillis: Lo
     ) {
         Box(
             Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFFE53935).copy(alpha = 0.15f)),
+                .background(AppTheme.palette.recording.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center,
         ) {
             // A repeat glyph, tinted record-red — reads as "records every time it's on".
-            Icon(Icons.Filled.Repeat, contentDescription = null, tint = Color(0xFFE53935))
+            Icon(Icons.Filled.Repeat, contentDescription = null, tint = AppTheme.palette.recording)
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -424,13 +426,12 @@ private fun RecordingRow(
 @Composable
 private fun ActionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val bg = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-    val fg = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val fg = MaterialTheme.colorScheme.onSurface
     Box(
         Modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(bg)
-            .onFocusChanged { focused = it.isFocused }
+            .background(MaterialTheme.colorScheme.surface)
+            .tvFocus(shape = RoundedCornerShape(10.dp), onFocusChange = { focused = it })
             .clickable(onClick = onClick)
             .padding(10.dp),
     ) {
@@ -459,7 +460,7 @@ private fun statusLine(rec: Recording): String {
 
 @Composable
 private fun statusColor(status: RecordingStatus): Color = when (status) {
-    RecordingStatus.RECORDING -> Color(0xFFE53935)
+    RecordingStatus.RECORDING -> AppTheme.palette.recording
     RecordingStatus.FAILED -> MaterialTheme.colorScheme.error
     RecordingStatus.SCHEDULED -> MaterialTheme.colorScheme.primary
     RecordingStatus.COMPLETED -> MaterialTheme.colorScheme.onSurfaceVariant

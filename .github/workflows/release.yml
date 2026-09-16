@@ -38,6 +38,12 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
           echo "KEYSTORE_PATH=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
 
+      # Gate the release on the unit tests: a broken build must fail here, not reach users.
+      - name: Run unit tests
+        env:
+          OPENTV_PAIRING_URL: ${{ vars.OPENTV_PAIRING_URL }}
+        run: ./gradlew test --stacktrace
+
       - name: Assemble release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

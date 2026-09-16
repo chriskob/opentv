@@ -127,6 +127,7 @@ object XmltvParser {
         var season: Int? = null
         var episode: Int? = null
         var isNew = false
+        var isLive = false
 
         var depth = 1
         while (depth > 0) {
@@ -151,6 +152,9 @@ object XmltvParser {
                         }
                         "new", "premiere" -> {
                             isNew = true
+                        }
+                        "live" -> {
+                            isLive = true
                         }
                         "episode-num" -> {
                             val system = parser.getAttributeValue(null, "system")
@@ -196,6 +200,7 @@ object XmltvParser {
             episode = episode,
             iconUrl = iconUrl?.takeIf { it.isNotEmpty() },
             isNew = isNew,
+            isLive = isLive,
         )
     }
 

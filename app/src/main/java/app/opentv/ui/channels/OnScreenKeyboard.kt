@@ -40,6 +40,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.opentv.R
+import app.opentv.ui.components.tvFocus
 
 /**
  * A d-pad-navigable on-screen keyboard, shared by every screen that needs text entry on a TV.
@@ -98,20 +99,15 @@ private fun KeyCap(
     focusRequester: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val bg = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val fg = MaterialTheme.colorScheme.onSurface
     Box(
         Modifier
             .height(48.dp)
             .width((48 * wide + (wide - 1) * 8).dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(8.dp))
-            .background(bg)
-            .then(
-                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                else Modifier,
-            )
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .tvFocus(shape = RoundedCornerShape(8.dp), onFocusChange = { focused = it })
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

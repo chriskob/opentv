@@ -54,7 +54,7 @@ fun AboutScreen(onBack: () -> Unit) {
             Text(
                 text = "OpenTV ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(12.dp))

@@ -28,3 +28,7 @@ node_modules/
 
 *.log
 cc_err.txt
+
+# Root-level Node tooling only; the pairing-service keeps its own package.json.
+/package.json
+/package-lock.json

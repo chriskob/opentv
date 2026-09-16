@@ -71,7 +71,7 @@ class Converters {
         SeriesRule::class,
         Reminder::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -335,6 +335,17 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v17 → v18: Add `isLive` boolean flag to programmes, from XMLTV `<live/>`. Additive with
+         * DEFAULT 0, so rows stored before this version simply carry no LIVE badge until the next
+         * EPG sync rewrites them with the flag.
+         */
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `programmes` ADD COLUMN `isLive` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
@@ -344,7 +355,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
                     MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                     MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-                    MIGRATION_16_17,
+                    MIGRATION_16_17, MIGRATION_17_18,
                 )
                 /*
                  * Pre-1.0 policy: schema changes drop and rebuild the database. Everything

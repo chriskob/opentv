@@ -89,7 +89,7 @@ fun EpgSettingsScreen(
                 Text(
                     text = "Delete Guide?",
                     color = SettingsDanger,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                 )
             },
             text = {
@@ -230,7 +230,7 @@ fun EpgSettingsScreen(
                 Text(
                     text = "Add Custom XMLTV Feed",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -335,7 +335,7 @@ private fun EditFeedDialog(
             Text(
                 text = if (confirmingDelete) "Delete Guide?" else "Edit Guide Settings",
                 color = if (confirmingDelete) SettingsDanger else MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
             )
         },
         text = {

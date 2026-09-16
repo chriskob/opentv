@@ -16,6 +16,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
+import androidx.core.content.IntentCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -61,9 +62,16 @@ class ApkInstaller(private val http: OkHttpClient) {
         url: String,
         expectedBytes: Long,
         progress: Progress,
+        /**
+         * Invoked once the platform reports the *final* result of a session install. [success] is
+         * false with the platform's `INSTALL_FAILED_*` text when the install was rejected — the
+         * caller surfaces that, because until now a rejected install was only logged and the user
+         * saw the dialog simply close back to About.
+         */
+        onSessionResult: ((success: Boolean, reason: String?) -> Unit)? = null,
     ): Outcome {
         val apk = download(context, url, expectedBytes, progress)
-        return launchInstaller(context, apk)
+        return launchInstaller(context, apk, onSessionResult)
     }
 
     private suspend fun download(
@@ -117,7 +125,11 @@ class ApkInstaller(private val http: OkHttpClient) {
         }
     }.getOrDefault(false)
 
-    private fun launchInstaller(context: Context, apk: File): Outcome {
+    private fun launchInstaller(
+        context: Context,
+        apk: File,
+        onSessionResult: ((success: Boolean, reason: String?) -> Unit)?,
+    ): Outcome {
         // Since Android 8, REQUEST_INSTALL_PACKAGES in the manifest is only half the story:
         // the user has to allow installs from *this app*. Without that the platform refuses
         // the install without showing anything at all, which is indistinguishable from the
@@ -134,7 +146,7 @@ class ApkInstaller(private val http: OkHttpClient) {
         // in particular) treat the download as a brand-new install and refuse with
         // "app already installed" unless the caller asked to replace. Committing through a
         // session is what makes About → Update actually update in place.
-        val session = runCatching { installThroughSession(context, apk) }
+        val session = runCatching { installThroughSession(context, apk, onSessionResult) }
         if (session.isSuccess) return Outcome.InstallerShown
         Log.w(TAG, "Package session install unavailable, falling back to the installer intent", session.exceptionOrNull())
 
@@ -184,7 +196,11 @@ class ApkInstaller(private val http: OkHttpClient) {
      * install — which cleans the downloaded APK up after either outcome, since the cache copy is
      * worthless once the installer has streamed its own copy in.
      */
-    private fun installThroughSession(context: Context, apk: File) {
+    private fun installThroughSession(
+        context: Context,
+        apk: File,
+        onSessionResult: ((success: Boolean, reason: String?) -> Unit)?,
+    ) {
         val installer = context.packageManager.packageInstaller
         val sessionId = installer.createSession(PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL))
         val session = installer.openSession(sessionId)
@@ -202,24 +218,60 @@ class ApkInstaller(private val http: OkHttpClient) {
             // fields in place rather than sending a new intent.
             val mutableFlag =
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-            context.registerReceiver(
-                object : BroadcastReceiver() {
-                    override fun onReceive(receiverContext: Context, intent: Intent) {
-                        runCatching { receiverContext.unregisterReceiver(this) }
-                        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-                        if (status == PackageInstaller.STATUS_SUCCESS) {
-                            apk.delete()
-                        } else {
-                            Log.w(
-                                TAG,
-                                "Install session finished with status $status: " +
-                                    intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE),
+
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(receiverContext: Context, intent: Intent) {
+                    when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
+                        // The platform does NOT show the confirmation by itself: it hands us the
+                        // activity to launch. Until we do, the session sits waiting and the viewer
+                        // sees nothing — the download hit 100%, the dialog closed, and no install
+                        // screen ever appeared. Launching EXTRA_INTENT is the missing step.
+                        PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                            // The confirmation activity arrives under Intent.EXTRA_INTENT, not a
+                            // PackageInstaller constant.
+                            val confirm = IntentCompat.getParcelableExtra(
+                                intent,
+                                Intent.EXTRA_INTENT,
+                                Intent::class.java,
                             )
+                            if (confirm != null) {
+                                runCatching {
+                                    receiverContext.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }.onFailure {
+                                    Log.w(TAG, "Could not launch the install confirmation screen", it)
+                                    finish(false, it.message)
+                                }
+                            } else {
+                                Log.w(TAG, "Pending-user-action status carried no confirmation intent")
+                                finish(false, "The installer did not provide a confirmation screen")
+                            }
+                        }
+                        PackageInstaller.STATUS_SUCCESS -> {
+                            finish(true, null)
+                            apk.delete()
+                        }
+                        else -> {
+                            val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                            Log.w(TAG, "Install session finished with status $status: $message")
+                            finish(false, message ?: "Install failed (status $status)")
                         }
                     }
-                },
-                IntentFilter(STATUS_ACTION),
-            )
+                }
+
+                private fun finish(success: Boolean, reason: String?) {
+                    runCatching { context.unregisterReceiver(this) }
+                    onSessionResult?.invoke(success, reason)
+                }
+            }
+
+            // The status callback arrives as a platform broadcast, so on Android 13+ the receiver
+            // is explicitly exported; the action is unique to this install session.
+            val filter = IntentFilter(STATUS_ACTION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                context.registerReceiver(receiver, filter)
+            }
 
             session.commit(
                 PendingIntent.getBroadcast(

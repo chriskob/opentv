@@ -5,7 +5,6 @@
  */
 package app.opentv.ui.settings.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -69,7 +68,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import app.opentv.R
+import app.opentv.ui.components.tvFocus
 import app.opentv.ui.theme.AppTheme
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -105,7 +106,8 @@ object SettingsShape {
 }
 
 /** Destructive actions (remove, delete) use this instead of scattering three different reds. */
-val SettingsDanger = Color(0xFFFF6B6B)
+val SettingsDanger: Color
+    @Composable get() = AppTheme.palette.error
 
 /** Page rhythm, shared so every screen breathes the same way. */
 object SettingsSpacing {
@@ -115,13 +117,14 @@ object SettingsSpacing {
 }
 
 /**
- * The single focus treatment. Attach it to any focusable surface instead of hand-rolling another
- * `onFocusChanged` + `background` + `border` block.
+ * The settings call-site name for the shared [tvFocus] treatment. Kept so the ~20 settings
+ * call sites did not have to move; it now draws exactly what every other screen draws.
  *
- * @param selected a persistent (not focus) selection state, e.g. the active accent or profile.
- * @param danger destructive controls ring in red rather than the accent.
- * @param focusScale how far the element lifts on focus; keep at 1f for rows inside a card so they
- *   do not overlap their neighbours.
+ * @param selected a persistent (not focus) selection state, e.g. the active section or profile.
+ *   Selected rows keep the `selection` lift at all times.
+ * @param quietSelection kept for call-site compatibility; selection is already a translucent lift,
+ *   so it needs no separate quiet form.
+ * @param focusScale kept for call-site compatibility; ignored — nothing scales any more.
  */
 @Composable
 fun Modifier.settingsFocus(
@@ -129,52 +132,16 @@ fun Modifier.settingsFocus(
     selected: Boolean = false,
     danger: Boolean = false,
     enabled: Boolean = true,
-    focusScale: Float = 1f,
+    @Suppress("UNUSED_PARAMETER") quietSelection: Boolean = false,
+    @Suppress("UNUSED_PARAMETER") focusScale: Float = 1f,
     onFocusChange: ((Boolean) -> Unit)? = null,
-): Modifier {
-    var focused by remember { mutableStateOf(false) }
-    val ring = if (danger) SettingsDanger else AppTheme.primary
-
-    val fill by animateColorAsState(
-        targetValue = when {
-            focused && danger -> SettingsDanger.copy(alpha = 0.16f)
-            focused -> AppTheme.primary.copy(alpha = 0.14f)
-            selected -> AppTheme.primary.copy(alpha = 0.10f)
-            else -> Color.Transparent
-        },
-        animationSpec = tween(140),
-        label = "settingsFocusFill",
-    )
-    val ringAlpha by animateFloatAsState(
-        targetValue = when {
-            !enabled -> 0f
-            focused -> 1f
-            selected -> 0.45f
-            else -> 0f
-        },
-        animationSpec = tween(140),
-        label = "settingsFocusRing",
-    )
-    val scale by animateFloatAsState(
-        targetValue = if (focused && enabled) focusScale else 1f,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = 700f),
-        label = "settingsFocusScale",
-    )
-
-    return this
-        .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-        }
-        .clip(shape)
-        .background(fill, shape)
-        .border(width = if (focused) 2.dp else if (selected) 1.dp else 0.dp, color = ring.copy(alpha = ringAlpha), shape = shape)
-        .alpha(if (enabled) 1f else 0.5f)
-        .onFocusChanged {
-            focused = it.isFocused
-            onFocusChange?.invoke(it.isFocused)
-        }
-}
+): Modifier = tvFocus(
+    shape = shape,
+    selected = selected,
+    danger = danger,
+    enabled = enabled,
+    onFocusChange = onFocusChange,
+)
 
 /** One switch palette for the whole app (the old code copy-pasted its own into six files). */
 @Composable
@@ -208,7 +175,10 @@ fun SettingsIconButton(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = tint ?: if (focused) AppTheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            // The cursor's fill is the accent's dark shade, so an explicit tint keeps working on it;
+            // without one, fall back to the plain onSurface white the rest of the row uses.
+            tint = if (focused) MaterialTheme.colorScheme.onSurface
+            else tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp),
         )
     }
@@ -243,35 +213,49 @@ fun SettingsChoiceRow(
                 .clip(CircleShape)
                 .border(
                     width = 2.dp,
-                    color = if (selected || focused) AppTheme.primary else MaterialTheme.colorScheme.outline,
+                    // A selected row now sits on the accent fill, so the ring and dot invert with it
+                    // exactly as the title does.
+                    color = if (focused || selected) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.outline,
                     shape = CircleShape,
                 ),
             contentAlignment = Alignment.Center,
         ) {
             if (selected) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(AppTheme.primary))
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (focused || selected) MaterialTheme.colorScheme.onSurface else AppTheme.primary,
+                        ),
+                )
             }
         }
         Spacer(Modifier.width(12.dp))
-        SettingsRowText(title = title, subtitle = subtitle, emphasized = focused || selected)
+        SettingsRowText(
+            title = title,
+            subtitle = subtitle,
+        )
     }
 }
 
-/** A raised settings card. */
+/**
+ * A settings group. Deliberately flat: no card fill, no border, no rounding. Rows sit straight on
+ * the page the way TiviMate and Sparkle draw theirs, so a page reads as one list instead of a stack
+ * of boxes, and the only filled thing on screen is the cursor.
+ */
 @Composable
 fun SettingsCard(
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
+    contentPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
         modifier
             .fillMaxWidth()
-            .clip(SettingsShape.Card)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, SettingsShape.Card)
             .padding(contentPadding),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
         content = content,
     )
 }
@@ -309,26 +293,22 @@ fun SettingsSection(
 @Composable
 private fun SettingsSectionHeader(
     title: String,
-    icon: ImageVector?,
+    @Suppress("UNUSED_PARAMETER") icon: ImageVector?,
     expanded: Boolean,
     onToggle: (() -> Unit)?,
 ) {
-    val label: @Composable () -> Unit = {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (icon != null) {
-                Icon(icon, contentDescription = null, tint = AppTheme.primary, modifier = Modifier.size(18.dp))
-            }
-            Text(
-                text = title.uppercase(),
-                style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.4.sp),
-                fontWeight = FontWeight.Bold,
-                color = AppTheme.primary,
-            )
-        }
+    val label: @Composable (Boolean) -> Unit = { onAccent ->
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall.copy(fontSize = 12.sp),
+            fontWeight = FontWeight.Medium,
+            color = if (onAccent) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 
     if (onToggle == null) {
-        Row(Modifier.padding(start = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) { label() }
+        Row(Modifier.padding(start = 2.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) { label(false) }
     } else {
         var focused by remember { mutableStateOf(false) }
         val rotation by animateFloatAsState(
@@ -348,11 +328,11 @@ private fun SettingsSectionHeader(
                 .padding(start = 4.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { label() }
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { label(focused) }
             Icon(
                 imageVector = Icons.Filled.ExpandMore,
                 contentDescription = if (expanded) "Collapse" else "Expand",
-                tint = if (focused) AppTheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = if (focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = rotation },
             )
         }
@@ -392,7 +372,6 @@ fun SettingsToggleRow(
         SettingsRowText(
             title = title,
             subtitle = subtitle,
-            emphasized = focused,
         )
         if (trailing != null) {
             Spacer(Modifier.width(8.dp))
@@ -422,6 +401,8 @@ fun SettingsNavRow(
     selected: Boolean = false,
     expanded: Boolean = true,
     tint: Color = AppTheme.primary,
+    titleSize: TextUnit = 14.sp,
+    titleWeight: FontWeight = FontWeight.Medium,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -447,15 +428,25 @@ fun SettingsNavRow(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(SettingsShape.Tile)
-                    .background(tint.copy(alpha = if (focused || selected) 0.20f else 0.12f)),
+                    .background(tint.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(20.dp),
+                )
             }
             if (expanded) Spacer(Modifier.width(12.dp))
         }
         if (expanded) {
-            SettingsRowText(title = title, subtitle = subtitle, emphasized = focused || selected)
+            SettingsRowText(
+                title = title,
+                subtitle = subtitle,
+                titleSize = titleSize,
+                titleWeight = titleWeight,
+            )
         } else {
             Spacer(Modifier.weight(1f))
         }
@@ -466,7 +457,7 @@ fun SettingsNavRow(
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
-                    tint = if (focused) AppTheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp),
                 )
             }
@@ -475,21 +466,26 @@ fun SettingsNavRow(
 }
 
 @Composable
-private fun RowScope.SettingsRowText(title: String, subtitle: String?, emphasized: Boolean) {
+private fun RowScope.SettingsRowText(
+    title: String,
+    subtitle: String?,
+    titleSize: TextUnit = 14.sp,
+    titleWeight: FontWeight = FontWeight.Medium,
+) {
     Column(Modifier.weight(1f)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
-            fontWeight = if (emphasized) FontWeight.Bold else FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = titleSize),
+            fontWeight = titleWeight,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         if (subtitle != null) {
-            Spacer(Modifier.height(1.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -512,16 +508,21 @@ fun SettingsButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val danger = style == SettingsButtonStyle.Danger
-    val ring = if (danger) SettingsDanger else AppTheme.primary
     val shape = SettingsShape.Control
 
-    val fill = when {
-        !enabled -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.4f)
-        focused && danger -> SettingsDanger.copy(alpha = 0.22f)
-        focused -> AppTheme.primary.copy(alpha = 0.22f)
+    // The base fill is the button's identity (solid accent for Primary, tinted for Danger); focus
+    // only adds the shared neutral cursor lift on top, it never repaints the button's colour.
+    val baseFill = when {
         danger -> SettingsDanger.copy(alpha = 0.14f)
         style == SettingsButtonStyle.Primary -> AppTheme.primary
         else -> MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val fill = when {
+        !enabled -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.4f)
+        focused && danger -> SettingsDanger.copy(alpha = 0.22f)
+        focused && style == SettingsButtonStyle.Primary -> AppTheme.primary
+        focused -> AppTheme.palette.cursorFill
+        else -> baseFill
     }
     val content = when {
         !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -531,26 +532,16 @@ fun SettingsButton(
         else -> MaterialTheme.colorScheme.onSurface
     }
     val outline = when {
-        focused -> ring
+        focused -> if (danger) SettingsDanger else AppTheme.palette.cursorBorder
         danger -> SettingsDanger.copy(alpha = 0.45f)
         style == SettingsButtonStyle.Primary -> AppTheme.primary
         else -> MaterialTheme.colorScheme.outlineVariant
     }
-    val scale by animateFloatAsState(
-        targetValue = if (focused && enabled) 1.04f else 1f,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = 700f),
-        label = "settingsButtonScale",
-    )
-
     Row(
         modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
             .clip(shape)
             .background(fill, shape)
-            .border(if (focused) 2.dp else 1.dp, outline, shape)
+            .border(if (focused) 1.5.dp else 1.dp, outline, shape)
             .alpha(if (enabled) 1f else 0.75f)
             .onFocusChanged { focused = it.isFocused }
             .focusable(enabled)
@@ -562,8 +553,8 @@ fun SettingsButton(
         if (icon != null) Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
         Text(
             text = text,
-            style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp),
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
+            fontWeight = FontWeight.Medium,
             color = content,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -605,6 +596,9 @@ fun SettingsChip(
                 shape = SettingsShape.Pill,
                 selected = selected,
                 enabled = enabled,
+                // A chip grid can have many chips on at once, so selection stays a faint tint here;
+                // the full pill is reserved for nav lists, where there is one current thing.
+                quietSelection = true,
                 focusScale = 1.04f,
                 onFocusChange = { focused = it },
             )
@@ -619,13 +613,22 @@ fun SettingsChip(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (selected) {
-            Icon(Icons.Filled.Check, contentDescription = null, tint = AppTheme.primary, modifier = Modifier.size(16.dp))
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = if (focused) MaterialTheme.colorScheme.onSurface else AppTheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
         }
         Text(
             text = label,
-            style = MaterialTheme.typography.titleSmall.copy(fontSize = 13.sp),
-            fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
-            color = if (selected) AppTheme.primary else MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleSmall.copy(fontSize = 12.sp),
+            fontWeight = FontWeight.Medium,
+            color = when {
+                focused -> MaterialTheme.colorScheme.onSurface
+                selected -> AppTheme.primary
+                else -> MaterialTheme.colorScheme.onSurface
+            },
             maxLines = 1,
         )
     }
@@ -650,6 +653,7 @@ fun SettingsSegmented(
     ) {
         options.forEachIndexed { index, option ->
             val isSelected = index == selectedIndex
+            var optionFocused by remember { mutableStateOf(false) }
             Box(
                 Modifier
                     .weight(1f)
@@ -657,6 +661,7 @@ fun SettingsSegmented(
                         shape = SettingsShape.Row,
                         selected = isSelected,
                         focusScale = 1.02f,
+                        onFocusChange = { optionFocused = it },
                     )
                     .focusable()
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onSelect(index) }
@@ -665,9 +670,14 @@ fun SettingsSegmented(
             ) {
                 Text(
                     text = option,
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSelected) AppTheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp),
+                    fontWeight = FontWeight.Medium,
+                    color = when {
+                        // The chosen segment sits on the accent fill at all times, so its label is
+                        // ordinary onSurface white rather than the accent.
+                        optionFocused || isSelected -> MaterialTheme.colorScheme.onSurface
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
         }
@@ -705,7 +715,7 @@ fun <T> SettingsDropdown(
                 Text(
                     text = currentLabel,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Medium,
                     color = AppTheme.primary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -743,8 +753,8 @@ fun <T> SettingsDropdown(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp),
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 18.sp),
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
@@ -771,7 +781,12 @@ fun <T> SettingsDropdown(
                             modifier = if (index == focusIndex) Modifier.focusRequester(itemFocus) else Modifier,
                             trailing = {
                                 if (isSelected) {
-                                    Icon(Icons.Filled.Check, contentDescription = null, tint = AppTheme.primary, modifier = Modifier.size(20.dp))
+                                    Icon(
+                                        Icons.Filled.Check,
+                                        contentDescription = null,
+                                        tint = AppTheme.primary,
+                                        modifier = Modifier.size(20.dp),
+                                    )
                                 }
                             },
                         )
@@ -808,13 +823,13 @@ fun SettingsStepperRow(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SettingsRowText(title = title, subtitle = subtitle, emphasized = false)
+        SettingsRowText(title = title, subtitle = subtitle)
         Spacer(Modifier.width(16.dp))
         StepperButton("−", onDecrement, canDecrement)
         Text(
             text = value,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.widthIn(min = 64.dp).padding(horizontal = 8.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -825,19 +840,29 @@ fun SettingsStepperRow(
 
 @Composable
 private fun StepperButton(glyph: String, onClick: () -> Unit, enabled: Boolean) {
+    var focused by remember { mutableStateOf(false) }
     Box(
         Modifier
             .size(44.dp)
-            .settingsFocus(shape = SettingsShape.Control, enabled = enabled, focusScale = 1.06f)
+            .settingsFocus(
+                shape = SettingsShape.Control,
+                enabled = enabled,
+                focusScale = 1.06f,
+                onFocusChange = { focused = it },
+            )
             .focusable(enabled)
             .clickable(enabled = enabled, indication = null, interactionSource = remember { MutableInteractionSource() }) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = glyph,
-            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp),
-            fontWeight = FontWeight.Bold,
-            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 18.sp),
+            fontWeight = FontWeight.Medium,
+            color = when {
+                focused -> MaterialTheme.colorScheme.onSurface
+                enabled -> MaterialTheme.colorScheme.onSurface
+                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            },
         )
     }
 }
@@ -865,8 +890,8 @@ fun SettingsEmptyState(
         }
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
         )
         if (message != null) {
@@ -906,8 +931,8 @@ fun SettingsPage(
             Column(Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = 26.sp),
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = 21.sp),
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 if (subtitle != null) {

@@ -47,8 +47,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import app.opentv.ui.theme.AppTheme
-import app.opentv.ui.theme.cardFocusBg
-import app.opentv.ui.theme.primary
 
 /**
  * A TV-optimized [OutlinedTextField] that does not bring up the on-screen keyboard when scrolled
@@ -139,11 +137,11 @@ fun TvOutlinedTextField(
 
     val effectiveColors = colors ?: OutlinedTextFieldDefaults.colors(
         focusedBorderColor = AppTheme.primary,
-        unfocusedBorderColor = if (isBoxFocused) AppTheme.primary else Color(0xFF37474F),
+        unfocusedBorderColor = if (isBoxFocused) AppTheme.primary else AppTheme.palette.textDisabled,
         focusedLabelColor = AppTheme.primary,
-        unfocusedLabelColor = if (isBoxFocused) AppTheme.primary else Color(0xFF90A4AE),
-        focusedContainerColor = if (isBoxFocused || isEditing) AppTheme.cardFocusBg else Color(0xFF141C24),
-        unfocusedContainerColor = if (isBoxFocused) AppTheme.cardFocusBg else Color(0xFF141C24),
+        unfocusedLabelColor = if (isBoxFocused) AppTheme.primary else AppTheme.palette.onSurfaceVariant,
+        focusedContainerColor = if (isBoxFocused || isEditing) AppTheme.cardFocusBg else AppTheme.palette.chipSurface,
+        unfocusedContainerColor = if (isBoxFocused) AppTheme.cardFocusBg else AppTheme.palette.chipSurface,
         focusedTextColor = Color.White,
         unfocusedTextColor = Color.White,
         cursorColor = AppTheme.primary,
@@ -195,7 +193,7 @@ fun TvOutlinedTextField(
                 Icon(
                     imageVector = if (isEditing) Icons.Filled.Keyboard else Icons.Filled.Edit,
                     contentDescription = if (isEditing) "Keyboard open" else "Click to enter text",
-                    tint = if (isBoxFocused || isEditing) AppTheme.primary else Color(0xFF607D8B),
+                    tint = if (isBoxFocused || isEditing) AppTheme.primary else AppTheme.palette.textDisabled,
                     modifier = Modifier.size(20.dp),
                 )
             },

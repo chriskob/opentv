@@ -19,14 +19,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Movie
@@ -42,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -60,10 +59,9 @@ import app.opentv.ui.settings.components.SettingsNavRow
 import app.opentv.ui.settings.components.SettingsSection
 import app.opentv.ui.settings.components.SettingsShape
 import app.opentv.ui.settings.components.settingsFocus
+import app.opentv.ui.theme.AppPalette
 import app.opentv.ui.theme.AppTheme
-import app.opentv.ui.theme.displayName
-import app.opentv.ui.theme.light
-import app.opentv.ui.theme.primary
+import app.opentv.ui.theme.palette
 
 /** Persist the chosen language and recreate the activity so the whole UI reloads translated. */
 internal fun changeAppLanguage(context: Context, settings: AppSettings, tag: String) {
@@ -152,7 +150,7 @@ internal fun SleepTimerSection() {
                             Text(
                                 text = "${remaining}m",
                                 style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Medium,
                                 color = AppTheme.primary,
                             )
                         }
@@ -185,15 +183,16 @@ internal fun SleepTimerSection() {
     }
 }
 
-/** One accent swatch pill, themed by the accent it represents. */
+/** One palette chip: a miniature of the theme's background / surface / accent, with its name. */
 @Composable
-internal fun AccentColorPill(
-    accent: AppSettings.AccentColor,
+internal fun ThemePalettePill(
+    palette: AppPalette,
     selected: Boolean,
     onSelect: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val primaryColor = accent.primary
+    val colors = palette.palette()
+    val swatchShape = RoundedCornerShape(6.dp)
 
     Row(
         Modifier
@@ -212,35 +211,34 @@ internal fun AccentColorPill(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(
+        Row(
             Modifier
-                .size(20.dp)
-                .clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(accent.light, primaryColor)))
+                .width(30.dp)
+                .height(20.dp)
+                .clip(swatchShape)
                 .border(
                     width = if (focused || selected) 1.5.dp else 1.dp,
-                    color = if (focused) Color.White else Color.Black.copy(alpha = 0.35f),
-                    shape = CircleShape,
+                    color = when {
+                        focused -> Color.White
+                        selected -> colors.primary
+                        else -> colors.outline
+                    },
+                    shape = swatchShape,
                 ),
-            contentAlignment = Alignment.Center,
         ) {
-            if (selected) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = null,
-                    tint = Color(0xFF0D141C),
-                    modifier = Modifier.size(12.dp),
-                )
-            }
+            Box(Modifier.weight(1f).fillMaxHeight().background(colors.background))
+            Box(Modifier.weight(1f).fillMaxHeight().background(colors.surface))
+            Box(Modifier.weight(1f).fillMaxHeight().background(colors.primary))
         }
 
         Text(
-            text = accent.displayName,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
-            fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
+            text = palette.displayName,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp),
+            fontWeight = FontWeight.Medium,
             color = when {
-                focused -> MaterialTheme.colorScheme.onSurface
-                selected -> primaryColor
+                // The active palette is a persistent pill, so its label is onSurface white; the
+                // swatch beside it is what carries the colours.
+                focused || selected -> MaterialTheme.colorScheme.onSurface
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             },
         )

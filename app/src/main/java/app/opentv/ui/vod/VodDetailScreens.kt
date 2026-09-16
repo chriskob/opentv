@@ -65,6 +65,8 @@ import app.opentv.data.model.StremioStream
 import app.opentv.data.parser.displayTitle
 import app.opentv.ui.VodViewModel
 import app.opentv.ui.components.posterRequest
+import app.opentv.ui.components.tvFocus
+import app.opentv.ui.theme.AppTheme
 import coil.compose.AsyncImage
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
@@ -222,13 +224,12 @@ private fun AddonStreamPicker(
 
 @Composable
 private fun AddonStreamRow(stream: StremioStream, onPick: (StremioStream) -> Unit) {
-    var focused by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
-            .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .tvFocus(shape = RoundedCornerShape(10.dp))
             .clickable { onPick(stream) }
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -588,23 +589,16 @@ private fun GenreChip(label: String) {
  */
 @Composable
 private fun PersonChip(name: String, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    val container = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val content = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
     Text(
         name,
         style = MaterialTheme.typography.titleSmall,
-        color = content,
+        color = MaterialTheme.colorScheme.onSurface,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
-            .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(22.dp))
-            .background(container)
-            .then(
-                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(22.dp))
-                else Modifier,
-            )
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .tvFocus(shape = RoundedCornerShape(22.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
     )
@@ -619,26 +613,13 @@ private fun DetailButton(
     primary: Boolean = false,
     onClick: () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    val container = when {
-        focused -> MaterialTheme.colorScheme.primary
-        primary -> MaterialTheme.colorScheme.primaryContainer
-        else -> Color.White.copy(alpha = 0.16f)
-    }
-    val content = when {
-        focused -> MaterialTheme.colorScheme.onPrimary
-        primary -> MaterialTheme.colorScheme.onPrimaryContainer
-        else -> Color.White
-    }
+    val container = if (primary) MaterialTheme.colorScheme.primaryContainer else AppTheme.palette.onSurface.copy(alpha = 0.16f)
+    val content = if (primary) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
     Row(
         modifier
-            .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(12.dp))
             .background(container)
-            .then(
-                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                else Modifier,
-            )
+            .tvFocus(shape = RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -652,21 +633,13 @@ private fun DetailButton(
 /** One episode row: season/episode marker, title, and a focus highlight; plays on click. */
 @Composable
 private fun EpisodeRow(ep: Episode, onPlay: (mediaKey: String, url: String, title: String) -> Unit) {
-    var focused by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 3.dp)
-            .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(8.dp))
-            .background(
-                if (focused) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surface,
-            )
-            .then(
-                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                else Modifier,
-            )
+            .background(MaterialTheme.colorScheme.surface)
+            .tvFocus(shape = RoundedCornerShape(8.dp))
             .clickable {
                 onPlay("ep:${ep.id}", ep.streamUrl, "S${ep.season}E${ep.episodeNumber} · ${ep.title}")
             }

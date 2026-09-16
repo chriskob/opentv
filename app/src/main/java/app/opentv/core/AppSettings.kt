@@ -8,6 +8,7 @@ package app.opentv.core
 import android.content.Context
 import app.opentv.BuildConfig
 import app.opentv.data.model.StremioAddon
+import app.opentv.ui.theme.AppPalette
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,11 +30,23 @@ class AppSettings private constructor(context: Context) {
 
     private val addonJson = Json { ignoreUnknownKeys = true }
 
-    /** Accent color used throughout the app for highlights, focus rings, progress, and badges. */
-    enum class AccentColor { CYAN, AZURE, IRIS, JADE, EMBER }
+    /**
+     * The palette used throughout the app — one of the OpenChamber dark themes. This used to be a
+     * set of accent colours painted over one fixed scheme; it is now a complete palette per theme
+     * (surfaces, text, borders and semantics all come from [AppPalette]).
+     */
+    private val _palette = MutableStateFlow(readPalette())
+    val palette: StateFlow<AppPalette> = _palette.asStateFlow()
 
-    private val _accentColor = MutableStateFlow(readAccentColor())
-    val accentColor: StateFlow<AccentColor> = _accentColor.asStateFlow()
+    /**
+     * How see-through the guide's own panels are, as a percentage — the same knob TiviMate ships as
+     * "User interface transparency". 0 leaves the guide a solid slab; the 30 default matches
+     * TiviMate, so the picture the guide is framing stays the brightest thing on screen instead of
+     * the chrome reading as one flat panel.
+     */
+    private val _uiTransparencyPercent =
+        MutableStateFlow(prefs.getInt(KEY_UI_TRANSPARENCY, 30).coerceIn(0, 80))
+    val uiTransparencyPercent: StateFlow<Int> = _uiTransparencyPercent.asStateFlow()
 
     /**
      * How the live-TV channel list is laid out: the scrolling EPG time-[ChannelLayout.GRID], or a
@@ -221,9 +234,15 @@ class AppSettings private constructor(context: Context) {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    fun setAccentColor(accent: AccentColor) {
-        prefs.edit().putString(KEY_ACCENT_COLOR, accent.name).apply()
-        _accentColor.value = accent
+    fun setPalette(palette: AppPalette) {
+        prefs.edit().putString(KEY_PALETTE, palette.name).apply()
+        _palette.value = palette
+    }
+
+    fun setUiTransparencyPercent(percent: Int) {
+        val clamped = percent.coerceIn(0, 80)
+        prefs.edit().putInt(KEY_UI_TRANSPARENCY, clamped).apply()
+        _uiTransparencyPercent.value = clamped
     }
 
     fun setChannelLayout(layout: ChannelLayout) {
@@ -410,9 +429,9 @@ class AppSettings private constructor(context: Context) {
         _playerResizeMode.value = mode
     }
 
-    private fun readAccentColor(): AccentColor =
-        runCatching { AccentColor.valueOf(prefs.getString(KEY_ACCENT_COLOR, null) ?: "") }
-            .getOrDefault(AccentColor.CYAN)
+    private fun readPalette(): AppPalette =
+        runCatching { AppPalette.valueOf(prefs.getString(KEY_PALETTE, null) ?: "") }
+            .getOrDefault(AppPalette.OPENCHAMBER)
 
     private fun readChannelLayout(): ChannelLayout =
         runCatching { ChannelLayout.valueOf(prefs.getString(KEY_CHANNEL_LAYOUT, null) ?: "") }
@@ -781,7 +800,8 @@ class AppSettings private constructor(context: Context) {
     }
 
     companion object {
-        private const val KEY_ACCENT_COLOR = "accent_color"
+        private const val KEY_PALETTE = "app_palette"
+private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_SUBMENU_BUTTONS = "submenu_buttons"
     private const val KEY_VOD_BUTTONS = "vod_player_buttons"
         private const val KEY_AUDIO_DELAY_MS = "audio_delay_ms"

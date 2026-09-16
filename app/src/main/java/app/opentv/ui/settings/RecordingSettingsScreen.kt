@@ -61,6 +61,7 @@ import app.opentv.recording.SmbClient
 import app.opentv.recording.SmbConfig
 import app.opentv.ui.components.TvOutlinedTextField
 import app.opentv.ui.settings.components.*
+import app.opentv.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -388,14 +389,14 @@ private fun BackgroundStatus() {
             Modifier
                 .fillMaxWidth()
                 .clip(SettingsShape.Row)
-                .background(Color(0xFF17351F))
+                .background(AppTheme.palette.successContainer)
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 Icons.Filled.CheckCircle,
                 contentDescription = null,
-                tint = Color(0xFF4ADE80),
+                tint = AppTheme.palette.success,
                 modifier = Modifier.size(30.dp),
             )
             Spacer(Modifier.width(14.dp))
@@ -403,8 +404,8 @@ private fun BackgroundStatus() {
                 Text(
                     stringResource(R.string.recset_background_on_title),
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF4ADE80),
+                    fontWeight = FontWeight.Medium,
+                    color = AppTheme.palette.success,
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(

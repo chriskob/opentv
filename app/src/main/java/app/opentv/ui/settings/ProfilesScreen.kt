@@ -135,8 +135,8 @@ private fun ProfileCard(
         Column(Modifier.weight(1f)) {
             Text(
                 text = name,
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             if (active) {
@@ -144,8 +144,10 @@ private fun ProfileCard(
                 Text(
                     text = stringResource(R.string.profiles_active),
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
-                    fontWeight = FontWeight.Bold,
-                    color = AppTheme.primary,
+                    fontWeight = FontWeight.Medium,
+                    // The active profile is a persistent accent pill, so its caption is the ordinary
+                    // onSurface white — accent-on-accent would erase it.
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
@@ -201,7 +203,7 @@ private fun NameEntry(
         Text(
             text = name.ifEmpty { "…" },
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             color = AppTheme.primary,
         )
         Spacer(Modifier.height(24.dp))

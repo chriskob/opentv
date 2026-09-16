@@ -195,7 +195,14 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
                     context = getApplication(),
                     url = update.apkUrl,
                     expectedBytes = update.apkSizeBytes,
-                ) { fraction -> _state.value = UpdateUiState.Downloading(update, fraction) }
+                    progress = { fraction -> _state.value = UpdateUiState.Downloading(update, fraction) },
+                    // A session install can be rejected after the download succeeds (Fire OS
+                    // refusing the install, a signature clash, the user cancelling). Surface it so
+                    // the dialog says why instead of silently returning to About.
+                    onSessionResult = { success, reason ->
+                        if (!success) _state.value = UpdateUiState.Failed(update, reason)
+                    },
+                )
             }.onSuccess { outcome ->
                 // Only stand down once the system installer is genuinely on screen. If the
                 // platform wants the install permission first, keep talking to the user —

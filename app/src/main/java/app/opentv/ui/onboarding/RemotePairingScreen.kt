@@ -1,4 +1,4 @@
-/*
+﻿/*
  * This file is part of OpenTV.
  * Copyright (C) 2026 The OpenTV Contributors
  * Licensed under the GNU General Public License v3.0 or later.
@@ -30,16 +30,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import app.opentv.ui.components.TvOutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -87,6 +82,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.RemoteProvisioningProgress
+import app.opentv.ui.theme.AppTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -191,7 +187,7 @@ fun RemotePairingScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF0D1117))
+            .background(AppTheme.palette.background)
             .padding(32.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -212,7 +208,7 @@ fun RemotePairingScreen(
                 is RemotePairingClient.State.Connecting -> Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator(color = Color(0xFF26C6DA))
+                    CircularProgressIndicator(color = AppTheme.primary)
                     Spacer(Modifier.height(16.dp))
                     Text(
                         text = "Connecting to Pairing Service...",
@@ -235,7 +231,7 @@ fun RemotePairingScreen(
                         text = "Connection Failed",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFF87171)
+                        color = AppTheme.palette.error
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
@@ -246,22 +242,20 @@ fun RemotePairingScreen(
                     )
                     Spacer(Modifier.height(24.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { restartClient() }) {
-                            Text("Try Again")
-                        }
-                        OutlinedButton(onClick = { showConfigDialog = true }) {
-                            Text("Change Server URL")
-                        }
-                        OutlinedButton(onClick = onCancel) {
-                            Text("Back")
-                        }
+                        OnboardingButton(
+                            text = "Try Again",
+                            onClick = { restartClient() },
+                            primary = true,
+                        )
+                        OnboardingButton(text = "Change Server URL", onClick = { showConfigDialog = true })
+                        OnboardingButton(text = "Back", onClick = onCancel)
                     }
                 }
 
                 is RemotePairingClient.State.Received -> Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator(color = Color(0xFF34D399))
+                    CircularProgressIndicator(color = AppTheme.palette.success)
                     Spacer(Modifier.height(16.dp))
                     Text(
                         text = "Configuration Received! Starting Import...",
@@ -274,7 +268,7 @@ fun RemotePairingScreen(
                     if (savedServerUrl.isBlank()) {
                         Text("No pairing server configured.", color = Color.White)
                     } else {
-                        CircularProgressIndicator(color = Color(0xFF26C6DA))
+                        CircularProgressIndicator(color = AppTheme.primary)
                     }
                 }
             }
@@ -300,7 +294,7 @@ private fun Listening(
                     .size(290.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color.White)
-                    .border(2.dp, Color(0xFF26C6DA), RoundedCornerShape(16.dp))
+                    .border(2.dp, AppTheme.primary, RoundedCornerShape(16.dp))
                     .padding(14.dp)
             ) {
                 Image(
@@ -330,7 +324,7 @@ private fun Listening(
                 text = "PAIRING CODE",
                 style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.2.sp),
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF26C6DA)
+                color = AppTheme.primary
             )
             Spacer(Modifier.height(4.dp))
             Text(
@@ -351,20 +345,18 @@ private fun Listening(
             Text(
                 text = session.webPortalUrl,
                 style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFF26C6DA),
+                color = AppTheme.primary,
                 fontWeight = FontWeight.SemiBold
             )
 
             Spacer(Modifier.height(26.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                OutlinedButton(onClick = onCancel) {
-                    Text("Type on TV Instead")
-                }
-                TextButton(onClick = onChangeServer) {
-                    Icon(Icons.Filled.Settings, contentDescription = null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Server Settings", color = Color.White.copy(alpha = 0.7f))
-                }
+                OnboardingButton(text = "Type on TV Instead", onClick = onCancel)
+                OnboardingButton(
+                    text = "Server Settings",
+                    onClick = onChangeServer,
+                    icon = Icons.Filled.Settings,
+                )
             }
         }
     }
@@ -399,17 +391,15 @@ private fun ServerConfigDialog(
             }
         },
         confirmButton = {
-            Button(
+            OnboardingButton(
+                text = "Connect",
                 onClick = { onConfirm(text.trim()) },
-                enabled = text.isNotBlank()
-            ) {
-                Text("Connect")
-            }
+                enabled = text.isNotBlank(),
+                primary = true,
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
+            OnboardingButton(text = "Cancel", onClick = onDismiss)
         }
     )
 }
@@ -423,7 +413,7 @@ private fun ProvisioningProgressDashboard(
     val dateFormat = remember { SimpleDateFormat("EEE h:mm a", Locale.getDefault()) }
     val isComplete = progress.isComplete
 
-    // Atmosphere for free: one vertical gradient behind everything. A Brush is a single draw pass —
+    // Atmosphere for free: one vertical gradient behind everything. A Brush is a single draw pass â€”
     // no blur, no shadow, no image, nothing that costs frames on a box that runs interpreted.
     Box(
         Modifier
@@ -440,7 +430,7 @@ private fun ProvisioningProgressDashboard(
         // Eyebrow, then state: the title carries what is happening, the line under it explains, and
         // nothing repeats itself.
         Text(
-            text = "OPENTV  ·  REMOTE SETUP",
+            text = "OPENTV  Â·  REMOTE SETUP",
             style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 3.sp),
             fontWeight = FontWeight.Bold,
             color = DashMuted.copy(alpha = 0.75f),
@@ -467,7 +457,7 @@ private fun ProvisioningProgressDashboard(
         // Progress Cards Grid
         Row(
             // The row takes the tallest card's height and every card fills it, so all three match
-            // exactly — whatever each one's contents are, and without a hardcoded height that could
+            // exactly â€” whatever each one's contents are, and without a hardcoded height that could
             // clip on a smaller screen.
             Modifier.fillMaxWidth().widthIn(max = 1180.dp).height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(20.dp)
@@ -506,7 +496,7 @@ private fun ProvisioningProgressDashboard(
 
                     StatValue(
                         value = if (progress.channelsSkipped) "Skipped" else "%,d".format(progress.channelsProcessed),
-                        label = if (progress.channelsSkipped) "Channels — unchecked" else "Channels imported",
+                        label = if (progress.channelsSkipped) "Channels â€” unchecked" else "Channels imported",
                         dimmed = progress.channelsSkipped,
                     )
                     if (!progress.channelsSkipped && progress.channelsTotal > 0) {
@@ -521,14 +511,14 @@ private fun ProvisioningProgressDashboard(
                     Spacer(Modifier.height(14.dp))
 
                     // Per-playlist attribution. This used to read "Source: <playlist processed last>"
-                    // beside the running total, which credited one playlist's channels to another — a
+                    // beside the running total, which credited one playlist's channels to another â€” a
                     // playlist whose Channels box was unticked appeared to have imported them anyway.
                     if (progress.playlistSummaries.isNotEmpty()) {
                         Text(
-                            text = progress.playlistSummaries.joinToString("  ·  "),
+                            text = progress.playlistSummaries.joinToString("  Â·  "),
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF26C6DA)
+                            color = AppTheme.primary
                         )
                     } else if (progress.totalPlaylists > 0) {
                         Text(
@@ -575,14 +565,14 @@ private fun ProvisioningProgressDashboard(
                         Column(Modifier.weight(1f)) {
                             StatValue(
                                 value = if (progress.moviesSkipped) "Skipped" else "%,d".format(progress.moviesProcessed),
-                                label = if (progress.moviesSkipped) "Movies — unchecked" else "Movies",
+                                label = if (progress.moviesSkipped) "Movies â€” unchecked" else "Movies",
                                 dimmed = progress.moviesSkipped,
                             )
                         }
                         Column(Modifier.weight(1f)) {
                             StatValue(
                                 value = if (progress.showsSkipped) "Skipped" else "%,d".format(progress.seriesProcessed),
-                                label = if (progress.showsSkipped) "Shows — unchecked" else "Shows",
+                                label = if (progress.showsSkipped) "Shows â€” unchecked" else "Shows",
                                 accent = AccentVod,
                                 dimmed = progress.showsSkipped,
                             )
@@ -649,7 +639,7 @@ private fun ProvisioningProgressDashboard(
                     Text(
                         text = when {
                             progress.epgBarIsMatching ->
-                                "Matching channels — %,d of %,d checked".format(
+                                "Matching channels â€” %,d of %,d checked".format(
                                     progress.epgChannelsScanned,
                                     progress.epgChannelsToScan,
                                 )
@@ -660,7 +650,7 @@ private fun ProvisioningProgressDashboard(
                             // ring sitting at 50%, and never named the fact that actually explained
                             // the ring: how many feeds had finished.
                             progress.epgFeedsTotal > 0 && progress.epgFeedsDone < progress.epgFeedsTotal ->
-                                "Fetching feeds — %,d of %,d done".format(
+                                "Fetching feeds â€” %,d of %,d done".format(
                                     progress.epgFeedsDone,
                                     progress.epgFeedsTotal,
                                 )
@@ -686,7 +676,7 @@ private fun ProvisioningProgressDashboard(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "${dateFormat.format(Date(progress.timelineStartMillis))} → ${dateFormat.format(Date(progress.timelineEndMillis))}",
+                                text = "${dateFormat.format(Date(progress.timelineStartMillis))} â†’ ${dateFormat.format(Date(progress.timelineEndMillis))}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = DashMuted
                             )
@@ -701,7 +691,7 @@ private fun ProvisioningProgressDashboard(
                         )
                     } else if (progress.epgFeedsTotal == 0) {
                         Text(
-                            text = "Fetching the guide…",
+                            text = "Fetching the guideâ€¦",
                             style = MaterialTheme.typography.bodySmall,
                             color = DashMuted
                         )
@@ -711,7 +701,7 @@ private fun ProvisioningProgressDashboard(
 
         Spacer(Modifier.height(24.dp))
 
-        // Status: a quiet pill with a state dot. The dot is deliberately not animated — an infinite
+        // Status: a quiet pill with a state dot. The dot is deliberately not animated â€” an infinite
         // transition redraws every frame, and this screen runs while a big import is already loading
         // the box.
         Box(
@@ -733,7 +723,7 @@ private fun ProvisioningProgressDashboard(
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    text = progress.statusMessage.ifBlank { "Working…" },
+                    text = progress.statusMessage.ifBlank { "Workingâ€¦" },
                     style = MaterialTheme.typography.bodyMedium,
                     color = DashInk.copy(alpha = 0.92f)
                 )
@@ -745,26 +735,16 @@ private fun ProvisioningProgressDashboard(
         // Bottom Action Bar
         if (isComplete) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(
+                OnboardingButton(
+                    text = "Open TV Guide",
                     onClick = onDone,
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Text(
-                        text = "Open TV Guide",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                    primary = true,
+                )
 
-                OutlinedButton(
+                OnboardingButton(
+                    text = "Return to Settings",
                     onClick = onCancel,
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Text(
-                        text = "Return to Settings",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                }
+                )
             }
         } else {
             // No indeterminate spinner here: it is an animation that never settles, redrawn every
@@ -784,33 +764,42 @@ private fun ProvisioningProgressDashboard(
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The dashboard's palette: three section accents over a near-black gradient.
+ * The dashboard's palette, now read from the active theme instead of hardcoded flat colours.
  *
- * Every value is a flat colour on purpose — no elevation, no blur, no shadow anywhere on this screen.
- * It renders on boxes that execute bytecode interpreted (the ANR trace that led here was all
+ * Every value is still a flat colour on purpose â€” no elevation, no blur, no shadow anywhere on this
+ * screen. It renders on boxes that execute bytecode interpreted (the ANR trace that led here was all
  * `art::interpreter` frames doing text layout), where one shadow costs more than the rest of the
  * screen combined.
  */
-private val DashBgTop = Color(0xFF0A0E14)
-private val DashBgBottom = Color(0xFF121A24)
-private val DashSurface = Color(0xFF141A22)
-private val DashHairline = Color(0xFF232C38)
-private val DashInk = Color(0xFFF4F7FA)
-private val DashMuted = Color(0xFF9BA8B6)
-private val AccentChannels = Color(0xFF22D3EE)
-private val AccentVod = Color(0xFFC084FC)
-private val AccentGuide = Color(0xFF34D399)
+private val DashBgTop: Color
+    @Composable get() = AppTheme.palette.background
+private val DashBgBottom: Color
+    @Composable get() = AppTheme.palette.surfaceContainerLow
+private val DashSurface: Color
+    @Composable get() = AppTheme.palette.surface
+private val DashHairline: Color
+    @Composable get() = AppTheme.palette.outline
+private val DashInk: Color
+    @Composable get() = AppTheme.palette.onSurface
+private val DashMuted: Color
+    @Composable get() = AppTheme.palette.onSurfaceVariant
+private val AccentChannels: Color
+    @Composable get() = AppTheme.palette.info
+private val AccentVod: Color
+    @Composable get() = AppTheme.palette.primaryActive
+private val AccentGuide: Color
+    @Composable get() = AppTheme.palette.success
 
 /** "42%", or a dash when there is no figure to show (skipped, or the provider's list is pending). */
 private fun ringLabel(fraction: Float?, skipped: Boolean): String = when {
-    skipped -> "—"
-    fraction == null -> "…"
+    skipped -> "â€”"
+    fraction == null -> "â€¦"
     else -> "%.0f%%".format(fraction * 100f)
 }
 
 /**
  * A card surface: flat fill, hairline outline, and a thin rule in the section's accent along the top
- * edge. The rule is the only decoration — it reads as deliberate design and costs one rectangle,
+ * edge. The rule is the only decoration â€” it reads as deliberate design and costs one rectangle,
  * which is the trade this screen wants: shape and colour instead of shadows.
  */
 @Composable
@@ -844,7 +833,7 @@ private fun CardShell(
     }
 }
 
-/** A big numeral over a quiet label — the dashboard's unit of information. */
+/** A big numeral over a quiet label â€” the dashboard's unit of information. */
 @Composable
 private fun StatValue(
     value: String,
@@ -882,13 +871,15 @@ private fun ProgressRing(
     modifier: Modifier = Modifier,
     muted: Boolean = false,
 ) {
+    // Read the theme colour before the Canvas lambda: a draw scope is not a composable context.
+    val hairline = DashHairline
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val strokePx = 5.dp.toPx()
             val inset = strokePx / 2f
             val arcSize = Size(size.width - strokePx, size.height - strokePx)
             drawArc(
-                color = DashHairline,
+                color = hairline,
                 startAngle = -90f,
                 sweepAngle = 360f,
                 useCenter = false,

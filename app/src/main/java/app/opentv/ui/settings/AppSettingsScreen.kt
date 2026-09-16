@@ -47,7 +47,9 @@ import app.opentv.ui.settings.components.SettingsPage
 import app.opentv.ui.settings.components.SettingsSection
 import app.opentv.ui.settings.components.SettingsSegmented
 import app.opentv.ui.settings.components.SettingsSpacing
+import app.opentv.ui.settings.components.SettingsStepperRow
 import app.opentv.ui.settings.components.SettingsToggleRow
+import app.opentv.ui.theme.AppPalette
 
 /**
  * Display & playback preferences: the app-behaviour settings, kept apart from the guide/data
@@ -59,7 +61,8 @@ import app.opentv.ui.settings.components.SettingsToggleRow
 fun AppSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { AppSettings.get(context) }
-    val currentAccent by settings.accentColor.collectAsState()
+    val currentPalette by settings.palette.collectAsState()
+    val uiTransparency by settings.uiTransparencyPercent.collectAsState()
     val channelLayout by settings.channelLayout.collectAsState()
     val previewVideo by settings.guidePreviewVideo.collectAsState()
     val showFavouritesCategory by settings.showFavouritesCategory.collectAsState()
@@ -103,32 +106,42 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     ) {
         SettingsSection(title = stringResource(R.string.settings_appearance), icon = Icons.Filled.Palette) {
             Text(
-                text = "Accent Color",
+                text = stringResource(R.string.settings_palette_title),
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "Choose a signature colour for highlights, focus rings, badges and buttons throughout OpenTV.",
+                text = stringResource(R.string.settings_palette_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            // FlowRow: with 11 accents the pills wrap onto a second line on narrow panels
-            // instead of overflowing the screen edge.
+            // FlowRow: the eight palettes wrap onto a second line on narrow panels instead of
+            // overflowing the screen edge.
             FlowRow(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                AppSettings.AccentColor.entries.forEach { accent ->
-                    AccentColorPill(
-                        accent = accent,
-                        selected = accent == currentAccent,
-                        onSelect = { settings.setAccentColor(accent) },
+                AppPalette.entries.forEach { palette ->
+                    ThemePalettePill(
+                        palette = palette,
+                        selected = palette == currentPalette,
+                        onSelect = { settings.setPalette(palette) },
                     )
                 }
             }
+            Spacer(Modifier.height(10.dp))
+            SettingsStepperRow(
+                title = stringResource(R.string.settings_ui_transparency),
+                subtitle = stringResource(R.string.settings_ui_transparency_desc),
+                value = stringResource(R.string.settings_ui_transparency_value, uiTransparency),
+                onDecrement = { settings.setUiTransparencyPercent(uiTransparency - 10) },
+                onIncrement = { settings.setUiTransparencyPercent(uiTransparency + 10) },
+                canDecrement = uiTransparency > 0,
+                canIncrement = uiTransparency < 80,
+            )
         }
 
         Spacer(Modifier.height(SettingsSpacing.SectionGap))

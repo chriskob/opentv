@@ -12,6 +12,10 @@ import kotlin.math.abs
  * Temporal Anchor Focus Engine: Finds the target programme in [targetChannelPrograms] that best
  * matches the virtual [temporalAnchorMillis].
  *
+ * The anchor is a half-hour *column* (see [halfHourColumnStart]), not a programme midpoint. That
+ * distinction matters: a midpoint drifts into the middle of a long block, so moving up/down would
+ * re-select a later column and the cursor would slide right one row at a time. A column stays put.
+ *
  * Implements the specification:
  * 1. Find programme where start <= anchor < end.
  * 2. If anchor falls into an unprogrammed gap or beyond the schedule boundary,
@@ -37,10 +41,14 @@ fun getVerticalTargetProgram(
 }
 
 /**
- * Calculates the midpoint timestamp of a programme.
+ * Snaps a timestamp down to the half-hour column that contains it — the guide's cursor is a
+ * :00/:30 column, so every anchor is expressed as one. Programme midpoints are never used; a
+ * long block would otherwise pull the cursor into its centre and drift the column as the user
+ * moves up and down.
  */
-fun computeProgrammeMidpoint(programme: Programme): Long {
-    return (programme.startUtcMillis + programme.endUtcMillis) / 2L
+fun halfHourColumnStart(millis: Long): Long {
+    val halfHourMs = 30 * 60 * 1000L
+    return millis - millis % halfHourMs
 }
 
 /**

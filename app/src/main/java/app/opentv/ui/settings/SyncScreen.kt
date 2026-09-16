@@ -87,7 +87,7 @@ private fun SharePane(viewModel: SyncViewModel) {
                     Text(
                         stringResource(R.string.sync_ready_to_share),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Medium,
                         color = AppTheme.primary,
                     )
                     Spacer(Modifier.height(12.dp))
@@ -146,7 +146,7 @@ private fun ReceivePane(viewModel: SyncViewModel) {
                 Text(
                     stringResource(R.string.sync_type_what_shows),
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = AppTheme.primary,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -218,7 +218,7 @@ private fun NasPane(viewModel: SyncViewModel) {
             Text(
                 stringResource(R.string.sync_nas_title),
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 color = AppTheme.primary,
             )
             Spacer(Modifier.height(8.dp))
@@ -273,7 +273,7 @@ private fun Field(label: String, value: String) {
     Row {
         Text(
             "$label:  ",
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Medium,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -281,7 +281,7 @@ private fun Field(label: String, value: String) {
             value,
             style = MaterialTheme.typography.titleMedium,
             color = AppTheme.primary,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
         )
     }
 }
@@ -324,7 +324,7 @@ private fun NumKey(label: String, onClick: () -> Unit) {
         Text(
             label,
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
         )
     }

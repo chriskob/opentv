@@ -77,7 +77,7 @@ fun WebManagerScreen(
                 Text(
                     text = stringResource(R.string.webmanager_stopped),
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(10.dp))
@@ -143,14 +143,14 @@ private fun Listening(session: ManagerServer.Session) {
                 Text(
                     text = stringResource(R.string.webmanager_open_browser).uppercase(),
                     style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = AppTheme.primary,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = session.url,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }

@@ -275,6 +275,8 @@ data class Programme(
     val episode: Int? = null,
     val iconUrl: String? = null,
     @ColumnInfo(defaultValue = "0") val isNew: Boolean = false,
+    /** XMLTV `<live/>` — this programme is being broadcast live (sport, news specials, …). */
+    @ColumnInfo(defaultValue = "0") val isLive: Boolean = false,
 ) {
     val durationMillis: Long get() = endUtcMillis - startUtcMillis
 

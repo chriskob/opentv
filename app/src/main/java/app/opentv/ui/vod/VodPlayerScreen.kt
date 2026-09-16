@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import app.opentv.ui.components.tvFocus
 import app.opentv.ui.theme.AppTheme
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -734,7 +735,7 @@ fun VodPlayerScreen(
                                 isCatchup -> "CATCH-UP"
                                 else -> "VOD"
                             }
-                            val badgeColor = if (growingRec) Color(0xFFE53935) else AppTheme.primary
+                            val badgeColor = if (growingRec) AppTheme.palette.recording else AppTheme.primary
                             Box(
                                 Modifier
                                     .clip(RoundedCornerShape(4.dp))
@@ -1077,7 +1078,7 @@ private fun InteractiveVodTimeline(
                 .fillMaxWidth()
                 .height(trackHeight)
                 .clip(RoundedCornerShape(3.dp))
-                .background(Color.White.copy(alpha = 0.2f)),
+                .background(AppTheme.palette.onSurface.copy(alpha = 0.2f)),
         )
 
         // Buffered track
@@ -1087,7 +1088,7 @@ private fun InteractiveVodTimeline(
                     .fillMaxWidth(bufferedProgress)
                     .height(trackHeight)
                     .clip(RoundedCornerShape(3.dp))
-                    .background(Color.White.copy(alpha = 0.35f)),
+                    .background(AppTheme.palette.onSurface.copy(alpha = 0.35f)),
             )
         }
 
@@ -1110,9 +1111,9 @@ private fun InteractiveVodTimeline(
                     .padding(start = dotOffset)
                     .size(thumbSize)
                     .clip(CircleShape)
-                    .background(Color.White)
+                    .background(AppTheme.palette.onSurface)
                     .then(
-                        if (isFocused) Modifier.border(2.5.dp, AppTheme.primary, CircleShape)
+                        if (isFocused) Modifier.border(2.5.dp, AppTheme.palette.cursorBorder, CircleShape)
                         else Modifier
                     ),
             )
@@ -1140,22 +1141,23 @@ private fun VodButtonCard(
     val circle = if (isPrimary) 50.dp else 42.dp
     val glyph = if (isPrimary) 24.dp else 19.dp
     val bg = when {
-        focused -> Color.White
-        isSelected -> Color(0xFF1E3A4B)
-        isPrimary -> Color.White.copy(alpha = 0.94f)
-        else -> Color(0xFF101720).copy(alpha = 0.72f)
+        focused -> AppTheme.palette.cursorFill
+        isSelected -> AppTheme.palette.selectedFill
+        isPrimary -> AppTheme.primary
+        else -> AppTheme.palette.chipSurface.copy(alpha = 0.72f)
     }
     val fg = when {
-        focused -> Color(0xFF10171E)
         isSelected -> AppTheme.primary
-        isPrimary -> Color(0xFF10171E)
-        else -> Color.White
+        isPrimary -> AppTheme.palette.onFocusSurface
+        focused -> AppTheme.palette.onSurface
+        else -> AppTheme.palette.onSurface
     }
     val outline = when {
-        focused -> Modifier.border(2.dp, AppTheme.primary, CircleShape)
-        isSelected -> Modifier.border(1.5.dp, AppTheme.primary, CircleShape)
-        isPrimary -> Modifier.border(1.dp, Color.White.copy(alpha = 0.75f), CircleShape)
-        else -> Modifier.border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+        focused && isPrimary -> Modifier.border(2.dp, AppTheme.palette.onFocusSurface, CircleShape)
+        focused -> Modifier.border(2.dp, AppTheme.palette.cursorBorder, CircleShape)
+        isSelected -> Modifier.border(1.5.dp, AppTheme.palette.cursorBorder, CircleShape)
+        isPrimary -> Modifier.border(1.dp, AppTheme.palette.cursorBorder, CircleShape)
+        else -> Modifier.border(1.dp, AppTheme.palette.outlineVariant, CircleShape)
     }
 
     Column(
@@ -1289,28 +1291,28 @@ private fun StreamInfoPanel(
 @Composable
 private fun InfoRow(label: String, value: String, focusRequester: FocusRequester?) {
     var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(8.dp)
     Row(
         Modifier
             .fillMaxWidth()
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .clip(shape)
+            .tvFocus(shape = shape, onFocusChange = { focused = it })
             .focusable()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (focused) Color.White.copy(alpha = 0.12f) else Color.Transparent)
             .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.65f),
+            color = AppTheme.palette.onSurface.copy(alpha = 0.65f),
             modifier = Modifier.weight(1f),
         )
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
-            color = Color.White,
+            color = AppTheme.palette.onSurface,
         )
     }
 }
@@ -1416,21 +1418,21 @@ private fun TrackPanel(
 @Composable
 private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit, focusRequester: FocusRequester?) {
     var focused by remember { mutableStateOf(false) }
-    val bg = if (focused) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f)
-    val fg = if (focused) MaterialTheme.colorScheme.onPrimary else Color.White
+    val shape = RoundedCornerShape(10.dp)
+    val fg = AppTheme.palette.onSurface
     Row(
         Modifier
             .fillMaxWidth()
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(10.dp))
-            .background(bg)
+            .clip(shape)
+            .background(AppTheme.palette.onSurface.copy(alpha = 0.08f))
+            .tvFocus(shape = shape, selected = selected, onFocusChange = { focused = it })
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = MaterialTheme.typography.titleMedium, color = fg, modifier = Modifier.weight(1f))
-        if (selected) Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_selected), tint = fg)
+        if (selected) Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_selected), tint = AppTheme.primary)
     }
 }
 

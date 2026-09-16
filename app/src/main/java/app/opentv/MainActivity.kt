@@ -86,6 +86,7 @@ import app.opentv.ui.settings.RecordingSettingsScreen
 import app.opentv.ui.settings.SyncScreen
 import app.opentv.ui.settings.SettingsScreen
 import app.opentv.ui.settings.WebManagerScreen
+import app.opentv.ui.theme.AppTheme
 import app.opentv.ui.theme.OpenTvTheme
 import app.opentv.ui.vod.MovieDetailScreen
 import app.opentv.ui.vod.PersonScreen
@@ -127,10 +128,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val settings = remember { ServiceLocator.get(this).settings }
-            val accentColor by settings.accentColor.collectAsState()
-            // Always dark. A light theme read poorly on a living-room panel, so OpenTV is dark-only
-            // and the choice was removed rather than left as a setting nobody should pick.
-            OpenTvTheme(accent = accentColor) {
+            val palette by settings.palette.collectAsState()
+            val uiTransparency by settings.uiTransparencyPercent.collectAsState()
+            // Every palette is a dark living-room theme, so there is no light variant to switch to.
+            OpenTvTheme(palette = palette, guideChromeAlpha = 1f - uiTransparency / 100f) {
                 // Tells startup maintenance it may begin: the first frame is about to be on screen.
                 // Those jobs wait on this instead of guessing a delay — see OpenTvApp — so they start
                 // the moment the UI is up and never compete with it for the disk beforehand.
@@ -575,12 +576,6 @@ private fun OpenTvApp(isTelevision: Boolean) {
                             ),
                         )
                     },
-                    onPlayCatchup = { key, url, title, ua ->
-                        // Catch-up is a seekable archive stream — plays through the VOD player.
-                        ServiceLocator.get(bootContext).livePlayer.player.pause()
-                        ServiceLocator.get(bootContext).livePlayer.player.stop()
-                        navController.navigate(Routes.vodPlayer(key, url, title, ua))
-                    },
                     activeProfileName = activeProfileName,
                 )
             }
@@ -708,19 +703,6 @@ private fun OpenTvApp(isTelevision: Boolean) {
                         }
                     },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
-                    onPlayCatchup = { mediaKey, streamUrl, title, userAgent ->
-                        val lp = ServiceLocator.get(bootContext).livePlayer
-                        lp.player.pause()
-                        lp.player.stop()
-                        navController.navigate(
-                            Routes.vodPlayer(
-                                key = mediaKey,
-                                url = streamUrl,
-                                title = title,
-                                ua = userAgent,
-                            )
-                        )
-                    },
                 )
             }
 
@@ -869,7 +851,7 @@ private fun RecordingSwitchBanner() {
             Icon(
                 Icons.Filled.FiberManualRecord,
                 contentDescription = null,
-                tint = Color(0xFFE53935),
+                tint = AppTheme.palette.recording,
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(10.dp))

@@ -66,6 +66,8 @@ import app.opentv.data.parser.displayTitle
 import app.opentv.ui.VodViewModel
 import app.opentv.ui.components.PrefetchImagesAhead
 import app.opentv.ui.components.posterRequest
+import app.opentv.ui.components.tvFocus
+import app.opentv.ui.theme.AppTheme
 import coil.compose.AsyncImage
 
 /**
@@ -412,7 +414,7 @@ internal fun PosterCard(
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .then(
-                    if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                    if (focused) Modifier.border(3.dp, AppTheme.palette.cursorBorder, RoundedCornerShape(8.dp))
                     else Modifier,
                 ),
         ) {
@@ -521,7 +523,7 @@ private fun ResumeCard(item: VodViewModel.ResumeItem, onClick: () -> Unit) {
                 .clip(RoundedCornerShape(6.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .then(
-                    if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                    if (focused) Modifier.border(3.dp, AppTheme.palette.cursorBorder, RoundedCornerShape(6.dp))
                     else Modifier,
                 ),
         ) {
@@ -650,23 +652,19 @@ private fun VodRailEntry(
     count: Int? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val labelColor = if (focused) Color(0xFF10171E)
-    else if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-    else MaterialTheme.colorScheme.onSurfaceVariant
+    val labelColor = when {
+        selected -> AppTheme.primary
+        focused -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(8.dp))
-            .background(
-                if (focused) Color(0xFFF0F4F8)
-                else if (selected) MaterialTheme.colorScheme.primaryContainer
-                else Color.Transparent,
-            )
-            .then(
-                if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                else Modifier,
+            .tvFocus(
+                shape = RoundedCornerShape(8.dp),
+                selected = selected,
+                onFocusChange = { focused = it },
             )
             .focusable()
             .clickable(onClick = onClick)
@@ -707,17 +705,13 @@ private fun SearchAffordance(onOpenSearch: () -> Unit) {
         Modifier
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (focused) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant,
-            )
-            .onFocusChanged { focused = it.isFocused }
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .tvFocus(shape = RoundedCornerShape(10.dp), onFocusChange = { focused = it })
             .clickable(onClick = onOpenSearch)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val tint = if (focused) MaterialTheme.colorScheme.onPrimary
-        else MaterialTheme.colorScheme.onSurfaceVariant
+        val tint = MaterialTheme.colorScheme.onSurfaceVariant
         Icon(Icons.Filled.Search, contentDescription = null, tint = tint)
         Spacer(Modifier.width(12.dp))
         Text(

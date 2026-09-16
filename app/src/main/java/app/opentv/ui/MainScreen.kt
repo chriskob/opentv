@@ -9,7 +9,6 @@ import androidx.activity.compose.BackHandler
 import app.opentv.R
 import app.opentv.core.findActivity
 import app.opentv.core.StatusBus
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -64,10 +63,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import app.opentv.core.AppSettings
 import app.opentv.ui.settings.components.settingsFocus
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.onFocusChanged
@@ -80,6 +86,7 @@ import app.opentv.data.model.Movie
 import app.opentv.data.model.Recording
 import app.opentv.data.model.Series
 import app.opentv.ui.channels.HomeScreen
+import app.opentv.ui.components.OpenTvLogo
 import app.opentv.ui.recordings.RecordingsScreen
 import app.opentv.ui.vod.MoviesScreen
 import app.opentv.ui.vod.SeriesScreen
@@ -99,6 +106,8 @@ enum class Tab(val labelRes: Int, val icon: ImageVector) {
 }
 
 private val RAIL_EXPANDED = 236.dp
+/** Icon-only width, so the menu can stay on screen without stealing the guide's space. */
+private val RAIL_COLLAPSED = 80.dp
 
 @Composable
 fun MainScreen(
@@ -115,7 +124,6 @@ fun MainScreen(
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
     onPlayRecording: (Recording) -> Unit,
-    onPlayCatchup: (mediaKey: String, url: String, title: String, ua: String) -> Unit,
     activeProfileName: String,
     channelsViewModel: ChannelsViewModel = viewModel(),
 ) {
@@ -141,6 +149,9 @@ fun MainScreen(
 
     var tab by remember { mutableStateOf(homeTab) }
     var navRailVisible by remember { mutableStateOf(false) }
+    // Whether focus is anywhere inside the main menu — the menu eases open to show its labels while
+    // the d-pad is in it and eases back to icons when focus leaves.
+    var railFocused by remember { mutableStateOf(false) }
 
     // If the selected tab gets hidden (its type toggled off while it's open), drop back to the
     // home tab so the content area never tries to show a tab that's no longer there.
@@ -227,20 +238,37 @@ fun MainScreen(
     // of it and leave a sliver poking out — so they live side by side and never collide.
     Column(Modifier.fillMaxSize()) {
       Row(Modifier.weight(1f).fillMaxWidth()) {
-        val showNavRail = navRailVisible && !isLiveFullScreen
-        if (showNavRail) {
+        // The main menu is always on screen: a slim icon rail that eases open to labels when focus
+        // is inside it (or the user opened it with Back), and pushes the content across rather than
+        // floating over it. This is what makes it "stay open" like TiviMate instead of appearing and
+        // vanishing on a hard cut.
+        val railExpanded = railFocused || navRailVisible
+        val railWidth by animateDpAsState(
+            targetValue = if (railExpanded) RAIL_EXPANDED else RAIL_COLLAPSED,
+            animationSpec = tween(durationMillis = 220),
+            label = "mainRailWidth",
+        )
+        // Hidden while browsing the Live TV guide: the guide has its own category rail, and a strip
+        // of menu icons next to it just clutters the screen. It eases in only when the user asks for
+        // it (Back / moving left), and stays on screen as the icon rail on every other tab.
+        val showRail = !isLiveFullScreen && (tab != Tab.LIVE || railExpanded)
+        AnimatedVisibility(
+            visible = showRail,
+            enter = expandHorizontally(),
+            exit = shrinkHorizontally(),
+        ) {
             NavRail(
+                width = railWidth,
+                expanded = railExpanded,
                 tabs = visibleTabs,
                 current = tab,
-                onSelect = {
-                    tab = it
-                    navRailVisible = false
-                },
+                onSelect = { tab = it },
                 onOpenSearch = onOpenSearch,
                 onOpenSettings = onOpenSettings,
                 onOpenProfiles = onOpenProfiles,
                 activeProfileName = activeProfileName,
                 requestFocusOnStart = navRailVisible,
+                onRailFocus = { railFocused = it },
                 onExitRight = { navRailVisible = false },
             )
         }
@@ -255,7 +283,6 @@ fun MainScreen(
                     onPlayChannel = onPlayChannel,
                     onAddSource = onAddSource,
                     onRefresh = onRefresh,
-                    onPlayCatchup = onPlayCatchup,
                     onOpenMainMenu = { navRailVisible = true },
                     onDismissMainMenu = { navRailVisible = false },
                     mainMenuVisible = navRailVisible,
@@ -341,6 +368,8 @@ private fun StatusBar() {
 
 @Composable
 private fun NavRail(
+    width: Dp,
+    expanded: Boolean,
     tabs: List<Tab>,
     current: Tab,
     onSelect: (Tab) -> Unit,
@@ -348,6 +377,7 @@ private fun NavRail(
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
     activeProfileName: String,
+    onRailFocus: (Boolean) -> Unit = {},
     onExitRight: () -> Unit = {},
     requestFocusOnStart: Boolean = false,
     modifier: Modifier = Modifier,
@@ -360,17 +390,12 @@ private fun NavRail(
         }
     }
 
-    // The menu is always shown fully — labels visible — for as long as it is open. There is
-    // deliberately no icon-only collapsed state: it used to appear whenever focus was not inside
-    // the rail, which read as a stray strip of icons sitting over the guide.
-    val expanded = true
-    val width = RAIL_EXPANDED
-
     Column(
         modifier
             .width(width)
             .fillMaxHeight()
             .background(MaterialTheme.colorScheme.surface)
+            .onFocusChanged { onRailFocus(it.hasFocus) }
             .focusGroup()
             .onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
@@ -384,23 +409,26 @@ private fun NavRail(
         // Brand: the logo mark and the "OpenTV" wordmark. The name stays on purpose — it's what
         // people search for.
         Row(
-            Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = if (expanded) 18.dp else 0.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
         ) {
-            Image(
-                painter = painterResource(R.drawable.ic_opentv_logo),
-                contentDescription = "OpenTV",
-                modifier = Modifier.size(34.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                "OpenTV",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            OpenTvLogo(size = 34.dp)
+            AnimatedVisibility(visible = expanded, enter = fadeIn(), exit = fadeOut()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "OpenTV",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(8.dp))
 
@@ -435,9 +463,11 @@ private fun RailItem(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    // The current tab keeps its selection lift whether or not focus is on it; both the lift and the
+    // cursor wash are translucent, so the icon and label stay ordinary onSurface white and the
+    // cursor is marked by the accent hairline rather than by inverting the text.
     val tint = when {
-        selected -> MaterialTheme.colorScheme.primary
-        focused -> MaterialTheme.colorScheme.onSurface
+        focused || selected -> MaterialTheme.colorScheme.onSurface
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
@@ -454,18 +484,21 @@ private fun RailItem(
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
     ) {
         Icon(icon, contentDescription = label, tint = tint)
-        if (expanded) {
-            Spacer(Modifier.width(14.dp))
-            Text(
-                label,
-                style = MaterialTheme.typography.titleMedium,
-                color = tint,
-                fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        AnimatedVisibility(visible = expanded, enter = fadeIn(), exit = fadeOut()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = tint,
+                    fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

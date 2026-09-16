@@ -8,8 +8,8 @@ package app.opentv
 import app.opentv.data.model.Programme
 import app.opentv.ui.channels.calculateInitialScrollOffsetPx
 import app.opentv.ui.channels.calculateMountedFrameStartTime
-import app.opentv.ui.channels.computeProgrammeMidpoint
 import app.opentv.ui.channels.getVerticalTargetProgram
+import app.opentv.ui.channels.halfHourColumnStart
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
@@ -65,7 +65,7 @@ class TemporalAnchorNavigationTest {
     }
 
     @Test
-    fun `irregular duration round-trip retains temporal anchor across channels`() {
+    fun `irregular duration round-trip retains the half-hour column across channels`() {
         // Channel 1: A 3-hour movie
         val movie = prog("Blockbuster Movie", 0, 180)
         val channel1Programs = listOf(movie)
@@ -75,17 +75,33 @@ class TemporalAnchorNavigationTest {
             prog("Episode ${idx + 1}", idx * 30L, (idx + 1) * 30L)
         }
 
-        // Suppose user is on Episode 4 (90 min to 120 min)
-        val currentShow = episodes[3]
-        val anchor = computeProgrammeMidpoint(currentShow) // 105 min
+        // Cursor sits in the 1:30 column (90 min in).
+        val column = baseTime + 90 * 60_000L
 
         // D-Pad UP to Channel 1
-        val targetOnChannel1 = getVerticalTargetProgram(channel1Programs, anchor)
+        val targetOnChannel1 = getVerticalTargetProgram(channel1Programs, column)
         assertThat(targetOnChannel1).isEqualTo(movie)
 
-        // D-Pad DOWN back to Channel 2 with the same preserved anchor
-        val targetBackOnChannel2 = getVerticalTargetProgram(episodes, anchor)
-        assertThat(targetBackOnChannel2).isEqualTo(currentShow)
+        // D-Pad DOWN back to Channel 2 with the same preserved column
+        val targetBackOnChannel2 = getVerticalTargetProgram(episodes, column)
+        assertThat(targetBackOnChannel2).isEqualTo(episodes[3])
+    }
+
+    @Test
+    fun `one hour programme does not move the cursor out of its half-hour column`() {
+        // Regression: the anchor used to be the focused programme's midpoint, so a 1:00-2:00
+        // block anchored at 1:30 and the next row's cursor jumped to the 1:30 show. A column
+        // anchor stays at 1:00 through both rows.
+        val oneHour = prog("One Hour Show", 0, 60)
+        val column = baseTime // 1:00 PM
+
+        assertThat(getVerticalTargetProgram(listOf(oneHour), column)).isEqualTo(oneHour)
+
+        val halfHourRow = listOf(
+            prog("First Half", 0, 30),
+            prog("Second Half", 30, 60),
+        )
+        assertThat(getVerticalTargetProgram(halfHourRow, column)).isEqualTo(halfHourRow[0])
     }
 
     @Test
@@ -95,10 +111,14 @@ class TemporalAnchorNavigationTest {
     }
 
     @Test
-    fun `computeProgrammeMidpoint calculates exact midpoint`() {
-        val show = prog("Half Hour Show", 10, 40)
-        val mid = computeProgrammeMidpoint(show)
-        assertThat(mid).isEqualTo(baseTime + 25 * 60_000L)
+    fun `half hour column snaps down to the containing slot`() {
+        val halfHourMs = 30 * 60 * 1000L
+        val onePm = baseTime
+
+        assertThat(halfHourColumnStart(onePm)).isEqualTo(onePm)
+        assertThat(halfHourColumnStart(onePm + 29 * 60_000L)).isEqualTo(onePm)
+        assertThat(halfHourColumnStart(onePm + 30 * 60_000L)).isEqualTo(onePm + halfHourMs)
+        assertThat(halfHourColumnStart(onePm + 45 * 60_000L)).isEqualTo(onePm + halfHourMs)
     }
 
     @Test

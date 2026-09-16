@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import app.opentv.ui.theme.AppTheme
+import app.opentv.ui.theme.LocalGuideChromeAlpha
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -84,6 +85,7 @@ import app.opentv.data.model.Channel
 import app.opentv.data.model.Programme
 import app.opentv.data.model.shownName
 import app.opentv.ui.ChannelsViewModel
+import app.opentv.ui.components.tvFocus
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -312,80 +314,83 @@ fun GuideGrid(
     var activeFocusedKey by activeFocusedKeyState
     val targetProgKeyState = remember { mutableStateOf<Long?>(null) }
     var targetProgKey by targetProgKeyState
-    val temporalAnchorState = remember { mutableLongStateOf(nowMillis) }
+    // The cursor's horizontal position, expressed as the half-hour column that contains it.
+    // Always :00/:30-aligned so D-pad Left/Right steps exactly 30 minutes and Up/Down keeps the
+    // same column even when a row's programme is a 1-hour (or longer) block.
+    val temporalAnchorState = remember { mutableLongStateOf(halfHourColumnStart(nowMillis)) }
     var temporalAnchorMillis by temporalAnchorState
     var isNavigatingVertically by remember { mutableStateOf(false) }
     var verticalNavJob by remember { mutableStateOf<Job?>(null) }
     var focusCenterJob by remember { mutableStateOf<Job?>(null) }
     var horizontalScrollJob by remember { mutableStateOf<Job?>(null) }
+    var columnStepJob by remember { mutableStateOf<Job?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
-    // ---- TiviMate-style timeline scrub (hold LEFT / RIGHT) -------------------------------------
-    // HOLD Left/Right anywhere scrolls the timeline continuously (accelerating) within the loaded
-    // guide window. Single taps fall through untouched and keep stepping programme-by-programme.
-    // On release, focus re-anchors to the programme now under the viewport's left edge, so the
+    // ---- TiviMate-style timeline scrub (HOLD LEFT only) ----------------------------------------
+    // HOLD Left anywhere on the timeline travels back through the guide in 30-minute steps, aligned
+    // to the header ruler. Forward scrubbing is deliberately not a hold gesture — TiviMate only uses
+    // hold-LEFT to reach the archive — so a held RIGHT does nothing beyond its single-tap column
+    // step. On release, focus re-anchors to the programme now under the viewport's left edge, so the
     // cursor is back on screen and Up/Down continues from the scrubbed time. Back returns to live
     // (HomeScreen's backScrollActive handler), which is also how the category rail is reached.
     var holdPressActive by remember { mutableStateOf(false) }
-    var pressIsForward by remember { mutableStateOf(false) }
     var scrubEngaged by remember { mutableStateOf(false) }
-    var scrubIsForward by remember { mutableStateOf(false) }
     var holdTimeoutJob by remember { mutableStateOf<Job?>(null) }
     var scrubJob by remember { mutableStateOf<Job?>(null) }
     // Until this time, keep-visible auto-scrolls are suppressed so nothing yanks the timeline
     // while the post-scrub re-anchor settles.
     var scrubSettlingUntilMillis by remember { mutableLongStateOf(0L) }
 
-    val engageScrub: (Boolean) -> Unit = { forward ->
+    val engageScrub: () -> Unit = {
         if (!scrubEngaged) {
             scrubEngaged = true
-            scrubIsForward = forward
             holdTimeoutJob?.cancel()
             scrubJob?.cancel()
             scrubJob = coroutineScope.launch {
-                // Either direction enters back-scroll layout: rows re-lay out from the loaded
-                // window's start and the viewport is anchored on "now" first — so pressing Back
-                // afterwards restores "now + playing channel" for forward scrubs too.
+                // Enter back-scroll layout: rows re-lay out from the loaded window's start and the
+                // viewport is anchored on "now" first — so pressing Back afterwards restores
+                // "now + playing channel".
                 onEnableBackScroll()
                 val frameStart = calculateMountedFrameStartTime(System.currentTimeMillis())
-                scroll.scrollTo(
-                    calculateInitialScrollOffsetPx(
-                        windowStartMillis = windowStartMillis,
-                        frameStartMillis = frameStart,
-                        minuteDp = MINUTE_DP,
-                        density = density.density,
-                    ),
+                val anchorPx = calculateInitialScrollOffsetPx(
+                    windowStartMillis = windowStartMillis,
+                    frameStartMillis = frameStart,
+                    minuteDp = MINUTE_DP,
+                    density = density.density,
                 )
+                scroll.scrollTo(anchorPx)
                 delay(30)
-                var lastFrame = System.currentTimeMillis()
-                val startedAt = lastFrame
-                while (isActive) {
-                    delay(16)
-                    val frame = System.currentTimeMillis()
-                    val dt = (frame - lastFrame).coerceAtLeast(1L)
-                    lastFrame = frame
-                    // ~10 minutes/sec at first, easing to ~90 minutes/sec after a few seconds held:
-                    // nearby programmes stay precise, and a week of catch-up is still only seconds.
-                    val heldSeconds = (frame - startedAt) / 1000f
-                    val minutesPerSecond = (SCRUB_MINUTES_PER_SECOND_START +
-                        heldSeconds * SCRUB_ACCELERATION).coerceAtMost(SCRUB_MINUTES_PER_SECOND_MAX)
-                    val deltaPx = (minutesPerSecond * MINUTE_DP * density.density * dt / 1000f).roundToInt()
-                    if (deltaPx > 0) {
-                        val target = if (scrubIsForward) scroll.value + deltaPx else scroll.value - deltaPx
-                        scroll.scrollTo(target.coerceIn(0, scroll.maxValue))
+                // One half-hour column per tick: the timeline walks back in 30-minute increments,
+                // matching the guide's header ruler, rather than scrolling by pixels. Wait for the
+                // back-scroll layout to give the timeline a real scroll extent first — until then
+                // the range is 0 and every step would clamp straight back to the start.
+                val stepPx = (HALF_HOUR_MS / 60_000.0 * MINUTE_DP * density.density).roundToInt()
+                var anchored = false
+                while (isActive && stepPx > 0) {
+                    if (scroll.maxValue > 0) {
+                        if (!anchored) {
+                            scroll.scrollTo(anchorPx.coerceIn(0, scroll.maxValue))
+                            anchored = true
+                        }
+                        val target = (scroll.value - stepPx).coerceAtLeast(0)
+                        if (target != scroll.value) scroll.scrollTo(target)
+                        if (target == 0) break
                     }
+                    delay(SCRUB_STEP_INTERVAL_MILLIS)
                 }
             }
         }
     }
 
     val onDirectionPressStarted: (Boolean) -> Unit = { forward ->
-        pressIsForward = forward
         holdPressActive = true
         holdTimeoutJob?.cancel()
-        holdTimeoutJob = coroutineScope.launch {
-            delay(SCRUB_ENGAGE_MILLIS)
-            if (holdPressActive && !scrubEngaged) engageScrub(pressIsForward)
+        // Only LEFT arms the back-in-time hold. RIGHT keeps just its single-tap column step.
+        if (!forward) {
+            holdTimeoutJob = coroutineScope.launch {
+                delay(SCRUB_ENGAGE_MILLIS)
+                if (holdPressActive && !scrubEngaged) engageScrub()
+            }
         }
     }
 
@@ -418,7 +423,9 @@ fun GuideGrid(
                 }
             val targetReq = key?.let { rowFocusRequesters[it] }
             if (row != null && targetReq != null) {
-                temporalAnchorMillis = anchorProgramme?.let { computeProgrammeMidpoint(it) } ?: anchorMillis
+                // Snap to the column under the viewport's left edge, not the programme midpoint,
+                // so the next Up/Down keeps the cursor in the scrubbed-to column.
+                temporalAnchorMillis = halfHourColumnStart(anchorMillis)
                 targetProgKey = anchorProgramme?.id
                 coroutineScope.launch {
                     delay(16)
@@ -451,7 +458,10 @@ fun GuideGrid(
             activeFocusedIndex = index
             activeFocusedKey = k
             targetProgKey = liveProg?.id
-            temporalAnchorMillis = if (liveProg != null) computeProgrammeMidpoint(liveProg) else now
+            // The live cursor sits on "now"'s half-hour column, which is also the viewport's left
+            // edge in live mode — not the live programme's midpoint, which drifted into the 2pm
+            // slot for a 1-hour show.
+            temporalAnchorMillis = halfHourColumnStart(now)
             isNavigatingVertically = false
             onFocusRow(matchedRow, liveProg)
 
@@ -653,6 +663,52 @@ fun GuideGrid(
         if (rows.isNotEmpty()) handleNavigateVertical(true, rows.size - 1)
     }
 
+    // D-pad Left/Right moves the cursor exactly one half-hour column, so the step matches the
+    // header ruler instead of varying with the focused programme's duration. A press at the first
+    // column opens the category rail (same as the old leftmost-block gesture); a press past the
+    // last column is absorbed as a no-op.
+    val stepColumn: (Boolean) -> Boolean = { isRight ->
+        if (rows.isEmpty()) {
+            false
+        } else {
+            val rowKey = activeFocusedKey ?: selectedKeyState.value ?: rows.first().key
+            val rowIndex = rows.indexOfFirst { it.key == rowKey }.coerceAtLeast(0)
+            val row = rows.getOrNull(rowIndex)
+            val windowEndMillis = effectiveStartMillis + HOURS_IN_WINDOW * 3600_000L
+            val firstColumn = halfHourColumnStart(effectiveStartMillis)
+            val lastColumn = halfHourColumnStart(windowEndMillis - HALF_HOUR_MS)
+            val candidate = halfHourColumnStart(temporalAnchorMillis) +
+                (if (isRight) HALF_HOUR_MS else -HALF_HOUR_MS)
+            if (candidate < firstColumn) {
+                // Nowhere left to go: open the category rail, like LEFT from the leftmost block.
+                onExitLeft()
+                true
+            } else {
+                val newColumn = candidate.coerceAtMost(lastColumn)
+                val target = row?.let { getVerticalTargetProgram(it.programmes, newColumn) }
+                temporalAnchorMillis = newColumn
+                isNavigatingVertically = false
+                if (row != null) {
+                    activeFocusedIndex = rowIndex
+                    activeFocusedKey = row.key
+                    targetProgKey = target?.id
+                    // The row's shared FocusRequester re-attaches to the block at the new column
+                    // on the next recomposition, so give it a frame before requesting focus.
+                    columnStepJob?.cancel()
+                    columnStepJob = coroutineScope.launch {
+                        delay(16)
+                        for (attempt in 0..3) {
+                            val res = runCatching { rowFocusRequesters[row.key]?.requestFocus() }
+                            if (res.isSuccess) break
+                            delay(20)
+                        }
+                    }
+                }
+                true
+            }
+        }
+    }
+
     Box(
         modifier
             .fillMaxSize()
@@ -663,35 +719,41 @@ fun GuideGrid(
                         handleJumpToLive()
                         true
                     }
-                    // TiviMate-style scrub: HOLD Left/Right anywhere on the timeline to rewind or
-                    // fast-forward; single taps return false and keep stepping programme focus.
-                    // Key repeats are consumed once a press is active so focus-walking stops and
-                    // the scrub takes over.
+                    // TiviMate-style scrub: HOLD Left anywhere on the timeline to travel back
+                    // through the guide in 30-minute steps. A single Left tap falls through and
+                    // steps the cursor one column. RIGHT is tap-only — a held RIGHT is swallowed so
+                    // it never walks the timeline forward.
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft -> {
                         if (e.nativeKeyEvent.repeatCount == 0) {
                             onDirectionPressStarted(false)
-                            false
+                            // Consume the initial press: a single tap's action (step one column, or
+                            // open the category rail at the first column) runs on key-up only if the
+                            // hold never engaged. Letting the focused block handle this first press
+                            // is what opened the rail the instant LEFT was held, before the scrub
+                            // could take over.
+                            true
                         } else {
-                            if (holdPressActive) engageScrub(false)
+                            if (holdPressActive) engageScrub()
                             holdPressActive
                         }
                     }
                     e.type == KeyEventType.KeyUp && e.key == Key.DirectionLeft -> {
                         if (scrubEngaged) {
                             releaseScrub()
-                            true
                         } else {
+                            holdTimeoutJob?.cancel()
                             holdPressActive = false
-                            false
+                            stepColumn(false)
                         }
+                        true
                     }
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight -> {
                         if (e.nativeKeyEvent.repeatCount == 0) {
                             onDirectionPressStarted(true)
                             false
                         } else {
-                            if (holdPressActive) engageScrub(true)
-                            holdPressActive
+                            // Forward time-travel is not a hold gesture; swallow key repeats.
+                            true
                         }
                     }
                     e.type == KeyEventType.KeyUp && e.key == Key.DirectionRight -> {
@@ -777,13 +839,12 @@ fun GuideGrid(
                             onSelect = { onSelectRow(row) },
                             onLongSelect = { onLongSelectRow(row) },
                             onFocus = { prog ->
-                                if (!isNavigatingVertically) {
-                                    if (prog != null) {
-                                        temporalAnchorMillis = computeProgrammeMidpoint(prog)
-                                    }
-                                } else {
-                                    isNavigatingVertically = false
-                                }
+                                // The temporal anchor is the half-hour column, and it is only moved
+                                // by an explicit horizontal step (stepColumn), a scrub release, or a
+                                // jump to live — never by gaining focus. Rewriting it from the
+                                // programme's midpoint here is what made the cursor slide right a
+                                // column when a row contained a 1-hour block.
+                                if (isNavigatingVertically) isNavigatingVertically = false
                                 activeFocusedIndex = index
                                 activeFocusedKey = row.key
                                 targetProgKey = prog?.id
@@ -820,9 +881,9 @@ fun GuideGrid(
                             onProgramme = { programme -> onProgramme(row, programme) },
                             onToggleFavourite = { onToggleFavourite(row) },
                             onNavigateVertical = { isDown -> handleNavigateVertical(isDown, index) },
+                            onStepColumn = stepColumn,
                             onWrapToBottom = { handleWrapToBottom() },
                             onWrapToTop = { handleWrapToTop() },
-                            onExitLeft = onExitLeft,
                         )
                     }
                 }
@@ -864,7 +925,7 @@ fun GuideGrid(
                     .size(7.dp)
                     .clip(CircleShape)
                     .background(AppTheme.primary.copy(alpha = 0.65f))
-                    .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
+                    .border(1.dp, AppTheme.palette.onSurface.copy(alpha = 0.35f), CircleShape)
             )
         }
     }
@@ -1044,6 +1105,8 @@ private fun ChannelListRow(
     val clockFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     val isLive = isSelected
+    // See LocalGuideChromeAlpha: only the unfocused fills fade, so the cursor stays legible.
+    val chromeAlpha = LocalGuideChromeAlpha.current
 
     Row(
         Modifier
@@ -1051,15 +1114,17 @@ private fun ChannelListRow(
             .fillMaxWidth()
             .height(ROW_HEIGHT)
             .background(
-                if (focused) Color(0xFFF0F4F8)
-                else if (isSelected) Color(0xFF1E2F3E)
-                else Color(0xFF18222C),
+                if (isSelected) AppTheme.palette.selectedFill
+                else AppTheme.palette.chrome.copy(alpha = chromeAlpha),
                 GuideCellShape,
             )
-            .then(
-                if (focused) Modifier.border(2.dp, Color.White, GuideCellShape)
-                else if (isSelected) Modifier.border(1.5.dp, AppTheme.primary, GuideCellShape)
-                else Modifier,
+            .tvFocus(
+                shape = GuideCellShape,
+                selected = isSelected,
+                onFocusChange = {
+                    focused = it
+                    if (it) onFocus(row.now)
+                },
             )
             .onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown) {
@@ -1077,10 +1142,6 @@ private fun ChannelListRow(
                     }
                 } else false
             }
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onFocus(row.now)
-            }
             .combinedClickable(
                 onClick = onSelect,
                 onLongClick = onLongSelect,
@@ -1093,7 +1154,7 @@ private fun ChannelListRow(
         Text(
             "$displayNum",
             style = MaterialTheme.typography.labelMedium,
-            color = if (focused) Color(0xFF37474F) else Color(0xFF78909C),
+            color = AppTheme.palette.textMuted,
             maxLines = 1,
             modifier = Modifier.width(32.dp),
         )
@@ -1111,7 +1172,7 @@ private fun ChannelListRow(
                     formatChannelNameForDisplay(row.primary.shownName),
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
                     fontWeight = if (isLive || focused) FontWeight.SemiBold else FontWeight.Medium,
-                    color = if (focused) Color(0xFF10171E) else if (isLive) AppTheme.primary else Color.White,
+                    color = if (isLive) AppTheme.primary else AppTheme.palette.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -1121,7 +1182,7 @@ private fun ChannelListRow(
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = "Live",
-                        tint = if (focused) AppTheme.dark else AppTheme.primary,
+                        tint = AppTheme.primary,
                         modifier = Modifier.size(16.dp),
                     )
                 }
@@ -1131,7 +1192,7 @@ private fun ChannelListRow(
                 Text(
                     text = "${clockFmt.format(Date(nowProg.startUtcMillis))}  ${nowProg.title}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (focused) Color(0xFF455A64) else Color(0xFF90A4AE),
+                    color = AppTheme.palette.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1149,12 +1210,13 @@ private fun TimeHeader(
 ) {
     val currentDateTimeFmt = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
     val slotTimeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+    val chromeAlpha = LocalGuideChromeAlpha.current
 
     Row(
         Modifier
             .fillMaxWidth()
             .height(38.dp)
-            .background(Color(0xFF161E26)),
+            .background(AppTheme.palette.chrome.copy(alpha = chromeAlpha)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Top-left label: Current Date & Time in clean Cyan, matching TiviMate, with the
@@ -1177,7 +1239,7 @@ private fun TimeHeader(
                     Text(
                         text = epgInfoLine,
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = Color(0xFF8B9BA8),
+                        color = AppTheme.palette.textMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1189,7 +1251,7 @@ private fun TimeHeader(
         Box(
             Modifier
                 .horizontalScroll(scroll)
-                .background(Color(0xFF161E26))
+                .background(AppTheme.palette.chrome.copy(alpha = chromeAlpha))
                 // The 96 half-hour ruler labels are pure decoration. Marking the strip
                 // semantically empty keeps them out of the accessibility tree: this box runs
                 // Projectivy's accessibility service, so Compose walks that tree on every frame
@@ -1209,7 +1271,7 @@ private fun TimeHeader(
                         Text(
                             slotTimeFmt.format(Date(slotStart)),
                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                            color = Color(0xFFCFD8DC),
+                            color = AppTheme.palette.onSurface,
                             fontWeight = FontWeight.Normal,
                         )
                     }
@@ -1247,9 +1309,10 @@ private fun GuideRow(
     onProgramme: (Programme) -> Unit,
     onToggleFavourite: () -> Unit = {},
     onNavigateVertical: (isDown: Boolean) -> Boolean = { false },
+    /** Steps the cursor one half-hour column; [Boolean] is true for RIGHT. */
+    onStepColumn: (Boolean) -> Boolean = { false },
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
-    onExitLeft: () -> Boolean = { false },
 ) {
     // Read focus/anchor state through derivedStateOf: this row recomposes only when ITS
     // highlight or target block changes, not whenever focus moves anywhere in the grid.
@@ -1257,6 +1320,7 @@ private fun GuideRow(
         derivedStateOf { (activeKeyState.value ?: fallbackKey) == row.key }
     }
     val isRowHighlighted = isFocused || previewHighlight
+    val chromeAlpha = LocalGuideChromeAlpha.current
     val rowTargetProgKey by remember(row.key, activeKeyState, fallbackKey, targetProgKeyState) {
         derivedStateOf {
             if ((activeKeyState.value ?: fallbackKey) == row.key) targetProgKeyState.value else null
@@ -1289,7 +1353,13 @@ private fun GuideRow(
             Modifier
                 .width(CHANNEL_COLUMN)
                 .fillMaxHeight()
-                .background(if (isRowHighlighted) Color(0xFF1C2630) else Color(0xFF161E26))
+                .background(
+                    when {
+                        isRowHighlighted -> AppTheme.palette.cursorFill
+                        isSelected -> AppTheme.palette.selectedFill
+                        else -> AppTheme.palette.chrome.copy(alpha = chromeAlpha)
+                    },
+                )
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1298,7 +1368,7 @@ private fun GuideRow(
             Text(
                 "$displayNum",
                 style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
-                color = Color(0xFF8B9BA8),
+                color = AppTheme.palette.textMuted,
                 maxLines = 1,
                 modifier = Modifier.width(32.dp),
             )
@@ -1319,7 +1389,7 @@ private fun GuideRow(
                     formatChannelNameForDisplay(row.primary.shownName),
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
                     fontWeight = if (isRowHighlighted) FontWeight.Bold else FontWeight.Medium,
-                    color = Color.White,
+                    color = AppTheme.palette.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1344,7 +1414,7 @@ private fun GuideRow(
                 Icon(
                     imageVector = Icons.Filled.History,
                     contentDescription = "Catchup",
-                    tint = Color(0xFF8B9BA8),
+                    tint = AppTheme.palette.textMuted,
                     modifier = Modifier.size(14.dp),
                 )
             }
@@ -1355,7 +1425,7 @@ private fun GuideRow(
                 Icon(
                     imageVector = Icons.Filled.Star,
                     contentDescription = "Favorite",
-                    tint = Color(0xFFFFD54F),
+                    tint = AppTheme.palette.favourite,
                     modifier = Modifier.size(14.dp),
                 )
             }
@@ -1379,13 +1449,13 @@ private fun GuideRow(
                         .width(widthFor(windowStartMillis, windowEndMillis))
                         .fillMaxSize()
                         .background(
-                            if (emptyHighlighted) Color.White
-                            else Color(0xFF222C36),
+                            if (emptyHighlighted) AppTheme.palette.cursorFill
+                            else AppTheme.palette.chromeCell.copy(alpha = chromeAlpha),
                             GuideCellShape,
                         )
                         .then(
-                            if (emptyHighlighted) Modifier.border(1.5.dp, Color.White, GuideCellShape)
-                            else Modifier.border(0.5.dp, Color(0xFF334250).copy(alpha = 0.6f), GuideCellShape),
+                            if (emptyHighlighted) Modifier.border(1.5.dp, AppTheme.palette.cursorBorder, GuideCellShape)
+                            else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), GuideCellShape),
                         )
                         .onFocusChanged {
                             emptyFocused = it.isFocused
@@ -1396,6 +1466,8 @@ private fun GuideRow(
                                 when (e.key) {
                                     Key.DirectionUp -> onNavigateVertical(false)
                                     Key.DirectionDown -> onNavigateVertical(true)
+                                    Key.DirectionLeft -> onStepColumn(false)
+                                    Key.DirectionRight -> onStepColumn(true)
                                     else -> false
                                 }
                             } else false
@@ -1408,7 +1480,7 @@ private fun GuideRow(
                     Text(
                         stringResource(R.string.guide_no_info),
                         style = MaterialTheme.typography.bodyLarge.copy(fontSize = 13.sp),
-                        color = if (emptyFocused) Color(0xFF10171E) else Color(0xFF78909C),
+                        color = if (emptyHighlighted) AppTheme.palette.onSurface else AppTheme.palette.textMuted,
                     )
                 }
             } else {
@@ -1530,8 +1602,6 @@ private fun GuideRow(
                     if (gap > 0.dp) Spacer(Modifier.width(gap))
                     val prog = programmes[layout.programmeIndex]
                     val isNow = nowMillis in prog.startUtcMillis until prog.endUtcMillis
-                    val isFirst = pOrder == 0
-                    val isLast = pOrder == blockLayouts.size - 1
                     val isTarget = pOrder == targetBlockIdx
                     val blockRequester = blockFocusRequesters.getOrNull(pOrder)
                     val extReq = if (isTarget && isFocused) externalFocusRequester else null
@@ -1543,6 +1613,7 @@ private fun GuideRow(
                             isNow = isNow,
                             progress = if (isNow) prog.progressAt(nowMillis) else 0f,
                             isNew = prog.isNewEpisode(),
+                            isLive = prog.isLive,
                             pseudoFocused = previewHighlight && isTarget,
                             isRowHighlighted = isRowHighlighted,
                             focusRequester = blockRequester,
@@ -1551,16 +1622,7 @@ private fun GuideRow(
                             onFocus = { onFocus(prog) },
                             onClick = { onProgramme(prog) },
                             onNavigateVertical = onNavigateVertical,
-                            onMoveLeft = if (!isFirst) {
-                                { runCatching { blockFocusRequesters[pOrder - 1].requestFocus() } }
-                            } else {
-                                // Leftmost block: open the category rail instead of letting focus
-                                // run off the edge (and into the collapsed rail).
-                                { onExitLeft() }
-                            },
-                            onMoveRight = if (!isLast) {
-                                { runCatching { blockFocusRequesters[pOrder + 1].requestFocus() } }
-                            } else null,
+                            onStepColumn = onStepColumn,
                         )
                     }
                     cursorMillis = layout.endMillis
@@ -1591,16 +1653,7 @@ private fun GuideRow(
                         onFocus = { onFocus(null) },
                         onClick = onSelect,
                         onNavigateVertical = onNavigateVertical,
-                        onMoveLeft = if (blockLayouts.isEmpty()) {
-                            { onExitLeft() }
-                        } else {
-                            {
-                                val target = composedIndices.lastOrNull() ?: blockLayouts.lastIndex
-                                blockFocusRequesters.getOrNull(target)?.let { req ->
-                                    runCatching { req.requestFocus() }
-                                }
-                            }
-                        },
+                        onStepColumn = onStepColumn,
                     )
                 } else if (windowEndMillis > cursorMillis) {
                     Spacer(Modifier.width(widthFor(cursorMillis, windowEndMillis)))
@@ -1628,6 +1681,27 @@ private fun contentHashKey(programmes: List<Programme>, windowStartMillis: Long)
     return hash
 }
 
+/** A tiny state chip on a programme cell — "NEW" (amber) or "LIVE" (red). */
+@Composable
+private fun GuideBadge(text: String, background: Color) {
+    Box(
+        modifier = Modifier
+            .padding(end = 5.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(background)
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = AppTheme.palette.onPrimary,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 10.sp,
+        )
+    }
+}
+
 /**
  * A programme block in the guide timeline.
  *
@@ -1641,6 +1715,8 @@ private fun ProgrammeBlock(
     isNow: Boolean,
     progress: Float,
     isNew: Boolean = false,
+    /** XMLTV `<live/>`: this programme is a live broadcast, so it wears a LIVE chip like NEW. */
+    isLive: Boolean = false,
     pseudoFocused: Boolean = false,
     isRowHighlighted: Boolean = false,
     focusRequester: FocusRequester? = null,
@@ -1649,13 +1725,14 @@ private fun ProgrammeBlock(
     onFocus: () -> Unit = {},
     onClick: () -> Unit,
     onNavigateVertical: ((isDown: Boolean) -> Boolean)? = null,
-    onMoveLeft: (() -> Unit)? = null,
-    onMoveRight: (() -> Unit)? = null,
+    /** Steps the cursor one half-hour column; [Boolean] is true for RIGHT. */
+    onStepColumn: ((Boolean) -> Boolean)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
 
     // Pseudo-cursor: rendered like focus without stealing it (rail category preview).
     val highlighted = focused || pseudoFocused
+    val chromeAlpha = LocalGuideChromeAlpha.current
 
     Box(
         Modifier
@@ -1670,13 +1747,13 @@ private fun ProgrammeBlock(
             // which is the bulk of the scrub/scroll render cost. A shaped background draws the
             // same rounded rect with no layer.
             .background(
-                if (highlighted) Color.White
-                else Color(0xFF222C36),
+                if (highlighted) AppTheme.palette.cursorFill
+                else AppTheme.palette.chromeCell.copy(alpha = chromeAlpha),
                 GuideCellShape,
             )
             .then(
-                if (highlighted) Modifier.border(1.5.dp, Color.White, GuideCellShape)
-                else Modifier.border(0.5.dp, Color(0xFF334250).copy(alpha = 0.6f), GuideCellShape)
+                if (highlighted) Modifier.border(1.5.dp, AppTheme.palette.cursorBorder, GuideCellShape)
+                else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), GuideCellShape)
             )
             .onPreviewKeyEvent { e ->
                 if (e.key == Key.DirectionUp) {
@@ -1688,19 +1765,19 @@ private fun ProgrammeBlock(
                         onNavigateVertical(true)
                     } else false
                 } else if (e.key == Key.DirectionLeft) {
-                    // Single Left taps step between blocks; on the leftmost block Left is a no-op
-                    // (the category rail is reached with Back). HOLD Left is the timeline scrub,
-                    // handled at the GuideGrid root.
+                    // A single Left tap moves the cursor one half-hour column; from the first
+                    // column it opens the category rail. HOLD Left is the timeline scrub, handled
+                    // at the GuideGrid root.
                     if (e.type == KeyEventType.KeyDown) {
-                        if (onMoveLeft != null) {
-                            onMoveLeft()
+                        if (onStepColumn != null) {
+                            onStepColumn(false)
                             true
                         } else false
                     } else false
                 } else if (e.key == Key.DirectionRight) {
-                    if (onMoveRight != null) {
-                        if (e.type == KeyEventType.KeyDown) {
-                            onMoveRight()
+                    if (e.type == KeyEventType.KeyDown) {
+                        if (onStepColumn != null) {
+                            onStepColumn(true)
                             true
                         } else false
                     } else false
@@ -1724,24 +1801,8 @@ private fun ProgrammeBlock(
                 .padding(horizontal = 7.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (isNew) {
-                Box(
-                    modifier = Modifier
-                        .padding(end = 5.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(Color(0xFFE65100))
-                        .padding(horizontal = 4.dp, vertical = 1.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "NEW",
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 10.sp,
-                    )
-                }
-            }
+            if (isLive) GuideBadge("LIVE", AppTheme.palette.recording)
+            if (isNew) GuideBadge("NEW", AppTheme.palette.live)
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium.copy(
@@ -1749,10 +1810,7 @@ private fun ProgrammeBlock(
                     lineHeight = 15.sp,
                 ),
                 fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Normal,
-                color = when {
-                    highlighted -> Color(0xFF10171E) // Dark slate text on pure white focus background
-                    else -> Color(0xFFECEFF1)
-                },
+                color = AppTheme.palette.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
@@ -1770,12 +1828,10 @@ private fun widthFor(fromMillis: Long, toMillis: Long): Dp {
 private const val MINUTE_DP = 7.0f
 
 // ---- TiviMate-style hold-to-scrub tuning ------------------------------------------------
-/** How long Left/Right must be held before the timeline scrub engages (a tap stays a tap). */
+/** How long LEFT must be held before the back-in-time scrub engages (a tap stays a tap). */
 private const val SCRUB_ENGAGE_MILLIS = 400L
-/** Scrub speed in minutes of timeline per second: start, acceleration per second held, cap. */
-private const val SCRUB_MINUTES_PER_SECOND_START = 10f
-private const val SCRUB_ACCELERATION = 20f
-private const val SCRUB_MINUTES_PER_SECOND_MAX = 90f
+/** Delay between the discrete 30-minute steps while LEFT is held. */
+private const val SCRUB_STEP_INTERVAL_MILLIS = 160L
 /** How long after a scrub release keep-visible auto-scrolls stay suppressed. */
 private const val SCRUB_SETTLE_MILLIS = 400L
 private const val PAST_HOURS = 24

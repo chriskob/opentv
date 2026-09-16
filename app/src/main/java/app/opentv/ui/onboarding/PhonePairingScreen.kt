@@ -1,4 +1,4 @@
-/*
+﻿/*
  * This file is part of OpenTV.
  * Copyright (C) 2026 The OpenTV Contributors
  * Licensed under the GNU General Public License v3.0 or later.
@@ -20,10 +20,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -96,11 +94,15 @@ fun PhonePairingScreen(
                 )
                 Spacer(Modifier.height(24.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { server.start() }) { Text(stringResource(R.string.common_try_again)) }
+                    OnboardingButton(
+                        text = stringResource(R.string.common_try_again),
+                        onClick = { server.start() },
+                        primary = true,
+                    )
                     if (onSwitchToRemote != null) {
-                        OutlinedButton(onClick = onSwitchToRemote) { Text("Try Remote Setup (NAS)") }
+                        OnboardingButton(text = "Try Remote Setup (NAS)", onClick = onSwitchToRemote)
                     }
-                    OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.pairing_type_here)) }
+                    OnboardingButton(text = stringResource(R.string.pairing_type_here), onClick = onCancel)
                 }
             }
 
@@ -123,7 +125,7 @@ private fun Listening(
     onCancel: () -> Unit,
     onSwitchToRemote: (() -> Unit)? = null,
 ) {
-    // Generated once per session rather than on every recomposition — encoding is not free
+    // Generated once per session rather than on every recomposition â€” encoding is not free
     // and the content does not change.
     val qr = remember(session.url) { QrCodes.render(session.url, QR_SIZE_PX) }
 
@@ -178,9 +180,9 @@ private fun Listening(
 
             Spacer(Modifier.height(32.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.pairing_type_on_tv)) }
+                OnboardingButton(text = stringResource(R.string.pairing_type_on_tv), onClick = onCancel)
                 if (onSwitchToRemote != null) {
-                    OutlinedButton(onClick = onSwitchToRemote) { Text("Use Remote NAS Setup") }
+                    OnboardingButton(text = "Use Remote NAS Setup", onClick = onSwitchToRemote)
                 }
             }
         }
