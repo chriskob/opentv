@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.1
+
+- **The in-app update no longer aborts itself.** The installer committed its install session and
+  then immediately abandoned it in the same breath, so the platform reported
+  `INSTALL_FAILED_ABORTED: Session was abandoned` before the confirmation screen could appear.
+  A committed session is never abandoned now — the confirmation shows and the install proceeds.
+  (Thanks to the 0.15.0 surfacing change, this arrived as a real error message instead of the
+  update silently doing nothing.)
+
 ## 0.16.0
 
 - **The player's shortcut icons show the cursor again.** The focus ring was being drawn on the
