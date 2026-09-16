@@ -1752,7 +1752,7 @@ fun PlayerScreen(
                                 contentDescription = if (isRecording) stringResource(R.string.rec_stop_recording) else stringResource(R.string.player_record),
                                 size = 38.dp,
                                 iconSize = 20.dp,
-                                iconTint = if (isRecording) AppTheme.palette.recording else Color.White,
+                                    iconTint = if (isRecording) AppTheme.palette.recording else null,
                                 onClick = {
                                     toggleRecord()
                                     interaction++
@@ -1839,7 +1839,7 @@ fun PlayerScreen(
                             Icon(
                                 imageVector = Icons.Filled.KeyboardArrowDown,
                                 contentDescription = "Shortcuts below",
-                                tint = Color.White.copy(alpha = 0.5f),
+                                tint = AppTheme.palette.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp),
                             )
                         }
@@ -2441,7 +2441,7 @@ private fun QuickActionCard(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = Color.White,
+                tint = AppTheme.palette.onSurface,
                 modifier = Modifier.size(26.dp),
             )
             Spacer(Modifier.height(5.dp))
@@ -2449,7 +2449,7 @@ private fun QuickActionCard(
                 text = label,
                 style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
                 fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
-                color = Color.White,
+                color = AppTheme.palette.onSurface,
                 maxLines = 1,
             )
         }
@@ -2530,7 +2530,7 @@ private fun QuickChannelCard(
                 text = channel.shownName,
                 style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = AppTheme.palette.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
@@ -2538,7 +2538,8 @@ private fun QuickChannelCard(
             Text(
                 text = programme?.title ?: "",
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-                color = if (focused) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.65f),
+                color = if (focused) AppTheme.palette.onSurface.copy(alpha = 0.9f)
+                else AppTheme.palette.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
@@ -2756,7 +2757,16 @@ private fun SubMenuButtonCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    // Focus is carried by the Column below, so the circle is painted from that state rather than
+    // from a focus modifier on this non-focusable child — which never observed it, leaving the
+    // shortcut row with no visible cursor. Focused fills the circle with the theme accent and
+    // inverts the glyph; an active (selected) shortcut keeps an accent ring on the plain surface.
+    val circleColor = if (focused) AppTheme.primary else AppTheme.palette.chrome
+    val ringColor =
+        if (focused || isSelected) AppTheme.primary else AppTheme.palette.outlineVariant
+    val ringWidth = if (focused || isSelected) 1.5.dp else 1.dp
     val icTint = when {
+        focused -> AppTheme.palette.onPrimary
         iconTint != null -> iconTint
         isSelected -> AppTheme.primary
         else -> AppTheme.palette.onSurface
@@ -2784,8 +2794,8 @@ private fun SubMenuButtonCard(
             modifier = Modifier
                 .size(46.dp)
                 .clip(CircleShape)
-                .background(AppTheme.palette.chrome)
-                .tvFocus(shape = CircleShape, selected = isSelected),
+                .background(circleColor)
+                .border(ringWidth, ringColor, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
