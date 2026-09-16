@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.3
+
+- **The settings menu is tidier.** It now opens with the cursor on **Providers**, Sync watch history
+  has been removed, and the tail is reordered so it reads Manage on Phone → Remote Support → About →
+  Done.
+- **The About page is flatter.** Its three sections no longer collapse, the "Install page" link is
+  gone, and "Licence" is spelled the American way. The cursor lands on **Check for updates** as soon
+  as focus enters the page.
+
 ## 0.16.2
 
 - **Maintenance release.** No behaviour change — a version bump so the 0.16.1 builds can update
