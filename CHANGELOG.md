@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.2
+
+- **Maintenance release.** No behaviour change — a version bump so the 0.16.1 builds can update
+  themselves in-app and prove the fixed installer end to end.
+
 ## 0.16.1
 
 - **The in-app update no longer aborts itself.** The installer committed its install session and
