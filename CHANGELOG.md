@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.0
+
+- **The player's shortcut icons show the cursor again.** The focus ring was being drawn on the
+  circle inside each shortcut, but focus actually lives on the column around it, so the circle
+  never saw it: the icons looked identical on every theme and there was no way to tell which one
+  the remote was on. The focused shortcut now fills with the theme accent and inverts its glyph —
+  clearly visible from the sofa. The few remaining hard-coded white icons and labels on the
+  player (the history cards, the "shortcuts below" chevron and the record button) now read from
+  the palette too.
+
 ## 0.15.0
 
 - **In-app updates actually install now.** Tapping Update downloaded to 100% and then dropped you
