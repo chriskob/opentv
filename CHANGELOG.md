@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.16.4
+
+- **The cursor stays on "Check for updates".** Pressing it used to disable the button, which made
+  it un-focusable and threw the cursor back to the settings menu; it now stays put while checking.
+- **Providers: no collapsible headers, and a per-playlist Update button.** Each playlist row gets a
+  refresh control that re-fetches just that playlist (channels and VOD) and re-matches its guide —
+  no guide feeds are downloaded.
+- **TV Guide: pressing a guide opens it for editing.** The row used to toggle the guide on or off;
+  now OK opens the edit dialog and enable/disable is its own switch on the right.
+- **Channels: show/hide works from the remote.** OK on a row toggles the channel's visibility (the
+  switch shows the state); the star still handles favourites.
+
 ## 0.16.3
 
 - **The settings menu is tidier.** It now opens with the cursor on **Providers**, Sync watch history
