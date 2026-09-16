@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.15.0
+
+- **In-app updates actually install now.** Tapping Update downloaded to 100% and then dropped you
+  back on About with no install screen and no error, because the platform's install session was
+  never told to show its confirmation — the app has to launch the confirmation intent it is handed,
+  and it never did. The updater now launches it, keeps listening for the final result, and reports
+  a rejected install (with the platform's reason) instead of closing silently. Existing installs
+  must be updated to this version once by hand; every release from here on updates in place.
+- **The guide's cursor moves and holds its column.** D-pad Left/Right now steps the timeline by
+  exactly 30 minutes, aligned to the header ruler, instead of jumping by whatever the focused
+  programme's duration happens to be. Moving up and down keeps the cursor on the same half-hour
+  column, so a channel with a 1-hour (or longer) programme no longer drags the cursor into the
+  next column when you scroll past it.
+- **The player's shortcut row loops.** D-pad Left/Right in the player sub-menu now wraps around:
+  moving past the last shortcut returns to the first, and moving back from the first lands on the
+  last.
+- **One focus language, everywhere.** The cursor is now the same across the app: a translucent lift
+  with the theme's accent hairline, and the current item — nav tab, settings section, category,
+  playing channel, selected option — keeps a persistent lift while focus is elsewhere. This is the
+  OpenChamber overlay model the palette was ported from, replacing the seven different focus
+  dialects (opaque accent blocks, opaque white blocks, accent washes, ring-only lifts). Settings and
+  both menu rails landed first; the guide, the player (history cards, transport buttons, sub-menu
+  shortcuts, scrubber) and the VOD screens (posters, rails, detail buttons, track rows) followed, so
+  focused labels no longer repaint themselves in a contrasting ink and nothing hard-codes white.
+- **The OpenTV mark follows the theme.** The rail's logo was baked to one brand blue; it is now
+  drawn from the active palette — screen in the accent, play mark in the accent's foreground — so it
+  matches the wordmark beside it on every theme. (The launcher icon and notification silhouette keep
+  their own art; change those in `ic_launcher_foreground.xml` / `ic_opentv_logo.xml`.)
+- **The guide shows a LIVE badge.** XMLTV's `<live/>` marker — carried by live sport, news
+  specials and similar — is now parsed and stored alongside the NEW flag, and a red LIVE chip
+  sits next to NEW on the programme cell. Like NEW, it appears after the next guide refresh and
+  only for programmes the provider actually flags. Adds an `isLive` column (database v17 → v18,
+  additive).
+- **Onboarding has a visible cursor.** The add-source, phone-pairing and remote-pairing screens
+  relied on Material's buttons, which draw no focus ring on TV, so the first screens a new install
+  shows had no cursor at all. They now use the shared button treatment like the rest of the app.
+  The battery-optimisation prompt got the same. The now-unused `focusSurface`/`highlightGlow`
+  palette tokens were removed.
+- **Hold LEFT to travel back through the guide.** Holding Left now walks the timeline back in
+  30-minute steps, matching the header ruler. Forward time-travel is no longer a hold gesture:
+  TiviMate only uses hold-LEFT to reach the archive, so a held Right does nothing beyond its
+  single-tap column step.
+- **Catch-up plays in the same player as live TV.** Selecting a past programme in the guide now
+  swaps the shared live player onto the provider's timeshift stream — the guide's preview pane and
+  fullscreen player are the ordinary live ones, and the separate movie-style player is no longer
+  used for catch-up. While an archive programme plays, channel up/down scrub ±30 seconds and
+  Left/Right keep the shorter skip. Back leaves the guide at the time you scrubbed to; pressing
+  Back again returns it to now.
+
 ## 0.14.0
 
 - **Settings has been redesigned end to end.** Every page now shares one design language: a single
