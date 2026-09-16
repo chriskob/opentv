@@ -84,6 +84,7 @@ fun AboutScreen(onBack: () -> Unit) {
                         text = if (checking) stringResource(R.string.about_checking)
                         else stringResource(R.string.about_check_updates),
                         onClick = {
+                            if (checking) return@SettingsButton
                             checking = true
                             updateLine = null
                             scope.launch {
@@ -100,10 +101,13 @@ fun AboutScreen(onBack: () -> Unit) {
                                         app.opentv.update.UpdateUiState.Available(update)
                                 }
                                 checking = false
+                                // Keep the cursor on the button. The button used to be disabled
+                                // while checking, which made it un-focusable and threw focus back to
+                                // the settings menu. When a dialog is showing it owns focus instead.
+                                if (update == null) runCatching { checkFocus.requestFocus() }
                             }
                         },
                         style = SettingsButtonStyle.Secondary,
-                        enabled = !checking,
                         modifier = Modifier.focusRequester(checkFocus),
                     )
                     updateLine?.let {

@@ -21,11 +21,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -278,21 +278,21 @@ private fun FeedRow(
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
-    SettingsToggleRow(
+    // OK on the row edits the guide; enable/disable is its own control on the right, so pressing
+    // the row no longer silently switches the feed on or off.
+    SettingsNavRow(
         title = feed.name,
         subtitle = feedSubtitle(feed),
-        checked = feed.enabled,
-        onToggle = onToggle,
+        onClick = onEdit,
         trailing = {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SettingsIconButton(
-                    icon = Icons.Filled.Edit,
-                    onClick = onEdit,
-                    contentDescription = "Edit",
-                    tint = AppTheme.primary,
+                Switch(
+                    checked = feed.enabled,
+                    onCheckedChange = onToggle,
+                    colors = settingsSwitchColors(),
                 )
                 SettingsIconButton(
                     icon = Icons.Filled.Delete,

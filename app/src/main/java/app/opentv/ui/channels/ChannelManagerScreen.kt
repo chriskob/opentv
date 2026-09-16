@@ -7,7 +7,9 @@ package app.opentv.ui.channels
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -326,6 +328,13 @@ private fun ManagerRow(
             .fillMaxWidth()
             .settingsFocus(shape = SettingsShape.Row)
             .focusable()
+            // OK on the row toggles show/hide: the row is the focus target, so this is what lets
+            // the viewer reach the switch's action without the switch itself being focusable. The
+            // star beside it stays the separate favourite control.
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onToggleHidden() }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

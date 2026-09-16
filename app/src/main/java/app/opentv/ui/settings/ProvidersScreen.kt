@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -173,6 +174,8 @@ fun ProvidersScreen(
                 onToggle = { source, enabled -> viewModel.setEnabled(source, enabled) },
                 onDelete = { pendingRemove = it },
                 onSetLiveFormat = { source, format -> viewModel.setLiveFormat(source, format) },
+                onRefresh = { source -> viewModel.refreshSource(source) },
+                syncingSourceId = ui.syncingSourceId,
                 showMove = true,
                 onMove = { source, delta -> viewModel.moveSource(source.id, delta) },
             )
@@ -187,6 +190,8 @@ fun ProvidersScreen(
                     onToggle = { source, enabled -> viewModel.setEnabled(source, enabled) },
                     onDelete = { pendingRemove = it },
                     onSetLiveFormat = { source, format -> viewModel.setLiveFormat(source, format) },
+                    onRefresh = { source -> viewModel.refreshSource(source) },
+                    syncingSourceId = ui.syncingSourceId,
                 )
             }
         }
@@ -206,11 +211,13 @@ private fun ProviderSection(
     onToggle: (Source, Boolean) -> Unit,
     onDelete: (Source) -> Unit,
     onSetLiveFormat: (Source, LiveStreamFormat) -> Unit,
+    onRefresh: (Source) -> Unit,
+    syncingSourceId: Long?,
     emptyMessage: String? = null,
     showMove: Boolean = false,
     onMove: (Source, Int) -> Unit = { _, _ -> },
 ) {
-    SettingsSection(title = title, icon = icon) {
+    SettingsSection(title = title, icon = icon, collapsible = false) {
         if (sources.isEmpty() && emptyMessage != null) {
             SettingsEmptyState(title = emptyMessage)
         } else {
@@ -221,11 +228,13 @@ private fun ProviderSection(
                     index = index,
                     count = sources.size,
                     showMove = showMove,
+                    refreshing = syncingSourceId == source.id,
                     onMove = { onMove(source, it) },
                     onEdit = { onEdit(source) },
                     onToggle = { onToggle(source, it) },
                     onDelete = { onDelete(source) },
                     onSetLiveFormat = { onSetLiveFormat(source, it) },
+                    onRefresh = { onRefresh(source) },
                 )
             }
         }
@@ -268,11 +277,13 @@ private fun ProviderRow(
     index: Int,
     count: Int,
     showMove: Boolean,
+    refreshing: Boolean,
     onMove: (Int) -> Unit,
     onEdit: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
     onSetLiveFormat: (LiveStreamFormat) -> Unit,
+    onRefresh: () -> Unit,
 ) {
     Column(
         Modifier
@@ -388,6 +399,34 @@ private fun ProviderRow(
                 }
                 Spacer(Modifier.width(10.dp))
             }
+
+            // Update action: re-fetch just this playlist, then re-match the guide.
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .settingsFocus(shape = SettingsShape.Control, enabled = !refreshing)
+                    .focusable(!refreshing)
+                    .clickable(
+                        enabled = !refreshing,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onRefresh,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (refreshing) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "Update playlist",
+                        tint = AppTheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(10.dp))
 
             // Delete action button
             Row(

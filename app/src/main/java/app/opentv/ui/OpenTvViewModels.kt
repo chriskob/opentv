@@ -202,6 +202,8 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         val testError: String? = null,
         val syncing: Boolean = false,
         val syncMessage: String? = null,
+        /** Which playlist a single-source refresh is working on, or null for none. */
+        val syncingSourceId: Long? = null,
     )
 
     private val _ui = MutableStateFlow(UiState())
@@ -762,6 +764,36 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                         "${summary.channelsMatched} of ${summary.channelsTotal}."
                 } else {
                     "Refreshed $channels channels, $problems problem(s) — see Guide settings."
+                },
+            )
+        }
+    }
+
+    /**
+     * Re-fetch one playlist's channels and VOD in place, then re-match the guide. Unlike
+     * [refreshAll] this touches a single source and does not download any EPG feed — [runMatcher]
+     * re-points channels at guide data already stored, so a new channel gets its listings without
+     * a full guide refresh.
+     */
+    fun refreshSource(source: Source) {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(
+                syncing = true,
+                syncingSourceId = source.id,
+                syncMessage = "Updating ${source.name}…",
+            )
+            val now = System.currentTimeMillis()
+            val result = graph.catalogRepository.sync(source, now)
+            runCatching { graph.epgRepository.runMatcher() }
+            runCatching { graph.recordingEngine.rescanSeriesRules() }
+            _ui.value = _ui.value.copy(
+                syncing = false,
+                syncingSourceId = null,
+                syncMessage = when (result) {
+                    is CatalogRepository.SyncResult.Success ->
+                        "Updated ${source.name}: ${result.channelCount} channels."
+                    is CatalogRepository.SyncResult.Failed ->
+                        "Could not update ${source.name}: ${result.reason}"
                 },
             )
         }
