@@ -92,7 +92,14 @@ fun UpdateGate(viewModel: UpdateViewModel = viewModel()) {
             title = { Text("Update failed") },
             text = {
                 Column {
-                    Text("Could not download the update. Check the connection and try again.")
+                    Text(
+                        // A download failure has no reason attached; a session/install failure does.
+                        if (s.reason.isNullOrBlank()) {
+                            "Could not download the update. Check the connection and try again."
+                        } else {
+                            "The update could not be installed."
+                        },
+                    )
                     if (!s.reason.isNullOrBlank()) {
                         Text(
                             text = s.reason,

@@ -204,6 +204,7 @@ class ApkInstaller(private val http: OkHttpClient) {
         val installer = context.packageManager.packageInstaller
         val sessionId = installer.createSession(PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL))
         val session = installer.openSession(sessionId)
+        var committed = false
         try {
             apk.inputStream().use { source ->
                 session.openWrite("opentv-update.apk", 0, apk.length()).use { sink ->
@@ -281,10 +282,13 @@ class ApkInstaller(private val http: OkHttpClient) {
                     PendingIntent.FLAG_UPDATE_CURRENT or mutableFlag,
                 ).intentSender,
             )
+            committed = true
         } finally {
-            // abandon() is harmless after a commit: it discards a session that was never
-            // committed, and is rejected (caught here) for one that was.
-            runCatching { session.abandon() }
+            // Never abandon a session we just committed: the platform owns it now and is about to
+            // show its confirmation. The old unconditional abandon() tore it down first — exactly
+            // the INSTALL_FAILED_ABORTED "Session was abandoned" the update dialog surfaced. Only a
+            // session that never reached commit() is abandoned.
+            if (!committed) runCatching { session.abandon() }
             session.close()
         }
     }
