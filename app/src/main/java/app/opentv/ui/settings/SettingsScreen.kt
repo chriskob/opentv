@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -71,11 +70,10 @@ private enum class SettingsSection(
     CHANNELS(R.string.common_channels, R.string.settings_channels_subtitle, Icons.Filled.GridView),
     DISPLAY(R.string.settings_display_title, R.string.settings_display_subtitle, Icons.Filled.Tune),
     RECORDINGS(R.string.settings_recording_title, R.string.settings_recording_subtitle, Icons.Filled.Storage),
-    SYNC(R.string.settings_sync_title, R.string.settings_sync_subtitle, Icons.Filled.Sync),
     ADDONS(R.string.settings_addons_title, R.string.settings_addons_subtitle, Icons.Filled.Extension),
-    WEB_MANAGER(R.string.settings_webmanager_title, R.string.settings_webmanager_subtitle, Icons.Filled.Devices),
     PROFILES(R.string.settings_profiles_title, R.string.settings_profiles_subtitle, Icons.Filled.Person),
     PARENTAL(R.string.settings_parental_title, R.string.settings_parental_subtitle, Icons.Filled.Lock),
+    WEB_MANAGER(R.string.settings_webmanager_title, R.string.settings_webmanager_subtitle, Icons.Filled.Devices),
     ABOUT(R.string.settings_about_title, R.string.settings_about_subtitle, Icons.Filled.Info),
 }
 
@@ -98,8 +96,9 @@ fun SettingsScreen(
     onDismiss: () -> Unit,
 ) {
     // A section is always selected: the hub used to boot to an empty "choose a section" pane, which
-    // spent half the screen apologising. Display is the page people come here for most.
-    var selected by remember { mutableStateOf(SettingsSection.DISPLAY) }
+    // spent half the screen apologising. It opens on Providers — the top of the list and the first
+    // thing people come here to manage.
+    var selected by remember { mutableStateOf(SettingsSection.PROVIDERS) }
     val menuFocus = remember { FocusRequester() }
     // A page's own back control hands focus back to the drawer, which re-expands it.
     val refocusMenu: () -> Unit = { runCatching { menuFocus.requestFocus() } }
@@ -150,7 +149,6 @@ fun SettingsScreen(
                 SettingsSection.CHANNELS -> ChannelManagerScreen(onBack = refocusMenu)
                 SettingsSection.DISPLAY -> AppSettingsScreen(onBack = refocusMenu)
                 SettingsSection.RECORDINGS -> RecordingSettingsScreen(onBack = refocusMenu)
-                SettingsSection.SYNC -> SyncScreen(onBack = refocusMenu)
                 SettingsSection.ADDONS -> StremioAddonsScreen(onBack = refocusMenu)
                 SettingsSection.WEB_MANAGER -> WebManagerScreen(onBack = refocusMenu)
                 SettingsSection.PROFILES -> ProfilesScreen(onBack = refocusMenu)
@@ -195,7 +193,7 @@ private fun SettingsDrawer(
             .focusGroup()
             .padding(vertical = 10.dp),
     ) {
-        // One flat list that all scrolls together — sections, then the two actions. Nothing is
+        // One flat list that all scrolls together — sections, then the trailing actions. Nothing is
         // pinned: the old layout kept Search on top and Remote/Done glued to the bottom, which ate
         // a third of a short drawer and split one menu into three.
         Column(
@@ -206,18 +204,22 @@ private fun SettingsDrawer(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            SettingsSection.entries.forEach { section ->
-                SettingsNavRow(
-                    title = stringResource(section.titleRes),
-                    icon = section.icon,
-                    selected = selected == section,
-                    expanded = expanded,
-                    titleSize = 16.sp,
-                    titleWeight = FontWeight.Normal,
-                    onClick = { onSelect(section) },
-                    modifier = if (selected == section) Modifier.focusRequester(menuFocus) else Modifier,
-                )
-            }
+            // Sections, in menu order. About is drawn below Remote Support so it sits last, just
+            // above Done.
+            SettingsSection.entries
+                .filter { it != SettingsSection.ABOUT }
+                .forEach { section ->
+                    SettingsNavRow(
+                        title = stringResource(section.titleRes),
+                        icon = section.icon,
+                        selected = selected == section,
+                        expanded = expanded,
+                        titleSize = 16.sp,
+                        titleWeight = FontWeight.Normal,
+                        onClick = { onSelect(section) },
+                        modifier = if (selected == section) Modifier.focusRequester(menuFocus) else Modifier,
+                    )
+                }
             SettingsNavRow(
                 title = stringResource(R.string.settings_remote_title),
                 icon = Icons.Filled.PhoneAndroid,
@@ -225,6 +227,16 @@ private fun SettingsDrawer(
                 titleSize = 16.sp,
                 titleWeight = FontWeight.Normal,
                 onClick = onOpenRemotePairing,
+            )
+            SettingsNavRow(
+                title = stringResource(R.string.settings_about_title),
+                icon = SettingsSection.ABOUT.icon,
+                selected = selected == SettingsSection.ABOUT,
+                expanded = expanded,
+                titleSize = 16.sp,
+                titleWeight = FontWeight.Normal,
+                onClick = { onSelect(SettingsSection.ABOUT) },
+                modifier = if (selected == SettingsSection.ABOUT) Modifier.focusRequester(menuFocus) else Modifier,
             )
             SettingsNavRow(
                 title = stringResource(R.string.common_done),
