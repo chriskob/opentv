@@ -52,17 +52,17 @@ keep it alive. That is the entire point.
 
 The live TV guide — program grid, favorites, and a live preview:
 
-![OpenTV live TV guide](docs/screenshots/01-guide.png)
+![OpenTV live TV guide](docs/screenshots/redesign/guide.png)
 
-| Recordings &amp; reminders | Free cloud sync — your own NAS, no server |
+| Main menu | Settings — display & playback |
 | :---: | :---: |
-| ![Recordings and reminders](docs/screenshots/02-recordings.png) | ![NAS cloud sync](docs/screenshots/03-cloud-sync.png) |
-| Movies &amp; series | Settings |
-| ![Movies](docs/screenshots/04-movies.png) | ![Settings](docs/screenshots/05-settings.png) |
+| ![OpenTV main menu](docs/screenshots/redesign/main-menu.png) | ![Display and playback settings](docs/screenshots/redesign/settings-display-playback.png) |
+| Recording settings | Player controls |
+| ![Recording settings](docs/screenshots/redesign/settings-recording.png) | ![Player controls](docs/screenshots/redesign/player-controls.png) |
 
 Open-source through and through — the About screen carries the license, the links, and a donation QR:
 
-![About](docs/screenshots/06-about.png)
+![About](docs/screenshots/redesign/about.png)
 
 ## What it deliberately does not do
 
