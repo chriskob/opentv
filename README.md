@@ -43,7 +43,7 @@ keep it alive. That is the entire point.
 - **Favorites, categories, hide channels, search**, picture-in-picture, aspect control, and
   hand-off to an external player
 - **Free sync between your own devices** — favorites, watch history and NAS recordings, over
-  your wifi or Tailscale, with no server of ours
+  your Wi-Fi or Tailscale, with no server of ours
 - **English and Polish** interfaces, a parental PIN, profiles, and self-updates
 - **D-pad first** — designed for a remote, works with a touchscreen
 - **One APK** for Android TV, Fire TV, phones and tablets
