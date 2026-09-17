@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.7
+
+- **The guide's long-press menu is legible again.** Its primary row drew an accent label on an
+  accent fill; it now uses the solid accent with on-accent ink, switching to light ink on focus.
+- **Star a channel from the programme menu.** Long-pressing a programme now offers Add/Remove
+  favourite alongside the record and reminder actions.
+- **Reminder bells in the guide.** A programme you have set a reminder for wears a bell on its
+  block, and the bell clears when the reminder is cancelled.
+
 ## 0.16.6
 
 - **Player buttons are theme-coloured rings, not solid discs.** Each transport control is now a
