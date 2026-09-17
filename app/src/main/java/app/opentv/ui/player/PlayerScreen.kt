@@ -302,7 +302,19 @@ fun PlayerScreen(
         }
     }
     LaunchedEffect(paused) { app.opentv.core.PipState.isPlaying = !paused }
-    val barFocus = remember { FocusRequester() }
+    // One requester per centre transport button, so the cursor returns to the button the viewer
+    // last used instead of snapping back to play/pause after every action. Index 2 is play/pause.
+    val transportFocus = remember { List(5) { FocusRequester() } }
+    var transportIndex by remember { mutableIntStateOf(2) }
+
+    /**
+     * Puts the cursor back on the transport button the viewer was on. Used whenever the controls
+     * tier is (re)entered, so moving along the row and pressing a button keeps focus there rather
+     * than jumping to play/pause.
+     */
+    fun focusTransport() {
+        runCatching { transportFocus[transportIndex.coerceIn(0, transportFocus.lastIndex)].requestFocus() }
+    }
     val historyFocus = remember { FocusRequester() }
     val timelineFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
@@ -1024,7 +1036,7 @@ fun PlayerScreen(
                 when {
                     panel != Panel.NONE -> panelFocus.requestFocus()
                     osdTier == OsdTier.TIMELINE -> timelineFocus.requestFocus()
-                    osdTier == OsdTier.CONTROLS -> barFocus.requestFocus()
+                    osdTier == OsdTier.CONTROLS -> focusTransport()
                     osdTier == OsdTier.SHORTCUTS -> {
                         subMenuFocusedIndex = 0
                         subMenuFocusRequesters[visibleSubMenuButtons.firstOrNull()]?.requestFocus()
@@ -1046,7 +1058,7 @@ fun PlayerScreen(
                 when (osdTier) {
                     OsdTier.TIMELINE -> {
                         osdTier = OsdTier.CONTROLS
-                        scope.launch { delay(16); runCatching { barFocus.requestFocus() } }
+                        scope.launch { delay(16); focusTransport() }
                     }
                     OsdTier.CONTROLS -> {
                         osdTier = OsdTier.HISTORY
@@ -1113,7 +1125,7 @@ fun PlayerScreen(
                                 when (event.key) {
                                     Key.DirectionDown -> {
                                         osdTier = OsdTier.CONTROLS
-                                        scope.launch { delay(16); runCatching { barFocus.requestFocus() } }
+                                        scope.launch { delay(16); focusTransport() }
                                         true
                                     }
                                     Key.DirectionLeft -> {
@@ -1161,7 +1173,7 @@ fun PlayerScreen(
                                 when (event.key) {
                                     Key.DirectionUp -> {
                                         osdTier = OsdTier.CONTROLS
-                                        scope.launch { delay(16); runCatching { barFocus.requestFocus() } }
+                                        scope.launch { delay(16); focusTransport() }
                                         true
                                     }
                                     Key.DirectionDown -> {
@@ -1647,9 +1659,12 @@ fun PlayerScreen(
                                 contentDescription = stringResource(R.string.player_rewind),
                                 size = 38.dp,
                                 iconSize = 20.dp,
+                                focusRequester = transportFocus[0],
+                                onFocusChanged = { if (it) transportIndex = 0 },
                                 onClick = {
                                     controller.player.seekTo(0L)
                                     interaction++
+                                    scope.launch { delay(16); focusTransport() }
                                 },
                             )
 
@@ -1659,6 +1674,8 @@ fun PlayerScreen(
                                 contentDescription = stringResource(R.string.player_rewind),
                                 size = 38.dp,
                                 iconSize = 20.dp,
+                                focusRequester = transportFocus[1],
+                                onFocusChanged = { if (it) transportIndex = 1 },
                                 onClick = {
                                     // stepBack, not a blind seek: on a live stream there is often
                                     // nothing behind the playhead to seek into, and stepBack is what
@@ -1666,22 +1683,26 @@ fun PlayerScreen(
                                     // the two-stage rule.
                                     stepBack(10_000L)
                                     interaction++
+                                    scope.launch { delay(16); focusTransport() }
                                 },
                             )
 
-                            // Play / Pause (|| / ▶) - 46dp solid white circle with dark icon (focused by default in Tier 2)
+                            // Play / Pause (|| / ▶) - the centre button, and the default cursor target
+                            // when the controls tier is first entered.
                             TransportButton(
                                 icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                                 contentDescription = if (paused) stringResource(R.string.player_play) else stringResource(R.string.player_pause),
                                 size = 46.dp,
                                 iconSize = 24.dp,
                                 isPrimary = true,
-                                focusRequester = barFocus,
+                                focusRequester = transportFocus[2],
+                                onFocusChanged = { if (it) transportIndex = 2 },
                                 onClick = {
                                     val targetPlaying = paused
                                     controller.player.playWhenReady = targetPlaying
                                     paused = !targetPlaying
                                     interaction++
+                                    scope.launch { delay(16); focusTransport() }
                                 },
                             )
 
@@ -1691,6 +1712,8 @@ fun PlayerScreen(
                                 contentDescription = stringResource(R.string.player_forward),
                                 size = 38.dp,
                                 iconSize = 20.dp,
+                                focusRequester = transportFocus[3],
+                                onFocusChanged = { if (it) transportIndex = 3 },
                                 onClick = {
                                     val cur = controller.player.currentPosition
                                     val dur = controller.player.duration
@@ -1700,6 +1723,7 @@ fun PlayerScreen(
                                         controller.player.seekTo(cur + 10_000L)
                                     }
                                     interaction++
+                                    scope.launch { delay(16); focusTransport() }
                                 },
                             )
 
@@ -1709,11 +1733,14 @@ fun PlayerScreen(
                                 contentDescription = stringResource(R.string.player_forward),
                                 size = 38.dp,
                                 iconSize = 20.dp,
+                                focusRequester = transportFocus[4],
+                                onFocusChanged = { if (it) transportIndex = 4 },
                                 onClick = {
                                     // goLive, not a bare seekToDefaultPosition: after a rewind the
                                     // open item is a catch-up stream, and its end is the end of that
                                     // programme, not now.
                                     goLive()
+                                    scope.launch { delay(16); focusTransport() }
                                 },
                             )
                         }
@@ -2672,21 +2699,19 @@ private fun TransportButton(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val bg = when {
-        isPrimary -> AppTheme.primary
-        focused -> AppTheme.palette.cursorFill
-        else -> AppTheme.palette.chipSurface.copy(alpha = 0.65f)
-    }
+    // A theme-coloured ring, never a solid disc: the picture shows through, and the focused control
+    // is the only one that reads as filled (a translucent accent wash). Nothing is permanently
+    // filled, so the cursor is never mistaken for the always-on play/pause emphasis.
+    val bg = if (focused) AppTheme.palette.cursorFill else Color.Transparent
     val icTint = when {
-        isPrimary -> AppTheme.palette.onFocusSurface
+        focused -> AppTheme.palette.onCursor
         iconTint != null -> iconTint
-        else -> AppTheme.palette.onSurface
+        else -> AppTheme.primary
     }
-    val ring = when {
-        focused && isPrimary -> AppTheme.palette.onFocusSurface
-        focused -> AppTheme.palette.cursorBorder
-        isPrimary -> AppTheme.palette.cursorBorder
-        else -> AppTheme.palette.outlineVariant
+    val ringWidth = when {
+        focused -> 2.5.dp
+        isPrimary -> 2.dp
+        else -> 1.5.dp
     }
 
     Box(
@@ -2699,7 +2724,7 @@ private fun TransportButton(
             }
             .clip(CircleShape)
             .background(bg)
-            .border(if (focused) 2.5.dp else 1.dp, ring, CircleShape)
+            .border(ringWidth, AppTheme.primary, CircleShape)
             .focusable()
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
