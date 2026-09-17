@@ -49,8 +49,8 @@ android {
         applicationId = "app.opentv"
         minSdk = project.findProperty("devMinSdk")?.toString()?.toIntOrNull() ?: 23
         targetSdk = 35
-        versionCode = 130
-        versionName = "0.16.4"
+        versionCode = 131
+        versionName = "0.16.5"
 
         /*
          * Only the languages OpenTV itself ships: English (the default resources) and Polish.

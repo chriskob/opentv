@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.5
+
+- **Providers: the per-playlist control is a labelled "Update" button.** It replaces the refresh
+  icon, and still spins in place while it re-fetches that playlist and re-matches its guide.
+- **Channels: the favourite star is reachable from the remote again.** OK on the row toggles
+  show/hide; move right onto the star and OK to favourite. The star used to sit inside the row's
+  focus area, where the d-pad could not reach it.
+
 ## 0.16.4
 
 - **The cursor stays on "Check for updates".** Pressing it used to disable the button, which made
