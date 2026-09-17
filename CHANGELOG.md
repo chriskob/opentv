@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.6
+
+- **Player buttons are theme-coloured rings, not solid discs.** Each transport control is now a
+  circle outlined in the theme accent with an accent icon; only the focused button fills, so the
+  play/pause no longer looks permanently selected.
+- **The player cursor stays on the button you pressed.** Every transport button remembers focus, so
+  moving along the row and pressing one keeps the cursor there instead of jumping back to
+  play/pause. Play/pause is the default only when the player is first opened.
+
 ## 0.16.5
 
 - **Providers: the per-playlist control is a labelled "Update" button.** It replaces the refresh
