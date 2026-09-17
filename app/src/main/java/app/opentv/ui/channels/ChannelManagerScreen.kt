@@ -28,8 +28,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -60,6 +58,7 @@ import app.opentv.R
 import app.opentv.data.model.shownName
 import app.opentv.ui.ChannelsViewModel
 import app.opentv.ui.settings.components.*
+import app.opentv.ui.theme.AppTheme
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 
@@ -326,47 +325,59 @@ private fun ManagerRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .settingsFocus(shape = SettingsShape.Row)
-            .focusable()
-            // OK on the row toggles show/hide: the row is the focus target, so this is what lets
-            // the viewer reach the switch's action without the switch itself being focusable. The
-            // star beside it stays the separate favourite control.
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { onToggleHidden() }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
-            model = row.primary.logoUrl,
-            contentDescription = null,
-            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)),
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                row.primary.shownName,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        // The show/hide target is the row body, not the whole row: the star must sit outside its
+        // bounds or the d-pad can never reach it — a nested focusable inside a full-width focus
+        // target is skipped by geometry. Mirrors ProvidersScreen, where trailing controls are
+        // siblings of the focusable area for the same reason.
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .settingsFocus(shape = SettingsShape.Row)
+                .focusable()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onToggleHidden() }
+                // The row body is now the leftmost control, so it carries the LEFT-to-rail handler.
+                .then(leftEdgeModifier)
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AsyncImage(
+                model = row.primary.logoUrl,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)),
             )
-            Text(
-                if (hidden) stringResource(R.string.channels_hidden) else stringResource(R.string.channels_showing),
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (hidden) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.primary,
-            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    row.primary.shownName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (hidden) stringResource(R.string.channels_hidden) else stringResource(R.string.channels_showing),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (hidden) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.primary,
+                )
+            }
         }
 
-        // The star is the row's leftmost focusable, so it carries the LEFT-to-rail handler.
-        IconButton(onClick = onToggleFavourite, modifier = leftEdgeModifier) {
-            Icon(
-                imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                contentDescription = if (row.primary.favourite) stringResource(R.string.common_remove_favourite) else stringResource(R.string.common_favourite),
-            )
-        }
+        // The star is the favourite control. As a sibling of the body it is its own focus target,
+        // so RIGHT reaches it and OK stars the channel (alongside the body's show/hide toggle).
+        SettingsIconButton(
+            icon = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+            onClick = onToggleFavourite,
+            contentDescription = if (row.primary.favourite) stringResource(R.string.common_remove_favourite)
+            else stringResource(R.string.common_favourite),
+            tint = if (row.primary.favourite) AppTheme.primary else null,
+        )
         Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(stringResource(R.string.channels_show), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)

@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -401,9 +400,8 @@ private fun ProviderRow(
             }
 
             // Update action: re-fetch just this playlist, then re-match the guide.
-            Box(
-                Modifier
-                    .size(40.dp)
+            Row(
+                modifier = Modifier
                     .settingsFocus(shape = SettingsShape.Control, enabled = !refreshing)
                     .focusable(!refreshing)
                     .clickable(
@@ -411,17 +409,20 @@ private fun ProviderRow(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClick = onRefresh,
-                    ),
-                contentAlignment = Alignment.Center,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (refreshing) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(
-                        imageVector = Icons.Filled.Refresh,
-                        contentDescription = "Update playlist",
-                        tint = AppTheme.primary,
-                        modifier = Modifier.size(18.dp),
+                    Text(
+                        text = stringResource(R.string.provider_update),
+                        color = AppTheme.primary,
+                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

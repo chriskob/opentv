@@ -359,6 +359,7 @@
     <string name="provider_stream_format_hls">HLS (.m3u8)</string>
     <string name="provider_stream_format_ts">MPEG-TS (.ts)</string>
     <string name="provider_stream_format_hint">HLS is the default. If channels won\'t play, try MPEG-TS — some providers only offer .ts.</string>
+    <string name="provider_update">Update</string>
 
     <!-- ============================ Recording settings ============================ -->
     <string name="recset_desc">Choose where recordings are saved. Internal keeps them on this device; a USB drive stores them on removable storage; NAS saves them to a shared folder on your network. All still play back here.</string>

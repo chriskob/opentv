@@ -264,6 +264,7 @@
     <string name="provider_stream_format_hls">HLS (.m3u8)</string>
     <string name="provider_stream_format_ts">MPEG-TS (.ts)</string>
     <string name="provider_stream_format_hint">HLS jest ustawieniem domyślnym. Jeśli kanały się nie odtwarzają, spróbuj MPEG-TS — niektórzy dostawcy oferują tylko .ts.</string>
+    <string name="provider_update">Aktualizuj</string>
     <string name="recset_desc">Wybierz, gdzie zapisywane są nagrania. Pamięć wewnętrzna przechowuje je na tym urządzeniu; dysk USB zapisuje je na nośniku wymiennym; NAS zapisuje je w folderze udostępnionym w Twojej sieci. Wszystkie nadal odtwarzasz tutaj.</string>
     <string name="recset_save_to">Zapisuj nagrania w</string>
     <string name="recset_internal_label">To urządzenie (pamięć wewnętrzna)</string>
