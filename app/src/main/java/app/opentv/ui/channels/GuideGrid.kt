@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
@@ -194,6 +195,8 @@ fun GuideGrid(
     /** Channel ids whose catch-up the resolver can actually build (per-channel capability) —
      *  the guide's catch-up badge shows exactly for these, never for the rest. */
     catchUpChannelIds: Set<Long> = emptySet(),
+    /** (channelId, programme start) pairs the viewer has set a reminder for — each draws a bell. */
+    reminderKeys: Set<Pair<Long, Long>> = emptySet(),
     /** "EPG updated … · N channels" stamp shown in the time header, or null until first sync. */
     epgInfoLine: String? = null,
     /** Increment to ask the grid to restore the cursor onto the playing channel at "now". */
@@ -832,6 +835,7 @@ fun GuideGrid(
                             anchorState = temporalAnchorState,
                             scroll = scroll,
                             catchUpChannelIds = catchUpChannelIds,
+                            reminderKeys = reminderKeys,
                             isSelected = isPlaying,
                             previewHighlight = isPreviewAnchor,
                             rowFocusRequester = rowRequester,
@@ -1294,6 +1298,7 @@ private fun GuideRow(
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     catchUpChannelIds: Set<Long> = emptySet(),
+    reminderKeys: Set<Pair<Long, Long>> = emptySet(),
     previewHighlight: Boolean = false,
     isSelected: Boolean,
     /** Focused row key, read through a derivedStateOf so focus moves only recompose changed rows. */
@@ -1605,6 +1610,9 @@ private fun GuideRow(
                     val isTarget = pOrder == targetBlockIdx
                     val blockRequester = blockFocusRequesters.getOrNull(pOrder)
                     val extReq = if (isTarget && isFocused) externalFocusRequester else null
+                    // A reminder is stored against one channel id, but the row groups every quality
+                    // variant, so test them all — the bell then survives the primary changing.
+                    val hasReminder = row.variants.any { (it.id to prog.startUtcMillis) in reminderKeys }
 
                     key(prog.id) {
                         ProgrammeBlock(
@@ -1614,6 +1622,7 @@ private fun GuideRow(
                             progress = if (isNow) prog.progressAt(nowMillis) else 0f,
                             isNew = prog.isNewEpisode(),
                             isLive = prog.isLive,
+                            hasReminder = hasReminder,
                             pseudoFocused = previewHighlight && isTarget,
                             isRowHighlighted = isRowHighlighted,
                             focusRequester = blockRequester,
@@ -1717,6 +1726,8 @@ private fun ProgrammeBlock(
     isNew: Boolean = false,
     /** XMLTV `<live/>`: this programme is a live broadcast, so it wears a LIVE chip like NEW. */
     isLive: Boolean = false,
+    /** The viewer has a reminder set for this programme, so it wears a bell. */
+    hasReminder: Boolean = false,
     pseudoFocused: Boolean = false,
     isRowHighlighted: Boolean = false,
     focusRequester: FocusRequester? = null,
@@ -1803,6 +1814,14 @@ private fun ProgrammeBlock(
         ) {
             if (isLive) GuideBadge("LIVE", AppTheme.palette.recording)
             if (isNew) GuideBadge("NEW", AppTheme.palette.live)
+            if (hasReminder) {
+                Icon(
+                    imageVector = Icons.Filled.Notifications,
+                    contentDescription = stringResource(R.string.guide_reminder_badge),
+                    tint = AppTheme.palette.favourite,
+                    modifier = Modifier.padding(end = 4.dp).size(12.dp),
+                )
+            }
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium.copy(

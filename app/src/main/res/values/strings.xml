@@ -39,6 +39,7 @@
     <string name="guide_reminder_removed">Reminder removed</string>
     <string name="guide_remind_me">🔔  Remind me</string>
     <string name="guide_reminder_set">🔔 Reminder set: %1$s</string>
+    <string name="guide_reminder_badge">Reminder set</string>
     <string name="guide_auto_switch">📺  Auto-switch when it starts</string>
     <string name="guide_will_switch">📺 Will switch to %1$s at start</string>
     <string name="guide_watch_channel">Watch channel</string>

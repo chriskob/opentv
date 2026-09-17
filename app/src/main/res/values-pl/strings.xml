@@ -30,6 +30,7 @@
     <string name="guide_reminder_removed">Przypomnienie usunięte</string>
     <string name="guide_remind_me">🔔  Przypomnij mi</string>
     <string name="guide_reminder_set">🔔 Przypomnienie ustawione: %1$s</string>
+    <string name="guide_reminder_badge">Przypomnienie ustawione</string>
     <string name="guide_auto_switch">📺  Automatyczne przełączenie po rozpoczęciu</string>
     <string name="guide_will_switch">📺 Przełączy na %1$s po rozpoczęciu</string>
     <string name="guide_watch_channel">Oglądaj kanał</string>

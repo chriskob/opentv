@@ -269,6 +269,12 @@ fun HomeScreen(
 
     // Recording from the guide: what's capturing now, and a scope to kick a capture off.
     val activeRecordings by graph.recordingRepository.observeActive().collectAsState(initial = emptyList())
+    // Programme reminders, so the guide can stamp a bell on every block the viewer has a reminder
+    // for. Keyed by (channel, slot) — the same pair a reminder is de-duped on.
+    val reminders by graph.reminderRepository.observeAll().collectAsState(initial = emptyList())
+    val reminderKeys = remember(reminders) {
+        reminders.map { it.channelId to it.startUtcMillis }.toSet()
+    }
     val scope = rememberCoroutineScope()
 
     /**
@@ -1500,6 +1506,7 @@ fun HomeScreen(
                         windowStartMillis = windowStart,
                         dayOffset = guideHourOffset / 24,
                         catchUpChannelIds = catchUpChannelIds,
+                        reminderKeys = reminderKeys,
                         epgInfoLine = epgInfoLine,
                         restoreTick = guideRestoreTick,
                         onTimeShifted = { timeShifted = it },
@@ -1713,6 +1720,13 @@ fun HomeScreen(
                         recordTarget = null
                     }
                 }
+                RecordActionRow(
+                    if (channel.favourite) stringResource(R.string.common_remove_favourite)
+                    else stringResource(R.string.common_favourite),
+                ) {
+                    viewModel.toggleFavourite(targetRow)
+                    recordTarget = null
+                }
                 RecordActionRow("Watch Live Channel") {
                     recordTarget = null
                     requestLive(channel)
@@ -1915,16 +1929,26 @@ private suspend fun setReminder(
 private fun RecordActionRow(label: String, primary: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
+    // primaryContainer/onPrimaryContainer are both accent shades in this palette, so the old
+    // primary row was accent-on-accent — unreadable, and worst on the focused first row. Use the
+    // solid accent with the on-accent ink, and flip to the light onSurface ink while focused, the
+    // same contrast rule SettingsButton uses.
+    val fill = if (primary) AppTheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val content = when {
+        primary && focused -> MaterialTheme.colorScheme.onSurface
+        primary -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
     Text(
         label,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal,
-        color = if (primary) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+        color = content,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .clip(shape)
-            .background(if (primary) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+            .background(fill)
             .tvFocus(shape = shape, onFocusChange = { focused = it })
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
