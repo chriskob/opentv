@@ -200,7 +200,7 @@
     <string name="settings_providers_subtitle">Add, remove and re-test your IPTV sources</string>
     <string name="settings_addons_title">Add-ons (Stremio)</string>
     <string name="settings_addons_subtitle">Play from Stremio add-ons you set up yourself</string>
-    <string name="addons_note">Add a Stremio add-on by pasting its manifest URL. OpenTV ships with none — you bring your own. If the add-on is debrid-backed, set your debrid key up on the add-on\'s own site and paste the personalised URL it gives you; your key stays there, never in OpenTV.</string>
+    <string name="addons_note">Add a Stremio add-on by pasting its manifest URL. OpenTV ships with none — you bring your own. If the add-on is debrid-backed, set your debrid key up on the add-on\'s own site and paste the personalized URL it gives you; your key stays there, never in OpenTV.</string>
     <string name="addons_url_label">Add-on manifest URL</string>
     <string name="addons_add">Add</string>
     <string name="addons_checking">Checking…</string>
@@ -221,9 +221,9 @@
     <string name="settings_sync_title">Sync watch history</string>
     <string name="settings_sync_subtitle">Copy continue-watching to another device over wifi</string>
     <string name="settings_about_title">About</string>
-    <string name="settings_about_subtitle">Version, updates, licence and links</string>
-    <string name="settings_show_fav_category_title">Favourites category</string>
-    <string name="settings_show_fav_category_subtitle">Show the Favourites entry in the guide\'s category list</string>
+    <string name="settings_about_subtitle">Version, updates, license and links</string>
+    <string name="settings_show_fav_category_title">Favorites category</string>
+    <string name="settings_show_fav_category_subtitle">Show the Favorites entry in the guide\'s category list</string>
     <string name="settings_pick_from_menu">Choose a section from the menu on the left</string>
     <string name="settings_menu_heading">Settings</string>
     <string name="settings_search_nav">Search settings</string>
@@ -237,9 +237,9 @@
     <string name="settings_group_network">Network &amp; sharing</string>
     <string name="settings_group_system">System</string>
     <string name="settings_profiles_title">Profiles</string>
-    <string name="settings_profiles_subtitle">Watch history and favourites per person</string>
+    <string name="settings_profiles_subtitle">Watch history and favorites per person</string>
     <string name="profiles_empty_title">No profiles yet</string>
-    <string name="profiles_empty_message">Add a profile so each person keeps their own watch history and favourites.</string>
+    <string name="profiles_empty_message">Add a profile so each person keeps their own watch history and favorites.</string>
     <string name="settings_remote_title">Remote Support</string>
     <string name="settings_remote_subtitle">Edit, add or troubleshoot playlists remotely</string>
     <string name="settings_providers_page_subtitle">Manage connected IPTV playlists, Xtream codes servers and portals</string>
@@ -248,9 +248,9 @@
     <string name="settings_recording_page_subtitle">Configure DVR storage, network shares (SMB), padding and the background engine</string>
     <string name="settings_sync_page_subtitle">Sync watch progress across devices on your local network</string>
     <string name="settings_addons_page_subtitle">Configure movie and series stream providers and Stremio manifests</string>
-    <string name="settings_profiles_page_subtitle">Manage multi-user watch history and personalised favourites</string>
+    <string name="settings_profiles_page_subtitle">Manage multi-user watch history and personalized favorites</string>
     <string name="settings_parental_page_subtitle">Manage PIN protection and hide sensitive channel categories</string>
-    <string name="settings_about_page_subtitle">OpenTV application details, updates and open-source licences</string>
+    <string name="settings_about_page_subtitle">OpenTV application details, updates and open-source licenses</string>
 
     <!-- ============================ Display & playback settings ============================ -->
     <string name="settings_appearance">Appearance</string>
@@ -305,7 +305,7 @@
     <string name="settings_data_refresh_note">How often the playlist and guide are re-downloaded in the background. Data is saved and cached — it only reloads when stale.</string>
     <string name="settings_playlist_refresh">Playlist refresh</string>
     <string name="settings_playlist_refresh_hint">How often to check playlists for channel and VOD updates</string>
-    <string name="settings_guide_refresh_hint">How often to fetch fresh TV guide and programme data</string>
+    <string name="settings_guide_refresh_hint">How often to fetch fresh TV guide and program data</string>
     <string name="settings_guide_last_updated">Guide updated %1$s · %2$d channels</string>
     <string name="settings_guide_not_synced">Guide has not synced yet</string>
     <string name="settings_guide_refresh">Guide refresh</string>
@@ -389,8 +389,8 @@
     <string name="recset_status_failed">Couldn\'t connect: %1$s</string>
     <string name="recset_test_connection">Test connection</string>
     <string name="recset_status_saved">Saved.</string>
-    <!-- Recording behaviour -->
-    <string name="recset_behaviour_title">Recording behaviour</string>
+    <!-- Recording behavior -->
+    <string name="recset_behaviour_title">Recording behavior</string>
     <string name="recset_pad_start">Start early</string>
     <string name="recset_pad_start_desc">Begin recording this many minutes before the listed start time</string>
     <string name="recset_pad_end">End late</string>
@@ -442,7 +442,7 @@
     <string name="sync_synced_items">Synced %1$d item(s).</string>
     <string name="sync_nas">NAS (cloud)</string>
     <string name="sync_nas_title">Sync through your NAS</string>
-    <string name="sync_nas_desc">Sync favourites, watch history and NAS recordings between all your devices through your own NAS. No server, no account.</string>
+    <string name="sync_nas_desc">Sync favorites, watch history and NAS recordings between all your devices through your own NAS. No server, no account.</string>
     <string name="sync_nas_needs_setup">Set up your NAS under Settings → Recording first, then come back here.</string>
     <string name="sync_nas_sync_now">Sync now</string>
     <string name="sync_nas_syncing">Syncing…</string>
@@ -512,7 +512,7 @@
 
     <!-- ============================ Manage on phone / laptop (web) ============================ -->
     <string name="webmanager_title">Manage on your phone or laptop</string>
-    <string name="webmanager_desc">Open this on a phone or laptop on the same wifi to browse, hide, favourite, rename and reorder your channels — with a real keyboard and mouse. Changes apply to this TV straight away.</string>
+    <string name="webmanager_desc">Open this on a phone or laptop on the same Wi-Fi to browse, hide, favorite, rename and reorder your channels — with a real keyboard and mouse. Changes apply to this TV straight away.</string>
     <string name="webmanager_qr_desc">QR code linking to the channel manager on this device</string>
     <string name="webmanager_open_browser">Camera won\'t scan it? Open this in any browser on the same wifi:</string>
     <string name="webmanager_local_only">This page is served by this television, over your own network — it never leaves your home.</string>
@@ -520,7 +520,7 @@
 
     <!-- ============================ Channel manager ============================ -->
     <string name="channels_manager_title">Channel manager</string>
-    <string name="channels_manager_hint">Search to hide or favourite channels</string>
+    <string name="channels_manager_hint">Search to hide or favorite channels</string>
     <string name="channels_manager_search_hint">Search for a channel, then hide it from the guide or star it.</string>
     <string name="channels_manager_no_match">No channels match “%1$s”.</string>
     <string name="channels_manager_all_sources">All sources</string>

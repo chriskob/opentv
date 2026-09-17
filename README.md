@@ -38,11 +38,11 @@ keep it alive. That is the entire point.
   never wipes itself
 - **Recording (DVR)** — record to the box, a USB drive or your NAS (SMB); schedule from the
   guide; series-link a whole show; play back in-app with full seeking
-- **Catch-up / archive** where your provider offers it, plus **programme reminders**
+- **Catch-up / archive** where your provider offers it, plus **program reminders**
 - **Movies and series** with resume and per-profile watch history
-- **Favourites, categories, hide channels, search**, picture-in-picture, aspect control, and
+- **Favorites, categories, hide channels, search**, picture-in-picture, aspect control, and
   hand-off to an external player
-- **Free sync between your own devices** — favourites, watch history and NAS recordings, over
+- **Free sync between your own devices** — favorites, watch history and NAS recordings, over
   your wifi or Tailscale, with no server of ours
 - **English and Polish** interfaces, a parental PIN, profiles, and self-updates
 - **D-pad first** — designed for a remote, works with a touchscreen
@@ -50,7 +50,7 @@ keep it alive. That is the entire point.
 
 ## Screenshots
 
-The live TV guide — programme grid, favourites, and a live preview:
+The live TV guide — program grid, favorites, and a live preview:
 
 ![OpenTV live TV guide](docs/screenshots/01-guide.png)
 
@@ -60,7 +60,7 @@ The live TV guide — programme grid, favourites, and a live preview:
 | Movies &amp; series | Settings |
 | ![Movies](docs/screenshots/04-movies.png) | ![Settings](docs/screenshots/05-settings.png) |
 
-Open-source through and through — the About screen carries the licence, the links, and a donation QR:
+Open-source through and through — the About screen carries the license, the links, and a donation QR:
 
 ![About](docs/screenshots/06-about.png)
 
@@ -149,7 +149,7 @@ If it saves you money or annoyance and you want to say thanks, you can sponsor t
 — see [.github/FUNDING.yml](.github/FUNDING.yml). Tips fund nothing except spare-evening development;
 nobody is owed a feature for one, and nothing is gated behind one.
 
-## Licence
+## License
 
 [GPL-3.0-or-later](LICENSE).
 

@@ -370,7 +370,7 @@ class XtreamApi(
                 // Panels behind a captive portal or Cloudflare return HTML here. Saying
                 // "not valid JSON" is useless to a user; say what it probably means.
                 throw XtreamException(
-                    "The server replied with something that is not a valid catalogue. " +
+                    "The server replied with something that is not a valid catalog. " +
                         "Check the address and port are correct.",
                     e,
                 )
@@ -403,7 +403,7 @@ class XtreamApi(
                 // Panels behind a captive portal or Cloudflare return HTML here. Saying
                 // "not valid JSON" is useless to a user; say what it probably means.
                 throw XtreamException(
-                    "The server replied with something that is not a valid catalogue. " +
+                    "The server replied with something that is not a valid catalog. " +
                         "Check the address and port are correct.",
                     e,
                 )

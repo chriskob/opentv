@@ -41,7 +41,7 @@ service that no longer exists.
 So OpenTV stores everything on the device, in SQLite. The consequences are accepted honestly:
 
 - Setting up a second TV means entering your details again. This is a real cost.
-- Favourites and channel ordering do not follow you between devices.
+- Favorites and channel ordering do not follow you between devices.
 
 And what is bought with it:
 
@@ -71,24 +71,24 @@ scratch. It fixes nothing. The next refresh fails the same way.
 
 `EpgRepository` never deletes before it has the replacement:
 
-1. Programmes are **upserted in batches of 500** as they stream out of the parser. The unique
+1. Programs are **upserted in batches of 500** as they stream out of the parser. The unique
    index on `(sourceId, epgChannelId, startUtcMillis)` makes this idempotent, so a sync that
    dies at 60% leaves 60% of a *fresher* guide — strictly better than what was there.
 2. Pruning happens **by age** (`deleteEndedBefore`), never by source, and only **after** a sync
    reports success.
 3. A failed sync leaves the previous guide completely intact and returns the reason.
 
-`XmltvParser` streams via `XmlPullParser` and emits programmes to a callback. A week of guide
+`XmltvParser` streams via `XmlPullParser` and emits programs to a callback. A week of guide
 data for a large provider is comfortably 150 MB of XML; nothing about that fits in the heap of
 a cheap TV stick, and `String`-based parsing is an OOM waiting to happen.
 
-**Times are stored as UTC epoch millis, always.** `XmltvParser.parseXmltvTime` normalises the
+**Times are stored as UTC epoch millis, always.** `XmltvParser.parseXmltvTime` normalizes the
 `+0100`-style offsets that XMLTV uses, treats a missing offset as UTC rather than guessing the
 device zone, and converts to local time only at draw time. `XmltvTimeTest` changes the JVM's
 default zone between assertions specifically to catch the "works on my machine, an hour out on
 yours" bug.
 
-## Catalogue refresh preserves what the user did
+## Catalog refresh preserves what the user did
 
 `ChannelDao.replaceCatalogue` merges rather than wipes: it reads existing rows, carries
 `favourite`, `hidden` and `sortIndex` across to the incoming rows by `streamId`, upserts, and
@@ -96,7 +96,7 @@ only then deletes channels the provider no longer lists.
 
 This is why `M3uParser` works so hard to produce a **stable** `streamId` for playlists with no
 `tvg-id` — an FNV-1a hash of the URL rather than `String.hashCode()`. An unstable id means
-every refresh looks like a completely new set of channels, and the user's favourites silently
+every refresh looks like a completely new set of channels, and the user's favorites silently
 vanish.
 
 ## SQLite's bound-variable limit is a real constraint here
@@ -104,7 +104,7 @@ vanish.
 Two queries are written in a non-obvious way because of it, and both are marked in the code.
 
 SQLite caps the number of bound variables in a statement — 999 on older Android versions,
-32766 on newer. A real IPTV catalogue has thousands of channels and a large playlist has tens
+32766 on newer. A real IPTV catalog has thousands of channels and a large playlist has tens
 of thousands. So neither of these works, despite being the natural thing to write:
 
 - `DELETE FROM channels WHERE streamId NOT IN (:everyCurrentId)` — replaced by a sync-stamp
@@ -126,7 +126,7 @@ teardowns, and the codec ends up in a state where nothing plays until the app is
 That is the entire mechanism behind "changing channels too quickly causes streams to fail", and
 it is self-inflicted.
 
-So: requests are debounced (350 ms), an in-flight switch is cancelled the moment a newer one
+So: requests are debounced (350 ms), an in-flight switch is canceled the moment a newer one
 arrives, and the player is `stop()`ed rather than released. Holding channel-up costs one actual
 tune — the one you stopped on.
 
@@ -154,13 +154,13 @@ only diagnostic the user had.
 
 ## Defensive parsing of Xtream responses
 
-`XtreamApi` reads `JsonElement` by hand instead of deserialising into `@Serializable` data
+`XtreamApi` reads `JsonElement` by hand instead of deserializing into `@Serializable` data
 classes, and every accessor returns null rather than throwing.
 
 Xtream Codes is not a standard. Different panel builds return the same field as a number, a
 quoted number, an empty string, `null`, or omit it. `stream_id` alone flips between `12345` and
-`"12345"`. Strict deserialisation means one unusual field aborts the parse of the entire
-catalogue, which the user experiences as "the app won't load my channels" with nothing to go on.
+`"12345"`. Strict deserialization means one unusual field aborts the parse of the entire
+catalog, which the user experiences as "the app won't load my channels" with nothing to go on.
 
 It is ugly. It is correct. Do not "clean it up" into typed models without a very large corpus
 of real panel responses to test against.
@@ -186,5 +186,5 @@ whole playlist.
 Things worth testing that are not yet covered, and would be very welcome contributions:
 
 - `EpgRepository.sync` against a mid-stream failure, asserting the old guide survives
-- `ChannelDao.replaceCatalogue` preserving favourites across a refresh
+- `ChannelDao.replaceCatalogue` preserving favorites across a refresh
 - `XtreamApi` against captured real-world panel responses (with credentials stripped)

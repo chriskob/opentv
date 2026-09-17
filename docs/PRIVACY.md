@@ -8,16 +8,16 @@ network call to any domain the project controls — because the project controls
 Everything lives in a SQLite database in the app's private storage on your device:
 
 - Your provider's address, username and password
-- The channel, movie and series catalogue downloaded from your provider
+- The channel, movie and series catalog downloaded from your provider
 - The guide (EPG)
-- Your favourites, hidden channels and resume positions
+- Your favorites, hidden channels and resume positions
 
 None of it is uploaded anywhere. There is no account to create and no server to sync with.
 
 ## Who your device talks to
 
 Only your provider, and only at the address you entered. Channel logos and posters are fetched
-from whatever URLs your provider puts in its catalogue, which are usually its own servers but
+from whatever URLs your provider puts in its catalog, which are usually its own servers but
 may be third parties — that is your provider's choice, not ours.
 
 ## Cleartext HTTP

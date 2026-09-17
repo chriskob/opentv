@@ -718,7 +718,7 @@ class CatalogRepository(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Catalogue sync failed for source ${source.id}", e)
-            SyncResult.Failed(e.message ?: "The catalogue could not be downloaded.", e)
+            SyncResult.Failed(e.message ?: "The catalog could not be downloaded.", e)
         }
     }
 
