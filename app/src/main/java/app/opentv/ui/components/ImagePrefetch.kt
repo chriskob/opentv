@@ -55,6 +55,27 @@ fun posterRequest(context: Context, url: String?): ImageRequest? {
 }
 
 /**
+ * Builds a channel-logo request with a stable cache key, namespaced away from posters.
+ *
+ * Logos are tiny (32-48dp) and numerous (one per guide row). Without an explicit size Coil
+ * decodes the provider's original (often 512px+) for a 36dp view, and without a stable key
+ * each size variant decodes separately — the same churn posters had before [posterRequest].
+ * Disk bytes are shared by URL; memory keys are partitioned as `logo:url:size` so a logo
+ * never collides with a poster for the same URL.
+ */
+fun logoRequest(context: Context, url: String?, sizePx: Int = 96): ImageRequest? {
+    if (url.isNullOrBlank()) return null
+    val px = sizePx.coerceIn(48, 256)
+    return ImageRequest.Builder(context)
+        .data(url)
+        .memoryCacheKey("logo:$url:$px")
+        .diskCacheKey(url)
+        .size(px, px)
+        .crossfade(false)
+        .build()
+}
+
+/**
  * Warms the image caches for the art just past the visible edge of a shelf or grid, so scrolling
  * into it shows decoded posters rather than a loading placeholder — the behaviour a viewer expects
  * from a paid IPTV player.

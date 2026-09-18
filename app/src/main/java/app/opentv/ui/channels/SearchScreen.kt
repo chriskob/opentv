@@ -56,6 +56,8 @@ import app.opentv.data.parser.displayTitle
 import app.opentv.ui.ChannelsViewModel
 import app.opentv.ui.VodViewModel
 import app.opentv.ui.components.tvFocus
+import app.opentv.ui.components.logoRequest
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -207,7 +209,7 @@ private fun SearchResultRow(row: ChannelsViewModel.Row, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
-            model = row.primary.logoUrl,
+            model = logoRequest(LocalContext.current, row.primary.logoUrl, 96),
             contentDescription = null,
             modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)),
         )

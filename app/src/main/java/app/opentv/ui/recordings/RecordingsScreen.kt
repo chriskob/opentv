@@ -62,6 +62,8 @@ import app.opentv.data.model.SeriesRule
 import app.opentv.recording.RecordingStorage
 import app.opentv.reminders.ReminderScheduler
 import app.opentv.ui.components.tvFocus
+import app.opentv.ui.components.logoRequest
+import androidx.compose.ui.platform.LocalContext
 import app.opentv.ui.theme.AppTheme
 import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.SharingStarted
@@ -360,7 +362,7 @@ private fun RecordingRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
-            model = recording.logoUrl,
+            model = logoRequest(LocalContext.current, recording.logoUrl, 128),
             contentDescription = null,
             modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp)),
         )

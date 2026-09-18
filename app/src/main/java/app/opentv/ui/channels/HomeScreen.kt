@@ -57,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -158,11 +159,9 @@ fun HomeScreen(
     val graph = remember { ServiceLocator.get(context) }
     val settings = remember { graph.settings }
     var isFullScreen by remember { mutableStateOf(false) }
-    // True for the ~300ms the picture takes to shrink out of full screen. The guide is only
-    // revealed once it has landed: revealing it in the same frame the shrink starts made Compose
-    // rebuild the whole guide while the shrink was still queued, so the guide painted over a
-    // picture that was still full size — the channel showing behind the guide. Shrinking first,
-    // with the guide still not composed, keeps the animation smooth.
+    // True for the ~300ms the picture takes to shrink out of full screen. The guide is composed
+    // underneath during the shrink (guideVisible below) so the video lands into a live card;
+    // focus stays locked until the shrink ends (see pendingGuideFocus effect).
     var shrinkingFromFullScreen by remember { mutableStateOf(false) }
 
     LaunchedEffect(isFullScreen) {
@@ -278,10 +277,9 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
 
     /**
-     * Leaves full screen the way the picture should: it shrinks into the preview card first, and the
-     * guide is only revealed once it has landed. Flipping [isFullScreen] straight away made Compose
-     * rebuild the whole guide (a ~1s job on this screen) in the same frame the shrink began, so the
-     * guide painted while the picture was still full size and the channel showed behind it.
+     * Leaves full screen the way the picture should: it shrinks into the preview card while the
+     * guide is already visible underneath. Focus is handed over once the shrink lands, so d-pad
+     * input cannot escape into a half-built guide mid-animation.
      */
     fun leaveFullScreen() {
         if (shrinkingFromFullScreen || !isFullScreen) {
@@ -515,13 +513,18 @@ fun HomeScreen(
         }
         return true
     }
-    LaunchedEffect(pendingGuideFocus, mainMenuVisible) {
+    LaunchedEffect(pendingGuideFocus, mainMenuVisible, shrinkingFromFullScreen) {
         // Never pull focus back to the guide while the main menu is open: doing so hands focus out
         // of the rail the moment it is summoned and the menu reads as "won't open at all".
-        if (pendingGuideFocus && !mainMenuVisible) {
+        // Also wait out the shrink: the guide is visible underneath during the animation but
+        // must not take focus until the picture has docked.
+        if (pendingGuideFocus && !mainMenuVisible && !shrinkingFromFullScreen) {
             delay(30)
-            runCatching { guideFocusRequester.requestFocus() }
-            pendingGuideFocus = false
+            // Only clear on success: a failed request (cell not composed yet) must retry on the
+            // next trigger instead of stranding focus on whatever holds it now.
+            if (runCatching { guideFocusRequester.requestFocus() }.isSuccess) {
+                pendingGuideFocus = false
+            }
         }
     }
     // When the main menu closes, put the guide cursor back on the playing channel. Closing the
@@ -1079,10 +1082,13 @@ fun HomeScreen(
         // only ever *moves* this surface (grows it out of the guide's preview card and shrinks it
         // back), so the video never re-attaches: no second decoder, no re-buffer, no black.
         //
-        // While the picture is shrinking out of full screen the guide is still not composed (see
-        // leaveFullScreen), so this flag is what drives the shrink; the guide only appears once the
-        // picture is already in the card.
+        // During the shrink the guide is composed underneath (guideVisible) while the surface
+        // stays on top by paint order (guide carries a below-zero layer); focus is handed over
+        // only after docking so d-pad input cannot escape mid-animation. No elevation is ever
+        // placed above the OSD — the OSD composes last and always wins.
         val surfaceFullScreen = isFullScreen && !shrinkingFromFullScreen
+        val guideVisible = !isFullScreen || shrinkingFromFullScreen
+        val showPlayerOsd = isFullScreen && !shrinkingFromFullScreen
         PersistentVideoSurface(
             player = previewController.player,
             isFullScreen = surfaceFullScreen,
@@ -1096,7 +1102,7 @@ fun HomeScreen(
             },
         )
 
-        if (isFullScreen) {
+        if (showPlayerOsd) {
             PlayerScreen(
                 channelId = (selectedRow ?: highlightedRow ?: activeSelectedRow ?: activeHighlightedRowState.value)?.primary?.id ?: (if (settings.lastChannelId > 0L) settings.lastChannelId else null),
                 onBack = {
@@ -1195,15 +1201,22 @@ fun HomeScreen(
                     }
                 },
             )
-        } else {
+        }
+        if (guideVisible) {
             // TiviMate-style: the category rail is a real column beside the guide, so opening it
             // pushes the guide across instead of sliding a panel over it. It appears and disappears
             // instantly — no width animation — so the grid re-lays-out once per open/close rather
             // than every frame, which is what the old overlay slide was built to avoid.
+            // Composed underneath during the shrink (below-zero layer keeps the video on top),
+            // dimmed until the picture docks. Deliberately not focusable: a focusable container
+            // traps focus on itself instead of a grid cell, which ate the first Back press at
+            // every stage (guide->categories, categories->menu).
             Row(
                 Modifier
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .zIndex(-1f)
+                    .alpha(if (shrinkingFromFullScreen) 0.35f else 1f),
             ) {
         if (railExpanded) {
         // ---- Category rail -----------------------------------------------------------------
@@ -2098,7 +2111,7 @@ private fun ChannelRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
-            model = row.primary.logoUrl,
+            model = app.opentv.ui.components.logoRequest(LocalContext.current, row.primary.logoUrl, 128),
             contentDescription = null,
             modifier = Modifier
                 .size(48.dp)

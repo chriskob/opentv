@@ -151,6 +151,7 @@ import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
 import app.opentv.ui.RecordingBackgroundDialog
 import app.opentv.ui.RecordingBackgroundPrompt
+import app.opentv.ui.components.logoRequest
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -1499,7 +1500,7 @@ fun PlayerScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         AsyncImage(
-                            model = currentChannel?.logoUrl,
+                            model = logoRequest(LocalContext.current, currentChannel?.logoUrl, 128),
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(0.85f),
                         )
@@ -2232,7 +2233,7 @@ private fun ChannelListRow(
             modifier = Modifier.width(40.dp),
         )
         AsyncImage(
-            model = item.logoUrl,
+            model = logoRequest(LocalContext.current, item.logoUrl, 96),
             contentDescription = null,
             modifier = Modifier.size(32.dp).clip(RoundedCornerShape(4.dp)),
         )
@@ -2546,7 +2547,7 @@ private fun QuickChannelCard(
             verticalArrangement = Arrangement.Center,
         ) {
             AsyncImage(
-                model = channel.logoUrl,
+                model = logoRequest(LocalContext.current, channel.logoUrl, 96),
                 contentDescription = null,
                 modifier = Modifier
                     .size(28.dp)

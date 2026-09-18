@@ -73,6 +73,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
@@ -87,6 +88,7 @@ import app.opentv.data.model.Programme
 import app.opentv.data.model.shownName
 import app.opentv.ui.ChannelsViewModel
 import app.opentv.ui.components.tvFocus
+import app.opentv.ui.components.logoRequest
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -1164,7 +1166,7 @@ private fun ChannelListRow(
         )
         // Channel Logo — enlarged for high legibility across the room
         AsyncImage(
-            model = row.primary.logoUrl,
+            model = logoRequest(LocalContext.current, row.primary.logoUrl, 96),
             contentDescription = null,
             contentScale = ContentScale.Fit,
             modifier = Modifier.size(36.dp).clip(RoundedCornerShape(4.dp)),
@@ -1380,7 +1382,7 @@ private fun GuideRow(
 
             // Channel Logo
             AsyncImage(
-                model = row.primary.logoUrl,
+                model = logoRequest(LocalContext.current, row.primary.logoUrl, 96),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.size(32.dp).clip(RoundedCornerShape(4.dp)),

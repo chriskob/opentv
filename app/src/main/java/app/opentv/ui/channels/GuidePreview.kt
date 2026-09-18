@@ -48,6 +48,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.opentv.ui.ChannelsViewModel
+import app.opentv.ui.components.logoRequest
 import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -129,7 +131,7 @@ fun GuidePreview(
         ) {
             if (row != null && previewPlayer == null) {
                 AsyncImage(
-                    model = row.primary.logoUrl,
+                    model = logoRequest(LocalContext.current, row.primary.logoUrl, 192),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(0.65f),
                 )
