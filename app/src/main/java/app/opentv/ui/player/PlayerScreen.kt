@@ -1266,18 +1266,11 @@ fun PlayerScreen(
                         true
                     }
 
-                    // D-pad left while watching: back through the stream, TiviMate-style. The
-                    // step is 10s a press and scales with the key repeat, so holding backs up
-                    // further. With the bar showing, left/right belong to the history carousel
-                    // instead — that branch is handled above this one.
+                    // D-pad left while watching: the transparent channel list. Rewind stays
+                    // available with the bar showing (timeline tier) and on the transport
+                    // rewind button — hidden-bar left is the list, as it always was.
                     event.key == Key.DirectionLeft -> {
-                        // stepBack covers both cases: the DVR/playlist window when the stream has one,
-                        // and the provider's catch-up archive when it does not — which is the norm for
-                        // live TV. Only when neither is available does left keep its old meaning of
-                        // opening the channel list.
-                        if (!stepBack(scrubStepMillis(event.nativeKeyEvent.repeatCount))) {
-                            if (queue.isNotEmpty()) channelListVisible = true
-                        }
+                        if (queue.isNotEmpty()) channelListVisible = true
                         true
                     }
 
