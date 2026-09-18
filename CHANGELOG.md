@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16.9
+
+- **D-pad Left opens the channel list again.** Pressing Left in fullscreen live TV brings back
+  the transparent channel list instead of stepping back ten seconds. Rewind is still there with
+  the player controls showing, and on the transport rewind button.
+
 ## 0.16.8
 
 - **The guide is there as the picture lands.** Backing out of fullscreen now reveals the guide
