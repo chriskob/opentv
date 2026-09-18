@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.8
+
+- **The guide is there as the picture lands.** Backing out of fullscreen now reveals the guide
+  underneath while the video shrinks into its card, instead of rebuilding after a 300ms black
+  gate. The on-screen player menu still draws on top throughout.
+- **Back behaves again.** A focusable container was swallowing the first press at every stage;
+  guide to categories to the main menu are single-press once more.
+- **Channel logos are cheaper.** Logos decode at fixed sizes with stable cache keys instead of
+  full resolution, so scrolling the guide stops evicting and re-downloading art it just showed.
+
 ## 0.16.7
 
 - **The guide's long-press menu is legible again.** Its primary row drew an accent label on an
