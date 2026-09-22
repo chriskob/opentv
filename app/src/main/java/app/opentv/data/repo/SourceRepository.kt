@@ -23,6 +23,9 @@ class SourceRepository(
 
     suspend fun enabled(): List<Source> = dao.enabled()
 
+    /** Every source row, enabled or not — for dedup matching that must not miss disabled rows. */
+    suspend fun all(): List<Source> = withContext(Dispatchers.IO) { dao.all() }
+
     suspend fun byId(id: Long): Source? = dao.byId(id)
 
     suspend fun setEnabled(id: Long, enabled: Boolean) = withContext(Dispatchers.IO) {

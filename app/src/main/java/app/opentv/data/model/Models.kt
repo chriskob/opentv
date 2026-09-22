@@ -163,6 +163,17 @@ data class Channel(
     /** Whether the provider offers catch-up/archive on this channel, and how many days back. */
     @ColumnInfo(defaultValue = "0") val tvArchive: Boolean = false,
     @ColumnInfo(defaultValue = "0") val tvArchiveDays: Int = 0,
+    /**
+     * Verbatim lowercased M3U `catchup` / `catchup-type` mode
+     * (`default`|`append`|`shift`|`xc`|`flussonic`), `""` when unknown.
+     * Xtream channels leave this empty — the portal kind drives resolve.
+     */
+    @ColumnInfo(defaultValue = "''") val catchupMode: String = "",
+    /**
+     * Per-channel `catchup-correction` in minutes (signed). Added to the global
+     * correction in settings before building the timeshift stamp/utc.
+     */
+    @ColumnInfo(defaultValue = "0") val catchupCorrectionMin: Int = 0,
     val number: Int?,
     /** Fully-resolved playback URL. For Stalker channels this is a placeholder; [cmd] is resolved
      *  to the real URL on demand at play time (see [SourceKind.STALKER]). */

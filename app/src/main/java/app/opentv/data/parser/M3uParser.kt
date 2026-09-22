@@ -85,13 +85,35 @@ object M3uParser {
                         // first and drop later duplicates rather than letting them collide on
                         // the unique index and abort the whole import.
                         if (seenStreamIds.add(streamId)) {
-                            val catchupAttr = attributes["catchup"] ?: attributes["catchup-type"]
+                            val rawMode = (attributes["catchup"] ?: attributes["catchup-type"])
+                                ?.trim()?.lowercase().orEmpty()
+                            val catchupMode = when (rawMode) {
+                                "shift", "timeshift" -> "shift"
+                                "flussonic", "fs" -> "flussonic"
+                                "xc" -> "xc"
+                                "append" -> "append"
+                                "default", "vod" -> "default"
+                                else -> if (rawMode.isNotBlank()) "default" else ""
+                            }
                             val catchupDaysAttr = attributes["catchup-days"]?.toIntOrNull()
                                 ?: attributes["timeshift"]?.toIntOrNull()
                                 ?: attributes["tvg-shift"]?.toIntOrNull()
-                                ?: if (!catchupAttr.isNullOrBlank()) 7 else 0
+                                ?: if (rawMode.isNotBlank()) 7 else 0
+                            val correctionAttr = attributes["catchup-correction"]
+                                ?.replace("mins", "", ignoreCase = true)
+                                ?.replace("min", "", ignoreCase = true)
+                                ?.trim()?.toIntOrNull() ?: 0
                             val catchupSource = attributes["catchup-source"]?.takeIf { it.isNotBlank() }
-                            val hasCatchup = !catchupAttr.isNullOrBlank() || catchupDaysAttr > 0 || catchupSource != null
+                            // A Stalker `create_link` command is not a catch-up template. It is a
+                            // bare command (`ffmpeg …`, `auto …`) with no URL/template markers —
+                            // treating it as catch-up badged unplayable channels.
+                            val isStalkerCmd = catchupSource != null &&
+                                !catchupSource.startsWith("http", ignoreCase = true) &&
+                                !catchupSource.startsWith("?") &&
+                                !catchupSource.contains("{") &&
+                                !catchupSource.contains("\${")
+                            val hasCatchup = rawMode.isNotBlank() || catchupDaysAttr > 0 ||
+                                (catchupSource != null && !isStalkerCmd)
 
                             channels += Channel(
                                 sourceId = sourceId,
@@ -103,9 +125,11 @@ object M3uParser {
                                 epgChannelId = attributes["tvg-id"]?.takeIf { it.isNotBlank() },
                                 tvArchive = hasCatchup,
                                 tvArchiveDays = if (hasCatchup) catchupDaysAttr.coerceAtLeast(1) else 0,
+                                catchupMode = if (hasCatchup) catchupMode else "",
+                                catchupCorrectionMin = correctionAttr,
                                 number = pendingNumber,
                                 streamUrl = line,
-                                cmd = catchupSource,
+                                cmd = if (isStalkerCmd) null else catchupSource,
                                 sortIndex = index++,
                             )
                         }

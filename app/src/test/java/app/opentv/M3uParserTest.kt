@@ -168,5 +168,58 @@ class M3uParserTest {
         assertThat(channel.name).isEqualTo("Short URL Channel")
         assertThat(channel.streamUrl).isEqualTo("http://example.com/stream")
     }
+
+    @Test
+    fun `catch-up modes are stored verbatim with days and correction`() {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="a" catchup="shift" catchup-days="3" catchup-correction="-2",Shift Channel
+            http://example.com/a.m3u8
+            #EXTINF:-1 tvg-id="b" catchup="flussonic" catchup-days="7",Flussonic Channel
+            http://example.com/b.m3u8
+            #EXTINF:-1 tvg-id="c" catchup-type="xc",XC Channel
+            http://panel.example.com/live/u/p/5.ts
+            #EXTINF:-1 tvg-id="d" catchup="default" catchup-source="http://arch.example.com/{utc}.m3u8",Template Channel
+            http://example.com/d.m3u8
+        """.trimIndent()
+
+        val channels = M3uParser.parse(playlist, sourceId = 1).channels.associateBy { it.epgChannelId }
+
+        assertThat(channels["a"]!!.tvArchive).isTrue()
+        assertThat(channels["a"]!!.catchupMode).isEqualTo("shift")
+        assertThat(channels["a"]!!.tvArchiveDays).isEqualTo(3)
+        assertThat(channels["a"]!!.catchupCorrectionMin).isEqualTo(-2)
+
+        assertThat(channels["b"]!!.catchupMode).isEqualTo("flussonic")
+        assertThat(channels["b"]!!.tvArchiveDays).isEqualTo(7)
+
+        assertThat(channels["c"]!!.catchupMode).isEqualTo("xc")
+        assertThat(channels["c"]!!.tvArchive).isTrue()
+
+        assertThat(channels["d"]!!.catchupMode).isEqualTo("default")
+        assertThat(channels["d"]!!.cmd).isEqualTo("http://arch.example.com/{utc}.m3u8")
+    }
+
+    @Test
+    fun `a stalker command is not mistaken for a catch-up template`() {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="s",Stalker Channel
+            http://example.com/s.m3u8
+        """.trimIndent()
+
+        // The parser only sees EXTINF attributes; a bare Stalker command can only arrive via
+        // catchup-source, which must not flag the channel.
+        val withStalker = """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="s" catchup-source="ffmpeg http://example.com/x",Stalker Channel
+            http://example.com/s.m3u8
+        """.trimIndent()
+
+        val channel = M3uParser.parse(withStalker, sourceId = 1).channels.single()
+        assertThat(channel.tvArchive).isFalse()
+        assertThat(channel.cmd).isNull()
+        assertThat(M3uParser.parse(playlist, sourceId = 1).channels.single().tvArchive).isFalse()
+    }
 }
 

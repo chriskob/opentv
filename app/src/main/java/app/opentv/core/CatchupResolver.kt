@@ -23,12 +23,26 @@ object CatchupResolver {
     private val XTREAM_URL_REGEX = Regex("""^(https?://[^/]+)(?:/.*?)*?/(?:live/)?([^/?#]+)/([^/?#]+)/([a-zA-Z0-9_.-]+?)(?:\.[a-zA-Z0-9]+)?(?:\?.*)?$""")
 
     /**
+     * A Stalker `create_link` command is not a catch-up template. Templates are absolute/relative
+     * URLs or query fragments carrying substitution markers; bare commands (`ffmpeg …`, `auto …`)
+     * have none of those and must never badge or resolve as catch-up.
+     */
+    fun isCatchupTemplate(value: String?): Boolean {
+        if (value.isNullOrBlank()) return false
+        return value.startsWith("http://", ignoreCase = true) ||
+            value.startsWith("https://", ignoreCase = true) ||
+            value.startsWith("?") ||
+            value.contains("{") ||
+            value.contains("\${")
+    }
+
+    /**
      * Checks whether catch-up / archive playback is supported for this channel.
-     * Checks database flag, custom template, Xtream source kind, or Xtream URL pattern.
+     * Checks database flag, catch-up template, Xtream source kind, or Xtream URL pattern.
      */
     fun isSupported(source: Source?, channel: Channel): Boolean {
         if (channel.tvArchive) return true
-        if (!channel.cmd.isNullOrBlank()) return true
+        if (isCatchupTemplate(channel.cmd)) return true
         if (source?.kind == SourceKind.XTREAM) return true
         if (source != null && extractCredentials(source) != null) return true
         return XTREAM_URL_REGEX.containsMatchIn(channel.streamUrl)
@@ -62,18 +76,33 @@ object CatchupResolver {
 
     /**
      * Resolves a seekable catch-up / timeshift stream URL for a finished programme.
+     *
      * Supports Xtream Codes timeshift, M3U templates with placeholder substitution,
-     * Xtream URL auto-detection from M3U stream URLs, and append mode.
+     * Xtream URL auto-detection from M3U stream URLs, Flussonic derivations, and
+     * shift/append modes. [globalCorrectionMin] (from Settings > Catch-up) is added to the
+     * channel's own `catchup-correction` before building stamps/utc values.
      */
-    fun resolve(source: Source, channel: Channel, programme: Programme): String? {
-        val url = resolveInternal(source, channel, programme)
+    fun resolve(
+        source: Source,
+        channel: Channel,
+        programme: Programme,
+        globalCorrectionMin: Int = 0,
+    ): String? {
+        val url = resolveInternal(source, channel, programme, globalCorrectionMin)
         android.util.Log.i("OpenTV-Catchup", "resolved ${url ?: "null"} (base=${channel.streamUrl})")
         return url
     }
 
-    private fun resolveInternal(source: Source, channel: Channel, programme: Programme): String? {
-        val startUtcMillis = programme.startUtcMillis
-        val endUtcMillis = programme.endUtcMillis
+    private fun resolveInternal(
+        source: Source,
+        channel: Channel,
+        programme: Programme,
+        globalCorrectionMin: Int = 0,
+    ): String? {
+        val correctionSec = ((channel.catchupCorrectionMin + globalCorrectionMin) * 60L)
+        val adjStartMillis = programme.startUtcMillis + correctionSec * 1000L
+        val startUtcMillis = adjStartMillis
+        val endUtcMillis = programme.endUtcMillis + correctionSec * 1000L
         val nowMillis = System.currentTimeMillis()
         val progDurationMillis = if (endUtcMillis > startUtcMillis) {
             endUtcMillis - startUtcMillis
@@ -98,9 +127,12 @@ object CatchupResolver {
             return "$baseUrl/timeshift/$u/$p/$durationMinutes/$stamp/$cleanStreamId.ts"
         }
 
+        val mode = channel.catchupMode.lowercase()
         // 2. M3U with explicit catchup-source template (stored in channel.cmd)
-        val template = channel.cmd?.takeIf { it.isNotBlank() }
-        if (template != null) {
+        val template = channel.cmd?.takeIf { isCatchupTemplate(it) }
+        // `shift` ignores any template (SIPTV auto `?utc=&lutc=`); every other mode prefers
+        // its explicit `catchup-source` template when one was supplied.
+        if (template != null && mode != "shift") {
             val stampXtream = stamp
             val stampFlussonic = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply { timeZone = utcTz }.format(Date(startUtcMillis))
 
@@ -139,7 +171,22 @@ object CatchupResolver {
             return url
         }
 
-        // 3. M3U stream URL matching Xtream live format: http(s)://host:port/(live/)user/pass/streamId(.ts/.m3u8)
+        // 3. Explicit shift/append modes: SIPTV-style `?utc={start}&lutc={now}`. These need no
+        // template and win over URL-shape guessing below — the provider said how to ask.
+        if (mode == "shift" || mode == "append") {
+            val sep = if (channel.streamUrl.contains("?")) "&" else "?"
+            return "${channel.streamUrl}${sep}utc=$startUtcSec&lutc=$nowSec"
+        }
+
+        // 4. Flussonic mode: archive-{utc}-{durationSecs}.m3u8 derived from the stream URL.
+        // Flussonic counts duration in seconds (Xtream counts minutes) — do not reuse stamp above.
+        if (mode == "flussonic") {
+            val base = channel.streamUrl.substringBeforeLast('/') + "/"
+            return "$base" + "archive-$startUtcSec-$durationSeconds.m3u8"
+        }
+
+        // 5. M3U stream URL matching Xtream live format (`xc` mode or auto-detect):
+        // http(s)://host:port/(live/)user/pass/streamId(.ts/.m3u8)
         val match = XTREAM_URL_REGEX.find(channel.streamUrl)
         if (match != null) {
             val (baseHost, user, pass, streamId) = match.destructured
@@ -147,7 +194,7 @@ object CatchupResolver {
             return "$base/timeshift/$user/$pass/$durationMinutes/$stamp/$streamId.ts"
         }
 
-        // 4. Source URL has embedded Xtream credentials (e.g. get.php?username=...&password=...)
+        // 5. Source URL has embedded Xtream credentials (e.g. get.php?username=...&password=...)
         val creds = extractCredentials(source)
         if (creds != null) {
             val sourceUri = source.url.toHttpUrlOrNull()
@@ -160,8 +207,8 @@ object CatchupResolver {
             }
         }
 
-        // 5. Default append mode if channel declared catch-up
-        if (channel.tvArchive) {
+        // 6. Default fallback: `default` without a template degrades to append-style.
+        if (channel.tvArchive || mode == "default") {
             val sep = if (channel.streamUrl.contains("?")) "&" else "?"
             return "${channel.streamUrl}${sep}utc=$startUtcSec&lutc=$nowSec"
         }
