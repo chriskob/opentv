@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.16.13
+
+- **Long-press OK in the guide opens the programme menu.** Holding OK on a programme now opens
+  the record/remind/catch-up menu instead of tuning away — including on a programme that is
+  currently airing, where a short OK still zaps straight to the channel. "Watch from start" in
+  that menu plays the programme from the beginning through catch-up.
+- **The programme menu is readable again.** In themes with a white accent (Slate Guide, TVPlayer)
+  the focused row was white-on-white; the first row now keeps dark ink on the filled accent.
+
+## 0.16.12
+
+- **New TVPlayer theme — now the default.** The classic blue-grey + teal look: the Material
+  blue-grey ramp (background `#263238`, surfaces `#37474F`) with teal 200 (`#80CBC4`) as the
+  accent, and the stock Material hues for recording, favourites and live. Every install lands on
+  it once with this update; the other themes are still one tap away in Display settings.
+- **Type and layout brought in line with the reference.** The type scale now spans the full
+  reference set (11–44sp across all fifteen Material3 roles), and the Live TV and Movies rails
+  match the reference's 238dp column.
+
+## 0.16.11
+
+- **New Slate Guide theme — now the default.** A deep slate-blue theme matching the classic
+  guide look, with white focus cells and dark ink. Every install lands on it once with this
+  update; the other themes are still one tap away in Display settings.
+- **Movies and Shows stop freezing the box.** Browsing a category while posters fill in no
+  longer piles full-list regroups onto the main thread: grid structure memoizes on membership,
+  list updates calm to one per second after the first paint, prefetch requests dedupe, and
+  image fetches are capped at 12 at once (4 per host) so posters arrive faster instead of
+  trickling side by side.
+- **Slimmer side menu.** The nav rail is narrower (190dp), with smaller icons and a slimmer
+  focus pill.
+
 ## 0.16.9
 
 - **D-pad Left opens the channel list again.** Pressing Left in fullscreen live TV brings back
