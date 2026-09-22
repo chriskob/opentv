@@ -468,9 +468,11 @@ class CatalogRepository(
         }
 
         // 2) TMDB fallback for whatever the provider still left blank — only when the user set a
-        //    key, and only while a headline visual field is missing (so it stops re-fetching once
-        //    filled). This is the "match Plex" back-fill for posters, backdrops, synopsis and cast.
-        if (tmdb.isConfigured() && (result.backdropUrl == null || result.plot == null || result.cast == null)) {
+        //    key, and only while a headline field is missing (so it stops re-fetching once
+        //    filled). The poster is explicitly included: provider rows routinely carry a plot but
+        //    no artwork, and without it those titles would never qualify for a lookup. This is the
+        //    "match Plex" back-fill for posters, backdrops, synopsis and cast.
+        if (tmdb.isConfigured() && (result.posterUrl == null || result.backdropUrl == null || result.plot == null || result.cast == null)) {
             val meta = runCatching {
                 tmdb.movieMeta(VodTitleCleaner.clean(result.name), result.year, result.tmdbId)
             }.getOrNull()
@@ -515,8 +517,9 @@ class CatalogRepository(
             }
         }
 
-        // 2) TMDB fallback for anything still missing (see [movieDetail]); TMDB has no director for TV.
-        if (tmdb.isConfigured() && (result.backdropUrl == null || result.plot == null || result.cast == null)) {
+        // 2) TMDB fallback for anything still missing (see [movieDetail], including the poster
+        //    gap); TMDB has no director for TV.
+        if (tmdb.isConfigured() && (result.posterUrl == null || result.backdropUrl == null || result.plot == null || result.cast == null)) {
             val meta = runCatching {
                 tmdb.seriesMeta(VodTitleCleaner.clean(result.name), result.year, result.tmdbId)
             }.getOrNull()
@@ -537,6 +540,160 @@ class CatalogRepository(
         if (result != series) seriesDao.upsertAll(listOf(result))
         result
     }
+
+    /** True once the user saved a TMDB key — gates lazy artwork fills so they cost nothing without one. */
+    fun tmdbReady(): Boolean = tmdb.isConfigured()
+
+    /**
+     * Back-fills one grid row's missing artwork the same way opening its detail would
+     * ([movieDetail]/[seriesDetail]: provider info, then TMDB, persisted). No-op when the row
+     * already has a poster — TMDB never overrides existing art — so callers can fire it for every
+     * visible card and only the bare ones cost a lookup.
+     */
+    suspend fun backfillMovieArtwork(movieId: Long): Boolean {
+        val before = withContext(Dispatchers.IO) { movieDao.byId(movieId) } ?: return false
+        if (!before.posterUrl.isNullOrBlank()) return true
+        // TMDB-only on purpose: the full movieDetail() also calls the provider's get_vod_info,
+        // which shares the catalogue client's minute-long timeouts — one hanging provider call
+        // would park a fill slot and stall every title queued behind it. Artwork needs TMDB alone.
+        val art = tmdbPosterFor(
+            name = before.name,
+            year = before.year,
+            tmdbId = before.tmdbId,
+            isMovie = true,
+        ) ?: run {
+            Log.i(TAG, "TMDB has no poster for movie '${before.name}'")
+            return false
+        }
+        movieDao.upsertAll(listOf(before.copy(posterUrl = art)))
+        Log.i(TAG, "TMDB poster filled for movie '${before.name}'")
+        return true
+    }
+
+    /** Show half of [backfillMovieArtwork]. */
+    suspend fun backfillSeriesArtwork(seriesId: Long): Boolean {
+        val before = withContext(Dispatchers.IO) { seriesDao.byId(seriesId) } ?: return false
+        if (!before.posterUrl.isNullOrBlank()) return true
+        val art = tmdbPosterFor(
+            name = before.name,
+            year = before.year,
+            tmdbId = before.tmdbId,
+            isMovie = false,
+        ) ?: run {
+            Log.i(TAG, "TMDB has no poster for series '${before.name}'")
+            return false
+        }
+        seriesDao.upsertAll(listOf(before.copy(posterUrl = art)))
+        Log.i(TAG, "TMDB poster filled for series '${before.name}'")
+        return true
+    }
+
+    /**
+     * TMDB poster URL for a title, or null. Bounded end-to-end so a hanging lookup abandons the
+     * slot instead of parking it — the blocking client underneath can't be cancelled mid-socket,
+     * but the worker moves on regardless.
+     */
+    private suspend fun tmdbPosterFor(name: String, year: Int?, tmdbId: String?, isMovie: Boolean): String? {
+        if (!tmdb.isConfigured()) return null
+        return try {
+            kotlinx.coroutines.withTimeout(TMDB_FILL_MILLIS) {
+                val meta = if (isMovie) {
+                    tmdb.movieMeta(VodTitleCleaner.clean(name), year, tmdbId)
+                } else {
+                    tmdb.seriesMeta(VodTitleCleaner.clean(name), year, tmdbId)
+                }
+                meta?.posterUrl
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Replaces a poster URL that is provably dead (the server answers 404/410) with TMDB art.
+     * A card can hold a non-blank URL that never renders — expired provider art — and plain
+     * back-fill skips those rows on purpose (TMDB must not override real art). So dead-ness is
+     * verified first with a cheap HEAD: a timeout or network error means "unknown, leave it"
+     * (transient blip, not a dead link), never a replace. Hits persist, so the grid repaints.
+     */
+    suspend fun replaceDeadMoviePoster(movieId: Long): Boolean = withContext(Dispatchers.IO) {
+        val row = movieDao.byId(movieId) ?: return@withContext false
+        val url = row.posterUrl?.takeIf { it.isNotBlank() } ?: return@withContext false
+        if (!tmdb.isConfigured()) return@withContext false
+        if (!isUrlDead(url)) {
+            Log.i(TAG, "Poster URL alive for movie '${row.name}' (render failed anyway)")
+            return@withContext false
+        }
+        val art = tmdbPosterFor(row.name, row.year, row.tmdbId, isMovie = true)
+            ?: run {
+                Log.i(TAG, "TMDB has no poster for movie '${row.name}'")
+                return@withContext false
+            }
+        movieDao.upsertAll(listOf(row.copy(posterUrl = art)))
+        Log.i(TAG, "TMDB replaced dead poster for movie '${row.name}'")
+        true
+    }
+
+    /** Show half of [replaceDeadMoviePoster]. */
+    suspend fun replaceDeadSeriesPoster(seriesId: Long): Boolean = withContext(Dispatchers.IO) {
+        val row = seriesDao.byId(seriesId) ?: return@withContext false
+        val url = row.posterUrl?.takeIf { it.isNotBlank() } ?: return@withContext false
+        if (!tmdb.isConfigured()) return@withContext false
+        if (!isUrlDead(url)) {
+            Log.i(TAG, "Poster URL alive for series '${row.name}' (render failed anyway)")
+            return@withContext false
+        }
+        val art = tmdbPosterFor(row.name, row.year, row.tmdbId, isMovie = false)
+            ?: run {
+                Log.i(TAG, "TMDB has no poster for series '${row.name}'")
+                return@withContext false
+            }
+        seriesDao.upsertAll(listOf(row.copy(posterUrl = art)))
+        Log.i(TAG, "TMDB replaced dead poster for series '${row.name}'")
+        true
+    }
+
+    /**
+     * True only when the server definitively says the art is gone. Anything else → not dead.
+     * Bounded: the shared client carries minute-long timeouts for catalogue downloads, which must
+     * never hold a 3-slot artwork worker hostage — a hanging image host times out here in seconds
+     * and the row is left alone for this session.
+     *
+     * Dead means: 403/404/410, any 5xx, or a 2xx whose Content-Type is explicitly not an
+     * image. Real case: a provider screenshot host answering `503 text/html` to everyone while
+     * Coil's GET also fails — the old check only trusted 404/410, so the card sat on the fallback
+     * tile forever with every probe reporting "alive". This probe only ever runs *after* Coil
+     * already failed to render the URL on this box, so a 5xx here is corroborated dead, not a
+     * guess: one transient blip can't reach this code without a failed render behind it. Anything
+     * else (timeouts, other 4xx, missing Content-Type) stays conservative (alive).
+     */
+    private suspend fun isUrlDead(url: String): Boolean {
+        return try {
+            kotlinx.coroutines.withTimeout(DEAD_URL_CHECK_MILLIS) {
+                val request = okhttp3.Request.Builder()
+                    .url(url)
+                    .head()
+                    .header("User-Agent", "OpenTV")
+                    .build()
+                http.newCall(request).execute().use { response ->
+                    val code = response.code
+                    if (code == 403 || code == 404 || code == 410 || code >= 500) {
+                        Log.i(TAG, "HEAD $code for <$url>")
+                        return@use true
+                    }
+                    if (!response.isSuccessful) return@use false
+                    val type = response.header("Content-Type")
+                        ?.substringBefore(";")?.trim()?.lowercase()
+                    Log.i(TAG, "HEAD $code $type for <$url>")
+                    type != null && !type.startsWith("image/")
+                }
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+
 
     /**
      * Collapses a list of movies (e.g. one category's titles) into logical films with switchable
@@ -994,11 +1151,13 @@ class CatalogRepository(
         // Most playlists are an Xtream panel's export, and the export drops the catch-up
         // attributes — so a playlist-only client can either guess (badging channels with no
         // archive) or stay silent (hiding the channels that have it). The panel's address and
-        // credentials are sitting in the playlist's own stream URLs, so ask it directly. Skipped
-        // when the playlist already answered for itself, and entirely best-effort: any failure
-        // leaves the playlist's flags exactly as they were.
+        // credentials are sitting in the playlist's own stream URLs, so ask it directly. Runs
+        // whenever any channel is still unflagged (one flagged channel no longer disables the
+        // whole source); channels that already declared catch-up keep their template and only
+        // gain a larger archive window. Entirely best-effort: any failure leaves the
+        // playlist's flags exactly as they were.
         val channels = if (settings.catchupDiscovery.value &&
-            parsed.channels.none { it.tvArchive || !it.cmd.isNullOrBlank() }
+            parsed.channels.any { !it.tvArchive && it.cmd.isNullOrBlank() }
         ) {
             runCatching {
                 XtreamPanelDiscovery.enrich(parsed.channels, http, source.userAgent)
@@ -1240,5 +1399,10 @@ class CatalogRepository(
          * and runs [renormalizeAll] once when it moves.
          */
         const val NORMALIZER_VERSION = 2
+
+        /** How long a dead-art probe may take before the row is left alone for this session. */
+        private const val DEAD_URL_CHECK_MILLIS = 8_000L
+        /** How long one TMDB artwork lookup may take before its slot is freed for the next title. */
+        private const val TMDB_FILL_MILLIS = 25_000L
     }
 }

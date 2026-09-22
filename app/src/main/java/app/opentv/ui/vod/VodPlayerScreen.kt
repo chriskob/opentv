@@ -9,9 +9,17 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,6 +78,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -637,16 +646,32 @@ fun VodPlayerScreen(
 
         AnimatedVisibility(
             visible = controlsVisible,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(animationSpec = tween(220)) +
+                slideInVertically(animationSpec = tween(240)) { it / 3 },
+            exit = fadeOut(animationSpec = tween(180)) +
+                slideOutVertically(animationSpec = tween(200)) { it / 3 },
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             Column(
                 Modifier
                     .fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f))))
-                    .padding(horizontal = 28.dp, vertical = 20.dp),
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
             ) {
+                // Frosted-glass sheet: a translucent rounded card with a hairline top edge over the
+                // scrim, so the transport reads as one floating panel instead of loose rows.
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .border(
+                            1.dp,
+                            Color.White.copy(alpha = 0.12f),
+                            RoundedCornerShape(24.dp),
+                        )
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                ) {
                 when (vodPanel) {
                     VodPanel.NONE -> Unit
                     VodPanel.SUBTITLES, VodPanel.AUDIO -> TrackPanel(
@@ -720,7 +745,12 @@ fun VodPlayerScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             AsyncImage(
-                                model = posterUrl,
+                                // Same sized, stable-key request the grids use, so the header
+                                // paints from the memory cache instead of re-decoding.
+                                model = app.opentv.ui.components.posterRequest(
+                                    LocalContext.current,
+                                    posterUrl,
+                                ) ?: posterUrl,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize(),
@@ -965,6 +995,7 @@ fun VodPlayerScreen(
                 }
             }
         }
+        }
 
         // Up-next card. It sits outside the auto-hiding controls on purpose: it is an offer, not a
         // control, and it has to be visible while the transport bar is down. It stays out of the
@@ -982,7 +1013,26 @@ fun VodPlayerScreen(
                     .padding(horizontal = 18.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.SkipNext, contentDescription = null, tint = AppTheme.primary)
+                // Episode still when the catalogue has one, else the skip mark — cached through
+                // the shared poster request so it paints instantly.
+                val still = upcoming.stillUrl
+                if (!still.isNullOrBlank()) {
+                    coil.compose.AsyncImage(
+                        model = app.opentv.ui.components.posterRequest(
+                            LocalContext.current,
+                            still,
+                        ) ?: still,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .width(96.dp)
+                            .height(54.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.White.copy(alpha = 0.08f)),
+                    )
+                } else {
+                    Icon(Icons.Filled.SkipNext, contentDescription = null, tint = AppTheme.primary)
+                }
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
@@ -1029,10 +1079,9 @@ private fun InteractiveVodTimeline(
     val progress = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
     val bufferedProgress = if (durationMs > 0L) (bufferedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
 
-    Box(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(28.dp)
             .focusRequester(focusRequester)
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
@@ -1068,55 +1117,108 @@ private fun InteractiveVodTimeline(
                 }
             }
             .onSizeChanged { widthPx = it.width },
-        contentAlignment = Alignment.CenterStart,
     ) {
-        val trackHeight = if (isFocused) 6.dp else 4.dp
-
-        // Background track
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(trackHeight)
-                .clip(RoundedCornerShape(3.dp))
-                .background(AppTheme.palette.onSurface.copy(alpha = 0.2f)),
-        )
-
-        // Buffered track
-        if (bufferedProgress > 0f) {
-            Box(
-                Modifier
-                    .fillMaxWidth(bufferedProgress)
-                    .height(trackHeight)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(AppTheme.palette.onSurface.copy(alpha = 0.35f)),
-            )
+        // Scrub tooltip: the current time in a bubble riding above the thumb while the timeline
+        // has focus, so the viewer can read exactly where a seek will land without looking down
+        // at the timestamp row.
+        AnimatedVisibility(
+            visible = isFocused && durationMs > 0L,
+            enter = fadeIn(animationSpec = tween(150)) + scaleIn(animationSpec = tween(150)),
+            exit = fadeOut(animationSpec = tween(120)),
+        ) {
+            Box(Modifier.fillMaxWidth()) {
+                if (widthDp.value > 0f) {
+                    // Clamp the bubble inside the bar so it never clips at either end.
+                    val bubbleWidth = 76.dp
+                    val travel = (widthDp.value - bubbleWidth.value).coerceAtLeast(0f)
+                    val bubbleOffset = (travel * progress).dp
+                    Box(
+                        Modifier
+                            .padding(start = bubbleOffset)
+                            .width(bubbleWidth)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(AppTheme.primary)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = formatDuration(positionMs),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
         }
-
-        // Played track (Cyan, TiviMate style)
+        if (isFocused) Spacer(Modifier.height(6.dp))
         Box(
-            Modifier
-                .fillMaxWidth(progress)
-                .height(trackHeight)
-                .clip(RoundedCornerShape(3.dp))
-                .background(AppTheme.primary),
-        )
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (isFocused) 34.dp else 28.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            val trackHeight = if (isFocused) 8.dp else 4.dp
 
-        // Cursor / Thumb
-        if (widthDp.value > 0f) {
-            val thumbSize = if (isFocused) 16.dp else 10.dp
-            val travel = (widthDp.value - thumbSize.value).coerceAtLeast(0f)
-            val dotOffset = (travel * progress).dp
+            // Background track
             Box(
                 Modifier
-                    .padding(start = dotOffset)
-                    .size(thumbSize)
-                    .clip(CircleShape)
-                    .background(AppTheme.palette.onSurface)
+                    .fillMaxWidth()
+                    .height(trackHeight)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(AppTheme.palette.onSurface.copy(alpha = 0.2f)),
+            )
+
+            // Buffered track
+            if (bufferedProgress > 0f) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(bufferedProgress)
+                        .height(trackHeight)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(AppTheme.palette.onSurface.copy(alpha = 0.35f)),
+                )
+            }
+
+            // Played track (Cyan, TiviMate style) with a soft glow while focused.
+            Box(
+                Modifier
+                    .fillMaxWidth(progress)
+                    .height(trackHeight)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(AppTheme.primary)
                     .then(
-                        if (isFocused) Modifier.border(2.5.dp, AppTheme.palette.cursorBorder, CircleShape)
+                        if (isFocused) Modifier.border(
+                            1.dp,
+                            AppTheme.primary.copy(alpha = 0.45f),
+                            RoundedCornerShape(4.dp),
+                        )
                         else Modifier
                     ),
             )
+
+            // Cursor / Thumb with glow ring while focused.
+            if (widthDp.value > 0f) {
+                val thumbSize = if (isFocused) 18.dp else 10.dp
+                val travel = (widthDp.value - thumbSize.value).coerceAtLeast(0f)
+                val dotOffset = (travel * progress).dp
+                Box(
+                    Modifier
+                        .padding(start = dotOffset)
+                        .size(thumbSize)
+                        .clip(CircleShape)
+                        .background(AppTheme.palette.onSurface)
+                        .then(
+                            if (isFocused) Modifier.border(
+                                3.dp,
+                                AppTheme.primary.copy(alpha = 0.85f),
+                                CircleShape,
+                            )
+                            else Modifier
+                        ),
+                )
+            }
         }
     }
 }
@@ -1127,6 +1229,8 @@ private fun InteractiveVodTimeline(
  * The caption is the point. An icon-only row makes the viewer open each button to find out what it
  * does; here the label carries the live state — `1.5×`, the subtitle language, `AAC 5.1`, the
  * resolution tier — so the whole bar can be read at a glance from the sofa.
+ *
+ * The play/pause button is the hero: larger, with an animated icon morph and a spring focus scale.
  */
 @Composable
 private fun VodButtonCard(
@@ -1138,24 +1242,34 @@ private fun VodButtonCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val circle = if (isPrimary) 50.dp else 42.dp
-    val glyph = if (isPrimary) 24.dp else 19.dp
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.12f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "vodButtonFocus",
+    )
+    // Hero sizing for play/pause; option buttons stay compact so the row fits small panels.
+    val circle = if (isPrimary) 56.dp else 42.dp
+    val glyph = if (isPrimary) 28.dp else 19.dp
     val bg = when {
         focused -> AppTheme.palette.cursorFill
-        isSelected -> AppTheme.palette.selectedFill
+        isSelected -> AppTheme.primary.copy(alpha = 0.22f)
         isPrimary -> AppTheme.primary
         else -> AppTheme.palette.chipSurface.copy(alpha = 0.72f)
     }
     val fg = when {
+        focused && isPrimary -> AppTheme.palette.onFocusSurface
         isSelected -> AppTheme.primary
         isPrimary -> AppTheme.palette.onFocusSurface
         focused -> AppTheme.palette.onSurface
         else -> AppTheme.palette.onSurface
     }
     val outline = when {
-        focused && isPrimary -> Modifier.border(2.dp, AppTheme.palette.onFocusSurface, CircleShape)
-        focused -> Modifier.border(2.dp, AppTheme.palette.cursorBorder, CircleShape)
-        isSelected -> Modifier.border(1.5.dp, AppTheme.palette.cursorBorder, CircleShape)
+        focused && isPrimary -> Modifier.border(2.5.dp, AppTheme.palette.onFocusSurface, CircleShape)
+        focused -> Modifier.border(2.5.dp, AppTheme.palette.cursorBorder, CircleShape)
+        isSelected -> Modifier.border(1.5.dp, AppTheme.primary.copy(alpha = 0.8f), CircleShape)
         isPrimary -> Modifier.border(1.dp, AppTheme.palette.cursorBorder, CircleShape)
         else -> Modifier.border(1.dp, AppTheme.palette.outlineVariant, CircleShape)
     }
@@ -1164,6 +1278,7 @@ private fun VodButtonCard(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .widthIn(min = 58.dp)
+            .graphicsLayer { scaleX = focusScale; scaleY = focusScale }
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .focusable()
@@ -1178,12 +1293,19 @@ private fun VodButtonCard(
                 .then(outline),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = fg,
-                modifier = Modifier.size(glyph),
-            )
+            // Animated morph: play <-> pause (and any re-label) crossfades + scales instead of
+            // swapping instantly, which is what makes the hero feel alive on every press.
+            AnimatedContent(
+                targetState = icon,
+                label = "vodButtonIcon",
+            ) { target ->
+                Icon(
+                    imageVector = target,
+                    contentDescription = label,
+                    tint = fg,
+                    modifier = Modifier.size(glyph),
+                )
+            }
         }
         Spacer(Modifier.height(4.dp))
         Text(
@@ -1199,6 +1321,27 @@ private fun VodButtonCard(
 }
 
 /**
+ * Shared entrance for the option panels above the transport bar: scales + fades in on open so
+ * every picker (speed, aspect, subtitles, audio, format, next episode) arrives the same way.
+ */
+@Composable
+private fun PanelEntrance(content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(animationSpec = tween(160)) +
+            scaleIn(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium,
+                ),
+                initialScale = 0.94f,
+            ),
+    ) {
+        content()
+    }
+}
+
+/**
  * A list of choices in the same shell as the audio and subtitle pickers — used for speed, aspect
  * ratio and the next-episode list, so every panel in this player looks like the same thing.
  */
@@ -1209,22 +1352,24 @@ private fun ChoicePanel(
     firstFocus: FocusRequester,
     onPick: (Int) -> Unit,
 ) {
-    Column(
-        Modifier
-            .widthIn(max = 420.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.Black.copy(alpha = 0.92f))
-            .padding(16.dp),
-    ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White.copy(alpha = 0.7f),
-        )
-        Spacer(Modifier.height(8.dp))
-        Column(Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState())) {
-            options.forEachIndexed { index, (label, selected) ->
-                TrackRow(label, selected, { onPick(index) }, if (index == 0) firstFocus else null)
+    PanelEntrance {
+        Column(
+            Modifier
+                .widthIn(max = 420.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.Black.copy(alpha = 0.92f))
+                .padding(16.dp),
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White.copy(alpha = 0.7f),
+            )
+            Spacer(Modifier.height(8.dp))
+            Column(Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState())) {
+                options.forEachIndexed { index, (label, selected) ->
+                    TrackRow(label, selected, { onPick(index) }, if (index == 0) firstFocus else null)
+                }
             }
         }
     }
@@ -1259,13 +1404,25 @@ private fun StreamInfoPanel(
         info.estimatedSize(durationMs)?.let { add(stringResource(R.string.player_estimated_size) to it) }
     }
 
-    Column(
-        Modifier
-            .widthIn(max = 460.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.Black.copy(alpha = 0.92f))
-            .padding(16.dp),
-    ) {
+    PanelEntrance {
+        Column(
+            Modifier
+                .widthIn(max = 460.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.Black.copy(alpha = 0.92f))
+                .padding(16.dp),
+        ) {
+            PanelBodyStreamInfo(rows, firstFocus)
+        }
+    }
+}
+
+/** Body of the format panel, split out so [StreamInfoPanel] stays a thin [PanelEntrance] shell. */
+@Composable
+private fun PanelBodyStreamInfo(
+    rows: List<Pair<String, String>>,
+    firstFocus: FocusRequester,
+) {
         Text(
             stringResource(R.string.player_stream_info),
             style = MaterialTheme.typography.titleMedium,
@@ -1284,7 +1441,6 @@ private fun StreamInfoPanel(
                 InfoRow(label, value, if (index == 0) firstFocus else null)
             }
         }
-    }
 }
 
 /** One `label — value` line of the format panel. */
@@ -1391,25 +1547,27 @@ private fun TrackPanel(
         }
     }
 
-    Column(
-        Modifier
-            .widthIn(max = 420.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.Black.copy(alpha = 0.92f))
-            .padding(16.dp),
-    ) {
-        Text(
-            if (panel == VodPanel.SUBTITLES) stringResource(R.string.player_subtitles) else stringResource(R.string.player_audio),
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White.copy(alpha = 0.7f),
-        )
-        Spacer(Modifier.height(8.dp))
-        Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
-            if (options.isEmpty()) {
-                Text(stringResource(R.string.player_none_available), color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(8.dp))
-            }
-            options.forEachIndexed { index, (label, selected, onClick) ->
-                TrackRow(label, selected, onClick, if (index == 0) firstFocus else null)
+    PanelEntrance {
+        Column(
+            Modifier
+                .widthIn(max = 420.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.Black.copy(alpha = 0.92f))
+                .padding(16.dp),
+        ) {
+            Text(
+                if (panel == VodPanel.SUBTITLES) stringResource(R.string.player_subtitles) else stringResource(R.string.player_audio),
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White.copy(alpha = 0.7f),
+            )
+            Spacer(Modifier.height(8.dp))
+            Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                if (options.isEmpty()) {
+                    Text(stringResource(R.string.player_none_available), color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(8.dp))
+                }
+                options.forEachIndexed { index, (label, selected, onClick) ->
+                    TrackRow(label, selected, onClick, if (index == 0) firstFocus else null)
+                }
             }
         }
     }
@@ -1468,13 +1626,28 @@ private fun NextEpisodePanel(
     val ordered = remember(episodes) {
         episodes.sortedWith(compareBy({ it.season }, { it.episodeNumber }))
     }
-    Column(
-        Modifier
-            .widthIn(max = 460.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.Black.copy(alpha = 0.92f))
-            .padding(16.dp),
-    ) {
+    PanelEntrance {
+        Column(
+            Modifier
+                .widthIn(max = 460.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.Black.copy(alpha = 0.92f))
+                .padding(16.dp),
+        ) {
+            PanelBodyNextEpisode(ordered, currentId, nextId, firstFocus, onPick)
+        }
+    }
+}
+
+/** Body of the next-episode panel, split out so the shell stays a thin [PanelEntrance]. */
+@Composable
+private fun PanelBodyNextEpisode(
+    ordered: List<Episode>,
+    currentId: Long?,
+    nextId: Long?,
+    firstFocus: FocusRequester,
+    onPick: (Episode) -> Unit,
+) {
         Text(
             stringResource(R.string.player_next_episode),
             style = MaterialTheme.typography.titleMedium,
@@ -1498,7 +1671,6 @@ private fun NextEpisodePanel(
                 )
             }
         }
-    }
 }
 
 /** The item being played. Held as state so "next episode" can swap it without a navigation. */

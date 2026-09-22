@@ -6,7 +6,13 @@
 package app.opentv.ui.vod
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,8 +38,12 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -42,14 +52,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -59,16 +75,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
+import app.opentv.core.AppSettings
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
 import app.opentv.data.model.Source
 import app.opentv.data.parser.displayTitle
 import app.opentv.ui.VodViewModel
-import app.opentv.ui.components.PrefetchImagesAhead
+import app.opentv.ui.components.PrefetchImagesAround
 import app.opentv.ui.components.posterRequest
 import app.opentv.ui.components.tvFocus
 import app.opentv.ui.theme.AppTheme
 import coil.compose.AsyncImage
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Movies: a modern, row-based home — Continue Watching, Recommended, Recently added and a row per
@@ -97,6 +115,10 @@ fun MoviesScreen(
     // here, so it must not appear in this rail's filter.
     val providers by viewModel.movieSources.collectAsState()
     val selectedSource by viewModel.selectedVodSource.collectAsState()
+    val context = LocalContext.current
+    val settings = remember { AppSettings.get(context) }
+    val sort by settings.movieSort.collectAsState()
+    val providerNames = remember(providers) { providers.associate { it.id to it.name } }
 
     // Pull the movie library the first time this tab is opened, not at login; refresh the computed
     // home rows (recommended, by-genre) on open too — cheap, and covers a library already on disk.
@@ -106,7 +128,9 @@ fun MoviesScreen(
     }
 
     // null = the curated home rows; a category id = that category's full grid.
-    var browseCategory by remember { mutableStateOf<String?>(null) }
+    // Saveable: BACK from a detail pops back to HOME (rebuilt from scratch), and the viewer
+    // expects the category they were browsing — not the shelves.
+    var browseCategory by rememberSaveable { mutableStateOf<String?>(null) }
 
     // BACK returns from a category to the shelves. The rail has no "All" row to do it — that entry
     // was removed because the unfiltered list behind it pulled the whole library in one go — so the
@@ -117,14 +141,30 @@ fun MoviesScreen(
     val hasContent = resume.isNotEmpty() || recommended.isNotEmpty() ||
         recentlyAdded.isNotEmpty() || genreRows.isNotEmpty()
 
+    // Records the opened title so BACK from its detail can restore scroll + focus onto it.
+    val openMovie: (Movie) -> Unit = { movie ->
+        viewModel.lastOpenedMovieId = movie.id
+        onOpenMovie(movie)
+    }
+
     Column(Modifier.fillMaxSize()) {
-        SearchAffordance(onOpenSearch)
+        VodToolbar(
+            onOpenSearch = onOpenSearch,
+            sort = sort,
+            onSelectSort = settings::setMovieSort,
+        )
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // Content is declared FIRST so it takes focus when the tab opens — the rail must
             // never steal the d-pad on entry — and is inset by the rail's width.
             Box(Modifier.fillMaxSize().padding(start = VOD_RAIL_WIDTH)) {
                 when {
-                    browseCategory != null -> MovieCategoryGrid(categoryMovies, viewModel, onOpenMovie)
+                    browseCategory != null -> MovieCategoryGrid(
+                        categoryMovies, viewModel, openMovie,
+                        sort = sort,
+                        providerNames = providerNames,
+                        returnToId = viewModel.lastOpenedMovieId,
+                        onReturnFocusGranted = { viewModel.lastOpenedMovieId = null },
+                    )
                     !hasContent -> when {
                         vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_movies))
                         hasSources -> EmptyVod(stringResource(R.string.vod_no_movies), stringResource(R.string.vod_no_movies_provider))
@@ -135,15 +175,39 @@ fun MoviesScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
+                        if (resume.isNotEmpty()) item(key = "cw") {
+                            ContinueWatchingRow(
+                                resume, onResume,
+                                onBareCard = viewModel::fillArtworkForKey,
+                                onArtworkFailed = viewModel::replaceDeadArtworkForKey,
+                            )
+                        }
                         if (recommended.isNotEmpty()) item(key = "rec") {
-                            MoviePosterRow(stringResource(R.string.vod_recommended), recommended, onOpenMovie)
+                            MoviePosterRow(
+                                stringResource(R.string.vod_recommended), recommended, openMovie,
+                                returnToId = viewModel.lastOpenedMovieId,
+                                onReturnFocusGranted = { viewModel.lastOpenedMovieId = null },
+                                onBareCard = viewModel::fillArtworkFor,
+                                onArtworkFailed = { viewModel.replaceDeadMovieArtwork(it.id) },
+                            )
                         }
                         if (recentlyAdded.isNotEmpty()) item(key = "recent") {
-                            MoviePosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenMovie)
+                            MoviePosterRow(
+                                stringResource(R.string.vod_recently_added), recentlyAdded, openMovie,
+                                returnToId = viewModel.lastOpenedMovieId,
+                                onReturnFocusGranted = { viewModel.lastOpenedMovieId = null },
+                                onBareCard = viewModel::fillArtworkFor,
+                                onArtworkFailed = { viewModel.replaceDeadMovieArtwork(it.id) },
+                            )
                         }
                         items(genreRows, key = { "g:${it.genre}" }) { group ->
-                            MoviePosterRow(group.genre, group.items, onOpenMovie)
+                            MoviePosterRow(
+                                group.genre, group.items, openMovie,
+                                returnToId = viewModel.lastOpenedMovieId,
+                                onReturnFocusGranted = { viewModel.lastOpenedMovieId = null },
+                                onBareCard = viewModel::fillArtworkFor,
+                                onArtworkFailed = { viewModel.replaceDeadMovieArtwork(it.id) },
+                            )
                         }
                     }
                 }
@@ -191,27 +255,48 @@ fun SeriesScreen(
     // nothing to browse here, so it must not appear in this rail's filter.
     val providers by viewModel.seriesSources.collectAsState()
     val selectedSource by viewModel.selectedVodSource.collectAsState()
+    val seriesContext = LocalContext.current
+    val seriesSettings = remember { AppSettings.get(seriesContext) }
+    val seriesSort by seriesSettings.seriesSort.collectAsState()
+    val seriesProviderNames = remember(providers) { providers.associate { it.id to it.name } }
 
     LaunchedEffect(Unit) {
         if (hasSources) viewModel.ensureVodLoaded()
         viewModel.loadHomeFeeds()
     }
 
-    var browseCategory by remember { mutableStateOf<String?>(null) }
+    // Saveable: BACK from a detail pops back to HOME (rebuilt from scratch) — see MoviesScreen.
+    var browseCategory by rememberSaveable { mutableStateOf<String?>(null) }
 
     // BACK returns from a category to the shelves — see MoviesScreen: there is no "All" row to do it.
     BackHandler(enabled = browseCategory != null) { browseCategory = null }
 
     val hasContent = resume.isNotEmpty() || recentlyAdded.isNotEmpty() || genreRows.isNotEmpty()
 
+    // Records the opened show so BACK from its detail can restore scroll + focus onto it.
+    val openSeries: (Series) -> Unit = { series ->
+        viewModel.lastOpenedSeriesId = series.id
+        onOpenSeries(series)
+    }
+
     Column(Modifier.fillMaxSize()) {
-        SearchAffordance(onOpenSearch)
+        VodToolbar(
+            onOpenSearch = onOpenSearch,
+            sort = seriesSort,
+            onSelectSort = seriesSettings::setSeriesSort,
+        )
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // Content first (focus on open — the rail must never steal the d-pad on entry),
             // inset by the rail's width. See MoviesScreen for the same arrangement.
             Box(Modifier.fillMaxSize().padding(start = VOD_RAIL_WIDTH)) {
                 when {
-                    browseCategory != null -> SeriesCategoryGrid(categorySeries, onOpenSeries)
+                    browseCategory != null -> SeriesCategoryGrid(
+                        categorySeries, openSeries, viewModel,
+                        sort = seriesSort,
+                        providerNames = seriesProviderNames,
+                        returnToId = viewModel.lastOpenedSeriesId,
+                        onReturnFocusGranted = { viewModel.lastOpenedSeriesId = null },
+                    )
                     !hasContent -> when {
                         vodLoading || isSyncing -> LoadingVod(stringResource(R.string.vod_loading_shows))
                         hasSources -> EmptyVod(stringResource(R.string.vod_no_shows), stringResource(R.string.vod_no_shows_provider))
@@ -222,12 +307,30 @@ fun SeriesScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        if (resume.isNotEmpty()) item(key = "cw") { ContinueWatchingRow(resume, onResume) }
+                        if (resume.isNotEmpty()) item(key = "cw") {
+                            ContinueWatchingRow(
+                                resume, onResume,
+                                onBareCard = viewModel::fillArtworkForKey,
+                                onArtworkFailed = viewModel::replaceDeadArtworkForKey,
+                            )
+                        }
                         if (recentlyAdded.isNotEmpty()) item(key = "recent") {
-                            SeriesPosterRow(stringResource(R.string.vod_recently_added), recentlyAdded, onOpenSeries)
+                            SeriesPosterRow(
+                                stringResource(R.string.vod_recently_added), recentlyAdded, openSeries,
+                                returnToId = viewModel.lastOpenedSeriesId,
+                                onReturnFocusGranted = { viewModel.lastOpenedSeriesId = null },
+                                onBareCard = viewModel::fillArtworkFor,
+                                onArtworkFailed = { viewModel.replaceDeadSeriesArtwork(it.id) },
+                            )
                         }
                         items(genreRows, key = { "g:${it.genre}" }) { group ->
-                            SeriesPosterRow(group.genre, group.items, onOpenSeries)
+                            SeriesPosterRow(
+                                group.genre, group.items, openSeries,
+                                returnToId = viewModel.lastOpenedSeriesId,
+                                onReturnFocusGranted = { viewModel.lastOpenedSeriesId = null },
+                                onBareCard = viewModel::fillArtworkFor,
+                                onArtworkFailed = { viewModel.replaceDeadSeriesArtwork(it.id) },
+                            )
                         }
                     }
                 }
@@ -249,23 +352,129 @@ fun SeriesScreen(
 
 // ---- Whole-category browse grids ---------------------------------------------------------------
 
-/** One category's films as a poster grid. Quality variants collapse to one card, badged. */
+/**
+ * One category's films as a poster grid. Quality variants collapse to one card, badged.
+ *
+ * Large categories (thousands of titles) render in windows of [GRID_PAGE_SIZE]: only the first
+ * window composes on open so the grid paints immediately, and scrolling near the end appends the
+ * next window. Lazy grids already recycle off-screen cards, but composing thousands of items up
+ * front still blocks the first frame on a Fire Stick — windowing fixes that without any DB change.
+ */
+private const val GRID_PAGE_SIZE = 120
+
+/** Posters across a category grid. Fixed so every row is full, TV-first layout. */
+private const val GRID_COLUMNS = 5
+
+/**
+ * Browse order for a category's collapsed movie groups. RECENT is identity — the DAO's native
+ * newest-first order — so the default view is byte-for-byte what it always was. Everything else
+ * sorts in memory over the already-loaded list: no query changes, and ties always break by title
+ * so the order is stable between recompositions.
+ */
+private fun movieOrder(
+    sort: AppSettings.VodSort,
+    providerNames: Map<Long, String>,
+): Comparator<app.opentv.data.repo.MovieVariantGroup> = when (sort) {
+    AppSettings.VodSort.RECENT -> Comparator { _, _ -> 0 }
+    AppSettings.VodSort.AZ -> compareBy { it.primary.displayTitle.lowercase() }
+    AppSettings.VodSort.YEAR -> compareByDescending<app.opentv.data.repo.MovieVariantGroup> { it.primary.year ?: 0 }
+        .thenBy { it.primary.displayTitle.lowercase() }
+    AppSettings.VodSort.RATING -> compareByDescending<app.opentv.data.repo.MovieVariantGroup> { it.primary.rating ?: -1.0 }
+        .thenBy { it.primary.displayTitle.lowercase() }
+    AppSettings.VodSort.PROVIDER -> compareBy<app.opentv.data.repo.MovieVariantGroup> { providerNames[it.primary.sourceId].orEmpty().lowercase() }
+        .thenBy { it.primary.displayTitle.lowercase() }
+}
+
+/** Show half of [movieOrder]. */
+private fun seriesOrder(
+    sort: AppSettings.VodSort,
+    providerNames: Map<Long, String>,
+): Comparator<Series> = when (sort) {
+    AppSettings.VodSort.RECENT -> Comparator { _, _ -> 0 }
+    AppSettings.VodSort.AZ -> compareBy { it.displayTitle.lowercase() }
+    AppSettings.VodSort.YEAR -> compareByDescending<Series> { it.year ?: 0 }
+        .thenBy { it.displayTitle.lowercase() }
+    AppSettings.VodSort.RATING -> compareByDescending<Series> { it.rating ?: -1.0 }
+        .thenBy { it.displayTitle.lowercase() }
+    AppSettings.VodSort.PROVIDER -> compareBy<Series> { providerNames[it.sourceId].orEmpty().lowercase() }
+        .thenBy { it.displayTitle.lowercase() }
+}
+
 @Composable
-private fun MovieCategoryGrid(movies: List<Movie>, viewModel: VodViewModel, onOpenMovie: (Movie) -> Unit) {
+private fun MovieCategoryGrid(
+    movies: List<Movie>,
+    viewModel: VodViewModel,
+    onOpenMovie: (Movie) -> Unit,
+    sort: AppSettings.VodSort = AppSettings.VodSort.RECENT,
+    providerNames: Map<Long, String> = emptyMap(),
+    returnToId: Long? = null,
+    onReturnFocusGranted: () -> Unit = {},
+) {
     if (movies.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_movies)); return }
-    val groups = remember(movies) { viewModel.collapseVariants(movies) }
+    // Room re-emits this list on EVERY row write — including each TMDB artwork backfill
+    // landing while posters are still filling in. Keying the regroup on list *identity* re-ran
+    // collapse + sort over thousands of titles per write (main thread, heavy alloc churn),
+    // reset the windowing, and re-fired the scroll-restore effect — the stutter/ANR loop seen
+    // while posters loaded. Title membership (ids) only changes when the category actually
+    // changes, so structure memoizes on ids; fresh poster URLs ride a separate light overlay
+    // map so backfilled art still paints without regrouping anything.
+    val movieIds = remember(movies) { movies.map { it.id } }
+    val posterById = remember(movies) { movies.associate { it.id to it.posterUrl } }
+    val collapsed = remember(movieIds) { viewModel.collapseVariants(movies) }
+    // Browse order is applied in memory over the collapsed groups — RECENT keeps the DAO's native
+    // newest-first order, so the default view is exactly what it always was.
+    val groups = remember(collapsed, sort, providerNames) { collapsed.sortedWith(movieOrder(sort, providerNames)) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
-    val art = remember(groups) { groups.map { it.primary.posterUrl.orEmpty() } }
-    PrefetchImagesAhead({ gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }, art)
+    val art = remember(groups, posterById) { groups.map { posterById[it.primary.id].orEmpty() } }
+    PrefetchImagesAround(
+        firstVisibleIndex = { gridState.layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: -1 },
+        lastVisibleIndex = { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+        urls = art,
+    )
+    // Open with enough windows for the saved scroll anchor when returning from a detail —
+    // scrolling to an item that was never composed silently does nothing. Keyed on membership,
+    // NOT list identity, so backfill writes landing mid-browse neither shrink the window
+    // (which dropped focus and yanked scroll) nor re-fire the restore effect below.
+    var visibleCount by remember(movieIds) {
+        mutableIntStateOf(
+            maxOf(GRID_PAGE_SIZE, viewModel.movieGridIndex + GRID_PAGE_SIZE)
+                .coerceAtMost(groups.size),
+        )
+    }
+    // Persist the scroll anchor continuously; restore it once the grid has its rows back.
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .collect { (index, offset) ->
+                viewModel.movieGridIndex = index
+                viewModel.movieGridOffset = offset
+            }
+    }
+    LaunchedEffect(gridState, groups) {
+        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { last ->
+                if (last >= 0 && last >= visibleCount - 20 && visibleCount < groups.size) {
+                    visibleCount = (visibleCount + GRID_PAGE_SIZE).coerceAtMost(groups.size)
+                }
+            }
+    }
+    LaunchedEffect(groups) {
+        val index = viewModel.movieGridIndex
+        if (index > 0 && groups.isNotEmpty()) {
+            runCatching { gridState.scrollToItem(index, viewModel.movieGridOffset) }
+        }
+    }
+    val visible = remember(groups, visibleCount) { groups.take(visibleCount) }
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Adaptive(minSize = 140.dp),
+        columns = GridCells.Fixed(GRID_COLUMNS),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        gridItems(groups, key = { it.primary.id }) { group ->
+        gridItems(visible, key = { it.primary.id }) { group ->
             val quality = group.variants.firstOrNull()?.qualityLabel?.takeIf { it.isNotBlank() }
             val badge = quality
                 ?: if (group.hasMultipleQualities) {
@@ -273,40 +482,131 @@ private fun MovieCategoryGrid(movies: List<Movie>, viewModel: VodViewModel, onOp
                 } else {
                     null
                 }
+            // Bare card on screen: one guarded TMDB fill (once per session per title, max 3
+            // concurrent). The persisted hit re-emits through `movies` and repaints this card.
+            // Poster comes from the fresh overlay map, not the memoized group, so backfilled art
+            // paints without regrouping (see above).
+            LaunchedEffect(group.primary.id) { viewModel.fillArtworkFor(group.primary) }
             PosterCard(
                 title = group.primary.displayTitle,
-                posterUrl = group.primary.posterUrl,
+                posterUrl = posterById[group.primary.id] ?: group.primary.posterUrl,
                 subtitle = group.primary.year?.toString(),
                 rating = group.primary.rating,
                 qualityBadge = badge,
                 onClick = { onOpenMovie(group.primary) },
+                modifier = Modifier.fillMaxWidth(),
+                fixedWidth = false,
+                requestFocus = returnToId == group.primary.id,
+                onFocusGranted = onReturnFocusGranted,
+                onArtworkFailed = { viewModel.replaceDeadMovieArtwork(group.primary.id) },
             )
+        }
+        if (visibleCount < groups.size) {
+            item(key = "more", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                GridLoadingMore()
+            }
         }
     }
 }
 
-/** One category's shows as a poster grid. */
+/** One category's shows as a poster grid — windowed the same way as [MovieCategoryGrid]. */
 @Composable
-private fun SeriesCategoryGrid(series: List<Series>, onOpenSeries: (Series) -> Unit) {
+private fun SeriesCategoryGrid(
+    series: List<Series>,
+    onOpenSeries: (Series) -> Unit,
+    viewModel: VodViewModel,
+    sort: AppSettings.VodSort = AppSettings.VodSort.RECENT,
+    providerNames: Map<Long, String> = emptyMap(),
+    returnToId: Long? = null,
+    onReturnFocusGranted: () -> Unit = {},
+) {
     if (series.isEmpty()) { LoadingVod(stringResource(R.string.vod_loading_shows)); return }
+    // Same backfill re-emission guard as MovieCategoryGrid: membership (ids) only changes when
+    // the category actually changes; fresh poster URLs ride a light overlay map.
+    val seriesIds = remember(series) { series.map { it.id } }
+    val seriesPosterById = remember(series) { series.associate { it.id to it.posterUrl } }
+    val ordered = remember(seriesIds, sort, providerNames) { series.sortedWith(seriesOrder(sort, providerNames)) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
-    val art = remember(series) { series.map { it.posterUrl.orEmpty() } }
-    PrefetchImagesAhead({ gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }, art)
+    val art = remember(ordered, seriesPosterById) { ordered.map { seriesPosterById[it.id].orEmpty() } }
+    PrefetchImagesAround(
+        firstVisibleIndex = { gridState.layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: -1 },
+        lastVisibleIndex = { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+        urls = art,
+    )
+    var visibleCount by remember(seriesIds) {
+        mutableIntStateOf(
+            maxOf(GRID_PAGE_SIZE, viewModel.seriesGridIndex + GRID_PAGE_SIZE)
+                .coerceAtMost(ordered.size),
+        )
+    }
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .collect { (index, offset) ->
+                viewModel.seriesGridIndex = index
+                viewModel.seriesGridOffset = offset
+            }
+    }
+    LaunchedEffect(gridState, ordered) {
+        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { last ->
+                if (last >= 0 && last >= visibleCount - 20 && visibleCount < ordered.size) {
+                    visibleCount = (visibleCount + GRID_PAGE_SIZE).coerceAtMost(ordered.size)
+                }
+            }
+    }
+    LaunchedEffect(ordered) {
+        val index = viewModel.seriesGridIndex
+        if (index > 0 && ordered.isNotEmpty()) {
+            runCatching { gridState.scrollToItem(index, viewModel.seriesGridOffset) }
+        }
+    }
+    val visible = remember(ordered, visibleCount) { ordered.take(visibleCount) }
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Adaptive(minSize = 140.dp),
+        columns = GridCells.Fixed(GRID_COLUMNS),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        gridItems(series, key = { it.id }) { item ->
+        gridItems(visible, key = { it.id }) { item ->
+            LaunchedEffect(item.id) { viewModel.fillArtworkFor(item) }
             PosterCard(
                 title = item.displayTitle,
-                posterUrl = item.posterUrl,
+                posterUrl = seriesPosterById[item.id] ?: item.posterUrl,
                 subtitle = item.year?.toString(),
                 rating = item.rating,
                 onClick = { onOpenSeries(item) },
+                modifier = Modifier.fillMaxWidth(),
+                fixedWidth = false,
+                requestFocus = returnToId == item.id,
+                onFocusGranted = onReturnFocusGranted,
+                onArtworkFailed = { viewModel.replaceDeadSeriesArtwork(item.id) },
+            )
+        }
+        if (visibleCount < ordered.size) {
+            item(key = "more", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                GridLoadingMore()
+            }
+        }
+    }
+}
+
+/** Full-width "loading more titles" footer while a windowed grid still has rows to append. */
+@Composable
+private fun GridLoadingMore() {
+    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(
+                modifier = Modifier.width(22.dp).height(22.dp),
+                strokeWidth = 2.dp,
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                stringResource(R.string.vod_loading_more),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -316,10 +616,24 @@ private fun SeriesCategoryGrid(series: List<Series>, onOpenSeries: (Series) -> U
 
 /** A titled horizontal shelf of movie poster cards. Shared by the home and the detail's "more like this". */
 @Composable
-internal fun MoviePosterRow(title: String, movies: List<Movie>, onOpenMovie: (Movie) -> Unit) {
+internal fun MoviePosterRow(
+    title: String,
+    movies: List<Movie>,
+    onOpenMovie: (Movie) -> Unit,
+    returnToId: Long? = null,
+    onReturnFocusGranted: () -> Unit = {},
+    /** Fired once per composed card so owners can lazily fill missing artwork. Defaults to none. */
+    onBareCard: (Movie) -> Unit = {},
+    /** Fired when a composed card's URL fails to render, so owners can replace dead art. */
+    onArtworkFailed: (Movie) -> Unit = {},
+) {
     val state = androidx.compose.foundation.lazy.rememberLazyListState()
     val art = remember(movies) { movies.map { it.posterUrl.orEmpty() } }
-    PrefetchImagesAhead({ state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }, art)
+    PrefetchImagesAround(
+        firstVisibleIndex = { state.layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: -1 },
+        lastVisibleIndex = { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+        urls = art,
+    )
     Column(Modifier.fillMaxWidth()) {
         SectionHeader(title)
         LazyRow(
@@ -328,12 +642,16 @@ internal fun MoviePosterRow(title: String, movies: List<Movie>, onOpenMovie: (Mo
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(movies, key = { it.id }) { movie ->
+                LaunchedEffect(movie.id) { onBareCard(movie) }
                 PosterCard(
                     title = movie.displayTitle,
                     posterUrl = movie.posterUrl,
                     subtitle = movie.year?.toString(),
                     rating = movie.rating,
                     onClick = { onOpenMovie(movie) },
+                    requestFocus = returnToId == movie.id,
+                    onFocusGranted = onReturnFocusGranted,
+                    onArtworkFailed = { onArtworkFailed(movie) },
                 )
             }
         }
@@ -342,10 +660,24 @@ internal fun MoviePosterRow(title: String, movies: List<Movie>, onOpenMovie: (Mo
 
 /** A titled horizontal shelf of series poster cards. */
 @Composable
-internal fun SeriesPosterRow(title: String, series: List<Series>, onOpenSeries: (Series) -> Unit) {
+internal fun SeriesPosterRow(
+    title: String,
+    series: List<Series>,
+    onOpenSeries: (Series) -> Unit,
+    returnToId: Long? = null,
+    onReturnFocusGranted: () -> Unit = {},
+    /** Fired once per composed card so owners can lazily fill missing artwork. Defaults to none. */
+    onBareCard: (Series) -> Unit = {},
+    /** Fired when a composed card's URL fails to render, so owners can replace dead art. */
+    onArtworkFailed: (Series) -> Unit = {},
+) {
     val state = androidx.compose.foundation.lazy.rememberLazyListState()
     val art = remember(series) { series.map { it.posterUrl.orEmpty() } }
-    PrefetchImagesAhead({ state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }, art)
+    PrefetchImagesAround(
+        firstVisibleIndex = { state.layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: -1 },
+        lastVisibleIndex = { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+        urls = art,
+    )
     Column(Modifier.fillMaxWidth()) {
         SectionHeader(title)
         LazyRow(
@@ -354,12 +686,16 @@ internal fun SeriesPosterRow(title: String, series: List<Series>, onOpenSeries: 
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(series, key = { it.id }) { item ->
+                LaunchedEffect(item.id) { onBareCard(item) }
                 PosterCard(
                     title = item.displayTitle,
                     posterUrl = item.posterUrl,
                     subtitle = item.year?.toString(),
                     rating = item.rating,
                     onClick = { onOpenSeries(item) },
+                    requestFocus = returnToId == item.id,
+                    onFocusGranted = onReturnFocusGranted,
+                    onArtworkFailed = { onArtworkFailed(item) },
                 )
             }
         }
@@ -395,14 +731,39 @@ internal fun PosterCard(
     rating: Double? = null,
     qualityBadge: String? = null,
     progress: Float? = null,
+    /**
+     * True for the card BACK is returning to. The card pulls d-pad focus onto itself once, then
+     * reports [onFocusGranted] so the caller clears the target — without the clear, a later
+     * recomposition would yank focus back here while the viewer is browsing elsewhere.
+     */
+    requestFocus: Boolean = false,
+    onFocusGranted: () -> Unit = {},
+    /**
+     * Fired when the card's URL was present but failed to render. Owners map it to a verified
+     * TMDB replacement; blank URLs never fire (see [PosterImage]).
+     */
+    onArtworkFailed: () -> Unit = {},
+    /**
+     * False in fixed-column grids: the card stretches to its column (via the incoming [modifier])
+     * instead of holding the 140dp shelf width.
+     */
+    fixedWidth: Boolean = true,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "posterScale")
+    val returnFocus = remember { FocusRequester() }
+    LaunchedEffect(requestFocus) {
+        if (requestFocus) runCatching { returnFocus.requestFocus() }
+    }
     Column(
         modifier
-            .width(POSTER_WIDTH)
+            .then(if (fixedWidth) Modifier.width(POSTER_WIDTH) else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .onFocusChanged { focused = it.isFocused }
+            .focusRequester(returnFocus)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused && requestFocus) onFocusGranted()
+            }
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(4.dp),
@@ -418,11 +779,11 @@ internal fun PosterCard(
                     else Modifier,
                 ),
         ) {
-            AsyncImage(
-                model = posterRequest(LocalContext.current, posterUrl),
-                contentDescription = title,
-                contentScale = ContentScale.Crop,
+            PosterImage(
+                posterUrl = posterUrl,
+                title = title,
                 modifier = Modifier.fillMaxSize(),
+                onLoadError = onArtworkFailed,
             )
             rating?.takeIf { it > 0.0 }?.let {
                 Badge(
@@ -463,6 +824,101 @@ internal fun PosterCard(
     }
 }
 
+/**
+ * Poster art with an instant-feeling loading state.
+ *
+ * While Coil decodes (or hits the network on first sight) a shimmer fills the frame instead of a
+ * flat grey box, so shelves read as loading rather than broken. On a missing or dead URL a titled
+ * gradient tile with the initial shows — the same fallback the detail hero uses — so a grid never
+ * shows an empty rectangle. Uses [posterRequest] so the UI shares one cache key and decode size
+ * with the prefetcher; any other request shape would decode the same art twice.
+ */
+@Composable
+internal fun PosterImage(
+    posterUrl: String?,
+    title: String,
+    modifier: Modifier = Modifier,
+    /**
+     * Fired when the URL was present but Coil could not render it (404, decode failure…).
+     * Owners use it to kick a verified TMDB replacement; blank URLs never fire it (there is
+     * nothing to verify dead), and each URL fires at most once per composition instance.
+     */
+    onLoadError: () -> Unit = {},
+) {
+    var loaded by remember(posterUrl) { mutableStateOf(false) }
+    var failed by remember(posterUrl) { mutableStateOf(false) }
+    Box(modifier) {
+        if (failed || posterUrl.isNullOrBlank()) {
+            PosterFallbackTile(title = title, modifier = Modifier.fillMaxSize())
+        } else {
+            if (!loaded) {
+                Box(Modifier.fillMaxSize().shimmerPlaceholder())
+            }
+            AsyncImage(
+                model = posterRequest(LocalContext.current, posterUrl),
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                onLoading = { loaded = false; failed = false },
+                onSuccess = { loaded = true },
+                onError = { state ->
+                    failed = true
+                    // Coil failures are otherwise invisible; the URL + state is what
+                    // distinguishes a dead host from a client-side decode/timeout problem.
+                    android.util.Log.w("OpenTV", "Poster failed for '$title' <$posterUrl>: $state")
+                    onLoadError()
+                },
+            )
+        }
+    }
+}
+
+/** Gradient tile with the title initial — shown when poster art is missing or failed to load. */
+@Composable
+private fun PosterFallbackTile(title: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier.background(
+            Brush.verticalGradient(
+                0f to MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                1f to MaterialTheme.colorScheme.surfaceVariant,
+            ),
+        ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            title.trim().take(1).uppercase().ifBlank { "?" },
+            style = MaterialTheme.typography.headlineMedium,
+            color = Color.White,
+        )
+    }
+}
+
+/**
+ * Shimmer sweep for image frames. Cheap on a stick: one infinite transition per visible card,
+ * no blur, no per-frame allocation outside the brush.
+ */
+@Composable
+private fun Modifier.shimmerPlaceholder(): Modifier {
+    val transition = rememberInfiniteTransition(label = "posterShimmer")
+    val sweep by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1100, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "shimmerSweep",
+    )
+    val base = MaterialTheme.colorScheme.surfaceVariant
+    return background(
+        Brush.linearGradient(
+            colors = listOf(base, base.copy(alpha = 0.55f), base),
+            start = androidx.compose.ui.geometry.Offset(-200f + 500f * sweep, 0f),
+            end = androidx.compose.ui.geometry.Offset(100f + 500f * sweep, 300f),
+        ),
+    )
+}
+
 /** A small rounded chip drawn over poster art — a rating or a quality label. */
 @Composable
 private fun Badge(text: String, modifier: Modifier = Modifier, highlight: Boolean = false) {
@@ -488,6 +944,10 @@ private fun Badge(text: String, modifier: Modifier = Modifier, highlight: Boolea
 internal fun ContinueWatchingRow(
     items: List<VodViewModel.ResumeItem>,
     onResume: (mediaKey: String, url: String, title: String) -> Unit,
+    /** See [MoviePosterRow.onBareCard]: lazily fills missing movie art. Defaults to none. */
+    onBareCard: (mediaKey: String, hasPoster: Boolean) -> Unit = { _, _ -> },
+    /** See [PosterCard.onArtworkFailed]: replaces provably dead movie art. Defaults to none. */
+    onArtworkFailed: (mediaKey: String) -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth()) {
         SectionHeader(stringResource(R.string.vod_continue_watching))
@@ -496,7 +956,12 @@ internal fun ContinueWatchingRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(items, key = { it.mediaKey }) { item ->
-                ResumeCard(item) { onResume(item.mediaKey, item.streamUrl, item.title) }
+                ResumeCard(
+                    item,
+                    onBareCard = { onBareCard(item.mediaKey, !item.posterUrl.isNullOrBlank()) },
+                    onArtworkFailed = { onArtworkFailed(item.mediaKey) },
+                    onClick = { onResume(item.mediaKey, item.streamUrl, item.title) },
+                )
             }
         }
     }
@@ -504,7 +969,12 @@ internal fun ContinueWatchingRow(
 
 /** A landscape resume thumbnail with a progress fill — a movie or an episode part-way through. */
 @Composable
-private fun ResumeCard(item: VodViewModel.ResumeItem, onClick: () -> Unit) {
+private fun ResumeCard(
+    item: VodViewModel.ResumeItem,
+    onBareCard: () -> Unit = {},
+    onArtworkFailed: () -> Unit = {},
+    onClick: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "resumeScale")
     Column(
@@ -527,11 +997,12 @@ private fun ResumeCard(item: VodViewModel.ResumeItem, onClick: () -> Unit) {
                     else Modifier,
                 ),
         ) {
-            AsyncImage(
-                model = posterRequest(LocalContext.current, item.posterUrl),
-                contentDescription = item.title,
-                contentScale = ContentScale.Crop,
+            LaunchedEffect(item.mediaKey) { onBareCard() }
+            PosterImage(
+                posterUrl = item.posterUrl,
+                title = item.title,
                 modifier = Modifier.fillMaxSize(),
+                onLoadError = onArtworkFailed,
             )
             LinearProgressIndicator(
                 progress = { item.progress },
@@ -551,8 +1022,8 @@ private fun ResumeCard(item: VodViewModel.ResumeItem, onClick: () -> Unit) {
 
 // ---- Category side rail ------------------------------------------------------------------------
 
-/** Width of the category rail — the same 240dp column the Live TV guide's rail uses. */
-private val VOD_RAIL_WIDTH = 240.dp
+/** Width of the category rail — the same 238dp column the Live TV guide's rail uses. */
+private val VOD_RAIL_WIDTH = 238.dp
 
 /**
  * The Movies/Shows category list as a LEFT SIDE MENU, mirroring the Live TV guide's rail:
@@ -672,7 +1143,7 @@ private fun VodRailEntry(
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = if (focused || selected) FontWeight.Bold else FontWeight.Medium,
             color = labelColor,
             maxLines = 1,
@@ -683,7 +1154,7 @@ private fun VodRailEntry(
             Spacer(Modifier.width(8.dp))
             Text(
                 text = "%,d".format(count),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 color = labelColor.copy(alpha = 0.7f),
                 maxLines = 1,
             )
@@ -694,16 +1165,118 @@ private fun VodRailEntry(
 // ---- Search / loading / empty ------------------------------------------------------------------
 
 /**
- * The search entry at the top of the Movies and Shows home. The rail's global search already covers
- * movies and series; this makes it reachable without leaving the tab. Focusable for d-pad on TV and
- * tappable on touch, it just opens the existing search screen.
+ * The top bar of the Movies and Shows home: search on the left, the TiviMate-style sort menu
+ * pinned top-right. The rail's global search already covers movies and series; this makes it
+ * reachable without leaving the tab.
  */
 @Composable
-private fun SearchAffordance(onOpenSearch: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
+private fun VodToolbar(
+    onOpenSearch: () -> Unit,
+    sort: AppSettings.VodSort,
+    onSelectSort: (AppSettings.VodSort) -> Unit,
+) {
     Row(
         Modifier
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SearchAffordance(onOpenSearch, Modifier.weight(1f))
+        Spacer(Modifier.width(12.dp))
+        SortMenuButton(sort = sort, onSelectSort = onSelectSort)
+    }
+}
+
+/**
+ * The sort picker: a pill showing the active order, opening a dropdown with the five browse
+ * orders. The choice persists per section in settings, so a restart keeps it.
+ */
+@Composable
+private fun SortMenuButton(
+    sort: AppSettings.VodSort,
+    onSelectSort: (AppSettings.VodSort) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .tvFocus(shape = RoundedCornerShape(10.dp), onFocusChange = { focused = it })
+                .clickable { expanded = true }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.Sort,
+                contentDescription = stringResource(R.string.vod_sort_title),
+                tint = if (focused) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                sortLabel(sort),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (focused) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            Text(
+                stringResource(R.string.vod_sort_title),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            AppSettings.VodSort.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(sortLabel(option)) },
+                    onClick = {
+                        expanded = false
+                        onSelectSort(option)
+                    },
+                    trailingIcon = {
+                        if (option == sort) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** The short label the sort pill shows for the active order. */
+@Composable
+private fun sortLabel(sort: AppSettings.VodSort): String = stringResource(
+    when (sort) {
+        AppSettings.VodSort.RECENT -> R.string.vod_sort_recent
+        AppSettings.VodSort.PROVIDER -> R.string.vod_sort_provider
+        AppSettings.VodSort.AZ -> R.string.vod_sort_az
+        AppSettings.VodSort.YEAR -> R.string.vod_sort_year
+        AppSettings.VodSort.RATING -> R.string.vod_sort_rating
+    },
+)
+
+/**
+ * The search entry — the toolbar's left side. Focusable for d-pad on TV and tappable on touch,
+ * it just opens the existing search screen.
+ */
+@Composable
+private fun SearchAffordance(onOpenSearch: () -> Unit, modifier: Modifier = Modifier) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        modifier
             .clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .tvFocus(shape = RoundedCornerShape(10.dp), onFocusChange = { focused = it })
@@ -749,7 +1322,7 @@ private fun LoadingVod(message: String) {
     }
 }
 
-/** Poster shelf card width; the grid uses an adaptive min size close to this. */
+/** Poster shelf card width. Grid cards stretch to fill their fixed column. */
 private val POSTER_WIDTH = 140.dp
 
 /** Rating to one decimal place, locale-independent (the "★" is drawn beside it). */

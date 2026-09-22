@@ -93,10 +93,25 @@ class TmdbClient(
         if (key.isEmpty()) return null
         val query = searchTitle(title)
         if (query.isBlank() && tmdbId.isNullOrBlank()) return null
-        val id = tmdbId?.takeIf { it.isNotBlank() } ?: searchId(isMovie, query, year, key) ?: return null
-        return runCatching { details(isMovie, id, key) }
-            .onFailure { Log.w(TAG, "TMDB details failed for $id", it) }
-            .getOrNull()
+        tmdbId?.takeIf { it.isNotBlank() }?.let { id ->
+            return runCatching { details(isMovie, id, key) }
+                .onFailure { Log.w(TAG, "TMDB details failed for $id", it) }
+                .getOrNull()
+        }
+        // Providers routinely file films under series and vice versa (one "Jackass" special can
+        // live on either side). When our own side has no match, try the other media type before
+        // giving up — artwork is artwork, and a missed match is a permanently bare card.
+        searchId(isMovie, query, year, key)?.let { id ->
+            return runCatching { details(isMovie, id, key) }
+                .onFailure { Log.w(TAG, "TMDB details failed for $id", it) }
+                .getOrNull()
+        }
+        searchId(!isMovie, query, year, key)?.let { id ->
+            return runCatching { details(!isMovie, id, key) }
+                .onFailure { Log.w(TAG, "TMDB cross-type details failed for $id", it) }
+                .getOrNull()
+        }
+        return null
     }
 
     /** Finds the best-matching TMDB id, retrying without the year filter if a year search comes back empty. */
@@ -179,7 +194,9 @@ class TmdbClient(
     private companion object {
         const val TAG = "TmdbClient"
         val TMDB_BASE: HttpUrl = "https://api.themoviedb.org/3".toHttpUrl()
-        const val IMG_POSTER = "https://image.tmdb.org/t/p/w500"
+        // w342: a 140dp card is ~280px on a 320dpi box, so 342px covers it with headroom
+        // at ~45% fewer bytes than w500 (measured 58KB vs 106KB on the same poster).
+        const val IMG_POSTER = "https://image.tmdb.org/t/p/w342"
         const val IMG_BACKDROP = "https://image.tmdb.org/t/p/w1280"
         const val TOP_CAST = 12
     }
