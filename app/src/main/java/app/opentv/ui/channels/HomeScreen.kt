@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -48,6 +49,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -297,6 +299,16 @@ fun HomeScreen(
     val recordScope = scope
     // The programme the user pressed OK on in the grid — drives the per-programme record menu.
     var recordTarget by remember { mutableStateOf<Pair<ChannelsViewModel.Row, Programme>?>(null) }
+    // Idle auto-close for that menu. Every d-pad key press restarts the countdown; when it runs
+    // out unanswered, the menu dismisses itself.
+    var menuIdleTick by remember { mutableIntStateOf(0) }
+    fun menuIdleReset() { menuIdleTick++ }
+    LaunchedEffect(recordTarget, menuIdleTick) {
+        if (recordTarget != null) {
+            delay(MENU_IDLE_TIMEOUT_MILLIS)
+            recordTarget = null
+        }
+    }
     // The channel whose OK menu (Watch / Record / Schedule) is open.
     var channelMenu by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
     // When a recording is running and the user wants to watch a live stream, asks first.
@@ -1653,7 +1665,15 @@ fun HomeScreen(
                     .width(440.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(24.dp),
+                    .padding(24.dp)
+                    // Auto-close a menu the viewer has walked away from. Any d-pad press on the
+                    // dialog restarts the countdown; when it runs out unanswered the menu
+                    // dismisses itself instead of sitting over the guide indefinitely. Returns
+                    // false so the press still reaches the rows that handle it.
+                    .onPreviewKeyEvent {
+                        menuIdleReset()
+                        false
+                    },
             ) {
                 Text(
                     programme.title,
@@ -1723,7 +1743,11 @@ fun HomeScreen(
                         Toast.makeText(context, context.getString(R.string.rec_recording_stopped), Toast.LENGTH_SHORT).show()
                         recordTarget = null
                     }
-                    liveNow -> RecordActionRow(stringResource(R.string.rec_record_now), primary = false) {
+                    liveNow -> RecordActionRow(
+                        stringResource(R.string.rec_record_now),
+                        primary = false,
+                        leading = { ActionGlyph.RecordingDot(AppTheme.palette.recording) },
+                    ) {
                         recordScope.launch { graph.recordingEngine.startChannel(chosenVariant, programme) }
                         Toast.makeText(context, context.getString(R.string.rec_recording_channel, channel.shownName), Toast.LENGTH_LONG).show()
                         promptBackgroundIfNeeded()
@@ -1770,19 +1794,10 @@ fun HomeScreen(
                         }
                     }
                 }
-                if (!isPast) {
-                    RecordActionRow(stringResource(R.string.rec_record_series)) {
-                        recordScope.launch {
-                            graph.recordingEngine.recordSeries(channel, programme, targetRow.programmes)
-                        }
-                        Toast.makeText(context, context.getString(R.string.rec_series_recording_set, programme.title), Toast.LENGTH_LONG).show()
-                        promptBackgroundIfNeeded()
-                        recordTarget = null
-                    }
-                }
                 RecordActionRow(
                     if (channel.favourite) stringResource(R.string.common_remove_favourite)
                     else stringResource(R.string.common_favourite),
+                    leading = { ActionGlyph.Star(AppTheme.palette.favourite) },
                 ) {
                     viewModel.toggleFavourite(targetRow)
                     recordTarget = null
@@ -1986,7 +2001,12 @@ private suspend fun setReminder(
 }
 
 @Composable
-private fun RecordActionRow(label: String, primary: Boolean = false, onClick: () -> Unit) {
+private fun RecordActionRow(
+    label: String,
+    primary: Boolean = false,
+    leading: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val shape = RoundedCornerShape(10.dp)
     // primaryContainer/onPrimaryContainer are both accent shades in this palette, so the old
     // primary row was accent-on-accent — unreadable, and worst on the focused first row. Use the
@@ -1997,11 +2017,8 @@ private fun RecordActionRow(label: String, primary: Boolean = false, onClick: ()
         primary -> MaterialTheme.colorScheme.onPrimary
         else -> MaterialTheme.colorScheme.onSurface
     }
-    Text(
-        label,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal,
-        color = content,
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
@@ -2010,7 +2027,51 @@ private fun RecordActionRow(label: String, primary: Boolean = false, onClick: ()
             .tvFocus(shape = shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
-    )
+    ) {
+        if (leading != null) {
+            leading()
+            Spacer(Modifier.width(12.dp))
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal,
+            color = content,
+        )
+    }
+}
+
+/**
+ * The leading marks the programme menu wears: a filled favourite star, or the recording dot.
+ *
+ * The glyph is coloured by what it means, not by the label it sits beside — the favourite row
+ * keeps the amber star even when the label reads "Remove favourite", and the recording dot is
+ * always the recording red.
+ */
+private object ActionGlyph {
+    @Composable
+    fun Star(tint: Color) {
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Filled.Star,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+
+    @Composable
+    fun RecordingDot(tint: Color) {
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(tint),
+            )
+        }
+    }
 }
 
 /** A small focusable quality pill (FHD / HD / SD…) for the record dialog's "record HD or SD" choice. */
@@ -2360,6 +2421,9 @@ private fun EmptyState(onAddSource: () -> Unit) {
 
 /** How long the picture takes to grow out of / shrink back into the guide's preview card. */
 private const val PLAYER_TRANSITION_MILLIS = 300
+
+/** How long the programme menu waits for a d-pad press before dismissing itself. */
+private const val MENU_IDLE_TIMEOUT_MILLIS = 30_000L
 
 /** UTC in the database, device zone on screen. Converted here and nowhere else. */
 private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
