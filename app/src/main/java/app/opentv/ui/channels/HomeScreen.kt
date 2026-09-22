@@ -153,6 +153,7 @@ fun HomeScreen(
     onFullScreenChanged: (Boolean) -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenMultiview: (Long) -> Unit = {},
     viewModel: ChannelsViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -917,10 +918,33 @@ fun HomeScreen(
      * the viewer scrubbed to when they back out.
      */
     fun playCatchup(channel: Channel, programme: Programme, onNoArchive: (() -> Unit)? = null) {
+        if (!settings.catchupEnabled.value) {
+            Toast.makeText(context, context.getString(R.string.guide_catchup_disabled), Toast.LENGTH_SHORT).show()
+            onNoArchive?.invoke()
+            return
+        }
+        // The guide only keeps 3 days back — older slots stay visible until the next refresh
+        // but the archive behind them is unreachable from this device (TiviMate shows the same
+        // expired-slot behaviour).
+        val effectiveDays = settings.effectiveArchiveDays(channel.tvArchiveDays)
+        if (effectiveDays > 0 &&
+            programme.startUtcMillis < System.currentTimeMillis() - effectiveDays * 86_400_000L
+        ) {
+            Toast.makeText(context, context.getString(R.string.guide_catchup_expired), Toast.LENGTH_SHORT).show()
+            onNoArchive?.invoke()
+            return
+        }
         recordScope.launch {
             val source = withContext(Dispatchers.IO) { graph.sourceRepository.byId(channel.sourceId) }
             val url = if (source != null) {
-                withContext(Dispatchers.IO) { CatchupResolver.resolve(source, channel, programme) }
+                withContext(Dispatchers.IO) {
+                    CatchupResolver.resolve(
+                        source,
+                        channel,
+                        programme,
+                        settings.catchupCorrectionMin.value,
+                    )
+                }
             } else null
             if (url == null) {
                 Toast.makeText(context, context.getString(R.string.guide_catchup_link_failed), Toast.LENGTH_SHORT).show()
@@ -1170,6 +1194,17 @@ fun HomeScreen(
                 onOpenShows = { leaveLiveForTab("shows") },
                 onOpenRecordings = { leaveLiveForTab("recordings") },
                 onOpenSettings = onOpenSettings,
+                onOpenMultiview = { channelId ->
+                    // Multiview brings its own two decoders; silence the shared player first so
+                    // we never hold three streams (and three lots of provider connections) at once.
+                    isFullScreen = false
+                    catchup = null
+                    graph.livePlayer.player.apply {
+                        volume = 0f
+                        pause()
+                    }
+                    onOpenMultiview(channelId)
+                },
                 catchup = catchup,
                 onCatchupChange = { catchup = it },
                 renderPlayerView = false,
@@ -1352,9 +1387,10 @@ fun HomeScreen(
                     favouritesOnly -> NoFavouritesState()
                     isSyncing || channelsPresent == null -> LoadingState(isSyncing)
                     channelsPresent == true -> {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
+                        // Channels are on the box but the current filter matches none (stale
+                        // category/provider after a playlist change, mid-transition). A bare
+                        // spinner here is a dead end for the d-pad — offer the rail instead.
+                        FilterEmptyState(onBrowse = { openCategoryRail() })
                     }
                     // Nothing is syncing and the catalogue is confirmed empty. With a provider
                     // configured, the last load failed or returned nothing — surface a clear error
@@ -1408,6 +1444,35 @@ fun HomeScreen(
                     }
                     else -> "${-guideHourOffset}h ago"
                 }
+                // Per-channel catch-up capability: the badge mirrors the resolver, so a badged
+                // channel is one `playCatchup` can actually build a URL for.
+                //
+                // Evidence counted (see CatchupResolver.isSupported):
+                //   * tvArchive — Xtream `tv_archive`, or the M3U `catchup` / `catchup-days` /
+                //     `timeshift` attributes (see M3uParser).
+                //   * cmd — an M3U `catchup-source` template (Stalker commands excluded).
+                //   * portal capability — an Xtream source, or an M3U whose source URL carries
+                //     Xtream credentials (`get.php`/`player_api.php`), or a stream URL shaped
+                //     like an Xtream panel URL.
+                // Nothing else does. In particular:
+                //   * tvArchiveDays is the archive *window*, not a yes/no. Panels routinely report
+                //     `tv_archive_duration` for channels whose `tv_archive` is 0, so treating a
+                //     duration as evidence badged channels that have no archive.
+                //
+                // Runs once per channel over the whole list, so it is computed off the main thread.
+                val catchUpChannelIds by produceState(
+                    initialValue = emptySet<Long>(),
+                    sources,
+                    rows,
+                ) {
+                    value = withContext(Dispatchers.Default) {
+                        val byId = sources.associateBy { it.id }
+                        rows.mapNotNull { row ->
+                            val ch = row.primary
+                            if (CatchupResolver.isSupported(byId[ch.sourceId], ch)) ch.id else null
+                        }.toSet()
+                    }
+                }
                 GuidePreview(
                     rowState = highlightedRowState,
                     programmeState = highlightedProgrammeState,
@@ -1427,36 +1492,10 @@ fun HomeScreen(
                             previewBounds = rect
                         }
                     },
+                    isCatchupChannel = highlightedRow?.let {
+                        it.primary.tvArchive || it.primary.id in catchUpChannelIds
+                    } == true,
                 )
-                // Per-channel catch-up capability: the badge shows only where the provider actually
-                // said catch-up exists for THAT channel.
-                //
-                // Exactly two pieces of evidence count, and both are per-channel facts the parser
-                // read out of the provider's own listing:
-                //   * tvArchive — Xtream `tv_archive`, or the M3U `catchup` / `catchup-days` /
-                //     `timeshift` attributes (see M3uParser).
-                //   * cmd — an M3U `catchup-source` template.
-                // Nothing else does. In particular:
-                //   * tvArchiveDays is the archive *window*, not a yes/no. Panels routinely report
-                //     `tv_archive_duration` for channels whose `tv_archive` is 0, so treating a
-                //     duration as evidence badged channels that have no archive.
-                //   * the shape of the stream URL (`host[/live]/user/pass/id.ts`) says nothing about
-                //     archive. Every channel of an M3U exported from an Xtream panel has that shape,
-                //     so probing it badged the entire list.
-                //
-                // Runs once per channel over the whole list, so it is computed off the main thread.
-                val catchUpChannelIds by produceState(
-                    initialValue = emptySet<Long>(),
-                    sources,
-                    rows,
-                ) {
-                    value = withContext(Dispatchers.Default) {
-                        rows.mapNotNull { row ->
-                            val ch = row.primary
-                            if (ch.tvArchive || !ch.cmd.isNullOrBlank()) ch.id else null
-                        }.toSet()
-                    }
-                }
                 // TiviMate-style guide header stamp: when the guide last synced + channel count.
                 val epgInfoLine = if (settings.lastGuideUpdatedMillis > 0L) {
                     "EPG updated ${formatTime(settings.lastGuideUpdatedMillis)} · ${settings.lastGuideChannelCount} channels"
@@ -1532,6 +1571,8 @@ fun HomeScreen(
                         onLongSelectRow = { row -> channelMenu = row },
                         onFocusRow = onFocusChannel,
                         onProgramme = { row, programme ->
+                            // Only reached for a genuine short press: GuideGrid consumes the
+                            // key-up when the OK hold was long enough for the menu.
                             val liveNow = nowMillis in programme.startUtcMillis until programme.endUtcMillis
                             val isPast = programme.endUtcMillis <= nowMillis
                             if (liveNow) {
@@ -1543,6 +1584,12 @@ fun HomeScreen(
                             } else {
                                 recordTarget = row to programme
                             }
+                        },
+                        onProgrammeLongPress = { row, programme ->
+                            // Short OK on a live programme keeps instant tune; long OK opens
+                            // the same programme menu so "Watch from start" (catch-up),
+                            // record, remind etc. stay reachable without zapping away.
+                            recordTarget = row to programme
                         },
                         onToggleFavourite = { viewModel.toggleFavourite(it) },
                         onEnableBackScroll = { backScrollActive = true },
@@ -1940,15 +1987,13 @@ private suspend fun setReminder(
 
 @Composable
 private fun RecordActionRow(label: String, primary: Boolean = false, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
     // primaryContainer/onPrimaryContainer are both accent shades in this palette, so the old
     // primary row was accent-on-accent — unreadable, and worst on the focused first row. Use the
-    // solid accent with the on-accent ink, and flip to the light onSurface ink while focused, the
-    // same contrast rule SettingsButton uses.
+    // solid accent with the on-accent ink in both states: the tvFocus cursor is a translucent
+    // white wash, so flipping to light onSurface ink while focused is white-on-white.
     val fill = if (primary) AppTheme.primary else MaterialTheme.colorScheme.surfaceVariant
     val content = when {
-        primary && focused -> MaterialTheme.colorScheme.onSurface
         primary -> MaterialTheme.colorScheme.onPrimary
         else -> MaterialTheme.colorScheme.onSurface
     }
@@ -1962,7 +2007,7 @@ private fun RecordActionRow(label: String, primary: Boolean = false, onClick: ()
             .padding(vertical = 3.dp)
             .clip(shape)
             .background(fill)
-            .tvFocus(shape = shape, onFocusChange = { focused = it })
+            .tvFocus(shape = shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     )
@@ -2261,6 +2306,37 @@ private fun ChannelsErrorState(onRetry: () -> Unit, onEditProvider: () -> Unit) 
                 androidx.compose.material3.OutlinedButton(onClick = onEditProvider) {
                     Text(stringResource(R.string.guide_edit_provider))
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Channels exist on the box but the current category/provider filter matches none of them —
+ * the state a stale filter leaves behind. Focusable by design (the Button takes d-pad focus),
+ * so this never strands the viewer the way the old bare spinner did.
+ */
+@Composable
+private fun FilterEmptyState(onBrowse: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.widthIn(max = 460.dp),
+        ) {
+            Text(
+                stringResource(R.string.guide_empty_filter_title),
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.guide_empty_filter_desc),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(16.dp))
+            androidx.compose.material3.Button(onClick = onBrowse) {
+                Text(stringResource(R.string.guide_browse_categories))
             }
         }
     }

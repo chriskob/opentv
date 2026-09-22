@@ -186,6 +186,7 @@ fun GuideGrid(
     onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
     onProgramme: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
+    onProgrammeLongPress: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onEnableBackScroll: () -> Unit = {},
     onJumpToLive: () -> Unit = {},
@@ -885,6 +886,7 @@ fun GuideGrid(
                                 }
                             },
                             onProgramme = { programme -> onProgramme(row, programme) },
+                            onProgrammeLongPress = { programme -> onProgrammeLongPress(row, programme) },
                             onToggleFavourite = { onToggleFavourite(row) },
                             onNavigateVertical = { isDown -> handleNavigateVertical(isDown, index) },
                             onStepColumn = stepColumn,
@@ -1087,7 +1089,7 @@ fun ChannelList(
 }
 
 /** Shared rounded-corner shape used on all guide cells for a smooth TiviMate-style look. */
-private val GuideCellShape = RoundedCornerShape(4.dp)
+private val GuideCellShape = RoundedCornerShape(6.dp)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1113,6 +1115,8 @@ private fun ChannelListRow(
     val isLive = isSelected
     // See LocalGuideChromeAlpha: only the unfocused fills fade, so the cursor stays legible.
     val chromeAlpha = LocalGuideChromeAlpha.current
+    // Opaque-focus themes (white cell) need dark ink while focused/selected.
+    val listHighlighted = focused || isSelected
 
     Row(
         Modifier
@@ -1160,7 +1164,7 @@ private fun ChannelListRow(
         Text(
             "$displayNum",
             style = MaterialTheme.typography.labelMedium,
-            color = AppTheme.palette.textMuted,
+            color = if (listHighlighted) AppTheme.palette.onCursor else AppTheme.palette.textMuted,
             maxLines = 1,
             modifier = Modifier.width(32.dp),
         )
@@ -1178,7 +1182,7 @@ private fun ChannelListRow(
                     formatChannelNameForDisplay(row.primary.shownName),
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
                     fontWeight = if (isLive || focused) FontWeight.SemiBold else FontWeight.Medium,
-                    color = if (isLive) AppTheme.primary else AppTheme.palette.onSurface,
+                    color = if (listHighlighted) AppTheme.palette.onCursor else if (isLive) AppTheme.primary else AppTheme.palette.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -1188,7 +1192,7 @@ private fun ChannelListRow(
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = "Live",
-                        tint = AppTheme.primary,
+                        tint = if (listHighlighted) AppTheme.palette.onCursor else AppTheme.primary,
                         modifier = Modifier.size(16.dp),
                     )
                 }
@@ -1198,7 +1202,7 @@ private fun ChannelListRow(
                 Text(
                     text = "${clockFmt.format(Date(nowProg.startUtcMillis))}  ${nowProg.title}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = AppTheme.palette.onSurfaceVariant,
+                    color = if (listHighlighted) AppTheme.palette.onCursor else AppTheme.palette.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1314,6 +1318,7 @@ private fun GuideRow(
     onLongSelect: () -> Unit = {},
     onFocus: (Programme?) -> Unit,
     onProgramme: (Programme) -> Unit,
+    onProgrammeLongPress: (Programme) -> Unit = {},
     onToggleFavourite: () -> Unit = {},
     onNavigateVertical: (isDown: Boolean) -> Boolean = { false },
     /** Steps the cursor one half-hour column; [Boolean] is true for RIGHT. */
@@ -1375,7 +1380,7 @@ private fun GuideRow(
             Text(
                 "$displayNum",
                 style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
-                color = AppTheme.palette.textMuted,
+                color = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.textMuted,
                 maxLines = 1,
                 modifier = Modifier.width(32.dp),
             )
@@ -1396,7 +1401,7 @@ private fun GuideRow(
                     formatChannelNameForDisplay(row.primary.shownName),
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
                     fontWeight = if (isRowHighlighted) FontWeight.Bold else FontWeight.Medium,
-                    color = AppTheme.palette.onSurface,
+                    color = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1408,7 +1413,7 @@ private fun GuideRow(
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Playing",
-                    tint = AppTheme.primary,
+                    tint = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.primary,
                     modifier = Modifier.size(15.dp),
                 )
             }
@@ -1421,7 +1426,7 @@ private fun GuideRow(
                 Icon(
                     imageVector = Icons.Filled.History,
                     contentDescription = "Catchup",
-                    tint = AppTheme.palette.textMuted,
+                    tint = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.textMuted,
                     modifier = Modifier.size(14.dp),
                 )
             }
@@ -1456,7 +1461,7 @@ private fun GuideRow(
                         .width(widthFor(windowStartMillis, windowEndMillis))
                         .fillMaxSize()
                         .background(
-                            if (emptyHighlighted) AppTheme.palette.cursorFill
+                            if (emptyHighlighted) AppTheme.palette.cellFocus
                             else AppTheme.palette.chromeCell.copy(alpha = chromeAlpha),
                             GuideCellShape,
                         )
@@ -1487,7 +1492,7 @@ private fun GuideRow(
                     Text(
                         stringResource(R.string.guide_no_info),
                         style = MaterialTheme.typography.bodyLarge.copy(fontSize = 13.sp),
-                        color = if (emptyHighlighted) AppTheme.palette.onSurface else AppTheme.palette.textMuted,
+                        color = if (emptyHighlighted) AppTheme.palette.onCellFocus else AppTheme.palette.textMuted,
                     )
                 }
             } else {
@@ -1610,6 +1615,11 @@ private fun GuideRow(
                     val prog = programmes[layout.programmeIndex]
                     val isNow = nowMillis in prog.startUtcMillis until prog.endUtcMillis
                     val isTarget = pOrder == targetBlockIdx
+                    // TiviMate greys past slots; replayable ones (archive channel) wear the
+                    // replay marker so 1-click catch-up targets are visible at a glance.
+                    val isPast = prog.endUtcMillis <= nowMillis
+                    val canReplay = isPast &&
+                        (row.primary.tvArchive || row.primary.id in catchUpChannelIds)
                     val blockRequester = blockFocusRequesters.getOrNull(pOrder)
                     val extReq = if (isTarget && isFocused) externalFocusRequester else null
                     // A reminder is stored against one channel id, but the row groups every quality
@@ -1625,6 +1635,8 @@ private fun GuideRow(
                             isNew = prog.isNewEpisode(),
                             isLive = prog.isLive,
                             hasReminder = hasReminder,
+                            isPast = isPast,
+                            canReplay = canReplay,
                             pseudoFocused = previewHighlight && isTarget,
                             isRowHighlighted = isRowHighlighted,
                             focusRequester = blockRequester,
@@ -1632,6 +1644,7 @@ private fun GuideRow(
                             externalFocusRequester = extReq,
                             onFocus = { onFocus(prog) },
                             onClick = { onProgramme(prog) },
+                            onLongClick = { onProgrammeLongPress(prog) },
                             onNavigateVertical = onNavigateVertical,
                             onStepColumn = onStepColumn,
                         )
@@ -1719,6 +1732,7 @@ private fun GuideBadge(text: String, background: Color) {
  * Supports directional vertical navigation using the Virtual Timestamp Anchor to preserve
  * timeline alignment across irregular program durations.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProgrammeBlock(
     title: String,
@@ -1730,6 +1744,10 @@ private fun ProgrammeBlock(
     isLive: Boolean = false,
     /** The viewer has a reminder set for this programme, so it wears a bell. */
     hasReminder: Boolean = false,
+    /** Finished airing — drawn dimmed, TiviMate-style, unless focused. */
+    isPast: Boolean = false,
+    /** Past programme on an archive channel — wears the replay marker. */
+    canReplay: Boolean = false,
     pseudoFocused: Boolean = false,
     isRowHighlighted: Boolean = false,
     focusRequester: FocusRequester? = null,
@@ -1737,6 +1755,7 @@ private fun ProgrammeBlock(
     externalFocusRequester: FocusRequester? = null,
     onFocus: () -> Unit = {},
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     onNavigateVertical: ((isDown: Boolean) -> Boolean)? = null,
     /** Steps the cursor one half-hour column; [Boolean] is true for RIGHT. */
     onStepColumn: ((Boolean) -> Boolean)? = null,
@@ -1746,6 +1765,15 @@ private fun ProgrammeBlock(
     // Pseudo-cursor: rendered like focus without stealing it (rail category preview).
     val highlighted = focused || pseudoFocused
     val chromeAlpha = LocalGuideChromeAlpha.current
+    // D-pad long-OK detection. combinedClickable's onLongClick never fires for a held
+    // DPAD_CENTER/ENTER from a TV remote, and a timer is the wrong shape for it anyway:
+    // firing mid-hold while the key is still down leaves the remaining repeat events (and the
+    // release) to land on whatever the action opened — which immediately activated the menu's
+    // auto-focused first row. So the hold is measured from the system's own event timestamps
+    // and fired on key-UP, and that up is consumed so the short-press click never reaches
+    // `clickable` (nor activates the menu the action just opened).
+    val holdAction by rememberUpdatedState(onLongClick)
+    val longPressMillis = android.view.ViewConfiguration.getLongPressTimeout().toLong()
 
     Box(
         Modifier
@@ -1760,7 +1788,8 @@ private fun ProgrammeBlock(
             // which is the bulk of the scrub/scroll render cost. A shaped background draws the
             // same rounded rect with no layer.
             .background(
-                if (highlighted) AppTheme.palette.cursorFill
+                if (highlighted) AppTheme.palette.cellFocus
+                else if (isPast) AppTheme.palette.chromeCell.copy(alpha = chromeAlpha * 0.55f)
                 else AppTheme.palette.chromeCell.copy(alpha = chromeAlpha),
                 GuideCellShape,
             )
@@ -1794,6 +1823,20 @@ private fun ProgrammeBlock(
                             true
                         } else false
                     } else false
+                } else if (e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter) {
+                    if (onLongClick == null) {
+                        false
+                    } else if (e.type == KeyEventType.KeyUp) {
+                        // The system's own press duration, immune to our scheduling: downTime is
+                        // when OK went down, eventTime when it came up.
+                        val held = e.nativeKeyEvent.eventTime - e.nativeKeyEvent.downTime
+                        if (held >= longPressMillis) {
+                            // Consume the up: the action opens a menu whose first row is
+                            // focusable, and this up must not also activate it or the cell.
+                            holdAction?.invoke()
+                            true
+                        } else false
+                    } else false
                 } else false
             }
             .onFocusChanged {
@@ -1801,7 +1844,7 @@ private fun ProgrammeBlock(
                 if (it.isFocused) onFocus()
             }
             .focusable()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             // One accessibility node per programme cell, not two (the cell + its title Text).
             // Projectivy's accessibility service is active on these boxes, so Compose walks the
             // semantics tree every frame — merging halves the nodes on the guide's busiest screen.
@@ -1816,11 +1859,19 @@ private fun ProgrammeBlock(
         ) {
             if (isLive) GuideBadge("LIVE", AppTheme.palette.recording)
             if (isNew) GuideBadge("NEW", AppTheme.palette.live)
+            if (canReplay) {
+                Icon(
+                    imageVector = Icons.Filled.History,
+                    contentDescription = "Replay",
+                    tint = if (highlighted) AppTheme.palette.onCellFocus else AppTheme.palette.textMuted,
+                    modifier = Modifier.padding(end = 4.dp).size(12.dp),
+                )
+            }
             if (hasReminder) {
                 Icon(
                     imageVector = Icons.Filled.Notifications,
                     contentDescription = stringResource(R.string.guide_reminder_badge),
-                    tint = AppTheme.palette.favourite,
+                    tint = if (highlighted) AppTheme.palette.onCellFocus else AppTheme.palette.favourite,
                     modifier = Modifier.padding(end = 4.dp).size(12.dp),
                 )
             }
@@ -1831,7 +1882,9 @@ private fun ProgrammeBlock(
                     lineHeight = 15.sp,
                 ),
                 fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Normal,
-                color = AppTheme.palette.onSurface,
+                color = if (highlighted) AppTheme.palette.onCellFocus
+                else if (isPast) AppTheme.palette.textMuted
+                else AppTheme.palette.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
@@ -1859,7 +1912,7 @@ private const val PAST_HOURS = 24
 private const val FUTURE_HOURS = 24
 private const val HOURS_IN_WINDOW = PAST_HOURS + FUTURE_HOURS
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
-private val CHANNEL_COLUMN = 240.dp
+private val CHANNEL_COLUMN = 238.dp
 private val ROW_HEIGHT = 48.dp
 private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 
