@@ -52,6 +52,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
@@ -365,12 +367,49 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             )
             _ui.value = _ui.value.copy(syncing = true, syncMessage = "Saving ${provisionedList.size} playlist(s)…")
 
-            // ONLY delete sources that the user explicitly selected to remove in the remote portal.
-            // NEVER delete existing sources automatically!
+            // Delete ONLY sources the portal explicitly flagged AND that this batch does not
+            // re-add under any id or URL form. A push that lists `[B]` while `[A]` is on the box
+            // must never be read as "delete A": absence from the batch is not a deletion request.
+            // Likewise an id in deletedSourceIds that matches an incoming source (same id, or same
+            // normalised URL) is a stale flag from an earlier portal state — deleting it would wipe
+            // the playlist the user just added, which is the exact data-loss report this guards.
             if (deletedSourceIds.isNotEmpty()) {
+                val incomingIds = provisionedList.mapNotNull { it.id?.takeIf { id -> id != 0L } }.toSet()
+                val incomingUrls = provisionedList.mapNotNull { item ->
+                    runCatching {
+                        app.opentv.data.repo.SourceRepository.normaliseUrl(
+                            item.url,
+                            item.kind,
+                        ).lowercase()
+                    }.getOrNull()
+                }.toSet()
+                val existingById = graph.sourceRepository.all()
+                    .associateBy { it.id }
                 for (delId in deletedSourceIds) {
-                    Log.i("OpenTV", "Explicitly deleting user-removed source #$delId")
-                    graph.catalogRepository.deleteSource(delId)
+                    val existing = existingById[delId]
+                    when {
+                        existing == null -> Log.w(
+                            "OpenTV",
+                            "Ignoring portal delete flag for unknown source #$delId",
+                        )
+                        delId in incomingIds -> Log.w(
+                            "OpenTV",
+                            "Ignoring portal delete flag for source #$delId: same batch re-adds it",
+                        )
+                        runCatching {
+                            app.opentv.data.repo.SourceRepository.normaliseUrl(
+                                existing.url,
+                                existing.kind,
+                            ).lowercase()
+                        }.getOrNull() in incomingUrls -> Log.w(
+                            "OpenTV",
+                            "Ignoring portal delete flag for source #$delId: same batch re-adds its URL",
+                        )
+                        else -> {
+                            Log.i("OpenTV", "Deleting portal-removed source #$delId (${existing.name})")
+                            graph.catalogRepository.deleteSource(delId)
+                        }
+                    }
                 }
             }
 
@@ -399,13 +438,29 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
             var seriesExpected = 0
             var anySuccess = false
 
+            // All rows (not just enabled ones) up front: matching per item against a snapshot
+            // avoids one query per playlist and cannot miss a disabled row and duplicate it.
+            val allSources = graph.sourceRepository.all()
             for ((idx, item) in provisionedList.withIndex()) {
-                // Find existing source by ID or URL so we update rather than creating duplicates or wiping metadata
+                // Find existing source by ID or normalised URL so we update rather than creating
+                // duplicates or wiping metadata. Normalised: `http://host/player_api.php?...`
+                // and `http://host` are the same Xtream portal and must match the same row.
                 val existing = if (item.id != null && item.id != 0L) {
                     graph.sourceRepository.byId(item.id)
                 } else {
-                    graph.sourceRepository.enabled().firstOrNull { 
-                        it.url.trim().equals(item.url.trim(), ignoreCase = true) 
+                    val want = runCatching {
+                        app.opentv.data.repo.SourceRepository.normaliseUrl(
+                            item.url,
+                            item.kind,
+                        ).lowercase()
+                    }.getOrNull() ?: item.url.trim().lowercase()
+                    allSources.firstOrNull { candidate ->
+                        runCatching {
+                            app.opentv.data.repo.SourceRepository.normaliseUrl(
+                                candidate.url,
+                                candidate.kind,
+                            ).lowercase()
+                        }.getOrNull() == want
                     }
                 }
 
@@ -929,6 +984,28 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                 val current = selectedCategory.value
                 if (current == null || groups.none { it.key == current }) {
                     selectCategory(groups.first().key)
+                }
+            }
+        }
+        // A provider filter pointing at a deleted playlist filters EVERYTHING out (the scope keeps
+        // only that source's categories, of which there are none), leaving an empty guide with no
+        // visible cause. A removed source id is not a selection — drop it back to All.
+        viewModelScope.launch {
+            graph.sourceRepository.observeAll().collect { sources ->
+                val current = selectedSource.value
+                if (current != null && sources.none { it.id == current }) {
+                    selectedSource.value = null
+                }
+            }
+        }
+        // Favourites-only restored from the last session with zero favourites on disk is another
+        // empty guide with no visible cause (its playlist was removed, or favourites were never
+        // set). Fall back to the category rail instead of showing nothing.
+        viewModelScope.launch {
+            graph.catalogRepository.observeFavouriteChannels().collect { favourites ->
+                if (favouritesOnly.value && favourites.isEmpty()) {
+                    favouritesOnly.value = false
+                    settings.lastFavouritesOnly = false
                 }
             }
         }
@@ -1779,6 +1856,142 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     private val movieCategory = MutableStateFlow<String?>(null)
     private val seriesCategory = MutableStateFlow<String?>(null)
 
+    /**
+     * Return-to-place state for BACK from a detail screen. The HOME destination leaves the
+     * composition while a detail is open, so the grids rebuild on return: these anchors put the
+     * viewer back on the title they just opened instead of the top of the list. Plain vars (not
+     * flows) — read once per composition, cleared once focus lands. They live on the view model
+     * rather than in composition because the HOME back-stack entry (and its view models) is
+     * retained while a detail is on top.
+     */
+    var lastOpenedMovieId: Long? = null
+    var lastOpenedSeriesId: Long? = null
+    /** First-visible grid position per section, saved continuously while scrolling. */
+    var movieGridIndex: Int = 0
+    var movieGridOffset: Int = 0
+    var seriesGridIndex: Int = 0
+    var seriesGridOffset: Int = 0
+
+    /**
+     * Lazy artwork fill for bare grid cards. Each title is attempted once per process (a miss
+     * stays a miss until relaunch, so a TMDB search-miss never becomes a per-scroll cost), at most
+     * [ARTWORK_CONCURRENCY] lookups run at once (TMDB rate limits are never approached), and every
+     * hit persists through the repository — so the observing grid re-emits and the card paints.
+     * No key configured, no launch at all.
+     */
+    private val artworkAttempted = mutableSetOf<String>()
+    private val artworkSlots = kotlinx.coroutines.sync.Semaphore(ARTWORK_CONCURRENCY)
+    /** One-time diagnostic: tells logcat whether fills run at all or die on a missing key. */
+    private var artworkGateLogged = false
+
+    /** Fill a bare movie card's poster; safe to call for every visible card. */
+    fun fillMovieArtwork(movieId: Long, hasPoster: Boolean) {
+        if (hasPoster) return
+        if (!graph.catalogRepository.tmdbReady()) {
+            if (!artworkGateLogged) {
+                artworkGateLogged = true
+                Log.w("OpenTV", "TMDB artwork fill skipped: no key saved on this box")
+            }
+            return
+        }
+        val key = "m:$movieId"
+        synchronized(artworkAttempted) { if (!artworkAttempted.add(key)) return }
+        viewModelScope.launch(Dispatchers.IO) {
+            artworkSlots.acquire()
+            try {
+                runCatching { graph.catalogRepository.backfillMovieArtwork(movieId) }
+            } finally {
+                artworkSlots.release()
+            }
+        }
+    }
+
+    /** Object convenience: no-op unless the poster is actually missing. */
+    fun fillArtworkFor(movie: Movie) {
+        if (movie.posterUrl.isNullOrBlank()) fillMovieArtwork(movie.id, false)
+    }
+
+    /** Show half of [fillMovieArtwork]. */
+    fun fillSeriesArtwork(seriesId: Long, hasPoster: Boolean) {
+        if (hasPoster) return
+        if (!graph.catalogRepository.tmdbReady()) {
+            if (!artworkGateLogged) {
+                artworkGateLogged = true
+                Log.w("OpenTV", "TMDB artwork fill skipped: no key saved on this box")
+            }
+            return
+        }
+        val key = "s:$seriesId"
+        synchronized(artworkAttempted) { if (!artworkAttempted.add(key)) return }
+        viewModelScope.launch(Dispatchers.IO) {
+            artworkSlots.acquire()
+            try {
+                runCatching { graph.catalogRepository.backfillSeriesArtwork(seriesId) }
+            } finally {
+                artworkSlots.release()
+            }
+        }
+    }
+
+    /** Object convenience: no-op unless the poster is actually missing. */
+    fun fillArtworkFor(series: Series) {
+        if (series.posterUrl.isNullOrBlank()) fillSeriesArtwork(series.id, false)
+    }
+
+    /**
+     * Dead-URL counterpart to the fill path: called when a card's art actually failed to render.
+     * Verifies (HEAD) before replacing, so a transient blip never rewrites good provider art.
+     * Once per title per session, same slot pool as fills.
+     */
+    fun replaceDeadMovieArtwork(movieId: Long) {
+        if (!graph.catalogRepository.tmdbReady()) return
+        val key = "md:$movieId"
+        synchronized(artworkAttempted) { if (!artworkAttempted.add(key)) return }
+        viewModelScope.launch(Dispatchers.IO) {
+            artworkSlots.acquire()
+            try {
+                runCatching { graph.catalogRepository.replaceDeadMoviePoster(movieId) }
+            } finally {
+                artworkSlots.release()
+            }
+        }
+    }
+
+    /**
+     * Resume-row convenience: mediaKeys are `movie:<id>` / `ep:<id>`. Movies fill like grid cards;
+     * episodes are skipped — their art is a frame still TMDB has no endpoint for.
+     */
+    fun fillArtworkForKey(mediaKey: String, hasPoster: Boolean) {
+        val id = mediaKey.removePrefix("movie:").toLongOrNull()
+        if (mediaKey.startsWith("movie:") && id != null) fillMovieArtwork(id, hasPoster)
+    }
+
+    /** Dead-URL half of [fillArtworkForKey]. */
+    fun replaceDeadArtworkForKey(mediaKey: String) {
+        val id = mediaKey.removePrefix("movie:").toLongOrNull()
+        if (mediaKey.startsWith("movie:") && id != null) replaceDeadMovieArtwork(id)
+    }
+
+    /** Show half of [replaceDeadMovieArtwork]. */
+    fun replaceDeadSeriesArtwork(seriesId: Long) {
+        if (!graph.catalogRepository.tmdbReady()) return
+        val key = "sd:$seriesId"
+        synchronized(artworkAttempted) { if (!artworkAttempted.add(key)) return }
+        viewModelScope.launch(Dispatchers.IO) {
+            artworkSlots.acquire()
+            try {
+                runCatching { graph.catalogRepository.replaceDeadSeriesPoster(seriesId) }
+            } finally {
+                artworkSlots.release()
+            }
+        }
+    }
+
+    /** Max simultaneous TMDB artwork lookups — conservative against the 40/10s rate limit. */
+    private companion object {
+        const val ARTWORK_CONCURRENCY = 3
+    }
+
     /** Provider filter for Movies/Shows. null = every source. Surfaced only when there's >1 source. */
     val selectedVodSource = MutableStateFlow<Long?>(null)
 
@@ -1829,19 +2042,49 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
     // entry. That is both the correctness and the performance fix — the unfiltered query behind the
     // old "All" selection returned every film of every provider as one list, which is what made the
     // box crawl for a view that only ever showed the curated shelves.
-    @OptIn(ExperimentalCoroutinesApi::class)
+    //
+    // Every artwork backfill (and any catalogue write) re-emits the whole list. The grid below
+    // memoizes structure on membership so a re-emission is cheap — but cheap × hundreds of writes
+    // while posters fill in still saturated the main thread into ANRs on a 2GB box. So the tail
+    // of this flow is calmed: the first emission paints immediately, the rest coalesce to at most
+    // one per second. Posters pop in ~1s delayed during a fill storm; browsing never blocks.
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
     val movies: StateFlow<List<Movie>> = movieCategory
         .flatMapLatest { id ->
-            if (id == null) flowOf(emptyList()) else graph.catalogRepository.observeMovies(id)
+            if (id == null) flowOf(emptyList()) else emitFirstThenCalm(graph.catalogRepository.observeMovies(id))
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    @OptIn(ExperimentalCoroutinesApi::class)
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
     val series: StateFlow<List<Series>> = seriesCategory
         .flatMapLatest { id ->
-            if (id == null) flowOf(emptyList()) else graph.catalogRepository.observeSeries(id)
+            if (id == null) flowOf(emptyList()) else emitFirstThenCalm(graph.catalogRepository.observeSeries(id))
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Passes the first value through immediately, then debounces the rest to at most one every
+     * [calmMillis]. Plain `debounce` would hold back the initial paint too (a blank grid for a
+     * full second on every category open); this keeps the open instant and only calms the
+     * back-to-back re-emissions from rapid DB writes.
+     */
+    private fun <T> emitFirstThenCalm(flow: kotlinx.coroutines.flow.Flow<T>, calmMillis: Long = 1000L) =
+        channelFlow {
+            var timer: kotlinx.coroutines.Job? = null
+            var first = true
+            flow.collect { v ->
+                if (first) {
+                    first = false
+                    send(v)
+                    return@collect
+                }
+                timer?.cancel()
+                timer = launch {
+                    delay(calmMillis)
+                    send(v)
+                }
+            }
+        }
 
     fun selectMovieCategory(id: String?) { movieCategory.value = id }
 

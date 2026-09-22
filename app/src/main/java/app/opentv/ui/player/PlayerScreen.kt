@@ -47,14 +47,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Grain
+import androidx.compose.material.icons.filled.Thunderstorm
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.GridView
@@ -119,6 +124,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.onSizeChanged
@@ -147,6 +154,10 @@ import app.opentv.data.model.Channel
 import app.opentv.data.model.Programme
 import app.opentv.data.model.Source
 import app.opentv.data.model.shownName
+import app.opentv.data.remote.WeatherClient
+import app.opentv.data.remote.WeatherKind
+import app.opentv.data.remote.WeatherNow
+import app.opentv.ui.components.TvOutlinedTextField
 import app.opentv.player.PlaybackQueue
 import app.opentv.player.PlayerController
 import app.opentv.ui.RecordingBackgroundDialog
@@ -195,6 +206,8 @@ fun PlayerScreen(
     onOpenShows: () -> Unit = {},
     onOpenRecordings: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    /** Opens 2-up split-screen multiview for [Long] = the channel for pane A. */
+    onOpenMultiview: (Long) -> Unit = {},
     /** The archive programme the shared player is on, when the guide launched catch-up. */
     catchup: CatchupPlayback? = null,
     /** Reports catch-up starting/ending (e.g. "Watch from start") back to the guide. */
@@ -208,6 +221,9 @@ fun PlayerScreen(
     val settings = remember { graph.settings }
     val scope = rememberCoroutineScope()
     val subtitlesDefault by settings.subtitlesEnabled.collectAsState()
+    val catchupEnabledSetting by settings.catchupEnabled.collectAsState()
+    val catchupCorrectionSetting by settings.catchupCorrectionMin.collectAsState()
+    val catchupSkipSetting by settings.catchupSkipSec.collectAsState()
     val controller = remember {
         graph.livePlayer.also {
             it.player.volume = 1f
@@ -283,6 +299,28 @@ fun PlayerScreen(
         while (true) {
             nowMillis = System.currentTimeMillis()
             kotlinx.coroutines.delay(30_000L)
+        }
+    }
+
+    // Keyless header weather (zip -> National Weather Service, no API key). Display-only: the header
+    // never opens anything. Null = hidden and the clock always shows. Fetches only while
+    // the user has opted in; refreshes every 30 minutes and whenever zip/toggle changes.
+    val weatherClient = remember(graph.httpClient) { WeatherClient(graph.httpClient) }
+    val weatherZip by settings.weatherZip.collectAsState()
+    val weatherEnabled by settings.weatherEnabled.collectAsState()
+    // Manual "Update now" from Settings restarts this loop, so the fetch below
+    // runs immediately instead of waiting out the 30-minute delay.
+    val weatherRefreshTick by settings.weatherRefreshTick.collectAsState()
+    var weatherNow by remember { mutableStateOf<WeatherNow?>(null) }
+    // First-run opt-in: asked once per player open until answered. A bare dismiss re-arms
+    // (answered stays false); Turn On / No thanks settle it for good via Settings afterwards.
+    var showWeatherOptIn by remember { mutableStateOf(!settings.weatherPromptAnswered && !settings.weatherEnabled.value) }
+    LaunchedEffect(weatherZip, weatherEnabled, weatherRefreshTick) {
+        weatherNow = null
+        if (!weatherEnabled || !WeatherClient.isValidZip(weatherZip)) return@LaunchedEffect
+        while (true) {
+            weatherNow = runCatching { weatherClient.currentForZip(weatherZip) }.getOrNull()
+            kotlinx.coroutines.delay(30 * 60_000L)
         }
     }
 
@@ -367,7 +405,6 @@ fun PlayerScreen(
     }
 
     val audioDelayMs by settings.audioDelayMs.collectAsState()
-    var showMultiviewDialog by remember { mutableStateOf(false) }
     var showChannelOptionsDialog by remember { mutableStateOf(false) }
     var selectedSubtitleLabel by remember { mutableStateOf("Off") }
     var selectedAudioLabel by remember { mutableStateOf("Stereo") }
@@ -477,6 +514,10 @@ fun PlayerScreen(
 
     fun watchFromStart() {
         val ch = currentChannel ?: return
+        if (!catchupEnabledSetting) {
+            Toast.makeText(context, "Catch-up is turned off in Settings", Toast.LENGTH_SHORT).show()
+            return
+        }
         val prog = currentProg
         scope.launch {
             val source = withContext(Dispatchers.IO) { graph.sourceRepository.byId(ch.sourceId) }
@@ -496,7 +537,9 @@ fun PlayerScreen(
                 )
             }
             val catchupUrl = if (source != null) {
-                withContext(Dispatchers.IO) { CatchupResolver.resolve(source, ch, effectiveProg) }
+                withContext(Dispatchers.IO) {
+                    CatchupResolver.resolve(source, ch, effectiveProg, catchupCorrectionSetting)
+                }
             } else null
 
             if (catchupUrl != null) {
@@ -757,15 +800,25 @@ fun PlayerScreen(
      */
     fun stepBack(stepMillis: Long): Boolean {
         if (seekBackBy(stepMillis)) return true
+        if (!catchupEnabledSetting) return false
 
         val ch = currentChannel ?: return false
         val source = currentSource
         val now = System.currentTimeMillis()
         val target = now - stepMillis
         // Stepping past the provider's retention only earns a 404, so refuse locally rather than
-        // spending a request on it.
-        val archiveStart = if (ch.tvArchiveDays > 0) now - ch.tvArchiveDays * 86_400_000L else Long.MIN_VALUE
-        if (target < archiveStart) return false
+        // spending a request on it. Honours Settings > Catch-up > Days, and never reaches past
+        // what the guide actually kept (3 days).
+        val effectiveDays = settings.effectiveArchiveDays(ch.tvArchiveDays)
+        val archiveStart = if (effectiveDays > 0) now - effectiveDays * 86_400_000L else Long.MIN_VALUE
+        if (target < archiveStart) {
+            Toast.makeText(
+                context,
+                "That programme has left the archive (guide keeps 3 days back)",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return true
+        }
         // Trust the channel's own flags, its catch-up template, or a portal source — whose channels
         // routinely do catch-up without ever saying so in the playlist. This is the same rule the
         // guide's badge uses before offering a finished programme.
@@ -785,7 +838,9 @@ fun PlayerScreen(
                 graph.sourceRepository.byId(ch.sourceId)
             }
             val url = if (prog == null || resolveSource == null) null else {
-                withContext(Dispatchers.IO) { CatchupResolver.resolve(resolveSource, ch, prog) }
+                withContext(Dispatchers.IO) {
+                    CatchupResolver.resolve(resolveSource, ch, prog, catchupCorrectionSetting)
+                }
             }
             if (prog == null || resolveSource == null || url == null) {
                 Toast.makeText(context, "No catch-up for this channel", Toast.LENGTH_SHORT).show()
@@ -848,6 +903,100 @@ fun PlayerScreen(
         paused = false
         Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
         interaction++
+    }
+
+    /**
+     * Steps the programme column while the timeline is focused (TiviMate: fullscreen Left opens
+     * the timeline, then Up/Down walks past programmes, OK plays).
+     *
+     * [delta] < 0 walks to the older programme, > 0 to the newer one. Past targets open as
+     * catch-up from their start; stepping into the live programme returns to the live edge.
+     */
+    fun stepProgramme(delta: Int) {
+        val ch = currentChannel ?: return
+        if (!catchupEnabledSetting) {
+            Toast.makeText(context, "Catch-up is turned off in Settings", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val anchor = if (delta < 0) {
+            currentProg?.startUtcMillis ?: System.currentTimeMillis()
+        } else {
+            currentProg?.endUtcMillis ?: System.currentTimeMillis()
+        }
+        scope.launch {
+            val now = System.currentTimeMillis()
+            val target = withContext(Dispatchers.IO) {
+                val candidates = ch.epgCandidates.ifEmpty { listOfNotNull(ch.epgChannelId ?: ch.streamId) }
+                val probe = if (delta < 0) anchor - 1L else anchor + 1L
+                graph.epgRepository.windowForChannels(
+                    candidates,
+                    probe - 30 * 60 * 1000L,
+                    probe + 30 * 60 * 1000L,
+                ).values.firstOrNull()?.let { list ->
+                    if (delta < 0) {
+                        list.lastOrNull { it.endUtcMillis <= anchor }
+                            ?: list.lastOrNull { it.startUtcMillis < anchor }
+                    } else {
+                        list.firstOrNull { it.startUtcMillis >= anchor }
+                            ?: list.firstOrNull { it.endUtcMillis > anchor }
+                    }
+                }
+            }
+            if (target == null) {
+                Toast.makeText(context, "No programme there", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            if (target.startUtcMillis > now) {
+                Toast.makeText(context, "That programme has not aired yet", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            if (target.endUtcMillis > now) {
+                goLive()
+                return@launch
+            }
+            val effectiveDays = settings.effectiveArchiveDays(ch.tvArchiveDays)
+            if (effectiveDays > 0 && target.startUtcMillis < now - effectiveDays * 86_400_000L) {
+                Toast.makeText(
+                    context,
+                    "That programme has left the archive (guide keeps 3 days back)",
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return@launch
+            }
+            val resolveSource = currentSource ?: withContext(Dispatchers.IO) {
+                graph.sourceRepository.byId(ch.sourceId)
+            } ?: return@launch
+            val url = withContext(Dispatchers.IO) {
+                CatchupResolver.resolve(resolveSource, ch, target, catchupCorrectionSetting)
+            }
+            if (url == null) {
+                Toast.makeText(context, "Couldn't build the catch-up link", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val session = CatchupPlayback(
+                channelId = ch.id,
+                channelName = ch.shownName,
+                programmeTitle = target.title,
+                startUtcMillis = target.startUtcMillis,
+                endUtcMillis = target.endUtcMillis,
+                url = url,
+                userAgent = resolveSource.userAgent ?: "OpenTV/0.1 (Android)",
+            )
+            activeCatchup = session
+            onCatchupChange(session)
+            controller.play(
+                PlayerController.Request(
+                    url = url,
+                    title = "${ch.shownName} — ${target.title}",
+                    userAgent = resolveSource.userAgent ?: "OpenTV/0.1 (Android)",
+                    startPositionMillis = 0L,
+                    isLive = false,
+                ),
+                debounce = false,
+            )
+            paused = false
+            interaction++
+        }
     }
 
     fun toggleRecord() {
@@ -1124,22 +1273,38 @@ fun PlayerScreen(
                         when (osdTier) {
                             OsdTier.TIMELINE -> {
                                 when (event.key) {
-                                    Key.DirectionDown -> {
-                                        osdTier = OsdTier.CONTROLS
-                                        scope.launch { delay(16); focusTransport() }
+                                    Key.DirectionUp -> {
+                                        // Walk to the older programme (opens as catch-up from
+                                        // its start). TiviMate's fullscreen past-programme entry.
+                                        stepProgramme(-1)
+                                        interaction++
                                         true
+                                    }
+                                    Key.DirectionDown -> {
+                                        if (activeCatchup != null) {
+                                            // In archive, walk newer (reaching live returns
+                                            // to the live edge); on live TV this keeps its
+                                            // old meaning and drops to the controls tier.
+                                            stepProgramme(1)
+                                            interaction++
+                                            true
+                                        } else {
+                                            osdTier = OsdTier.CONTROLS
+                                            scope.launch { delay(16); focusTransport() }
+                                            true
+                                        }
                                     }
                                     Key.DirectionLeft -> {
                                         // Same two-stage step as the D-pad-left handler below, so
                                         // rewinding with the timeline focused works on live TV too
                                         // rather than only where the player already has a window.
-                                        stepBack(scrubStepMillis(event.nativeKeyEvent.repeatCount))
+                                        stepBack(scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting))
                                         interaction++
                                         true
                                     }
                                     Key.DirectionRight -> {
                                         val cur = controller.player.currentPosition
-                                        val step = scrubStepMillis(event.nativeKeyEvent.repeatCount)
+                                        val step = scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting)
                                         val dur = controller.player.duration
                                         val target = if (dur > 0) (cur + step).coerceIn(0L, dur) else cur + step
                                         controller.player.seekTo(target)
@@ -1213,15 +1378,16 @@ fun PlayerScreen(
                             }
                         }
                     }
-                    // While an ARCHIVE programme plays, channel up/down scrub the recording ±30s
-                    // instead of zapping — there is no "next channel" while watching a finished show.
+                    // While an ARCHIVE programme plays, channel up/down scrub the recording by the
+                    // catch-up skip step instead of zapping — there is no "next channel" while
+                    // watching a finished show.
                     activeCatchup != null && (
                         event.key == Key.ChannelUp ||
                         event.key == Key.PageUp ||
                         event.nativeKeyEvent.keyCode == 166 || // KEYCODE_CHANNEL_UP
                         event.nativeKeyEvent.keyCode == 92 ||  // KEYCODE_PAGE_UP
                         event.key == Key.DirectionUp
-                    ) -> { seekBy(30_000L); true }
+                    ) -> { seekBy(catchupSkipSetting * 1000L); true }
 
                     activeCatchup != null && (
                         event.key == Key.ChannelDown ||
@@ -1229,7 +1395,7 @@ fun PlayerScreen(
                         event.nativeKeyEvent.keyCode == 167 || // KEYCODE_CHANNEL_DOWN
                         event.nativeKeyEvent.keyCode == 93 ||  // KEYCODE_PAGE_DOWN
                         event.key == Key.DirectionDown
-                    ) -> { seekBy(-30_000L); true }
+                    ) -> { seekBy(-catchupSkipSetting * 1000L); true }
 
                     // D-Pad Up, or a dedicated Channel Up / Page Up (ONN 4k box remote), while
                     // full-screen: the next channel up the list — the next channel number.
@@ -1280,10 +1446,10 @@ fun PlayerScreen(
                     event.nativeKeyEvent.keyCode == 172 // KEYCODE_GUIDE
                     -> { if (queue.isNotEmpty()) channelListVisible = true; true }
 
-                    // In archive, Right is the matching forward skip to Left's stepBack (10s a press,
-                    // scaling with key repeat), not "previous channel".
+                    // In archive, Right is the matching forward skip to Left's stepBack (the
+                    // catch-up skip step, scaling with key repeat), not "previous channel".
                     activeCatchup != null && event.key == Key.DirectionRight -> {
-                        seekBy(scrubStepMillis(event.nativeKeyEvent.repeatCount))
+                        seekBy(scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting))
                         true
                     }
 
@@ -1425,17 +1591,45 @@ fun PlayerScreen(
 
                 Text(
                     text = groupText,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
                     color = Color.White.copy(alpha = 0.85f),
                 )
 
-                Text(
-                    text = headerDateTimeFmt.format(Date(nowMillis)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                )
+                // Right: display-only weather chip (temp + condition icon) next to the
+                // clock. Nothing here is tappable — the zip code and on/off toggle live
+                // in Settings. Clock-only until weather is enabled with a valid zip.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    weatherNow?.let { now ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            val look = weatherLook(now.kind)
+                            Icon(
+                                imageVector = look.icon,
+                                contentDescription = null,
+                                tint = look.tint,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            Text(
+                                text = now.display,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                            )
+                        }
+                    }
+                    Text(
+                        text = headerDateTimeFmt.format(Date(nowMillis)),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                }
             }
         }
 
@@ -1502,14 +1696,15 @@ fun PlayerScreen(
                     Spacer(Modifier.width(16.dp))
 
                     Column(Modifier.weight(1f)) {
-                        // Line 1: Active Show Title
+                        // Line 1: Active Show Title. Two lines so long titles (or
+                        // show + episode pairs) wrap instead of cutting off.
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = currentProg?.title ?: currentChannel?.shownName ?: channelTitle,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -1544,6 +1739,7 @@ fun PlayerScreen(
                             val chNum = queue.firstOrNull { it.id == currentChannel?.id }?.number ?: currentChannel?.number
                             val numStr = chNum?.let { "$it " } ?: ""
                             val chName = currentChannel?.shownName ?: channelTitle
+                            // Weighted so the name yields first: times and badges never get pushed off.
                             Text(
                                 text = "$numStr$chName",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -1551,6 +1747,7 @@ fun PlayerScreen(
                                 color = Color.White,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
                             )
 
                             if (videoSizeText.isNotEmpty()) {
@@ -1571,18 +1768,30 @@ fun PlayerScreen(
                             }
                         }
 
-                        // Line 3: Next Show Preview
+                        // Line 3: Next Show Preview. Time is fixed so it never wraps
+                        // mid-timestamp; the title takes the remaining width and wraps
+                        // instead of being cut off by the time it shares a line with.
                         if (nextProg != null) {
                             Spacer(Modifier.height(2.dp))
                             val nextStart = timeFmt.format(Date(nextProg!!.startUtcMillis))
                             val nextEnd = timeFmt.format(Date(nextProg!!.endUtcMillis))
-                            Text(
-                                text = "$nextStart – $nextEnd   ${nextProg!!.title}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.65f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "$nextStart – $nextEnd",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White.copy(alpha = 0.65f),
+                                    maxLines = 1,
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = nextProg!!.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White.copy(alpha = 0.65f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
                     }
                 }
@@ -1662,7 +1871,7 @@ fun PlayerScreen(
                                 },
                             )
 
-                            // Fast Rewind (◀◀) - 10s
+                            // Fast Rewind (◀◀) - catch-up skip step
                             TransportButton(
                                 icon = Icons.Filled.FastRewind,
                                 contentDescription = stringResource(R.string.player_rewind),
@@ -1675,7 +1884,7 @@ fun PlayerScreen(
                                     // nothing behind the playhead to seek into, and stepBack is what
                                     // reaches into the provider's archive in that case. See it for
                                     // the two-stage rule.
-                                    stepBack(10_000L)
+                                    stepBack(catchupSkipSetting * 1000L)
                                     interaction++
                                     scope.launch { delay(16); focusTransport() }
                                 },
@@ -1700,7 +1909,7 @@ fun PlayerScreen(
                                 },
                             )
 
-                            // Fast Forward (▶▶) + 10s
+                            // Fast Forward (▶▶) - catch-up skip step
                             TransportButton(
                                 icon = Icons.Filled.FastForward,
                                 contentDescription = stringResource(R.string.player_forward),
@@ -1710,11 +1919,12 @@ fun PlayerScreen(
                                 onFocusChanged = { if (it) transportIndex = 3 },
                                 onClick = {
                                     val cur = controller.player.currentPosition
+                                    val step = if (activeCatchup != null) catchupSkipSetting * 1000L else 10_000L
                                     val dur = controller.player.duration
                                     if (dur > 0) {
-                                        controller.player.seekTo((cur + 10_000L).coerceAtMost(dur))
+                                        controller.player.seekTo((cur + step).coerceAtMost(dur))
                                     } else {
-                                        controller.player.seekTo(cur + 10_000L)
+                                        controller.player.seekTo(cur + step)
                                     }
                                     interaction++
                                     scope.launch { delay(16); focusTransport() }
@@ -1745,20 +1955,22 @@ fun PlayerScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            // Watch from start button (↺) — hidden in archive, where the viewer is
-                            // already watching a finished programme from its start.
-                            if (activeCatchup == null) {
-                                TransportButton(
-                                    icon = Icons.Filled.Replay,
-                                    contentDescription = "Watch from start",
-                                    size = 38.dp,
-                                    iconSize = 20.dp,
-                                    onClick = {
+                            // Watch from start button (↺) — in archive it restarts the recording
+                            // (seek to 0); on live it opens the archive at the programme start.
+                            TransportButton(
+                                icon = Icons.Filled.Replay,
+                                contentDescription = "Watch from start",
+                                size = 38.dp,
+                                iconSize = 20.dp,
+                                onClick = {
+                                    if (activeCatchup != null) {
+                                        controller.player.seekTo(0L)
+                                    } else {
                                         watchFromStart()
-                                        interaction++
-                                    },
-                                )
-                            }
+                                    }
+                                    interaction++
+                                },
+                            )
 
                             // LIVE Badge Button
                             LiveBadgeButton(
@@ -1936,7 +2148,17 @@ fun PlayerScreen(
                                                 label = stringResource(R.string.submenu_multiview),
                                                 focusRequester = subMenuFocusRequesters.getOrPut(btn) { FocusRequester() },
                                                 onFocusChanged = { if (it) subMenuFocusedIndex = index },
-                                                onClick = { showMultiviewDialog = true },
+                                                onClick = {
+                                                    val anchorId = currentId ?: channelId
+                                                        ?: currentChannel?.id
+                                                        ?: (if (settings.lastChannelId > 0L) settings.lastChannelId else 0L)
+                                                    if (anchorId > 0L) {
+                                                        controlsVisible = false
+                                                        onOpenMultiview(anchorId)
+                                                    } else {
+                                                        Toast.makeText(context, context.getString(R.string.multiview_empty), Toast.LENGTH_SHORT).show()
+                                                    }
+                                                },
                                             )
                                         }
                                         AppSettings.SubMenuButton.QUALITY -> {
@@ -2147,26 +2369,6 @@ fun PlayerScreen(
         )
     }
 
-    if (showMultiviewDialog) {
-        AlertDialog(
-            onDismissRequest = { showMultiviewDialog = false },
-            title = { Text(stringResource(R.string.submenu_multiview_title), color = Color.White, fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    stringResource(R.string.submenu_multiview_desc),
-                    color = Color.White.copy(alpha = 0.85f),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showMultiviewDialog = false }) {
-                    Text(stringResource(R.string.common_done), color = AppTheme.primary, fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        )
-    }
-
     if (showChannelOptionsDialog) {
         AlertDialog(
             onDismissRequest = { showChannelOptionsDialog = false },
@@ -2191,6 +2393,101 @@ fun PlayerScreen(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         )
     }
+
+    if (showWeatherOptIn) {
+        WeatherOptInDialog(
+            initialZip = weatherZip,
+            // Bare dismiss (Back / outside tap) leaves the question unanswered, so the
+            // prompt re-arms on the next player open.
+            onDismiss = { showWeatherOptIn = false },
+            onTurnOn = { zip ->
+                settings.setWeatherZip(zip)
+                settings.setWeatherEnabled(true)
+                settings.weatherPromptAnswered = true
+                Toast.makeText(context, context.getString(R.string.weather_optin_enabled), Toast.LENGTH_SHORT).show()
+                showWeatherOptIn = false
+            },
+            onDecline = {
+                settings.weatherPromptAnswered = true
+                showWeatherOptIn = false
+            },
+        )
+    }
+}
+
+/**
+ * Maps a National Weather Service condition bucket to a Material icon plus a tint
+ * for the header chip. Tints are brightened for the dark gradient header — the
+ * temp/clock text stays white and only the icon carries color.
+ */
+private data class WeatherLook(val icon: ImageVector, val tint: Color)
+
+private fun weatherLook(kind: WeatherKind): WeatherLook = when (kind) {
+    WeatherKind.CLEAR -> WeatherLook(Icons.Filled.WbSunny, Color(0xFFFFC107))
+    WeatherKind.CLOUDY -> WeatherLook(Icons.Filled.Cloud, Color(0xFFB0BEC5))
+    WeatherKind.FOG -> WeatherLook(Icons.Filled.Cloud, Color(0xFF90A4AE))
+    WeatherKind.RAIN -> WeatherLook(Icons.Filled.Grain, Color(0xFF4FC3F7))
+    WeatherKind.SNOW -> WeatherLook(Icons.Filled.AcUnit, Color(0xFFB3E5FC))
+    WeatherKind.STORM -> WeatherLook(Icons.Filled.Thunderstorm, Color(0xFFFFD54F))
+}
+
+/**
+ * First-run weather opt-in: asks whether to turn the header weather on, with a zip-code
+ * field. TV-friendly (D-pad-safe text field, focus lands on Turn On). No API key involved —
+ * the header resolves the zip through keyless Zippopotam + National Weather Service endpoints.
+ */
+@Composable
+private fun WeatherOptInDialog(
+    initialZip: String,
+    onDismiss: () -> Unit,
+    onTurnOn: (String) -> Unit,
+    onDecline: () -> Unit,
+) {
+    var zip by remember(initialZip) { mutableStateOf(initialZip) }
+    var showError by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.weather_optin_title), color = Color.White, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    stringResource(R.string.weather_optin_body),
+                    color = Color.White.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                TvOutlinedTextField(
+                    value = zip,
+                    onValueChange = {
+                        // Digits and a single dash only; cap at ZIP+4 length.
+                        zip = it.filter { c -> c.isDigit() || c == '-' }.take(10)
+                        showError = false
+                    },
+                    label = { Text(stringResource(R.string.weather_zip_label)) },
+                    placeholder = { Text(stringResource(R.string.weather_zip_hint)) },
+                    singleLine = true,
+                    isError = showError,
+                    supportingText = if (showError) {
+                        { Text(stringResource(R.string.weather_zip_invalid)) }
+                    } else null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (WeatherClient.isValidZip(zip)) onTurnOn(zip.trim())
+                else showError = true
+            }) {
+                Text(stringResource(R.string.weather_optin_turn_on), color = AppTheme.primary, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDecline) {
+                Text(stringResource(R.string.weather_optin_no_thanks), color = Color.White.copy(alpha = 0.8f))
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    )
 }
 
 @Composable
@@ -2628,12 +2925,15 @@ private fun LiveTimelineBar(
     }
 }
 
-/** TiviMate-style accelerating seek step: taps move 10s; holding ramps 10s → 20s → 30s → 60s. */
-private fun scrubStepMillis(repeatCount: Int): Long = when {
-    repeatCount >= 8 -> 60_000L
-    repeatCount >= 4 -> 30_000L
-    repeatCount >= 2 -> 20_000L
-    else -> 10_000L
+/** TiviMate-style accelerating seek step: taps move the skip-step; holding ramps up. */
+private fun scrubStepMillis(repeatCount: Int, baseSec: Int = 10): Long {
+    val base = baseSec.coerceIn(5, 60) * 1000L
+    return when {
+        repeatCount >= 8 -> (base * 6).coerceAtMost(300_000L)
+        repeatCount >= 4 -> base * 3
+        repeatCount >= 2 -> base * 2
+        else -> base
+    }
 }
 
 private fun formatDurationMs(ms: Long): String {

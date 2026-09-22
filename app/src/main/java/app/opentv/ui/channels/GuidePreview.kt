@@ -102,6 +102,8 @@ fun GuidePreview(
     canGoPrevDay: Boolean = false,
     onPrevDay: () -> Unit = {},
     onNextDay: () -> Unit = {},
+    /** Whether the highlighted channel can replay past programmes (guide badge rule). */
+    isCatchupChannel: Boolean = false,
     modifier: Modifier = Modifier,
     onPreviewBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
@@ -199,6 +201,7 @@ fun GuidePreview(
                 val endStr = timeFmt.format(Date(displayProg.endUtcMillis))
                 val durationMins = (displayProg.durationMillis / 60_000L).coerceAtLeast(1)
                 val isLiveShow = nowMillis in displayProg.startUtcMillis until displayProg.endUtcMillis
+                val isPastShow = displayProg.endUtcMillis <= nowMillis
 
                 Row(
                     Modifier.fillMaxWidth(),
@@ -243,6 +246,33 @@ fun GuidePreview(
                             color = AppTheme.palette.onSurface,
                             fontWeight = FontWeight.Normal,
                         )
+                        if (dayLabel.isNotBlank()) {
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = dayLabel,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                                color = AppTheme.palette.onSurfaceVariant,
+                                fontWeight = FontWeight.Normal,
+                            )
+                        }
+                        if (isPastShow && isCatchupChannel) {
+                            Spacer(Modifier.width(10.dp))
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(AppTheme.palette.chipSurface)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "Catch-up",
+                                    color = AppTheme.palette.onSurface,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    lineHeight = 12.sp,
+                                )
+                            }
+                        }
                     }
 
                     val categoryTag = row?.primary?.qualityLabel?.ifBlank { row.primary.categoryId.orEmpty() }?.takeIf { it.isNotBlank() }

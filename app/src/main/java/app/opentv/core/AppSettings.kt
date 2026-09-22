@@ -389,6 +389,32 @@ class AppSettings private constructor(context: Context) {
     }
 
     /**
+     * Browse order for the Movies/Shows category grids (TiviMate-style). Persisted per section so
+     * a restart keeps the chosen order. RECENT matches the DAO's native order (newest first).
+     */
+    enum class VodSort { RECENT, PROVIDER, AZ, YEAR, RATING }
+
+    private fun readSort(key: String): VodSort =
+        runCatching { VodSort.valueOf(prefs.getString(key, VodSort.RECENT.name).orEmpty()) }
+            .getOrDefault(VodSort.RECENT)
+
+    private val _movieSort = MutableStateFlow(readSort(KEY_MOVIE_SORT))
+    val movieSort: StateFlow<VodSort> = _movieSort.asStateFlow()
+
+    private val _seriesSort = MutableStateFlow(readSort(KEY_SERIES_SORT))
+    val seriesSort: StateFlow<VodSort> = _seriesSort.asStateFlow()
+
+    fun setMovieSort(sort: VodSort) {
+        prefs.edit().putString(KEY_MOVIE_SORT, sort.name).apply()
+        _movieSort.value = sort
+    }
+
+    fun setSeriesSort(sort: VodSort) {
+        prefs.edit().putString(KEY_SERIES_SORT, sort.name).apply()
+        _seriesSort.value = sort
+    }
+
+    /**
      * UI language override. Blank = follow the device; otherwise a BCP-47 tag ("en", "pl").
      * Applied at [android.content.ContextWrapper.attachBaseContext] time so the whole app —
      * including notifications built off the app context — picks it up.
@@ -429,9 +455,20 @@ class AppSettings private constructor(context: Context) {
         _playerResizeMode.value = mode
     }
 
-    private fun readPalette(): AppPalette =
-        runCatching { AppPalette.valueOf(prefs.getString(KEY_PALETTE, null) ?: "") }
-            .getOrDefault(AppPalette.OPENCHAMBER)
+    private fun readPalette(): AppPalette {
+        // One-shot v138 takeover (see KEY_THEME_FORCED_VERSION): everyone lands on TVPlayer
+        // once, upgrading or new. Runs before any UI reads `palette`, so the first frame after
+        // update already renders TVPlayer; afterwards the viewer's own pick is untouched.
+        if (prefs.getInt(KEY_THEME_FORCED_VERSION, 0) < THEME_FORCE_VERSION) {
+            prefs.edit()
+                .putString(KEY_PALETTE, AppPalette.TVPLAYER.name)
+                .putInt(KEY_THEME_FORCED_VERSION, THEME_FORCE_VERSION)
+                .apply()
+            return AppPalette.TVPLAYER
+        }
+        return runCatching { AppPalette.valueOf(prefs.getString(KEY_PALETTE, null) ?: "") }
+            .getOrDefault(AppPalette.TVPLAYER)
+    }
 
     private fun readChannelLayout(): ChannelLayout =
         runCatching { ChannelLayout.valueOf(prefs.getString(KEY_CHANNEL_LAYOUT, null) ?: "") }
@@ -612,6 +649,55 @@ class AppSettings private constructor(context: Context) {
         _tmdbApiKey.value = trimmed
     }
 
+    /**
+     * The US zip code used for the keyless player-header weather lookup (Zippopotam +
+     * National Weather Service, no API key). Blank = weather stays hidden and only the clock shows.
+     * Accepts 5 digits or ZIP+4; anything else is stored trimmed and simply never resolves.
+     */
+    private val _weatherZip = MutableStateFlow(prefs.getString(KEY_WEATHER_ZIP, "").orEmpty())
+    val weatherZip: StateFlow<String> = _weatherZip.asStateFlow()
+
+    fun setWeatherZip(zip: String) {
+        val trimmed = zip.trim()
+        prefs.edit().putString(KEY_WEATHER_ZIP, trimmed).apply()
+        _weatherZip.value = trimmed
+    }
+
+    /**
+     * Whether the player header shows current weather. Off until the user opts in through
+     * the first-run prompt (or the Settings toggle) — the header is clock-only while false.
+     * Disabling keeps the saved zip but hides the chip; the prompt does not return.
+     */
+    private val _weatherEnabled = MutableStateFlow(prefs.getBoolean(KEY_WEATHER_ENABLED, false))
+    val weatherEnabled: StateFlow<Boolean> = _weatherEnabled.asStateFlow()
+
+    fun setWeatherEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_WEATHER_ENABLED, enabled).apply()
+        _weatherEnabled.value = enabled
+    }
+
+    /**
+     * Whether the weather opt-in question has been answered (enabled with a zip, or
+     * explicitly declined). A bare dismiss does not set this, so the prompt re-arms
+     * on the next player open until the user makes a choice.
+     */
+    var weatherPromptAnswered: Boolean
+        get() = prefs.getBoolean(KEY_WEATHER_PROMPT_ANSWERED, false)
+        set(value) = prefs.edit().putBoolean(KEY_WEATHER_PROMPT_ANSWERED, value).apply()
+
+    /**
+     * Manual refresh signal for the header weather (the "Update now" button in
+     * Settings). The player collects this and refetches immediately, out of band
+     * from the 30-minute loop. Not persisted — a fresh process fetches on entry
+     * anyway, so there is nothing to restore.
+     */
+    private val _weatherRefreshTick = MutableStateFlow(0)
+    val weatherRefreshTick: StateFlow<Int> = _weatherRefreshTick.asStateFlow()
+
+    fun requestWeatherRefresh() {
+        _weatherRefreshTick.value++
+    }
+
     // ---- Stremio add-ons ---------------------------------------------------------------------
 
     /**
@@ -772,6 +858,65 @@ class AppSettings private constructor(context: Context) {
     }
 
     /**
+     * Master switch for catch-up (TiviMate: Settings > Catch-up > Enable catch-up).
+     * Off hides badges' effect: past programmes fall back to the record/reminder menu and
+     * rewind stays on the local DVR window instead of reaching for the archive.
+     */
+    private val _catchupEnabled = MutableStateFlow(prefs.getBoolean(KEY_CATCHUP_ENABLED, true))
+    val catchupEnabled: StateFlow<Boolean> = _catchupEnabled.asStateFlow()
+
+    fun setCatchupEnabled(value: Boolean) {
+        prefs.edit().putBoolean(KEY_CATCHUP_ENABLED, value).apply()
+        _catchupEnabled.value = value
+    }
+
+    /**
+     * Caps the archive depth (TiviMate: Catch-up Days). `-1` follows the provider's own
+     * `tv_archive_duration` / `catchup-days`; any other value clamps it. Never extends the
+     * guide retention (3 days past) — it can only narrow the window.
+     */
+    private val _catchupDaysOverride = MutableStateFlow(prefs.getInt(KEY_CATCHUP_DAYS, -1))
+    val catchupDaysOverride: StateFlow<Int> = _catchupDaysOverride.asStateFlow()
+
+    fun setCatchupDaysOverride(value: Int) {
+        prefs.edit().putInt(KEY_CATCHUP_DAYS, value).apply()
+        _catchupDaysOverride.value = value
+    }
+
+    /** Effective archive depth in days for a channel, after the override above. */
+    fun effectiveArchiveDays(channelDays: Int): Int {
+        val cap = _catchupDaysOverride.value
+        return if (cap < 0) channelDays else minOf(channelDays, cap)
+    }
+
+    /**
+     * Global start-time correction in minutes, signed (TiviMate: Catch-up Correction).
+     * Added to the channel's own `catchup-correction` before building the timeshift
+     * stamp/utc, to align streams whose archive starts early/late vs the EPG.
+     */
+    private val _catchupCorrectionMin = MutableStateFlow(prefs.getInt(KEY_CATCHUP_CORRECTION, 0))
+    val catchupCorrectionMin: StateFlow<Int> = _catchupCorrectionMin.asStateFlow()
+
+    fun setCatchupCorrectionMin(value: Int) {
+        val clamped = value.coerceIn(-30, 30)
+        prefs.edit().putInt(KEY_CATCHUP_CORRECTION, clamped).apply()
+        _catchupCorrectionMin.value = clamped
+    }
+
+    /**
+     * Seek step for catch-up/archive playback in seconds (TiviMate: Playback > Skip Steps).
+     * Drives the TIMELINE Left/Right scrub and the ± channel-key skips while an archive plays.
+     */
+    private val _catchupSkipSec = MutableStateFlow(prefs.getInt(KEY_CATCHUP_SKIP, 10))
+    val catchupSkipSec: StateFlow<Int> = _catchupSkipSec.asStateFlow()
+
+    fun setCatchupSkipSec(value: Int) {
+        val clamped = value.coerceIn(5, 60)
+        prefs.edit().putInt(KEY_CATCHUP_SKIP, clamped).apply()
+        _catchupSkipSec.value = clamped
+    }
+
+    /**
      * A one-shot request for which Home tab to open, made by a screen outside the tab shell — the
      * Movies / Shows / Recordings shortcuts on the player's OSD.
      *
@@ -801,12 +946,23 @@ class AppSettings private constructor(context: Context) {
 
     companion object {
         private const val KEY_PALETTE = "app_palette"
+        /**
+         * One-shot gate for the v138 TVPlayer takeover: every install — new or upgrading —
+         * lands on TVPlayer exactly once, then the viewer's own choice sticks. Stored as the
+         * version that already forced, so later versions never re-trigger.
+         */
+        private const val KEY_THEME_FORCED_VERSION = "theme_forced_version"
+        private const val THEME_FORCE_VERSION = 138
 private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_SUBMENU_BUTTONS = "submenu_buttons"
     private const val KEY_VOD_BUTTONS = "vod_player_buttons"
         private const val KEY_AUDIO_DELAY_MS = "audio_delay_ms"
         private const val KEY_MATCH_REFRESH_RATE = "match_refresh_rate"
     private const val KEY_CATCHUP_DISCOVERY = "catchup_m3u_discovery"
+    private const val KEY_CATCHUP_ENABLED = "catchup_enabled"
+    private const val KEY_CATCHUP_DAYS = "catchup_days_override"
+    private const val KEY_CATCHUP_CORRECTION = "catchup_correction_min"
+    private const val KEY_CATCHUP_SKIP = "catchup_skip_sec"
         private const val KEY_CHANNEL_LAYOUT = "channel_layout"
         private const val KEY_SUBTITLES = "subtitles_enabled"
         private const val KEY_PREVIEW_VIDEO = "guide_preview_video"
@@ -821,6 +977,8 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_CONTENT_LIVE = "content_live"
         private const val KEY_CONTENT_MOVIES = "content_movies"
         private const val KEY_CONTENT_SERIES = "content_series"
+        private const val KEY_MOVIE_SORT = "movie_sort"
+        private const val KEY_SERIES_SORT = "series_sort"
         private const val KEY_LAST_CHANNEL = "last_channel_id"
         private const val KEY_LAST_CATEGORY_KEY = "last_category_key"
         private const val KEY_LAST_FAVOURITES_ONLY = "last_favourites_only"
@@ -852,6 +1010,9 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_NAS_AUTO_SYNC = "nas_auto_sync"
         private const val KEY_VOD_SYNCED_AT = "vod_synced_at"
         private const val KEY_TMDB_KEY = "tmdb_api_key"
+        private const val KEY_WEATHER_ZIP = "weather_zip"
+        private const val KEY_WEATHER_ENABLED = "weather_enabled"
+        private const val KEY_WEATHER_PROMPT_ANSWERED = "weather_prompt_answered"
         private const val KEY_STREMIO_ADDONS = "stremio_addons"
         private const val KEY_PAD_START = "rec_pad_start_min"
         private const val KEY_PAD_END = "rec_pad_end_min"

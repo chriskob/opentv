@@ -71,7 +71,7 @@ class Converters {
         SeriesRule::class,
         Reminder::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -346,6 +346,18 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v18 → v19: catch-up mode + correction. Adds the verbatim M3U `catchup` mode and the
+         * per-channel `catchup-correction` minutes to channels. Additive with defaults matching
+         * the entity's @ColumnInfo so the schema-identity check passes.
+         */
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `channels` ADD COLUMN `catchupMode` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `channels` ADD COLUMN `catchupCorrectionMin` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
@@ -355,7 +367,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
                     MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                     MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-                    MIGRATION_16_17, MIGRATION_17_18,
+                    MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
                 )
                 /*
                  * Pre-1.0 policy: schema changes drop and rebuild the database. Everything

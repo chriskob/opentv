@@ -167,6 +167,17 @@ object ManagerPage {
               </div>
             </details>
 
+            <details class="tmdb" id="tmdbCard">
+              <summary>TMDB key (movie &amp; show artwork)</summary>
+              <div class="body">
+                <p class="hint">Fills in missing posters, backdrops and synopses. Paste the free key from themoviedb.org — it stays on the TV, and this page never shows it back. Leaving it blank and saving clears the stored key.</p>
+                <label class="field"><span>API key</span>
+                  <input id="tmdbKey" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+                <p class="hint" id="tmdbState"></p>
+                <button class="save" id="tmdbSave">Save key</button>
+              </div>
+            </details>
+
             <section id="catView">
               <div id="srcBar" class="chips" hidden></div>
               <input id="catSearch" class="search" type="text" placeholder="Filter categories…"
@@ -471,6 +482,29 @@ object ManagerPage {
               .catch(function(){ setStatus(UNREACH, 'err'); });
           };
 
+          // ---- TMDB key ------------------------------------------------------------------------
+          async function loadTmdb(){
+            try {
+              var r = await getJson('/tmdb');
+              el('tmdbKey').placeholder = (r && r.hasKey) ? '•••• (saved)' : '';
+              el('tmdbState').textContent = (r && r.hasKey) ? 'A key is saved and active.' : 'No key set.';
+              if (r && r.hasKey) el('tmdbCard').open = true;
+            } catch (e) { /* leave the form blank if the TV can't be reached yet */ }
+          }
+          el('tmdbSave').onclick = function(){
+            var key = el('tmdbKey').value.trim();
+            if (key && key.length < 8) { setStatus('That key looks too short — check for a copy/paste slip.', 'err'); return; }
+            if (key && !/^[0-9a-fA-F]{32}$/.test(key) && key.length < 100) { setStatus('Does not look like a TMDB v3 key (32 hex characters) — saving anyway.', ''); }
+            else setStatus('Saving…');
+            post('/tmdb', { key: key })
+              .then(function(){
+                el('tmdbKey').value = '';
+                loadTmdb();
+                setStatus(key ? 'TMDB key saved. ✓' : 'TMDB key cleared.', 'ok');
+              })
+              .catch(function(){ setStatus(UNREACH, 'err'); });
+          };
+
           // ---- Add a provider ----------------------------------------------------------------
           function provType(){ return el('provKind').value; }
           function syncProvFields(){
@@ -520,6 +554,7 @@ object ManagerPage {
 
           loadMeta();
           loadRecording();
+          loadTmdb();
         </script>
         </body>
         </html>

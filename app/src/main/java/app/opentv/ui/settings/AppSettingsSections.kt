@@ -25,11 +25,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -52,12 +56,14 @@ import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
+import app.opentv.data.remote.WeatherClient
 import app.opentv.ui.components.TvOutlinedTextField
 import app.opentv.ui.settings.components.SettingsButton
 import app.opentv.ui.settings.components.SettingsChoiceRow
 import app.opentv.ui.settings.components.SettingsNavRow
 import app.opentv.ui.settings.components.SettingsSection
 import app.opentv.ui.settings.components.SettingsShape
+import app.opentv.ui.settings.components.SettingsToggleRow
 import app.opentv.ui.settings.components.settingsFocus
 import app.opentv.ui.theme.AppPalette
 import app.opentv.ui.theme.AppTheme
@@ -112,6 +118,101 @@ internal fun TmdbKeySection(settings: AppSettings) {
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
+        }
+    }
+}
+
+/**
+ * Keyless player-header weather: an on/off toggle plus the US zip code it looks up.
+ * Enabling without a valid zip is allowed — the header simply stays clock-only until
+ * a zip is saved. Answering here also settles the first-run prompt for good.
+ */
+@Composable
+internal fun WeatherZipSection(settings: AppSettings) {
+    val context = LocalContext.current
+    val enabled by settings.weatherEnabled.collectAsState()
+    val savedZip by settings.weatherZip.collectAsState()
+    var field by remember(savedZip) { mutableStateOf(savedZip) }
+    var showError by remember { mutableStateOf(false) }
+    val savedMessage = stringResource(R.string.settings_weather_saved)
+    val updatingMessage = stringResource(R.string.settings_weather_updating)
+    val needSetupMessage = stringResource(R.string.settings_weather_need_setup)
+    // After typing the zip, the keyboard's Done key jumps focus straight to Save.
+    // On a TV remote it is otherwise easy to get stranded inside the text field,
+    // with D-pad Up/Down swallowed by the field instead of moving to the buttons.
+    val saveFocus = remember { FocusRequester() }
+
+    SettingsSection(title = stringResource(R.string.settings_section_weather), icon = Icons.Filled.WbSunny, initiallyExpanded = false) {
+        Text(
+            stringResource(R.string.settings_weather_note),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        SettingsToggleRow(
+            title = stringResource(R.string.settings_weather_toggle),
+            checked = enabled,
+            onToggle = {
+                settings.setWeatherEnabled(it)
+                settings.weatherPromptAnswered = true
+            },
+        )
+        Spacer(Modifier.height(8.dp))
+        TvOutlinedTextField(
+            value = field,
+            onValueChange = {
+                field = it.filter { c -> c.isDigit() || c == '-' }.take(10)
+                showError = false
+            },
+            singleLine = true,
+            isError = showError,
+            supportingText = if (showError) {
+                { Text(stringResource(R.string.weather_zip_invalid)) }
+            } else null,
+            label = { Text(stringResource(R.string.settings_weather_zip_label)) },
+            placeholder = { Text(stringResource(R.string.weather_zip_hint)) },
+            keyboardActions = KeyboardActions(
+                onDone = { runCatching { saveFocus.requestFocus() } },
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SettingsButton(
+                text = stringResource(R.string.common_save),
+                onClick = {
+                    if (WeatherClient.isValidZip(field)) {
+                        settings.setWeatherZip(field.trim())
+                        settings.weatherPromptAnswered = true
+                        Toast.makeText(context, savedMessage, Toast.LENGTH_SHORT).show()
+                    } else {
+                        showError = true
+                    }
+                },
+                modifier = Modifier.focusRequester(saveFocus),
+            )
+            SettingsButton(
+                text = stringResource(R.string.settings_weather_update_now),
+                onClick = {
+                    // Refresh from whatever is in the field: a valid zip is saved
+                    // first so Update now never refreshes a stale location.
+                    if (WeatherClient.isValidZip(field)) {
+                        settings.setWeatherZip(field.trim())
+                        settings.weatherPromptAnswered = true
+                        if (enabled) {
+                            settings.requestWeatherRefresh()
+                            Toast.makeText(context, updatingMessage, Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, needSetupMessage, Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        showError = true
+                    }
+                },
+            )
         }
     }
 }

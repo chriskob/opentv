@@ -67,6 +67,10 @@ fun AppSettingsScreen(onBack: () -> Unit) {
     val previewVideo by settings.guidePreviewVideo.collectAsState()
     val showFavouritesCategory by settings.showFavouritesCategory.collectAsState()
     val catchupLookup by settings.catchupDiscovery.collectAsState()
+    val catchupEnabled by settings.catchupEnabled.collectAsState()
+    val catchupDays by settings.catchupDaysOverride.collectAsState()
+    val catchupCorrection by settings.catchupCorrectionMin.collectAsState()
+    val catchupSkip by settings.catchupSkipSec.collectAsState()
     val previewSound by settings.guidePreviewSound.collectAsState()
     val guideResetOnOpen by settings.guideResetOnOpen.collectAsState()
     val captions by settings.subtitlesEnabled.collectAsState()
@@ -117,7 +121,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            // FlowRow: the eight palettes wrap onto a second line on narrow panels instead of
+            // FlowRow: the palettes wrap onto a second line on narrow panels instead of
             // overflowing the screen edge.
             FlowRow(
                 Modifier.fillMaxWidth(),
@@ -313,6 +317,45 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(SettingsSpacing.SectionGap))
 
+        SettingsSection(title = stringResource(R.string.settings_section_catchup), icon = Icons.Filled.LiveTv, initiallyExpanded = false) {
+            SettingsToggleRow(
+                title = stringResource(R.string.settings_catchup_enable_title),
+                subtitle = stringResource(R.string.settings_catchup_enable_subtitle),
+                checked = catchupEnabled,
+                onToggle = settings::setCatchupEnabled,
+            )
+            SettingsDropdown(
+                title = stringResource(R.string.settings_catchup_days_title),
+                subtitle = stringResource(R.string.settings_catchup_days_subtitle),
+                options = listOf(
+                    stringResource(R.string.settings_catchup_days_provider) to -1,
+                    "1" to 1,
+                    "2" to 2,
+                    "3" to 3,
+                ),
+                selectedValue = catchupDays,
+                onSelect = settings::setCatchupDaysOverride,
+            )
+            SettingsStepperRow(
+                title = stringResource(R.string.settings_catchup_correction_title),
+                subtitle = stringResource(R.string.settings_catchup_correction_subtitle),
+                value = if (catchupCorrection >= 0) "+$catchupCorrection min" else "$catchupCorrection min",
+                onDecrement = { settings.setCatchupCorrectionMin(catchupCorrection - 1) },
+                onIncrement = { settings.setCatchupCorrectionMin(catchupCorrection + 1) },
+                canDecrement = catchupCorrection > -30,
+                canIncrement = catchupCorrection < 30,
+            )
+            SettingsDropdown(
+                title = stringResource(R.string.settings_catchup_skip_title),
+                subtitle = stringResource(R.string.settings_catchup_skip_subtitle),
+                options = listOf("5s" to 5, "10s" to 10, "20s" to 20, "30s" to 30, "60s" to 60),
+                selectedValue = catchupSkip,
+                onSelect = settings::setCatchupSkipSec,
+            )
+        }
+
+        Spacer(Modifier.height(SettingsSpacing.SectionGap))
+
         SettingsSection(title = stringResource(R.string.settings_section_playback), icon = Icons.Filled.PlayCircle, initiallyExpanded = false) {
             SettingsToggleRow(
                 title = stringResource(R.string.settings_subtitles_title),
@@ -426,6 +469,10 @@ fun AppSettingsScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(SettingsSpacing.SectionGap))
 
         TmdbKeySection(settings)
+
+        Spacer(Modifier.height(SettingsSpacing.SectionGap))
+
+        WeatherZipSection(settings)
 
         Spacer(Modifier.height(SettingsSpacing.SectionGap))
 

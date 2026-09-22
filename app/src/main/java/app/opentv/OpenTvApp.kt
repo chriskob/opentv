@@ -33,15 +33,46 @@ class OpenTvApp : Application(), ImageLoaderFactory {
      * The app-wide Coil loader, tuned for a poster-and-logo heavy UI on a low-end TV box. The
      * default loader keeps a small memory cache and no disk cache, so scrolling back through a
      * shelf — or reopening Movies — re-downloads and re-decodes every image. Here:
-     *  - a generous memory cache and a 256 MB disk cache mean art you've already seen paints from
-     *    cache, instantly, instead of hitting the network;
+     *  - a generous memory cache and a 64 MB disk cache mean art you've already seen paints from
+     *    cache, instantly, instead of hitting the network. Disk entries are keyed by URL and honor
+     *    HTTP cache headers, so stable provider art stays cached while changed art revalidates;
      *  - no crossfade — an immediate swap reads as snappier on a d-pad grid than a fade, and skips
      *    a frame of blending per image;
      *  - RGB_565 for opaque art (posters/backdrops) halves the memory per bitmap, so more fits in
      *    cache; Coil keeps ARGB_8888 for anything with transparency, so channel logos are untouched.
+     *  - a dedicated HTTP client that identifies as OpenTV with generous timeouts: provider image
+     *    hosts routinely refuse header-less requests (or trickle), and Coil's default client sends
+     *    no User-Agent with 10s timeouts — a HEAD probe could pass while the real fetch 403s or
+     *    times out, leaving a permanently bare card.
      */
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
+            .okHttpClient {
+                okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    // Bound fetch parallelism: every shelf/grid enqueues its visible cards plus
+                    // the prefetch window, so a fast d-pad scroll could otherwise put 60+ image
+                    // fetches in flight at once — each splitting the box's bandwidth and each
+                    // holding decode buffers, which is what made posters trickle in slowly while
+                    // the heap thrashed into GC-pressure ANRs on a 2GB box. 12 total / 4 per
+                    // host keeps shelves filling fast without contention. This client serves
+                    // images only, so API/EPG calls are unaffected.
+                    .dispatcher(
+                        okhttp3.Dispatcher().apply {
+                            maxRequests = 12
+                            maxRequestsPerHost = 4
+                        },
+                    )
+                    .addNetworkInterceptor { chain ->
+                        chain.proceed(
+                            chain.request().newBuilder()
+                                .header("User-Agent", "OpenTV")
+                                .build(),
+                        )
+                    }
+                    .build()
+            }
             .memoryCache {
                 MemoryCache.Builder(this)
                     // 8%, not 20%: on the boxes this app targets the ART heap cap is 384MB, and a

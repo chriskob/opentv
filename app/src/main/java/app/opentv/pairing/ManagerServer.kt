@@ -236,6 +236,11 @@ class ManagerServer(
 
             method == "POST" && path == "/source/test" -> handleTestSource(output, body)
 
+            method == "GET" && path == "/tmdb" ->
+                output.write(PairingHttp.httpResponse("200 OK", "application/json", tmdbJson()))
+
+            method == "POST" && path == "/tmdb" -> handleTmdb(output, body)
+
             else -> output.write(PairingHttp.httpResponse("404 Not Found", "text/plain", "Not found."))
         }
     }
@@ -370,6 +375,35 @@ class ManagerServer(
             TestDto(ok = false, error = e?.message ?: e?.javaClass?.simpleName ?: "Connection failed")
         }
         output.write(PairingHttp.httpResponse("200 OK", "application/json", json.encodeToString(TestDto.serializer(), dto)))
+    }
+
+    // ---- TMDB key --------------------------------------------------------------------------------
+
+    /** `GET /tmdb` → whether a key is stored. The key itself is never sent back to the browser —
+     *  same rule as the NAS password: LAN-only with a token is still no place to echo secrets. */
+    private fun tmdbJson(): String = json.encodeToString(
+        TmdbDto.serializer(),
+        TmdbDto(hasKey = settings.tmdbApiKey.value.isNotBlank()),
+    )
+
+    /**
+     * `POST /tmdb {key}` → store the TMDB key for artwork/synopsis back-fill. A blank key clears
+     * the stored one. Accepts the 32-hex v3 key and longer v4 read tokens; anything shorter than
+     * 8 characters is rejected as a typo rather than saved.
+     */
+    private fun handleTmdb(output: OutputStream, body: String) {
+        val req = runCatching { json.decodeFromString(TmdbReq.serializer(), body) }.getOrNull()
+        if (req == null) {
+            output.write(PairingHttp.httpResponse("400 Bad Request", "text/plain", "Bad request."))
+            return
+        }
+        val key = req.key.orEmpty().trim()
+        if (key.isNotEmpty() && key.length < 8) {
+            output.write(PairingHttp.httpResponse("400 Bad Request", "text/plain", "That key looks too short."))
+            return
+        }
+        settings.setTmdbApiKey(key)
+        writeOk(output)
     }
 
     // ---- Add a provider ------------------------------------------------------------------------
@@ -579,6 +613,10 @@ class ManagerServer(
 )
 
 @Serializable private data class TestDto(val ok: Boolean, val error: String?)
+
+@Serializable private data class TmdbDto(val hasKey: Boolean)
+
+@Serializable private data class TmdbReq(val key: String? = null)
 
 @Serializable private data class SourceReq(
     val kind: String = "xtream",
