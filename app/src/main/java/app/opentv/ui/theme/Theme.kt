@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
  * recording/favourite/live semantics, the focus fill — so these live here rather than being passed
  * around or, worse, re-hardcoded at each call site.
  */
-val LocalPalette = staticCompositionLocalOf { AppPalette.OPENCHAMBER.palette() }
+val LocalPalette = staticCompositionLocalOf { AppPalette.TVPLAYER.palette() }
 
 /**
  * How translucent the guide's own chrome is — 1f leaves the old solid panels. TiviMate ships the
@@ -96,25 +96,31 @@ private fun buildDarkScheme(p: OpenTvPalette) = darkColorScheme(
     inversePrimary = p.primaryHover,
 )
 
-/** Scaled for TV viewing, adjusted one size smaller for sleekness and clarity. */
+/**
+ * Mirrors the reference's type scale: its dimens set the text sizes at 11, 12, 13, 14, 16, 18,
+ * 20, 22, 24, 28, 34 and 44 sp, mapped here onto the fifteen Material3 roles.
+ */
 private val OpenTvTypography = Typography(
+    displayLarge = TextStyle(fontSize = 44.sp, fontWeight = FontWeight.SemiBold),
+    displayMedium = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.SemiBold),
     displaySmall = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.SemiBold),
+    headlineLarge = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold),
     headlineMedium = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold),
-    headlineSmall = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium),
-    titleMedium = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
-    titleSmall = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+    headlineSmall = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium),
+    titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium),
+    titleSmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
     bodyLarge = TextStyle(fontSize = 14.sp),
-    bodyMedium = TextStyle(fontSize = 12.sp),
-    bodySmall = TextStyle(fontSize = 11.sp),
-    labelLarge = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium),
-    labelSmall = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium),
+    bodyMedium = TextStyle(fontSize = 13.sp),
+    bodySmall = TextStyle(fontSize = 12.sp),
+    labelLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+    labelMedium = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+    labelSmall = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium),
 )
 
 @Composable
 fun OpenTvTheme(
-    palette: AppPalette = AppPalette.OPENCHAMBER,
+    palette: AppPalette = AppPalette.TVPLAYER,
     guideChromeAlpha: Float = 1f,
     content: @Composable () -> Unit,
 ) {

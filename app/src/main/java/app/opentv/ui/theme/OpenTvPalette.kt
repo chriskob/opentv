@@ -26,6 +26,8 @@ enum class AppPalette(val displayName: String) {
     NIGHTOWL("Night Owl"),
     MONOPLUS("Mono Plus"),
     OPENCHAMBER("OpenChamber"),
+    SLATE_GUIDE("Slate Guide"),
+    TVPLAYER("TVPlayer"),
 }
 
 /**
@@ -59,6 +61,9 @@ class OpenTvPalette internal constructor(
     val successContainer: Color,
     val warning: Color,
     val info: Color,
+    val onCursor: Color,
+    val cellFocus: Color,
+    val onCellFocus: Color,
 ) {
     // ---- Surface ramp -----------------------------------------------------------------------
     val surfaceContainerLowest: Color get() = background
@@ -106,7 +111,6 @@ class OpenTvPalette internal constructor(
     val cursorFill: Color get() = hover
     val cursorBorder: Color get() = focusBorder
     val selectedFill: Color get() = selection
-    val onCursor: Color get() = onSurface
 }
 
 private val AuraPalette = OpenTvPalette(
@@ -134,6 +138,9 @@ private val AuraPalette = OpenTvPalette(
     successContainer = Color(0x2061FFCA),
     warning = Color(0xFFFFCA85),
     info = Color(0xFF82E2FF),
+    onCursor = Color(0xFFEDECEE),
+    cellFocus = Color(0x2D7887AC),
+    onCellFocus = Color(0xFFEDECEE),
 )
 
 private val AyuPalette = OpenTvPalette(
@@ -161,6 +168,9 @@ private val AyuPalette = OpenTvPalette(
     successContainer = Color(0x2078D05C),
     warning = Color(0xFFE4A75C),
     info = Color(0xFF66C6F1),
+    onCursor = Color(0xFFD6DAE0),
+    cellFocus = Color(0x1DB6B6CC),
+    onCellFocus = Color(0xFFD6DAE0),
 )
 
 private val CarbonfoxPalette = OpenTvPalette(
@@ -188,6 +198,9 @@ private val CarbonfoxPalette = OpenTvPalette(
     successContainer = Color(0x2042BE65),
     warning = Color(0xFFF1C21B),
     info = Color(0xFF78A9FF),
+    onCursor = Color(0xFFF2F4F8),
+    cellFocus = Color(0x12FFFFFF),
+    onCellFocus = Color(0xFFF2F4F8),
 )
 
 private val DraculaPalette = OpenTvPalette(
@@ -215,6 +228,9 @@ private val DraculaPalette = OpenTvPalette(
     successContainer = Color(0x2050FA7B),
     warning = Color(0xFFFFB86C),
     info = Color(0xFF8BE9FD),
+    onCursor = Color(0xFFF8F8F2),
+    cellFocus = Color(0xA330334B),
+    onCellFocus = Color(0xFFF8F8F2),
 )
 
 private val JetBrainsPalette = OpenTvPalette(
@@ -242,6 +258,9 @@ private val JetBrainsPalette = OpenTvPalette(
     successContainer = Color(0xFF253627),
     warning = Color(0xFFF2C55C),
     info = Color(0xFF3592C4),
+    onCursor = Color(0xFFDFE1E5),
+    cellFocus = Color(0xFF3C3E41),
+    onCellFocus = Color(0xFFDFE1E5),
 )
 
 private val NightOwlPalette = OpenTvPalette(
@@ -269,6 +288,9 @@ private val NightOwlPalette = OpenTvPalette(
     successContainer = Color(0x20C5E478),
     warning = Color(0xFFECC48D),
     info = Color(0xFF82AAFF),
+    onCursor = Color(0xFFD6DEEB),
+    cellFocus = Color(0x68555D6D),
+    onCellFocus = Color(0xFFD6DEEB),
 )
 
 private val MonoPlusPalette = OpenTvPalette(
@@ -296,6 +318,9 @@ private val MonoPlusPalette = OpenTvPalette(
     successContainer = Color(0x206A8E6A),
     warning = Color(0xFF9E8A6A),
     info = Color(0xFF6A7E9E),
+    onCursor = Color(0xFFE5E5E5),
+    cellFocus = Color(0x1FFFFFFF),
+    onCellFocus = Color(0xFFE5E5E5),
 )
 
 private val OpenChamberPalette = OpenTvPalette(
@@ -323,6 +348,76 @@ private val OpenChamberPalette = OpenTvPalette(
     successContainer = Color(0x2076AD4F),
     warning = Color(0xFFC67F13),
     info = Color(0xFF479FE6),
+    onCursor = Color(0xFFC9C5BA),
+    cellFocus = Color(0x12FFFFFF),
+    onCellFocus = Color(0xFFC9C5BA),
+)
+
+private val SlateGuidePalette = OpenTvPalette(
+    background = Color(0xFF1E2A3B),
+    surface = Color(0xFF2A3A50),
+    subtle = Color(0xFF33465E),
+    onSurface = Color(0xFFFFFFFF),
+    onSurfaceVariant = Color(0xFFC9D4E3),
+    outline = Color(0xFF3E526B),
+    borderHover = Color(0xFF5A728C),
+    focusBorder = Color(0xFFFFFFFF),
+    primary = Color(0xFFFFFFFF),
+    onPrimary = Color(0xFF111318),
+    primaryHover = Color(0xFFA9BFD8),
+    primaryActive = Color(0xFF7A93B2),
+    focusRing = Color(0x80FFFFFF),
+    selection = Color(0xFF5A728C),
+    hover = Color(0x33FFFFFF),
+    recording = Color(0xFFE5484D),
+    favourite = Color(0xFFFFC94D),
+    live = Color(0xFF33DFFF),
+    error = Color(0xFFFF6B6B),
+    errorContainer = Color(0x33FF6B6B),
+    success = Color(0xFF76AD4F),
+    successContainer = Color(0x2076AD4F),
+    warning = Color(0xFFFFC94D),
+    info = Color(0xFF33DFFF),
+    onCursor = Color(0xFFFFFFFF),
+    cellFocus = Color(0xFFFFFFFF),
+    onCellFocus = Color(0xFF111318),
+)
+
+/**
+ * The classic blue-grey + teal look: the Material blue-grey ramp as the surface ladder
+ * (`#263238` background, `#37474F` surfaces) with teal 200 (`#80CBC4`) as the accent, and the
+ * stock Material semantic hues for recording/favourite/live. Reconstructed from the reference's
+ * base theme tokens (colorPrimary #37474F, colorPrimaryDark/windowBackground #263238, colorAccent
+ * #80CBC4, colorButtonNormal #5A595B, colorControlHighlight #33FFFFFF).
+ */
+private val TvPlayerPalette = OpenTvPalette(
+    background = Color(0xFF263238),
+    surface = Color(0xFF37474F),
+    subtle = Color(0xFF455A64),
+    onSurface = Color(0xFFECEFF1),
+    onSurfaceVariant = Color(0xFFB0BEC5),
+    outline = Color(0xFF546E7A),
+    borderHover = Color(0xFF78909C),
+    focusBorder = Color(0xFF80CBC4),
+    primary = Color(0xFF80CBC4),
+    onPrimary = Color(0xFF1B2A32),
+    primaryHover = Color(0xFF4DB6AC),
+    primaryActive = Color(0xFFB2DFDB),
+    focusRing = Color(0x5580CBC4),
+    selection = Color(0x33FFFFFF),
+    hover = Color(0x1FFFFFFF),
+    recording = Color(0xFFF44336),
+    favourite = Color(0xFFFFC107),
+    live = Color(0xFF4DD0E1),
+    error = Color(0xFFF44336),
+    errorContainer = Color(0x33F44336),
+    success = Color(0xFF4CAF50),
+    successContainer = Color(0x204CAF50),
+    warning = Color(0xFFFFC107),
+    info = Color(0xFF00BCD4),
+    onCursor = Color(0xFFFFFFFF),
+    cellFocus = Color(0xFF80CBC4),
+    onCellFocus = Color(0xFF1B2A32),
 )
 
 /** The resolved palette for this selection. */
@@ -335,4 +430,6 @@ fun AppPalette.palette(): OpenTvPalette = when (this) {
     AppPalette.NIGHTOWL -> NightOwlPalette
     AppPalette.MONOPLUS -> MonoPlusPalette
     AppPalette.OPENCHAMBER -> OpenChamberPalette
+    AppPalette.SLATE_GUIDE -> SlateGuidePalette
+    AppPalette.TVPLAYER -> TvPlayerPalette
 }
