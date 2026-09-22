@@ -186,6 +186,11 @@ dependencies {
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+    // Phase 1 of Room 2.8.4 -> 3.0.1: sqlite-bundled stages the driver cutover
+    // (setDriver comes in Phase 2); the wrapper bridges the one legacy
+    // SupportSQLite call site in EpgRepository until it is rewritten natively.
+    implementation(libs.androidx.sqlite.bundled)
+    implementation(libs.androidx.room.sqlite.wrapper)
     ksp(libs.room.compiler)
 
     implementation(libs.okhttp)
