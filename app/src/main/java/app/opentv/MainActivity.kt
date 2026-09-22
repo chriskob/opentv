@@ -74,6 +74,7 @@ import app.opentv.ui.ChannelsViewModel
 import app.opentv.ui.VodViewModel
 import app.opentv.ui.onboarding.AddSourceScreen
 import app.opentv.ui.onboarding.RemotePairingScreen
+import app.opentv.ui.multiview.MultiviewScreen
 import app.opentv.ui.player.PlayerScreen
 import app.opentv.ui.settings.AboutScreen
 import app.opentv.ui.settings.AppSettingsScreen
@@ -389,7 +390,12 @@ object Routes {
     // the player can look up the way a channel is.
     const val VOD_PLAYER = "vod?key={key}&url={url}&title={title}&ua={ua}"
 
+    // 2-up split-screen multiview. Ids ride the route so Back restores the single player;
+    // the channel list itself stays in PlaybackQueue (too big for a nav argument).
+    const val MULTIVIEW = "multiview/{channelAId}/{channelBId}"
+
     fun player(channelId: Long) = "player/$channelId"
+    fun multiview(channelAId: Long, channelBId: Long) = "multiview/$channelAId/$channelBId"
     fun seriesDetail(seriesId: Long) = "series/$seriesId"
     fun movieDetail(movieId: Long) = "movie/$movieId"
     fun person(name: String) = "person?name=${java.net.URLEncoder.encode(name, "UTF-8")}"
@@ -549,6 +555,10 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     onRefresh = sourcesViewModel::refreshAll,
                     onOpenSearch = { navController.navigate(Routes.SEARCH) },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
+                    onOpenMultiview = { channelId ->
+                        val second = bootSettings.lastChannelId.takeIf { it > 0L && it != channelId } ?: 0L
+                        navController.navigate(Routes.multiview(channelId, second))
+                    },
                     onOpenProfiles = { navController.navigate(Routes.PROFILES) },
                     onPlayRecording = { rec ->
                         // A NAS recording plays straight off its smb:// locator and a USB one off
@@ -703,6 +713,35 @@ private fun OpenTvApp(isTelevision: Boolean) {
                         }
                     },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
+                    onOpenMultiview = { id ->
+                        // Standalone player owns the shared livePlayer; silence it so multiview's
+                        // two panes don't become a third concurrent stream. Returning pops back
+                        // to this player, whose ON_RESUME retunes/resumes.
+                        runCatching {
+                            bootGraph.livePlayer.player.apply {
+                                volume = 0f
+                                pause()
+                            }
+                        }
+                        val second = bootSettings.lastChannelId.takeIf { it > 0L && it != id } ?: 0L
+                        navController.navigate(Routes.multiview(id, second))
+                    },
+                )
+            }
+
+            composable(Routes.MULTIVIEW) { entry ->
+                val aId = entry.arguments?.getString("channelAId")?.toLongOrNull()
+                val bId = entry.arguments?.getString("channelBId")?.toLongOrNull()
+                MultiviewScreen(
+                    channelAId = aId,
+                    channelBId = bId,
+                    onBack = {
+                        if (!navController.popBackStack()) {
+                            navController.navigate(Routes.HOME) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    },
                 )
             }
 

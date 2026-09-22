@@ -35,6 +35,8 @@
     <string name="guide_favourites">★ Favorites</string>
     <string name="guide_watch_from_start">▶  Watch from start (catch-up)</string>
     <string name="guide_catchup_link_failed">Couldn\'t build the catch-up link</string>
+    <string name="guide_catchup_disabled">Catch-up is turned off in Settings</string>
+    <string name="guide_catchup_expired">That programme has left the archive (guide keeps 3 days back)</string>
     <string name="guide_cancel_reminder">🔔  Cancel reminder</string>
     <string name="guide_reminder_removed">Reminder removed</string>
     <string name="guide_remind_me">🔔  Remind me</string>
@@ -57,6 +59,9 @@
     <string name="guide_building_desc">Building your guide from the channels saved on this device. On a big provider this takes a moment — it\'ll appear shortly.</string>
     <string name="guide_no_favourites_title">No favorites yet</string>
     <string name="guide_no_favourites_desc">Press the star on any channel and it lands here.</string>
+    <string name="guide_empty_filter_title">Nothing in this view</string>
+    <string name="guide_empty_filter_desc">Your channels are on this box, but the current category or provider filter matches none of them.</string>
+    <string name="guide_browse_categories">Browse categories</string>
     <string name="guide_no_channels_title">No channels yet</string>
     <string name="guide_add_provider_desc">Add a provider to get started.</string>
     <string name="guide_add_provider_button">Add a provider</string>
@@ -184,6 +189,15 @@
     <string name="submenu_channel_options_title">Channel Options</string>
     <string name="submenu_multiview_title">Multiview Mode</string>
     <string name="submenu_multiview_desc">Watch multiple live channels simultaneously in split-screen or grid view.</string>
+    <string name="multiview_pane_a">Pane A — pick a channel</string>
+    <string name="multiview_pane_b">Pane B — pick a channel</string>
+    <string name="multiview_hint">Left/Right: sound • Up/Down: zap • OK: change channel • Back: exit</string>
+    <string name="multiview_pick_a">Pane A — choose channel</string>
+    <string name="multiview_pick_b">Pane B — choose channel</string>
+    <string name="multiview_swap">Swap</string>
+    <string name="multiview_retry">Retry</string>
+    <string name="multiview_unavailable">That channel is no longer available</string>
+    <string name="multiview_empty">No channels to pick yet — open the guide first.</string>
 
     <!-- Settings: Sub Menu Customization -->
     <string name="settings_section_submenu_buttons">Player Sub Menu Buttons</string>
@@ -191,6 +205,16 @@
     <string name="settings_submenu_enable_all">Enable all</string>
     <string name="settings_catchup_lookup_title">Detect catch-up from the provider</string>
     <string name="settings_catchup_lookup_subtitle">Most playlists are a panel export that omits catch-up, so ask the panel behind the playlist which channels really have it. One request per sync; skipped when the playlist says so itself.</string>
+    <string name="settings_section_catchup">Catch-up</string>
+    <string name="settings_catchup_enable_title">Enable catch-up</string>
+    <string name="settings_catchup_enable_subtitle">Play past programmes from the provider archive. Off keeps the guide read-only for the past.</string>
+    <string name="settings_catchup_days_title">Catch-up days</string>
+    <string name="settings_catchup_days_subtitle">Cap how far back catch-up reaches. Provider follows tv_archive_duration / catchup-days; this can only narrow it, never extend past the 3-day guide.</string>
+    <string name="settings_catchup_days_provider">Provider</string>
+    <string name="settings_catchup_correction_title">Catch-up correction</string>
+    <string name="settings_catchup_correction_subtitle">Shift the archive start when the stream runs early or late vs the guide.</string>
+    <string name="settings_catchup_skip_title">Catch-up skip step</string>
+    <string name="settings_catchup_skip_subtitle">Left/Right scrub while an archive plays. Minutes are coarse on Xtream .ts streams.</string>
     <string name="settings_section_vod_buttons">Movie &amp; show player buttons</string>
     <string name="settings_vod_buttons_note">Choose which buttons appear along the bottom of the movie and show player.</string>
     <string name="settings_submenu_disable_all">Disable all</string>
@@ -573,6 +597,13 @@
     <string name="vod_director">Director</string>
     <string name="vod_season">Season %1$d</string>
     <string name="vod_episode">Episode %1$d</string>
+    <string name="vod_loading_more">Loading more titles…</string>
+    <string name="vod_sort_title">Sort by</string>
+    <string name="vod_sort_recent">Recently added</string>
+    <string name="vod_sort_provider">Provider</string>
+    <string name="vod_sort_az">A to Z</string>
+    <string name="vod_sort_year">Year (newest)</string>
+    <string name="vod_sort_rating">Top rated</string>
     <string name="vod_detail_loading">Loading…</string>
     <string name="vod_person_title">With %1$s</string>
     <string name="vod_person_empty">Nothing else with %1$s in your library.</string>
@@ -629,4 +660,22 @@
     <string name="history_clear">Clear history</string>
     <string name="history_cleared">Watch history cleared</string>
     <string name="history_removed">%1$s removed from history</string>
+
+    <!-- Player header weather (keyless: zip -> National Weather Service) -->
+    <string name="weather_zip_label">Zip code</string>
+    <string name="weather_zip_hint">e.g. 90210</string>
+    <string name="weather_zip_invalid">Enter a 5-digit zip code</string>
+    <string name="weather_optin_title">Show weather?</string>
+    <string name="weather_optin_body">OpenTV can show the current temperature next to the clock in the player header. Enter your US zip code to turn it on — no account or API key needed.</string>
+    <string name="weather_optin_turn_on">Turn On</string>
+    <string name="weather_optin_no_thanks">No thanks</string>
+    <string name="weather_optin_enabled">Weather turned on</string>
+    <string name="settings_section_weather">Weather</string>
+    <string name="settings_weather_note">Show the current temperature next to the clock in the player header. Uses your zip code with free keyless weather data — nothing leaves the device except the forecast lookup.</string>
+    <string name="settings_weather_toggle">Show weather in player header</string>
+    <string name="settings_weather_zip_label">Zip code</string>
+    <string name="settings_weather_saved">Weather settings saved</string>
+    <string name="settings_weather_update_now">Update now</string>
+    <string name="settings_weather_updating">Updating weather…</string>
+    <string name="settings_weather_need_setup">Saved. Turn weather on to refresh the header.</string>
 </resources>

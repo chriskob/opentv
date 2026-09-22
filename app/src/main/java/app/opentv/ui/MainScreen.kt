@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
@@ -105,7 +106,7 @@ enum class Tab(val labelRes: Int, val icon: ImageVector) {
     RECORDINGS(R.string.nav_recordings, Icons.Filled.FiberManualRecord),
 }
 
-private val RAIL_EXPANDED = 236.dp
+private val RAIL_EXPANDED = 190.dp
 /** Icon-only width, so the menu can stay on screen without stealing the guide's space. */
 private val RAIL_COLLAPSED = 80.dp
 
@@ -123,6 +124,7 @@ fun MainScreen(
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenProfiles: () -> Unit,
+    onOpenMultiview: (Long) -> Unit = {},
     onPlayRecording: (Recording) -> Unit,
     activeProfileName: String,
     channelsViewModel: ChannelsViewModel = viewModel(),
@@ -147,7 +149,9 @@ fun MainScreen(
     // still switched on (or Recordings if none are).
     val homeTab = visibleTabs.first()
 
-    var tab by remember { mutableStateOf(homeTab) }
+    // Saveable so BACK from a detail/player destination (which takes HOME out of the
+    // composition and back) restores the Movies/Shows tab instead of resetting to the guide.
+    var tab by rememberSaveable { mutableStateOf(homeTab) }
     var navRailVisible by remember { mutableStateOf(false) }
     // Whether focus is anywhere inside the main menu — the menu eases open to show its labels while
     // the d-pad is in it and eases back to icons when focus leaves.
@@ -294,6 +298,7 @@ fun MainScreen(
                     },
                     onOpenSearch = onOpenSearch,
                     onOpenSettings = onOpenSettings,
+                    onOpenMultiview = onOpenMultiview,
                 )
                 Tab.MOVIES -> MoviesScreen(
                     onOpenMovie = onOpenMovie,
@@ -415,7 +420,7 @@ private fun NavRail(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
         ) {
-            OpenTvLogo(size = 34.dp)
+            OpenTvLogo(size = 28.dp)
             AnimatedVisibility(visible = expanded, enter = fadeIn(), exit = fadeOut()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.width(12.dp))
@@ -476,20 +481,20 @@ private fun RailItem(
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .settingsFocus(
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 selected = selected,
                 onFocusChange = { focused = it },
             )
             .focusable()
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = tint)
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
         AnimatedVisibility(visible = expanded, enter = fadeIn(), exit = fadeOut()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(12.dp))
                 Text(
                     label,
                     style = MaterialTheme.typography.titleMedium,

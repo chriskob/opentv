@@ -438,6 +438,12 @@
     <string name="vod_recommended">Polecane dla Ciebie</string>
     <string name="vod_recently_added">Ostatnio dodane</string>
     <string name="vod_categories">Kategorie</string>
+    <string name="vod_sort_title">Sortuj według</string>
+    <string name="vod_sort_recent">Ostatnio dodane</string>
+    <string name="vod_sort_provider">Dostawca</string>
+    <string name="vod_sort_az">A do Z</string>
+    <string name="vod_sort_year">Rok (od najnowszych)</string>
+    <string name="vod_sort_rating">Najwyżej oceniane</string>
     <string name="vod_watch_now">Oglądaj teraz</string>
     <string name="vod_resume">Wznów</string>
     <string name="vod_addon_sources">Źródła dodatków</string>
