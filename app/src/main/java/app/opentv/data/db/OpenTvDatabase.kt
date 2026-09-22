@@ -6,13 +6,15 @@
 package app.opentv.data.db
 
 import android.content.Context
-import androidx.room.Database
-import androidx.room.Room
-import androidx.room.RoomDatabase
-import androidx.room.TypeConverter
-import androidx.room.TypeConverters
-import androidx.room.migration.Migration
+import androidx.room3.ColumnTypeConverter
+import androidx.room3.ColumnTypeConverters
+import androidx.room3.Database
+import androidx.room3.Room
+import androidx.room3.RoomDatabase
+import androidx.room3.migration.Migration
 import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
 import app.opentv.data.model.Category
 import app.opentv.data.model.Channel
 import app.opentv.data.model.EpgChannelAlias
@@ -33,36 +35,31 @@ import app.opentv.data.model.SourceKind
 import app.opentv.data.model.StreamKind
 
 class Converters {
-    @TypeConverter fun sourceKindToString(value: SourceKind): String = value.name
+    @ColumnTypeConverter fun sourceKindToString(value: SourceKind): String = value.name
 
-    @TypeConverter fun stringToSourceKind(value: String): SourceKind =
+    @ColumnTypeConverter fun stringToSourceKind(value: String): SourceKind =
         runCatching { SourceKind.valueOf(value) }.getOrDefault(SourceKind.M3U)
 
-    @TypeConverter fun liveStreamFormatToString(value: LiveStreamFormat): String = value.name
+    @ColumnTypeConverter fun liveStreamFormatToString(value: LiveStreamFormat): String = value.name
 
-    @TypeConverter fun stringToLiveStreamFormat(value: String): LiveStreamFormat =
+    @ColumnTypeConverter fun stringToLiveStreamFormat(value: String): LiveStreamFormat =
         runCatching { LiveStreamFormat.valueOf(value) }.getOrDefault(LiveStreamFormat.HLS)
 
-    @TypeConverter fun streamKindToString(value: StreamKind): String = value.name
+    @ColumnTypeConverter fun streamKindToString(value: StreamKind): String = value.name
 
-    @TypeConverter fun stringToStreamKind(value: String): StreamKind =
+    @ColumnTypeConverter fun stringToStreamKind(value: String): StreamKind =
         runCatching { StreamKind.valueOf(value) }.getOrDefault(StreamKind.LIVE)
 
-    @TypeConverter fun recordingStatusToString(value: RecordingStatus): String = value.name
+    @ColumnTypeConverter fun recordingStatusToString(value: RecordingStatus): String = value.name
 
-    @TypeConverter fun stringToRecordingStatus(value: String): RecordingStatus =
+    @ColumnTypeConverter fun stringToRecordingStatus(value: String): RecordingStatus =
         runCatching { RecordingStatus.valueOf(value) }.getOrDefault(RecordingStatus.FAILED)
 }
 
 /**
- * Phase 1 (Room 2.8.4 + sqlite 2.6.x): the driver API exposes no execSQL —
- * statements run via prepare/step. Keeps the 17 migrations' call sites identical
- * to the SupportSQLite era. Phase 2 (Room 3.0.1) replaces this with the official
- * androidx.sqlite.execSQL extension and makes migrate() suspend.
+ * Phase 1 helper (Room 2.8.4 + sqlite 2.6.x had no execSQL): superseded in Phase 2
+ * by the official androidx.sqlite.execSQL extension (see imports). Removed.
  */
-private fun SQLiteConnection.execSQL(sql: String) {
-    prepare(sql).use { it.step() }
-}
 
 @Database(
     entities = [
@@ -84,7 +81,7 @@ private fun SQLiteConnection.execSQL(sql: String) {
     version = 19,
     exportSchema = true,
 )
-@TypeConverters(Converters::class)
+@ColumnTypeConverters(Converters::class)
 abstract class OpenTvDatabase : RoomDatabase() {
     abstract fun sources(): SourceDao
     abstract fun categories(): CategoryDao
@@ -109,7 +106,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * identity check passes; the destructive fallback below is only a backstop.
          */
         private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL(
                     "CREATE TABLE IF NOT EXISTS `profiles` (" +
                         "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
@@ -140,7 +137,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * than falling through to the destructive rebuild below).
          */
         private val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL(
                     "CREATE TABLE IF NOT EXISTS `recordings` (" +
                         "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
@@ -183,7 +180,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * the entity's @ColumnInfo(defaultValue = "0") so the schema-identity check passes.
          */
         private val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `channels` ADD COLUMN `tvArchive` INTEGER NOT NULL DEFAULT 0")
                 connection.execSQL("ALTER TABLE `channels` ADD COLUMN `tvArchiveDays` INTEGER NOT NULL DEFAULT 0")
             }
@@ -195,7 +192,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * the upgrade rather than falling through to the destructive rebuild.
          */
         private val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL(
                     "CREATE TABLE IF NOT EXISTS `reminders` (" +
                         "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
@@ -222,7 +219,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * schema-identity check and the upgrade preserves favourites and overrides.
          */
         private val MIGRATION_6_7 = object : Migration(6, 7) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `sources` ADD COLUMN `liveFormat` TEXT NOT NULL DEFAULT 'HLS'")
             }
         }
@@ -234,7 +231,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * schema-identity check passes and favourites/overrides survive the upgrade.
          */
         private val MIGRATION_7_8 = object : Migration(7, 8) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `channels` ADD COLUMN `customName` TEXT")
             }
         }
@@ -248,7 +245,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * the destructive rebuild.
          */
         private val MIGRATION_8_9 = object : Migration(8, 9) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `movies` ADD COLUMN `backdropUrl` TEXT")
                 connection.execSQL("ALTER TABLE `movies` ADD COLUMN `cast` TEXT")
                 connection.execSQL("ALTER TABLE `movies` ADD COLUMN `genre` TEXT")
@@ -264,13 +261,13 @@ abstract class OpenTvDatabase : RoomDatabase() {
         /** Recordings gain a profile owner so a booking can be tagged to whoever set it. Nullable
          *  (no default) to match Room's generated DDL for a `Long?` field — the project's pattern. */
         private val MIGRATION_9_10 = object : Migration(9, 10) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `recordings` ADD COLUMN `profileId` INTEGER")
             }
         }
 
         private val MIGRATION_10_11 = object : Migration(10, 11) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `sources` ADD COLUMN `macAddress` TEXT")
                 connection.execSQL("ALTER TABLE `channels` ADD COLUMN `cmd` TEXT")
             }
@@ -280,7 +277,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * v11 → v12: Composite range indexes on programmes table for instant TV guide query.
          */
         private val MIGRATION_11_12 = object : Migration(11, 12) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("CREATE INDEX IF NOT EXISTS `index_programmes_endUtcMillis_startUtcMillis` ON `programmes` (`endUtcMillis`, `startUtcMillis`)")
                 connection.execSQL("CREATE INDEX IF NOT EXISTS `index_programmes_epgChannelId_endUtcMillis_startUtcMillis` ON `programmes` (`epgChannelId`, `endUtcMillis`, `startUtcMillis`)")
             }
@@ -292,7 +289,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * index.
          */
         private val MIGRATION_12_13 = object : Migration(12, 13) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("CREATE INDEX IF NOT EXISTS `index_channels_sourceId` ON `channels` (`sourceId`)")
             }
         }
@@ -301,7 +298,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * v13 → v14: Add `isNew` boolean flag to programmes table for new episodes/premieres.
          */
         private val MIGRATION_13_14 = object : Migration(13, 14) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `programmes` ADD COLUMN `isNew` INTEGER NOT NULL DEFAULT 0")
             }
         }
@@ -313,7 +310,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * Room's own DDL (index_channels_categoryId) so the identity check passes.
          */
         private val MIGRATION_14_15 = object : Migration(14, 15) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_channels_categoryId` ON `channels` (`categoryId`)"
                 )
@@ -327,7 +324,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * DEFAULT 1 matches the old behaviour for playlists added before these columns existed.
          */
         private val MIGRATION_15_16 = object : Migration(15, 16) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `sources` ADD COLUMN `includeLive` INTEGER NOT NULL DEFAULT 1")
                 connection.execSQL("ALTER TABLE `sources` ADD COLUMN `includeVod` INTEGER NOT NULL DEFAULT 1")
                 connection.execSQL("ALTER TABLE `sources` ADD COLUMN `includeSeries` INTEGER NOT NULL DEFAULT 1")
@@ -340,7 +337,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * reorders. Additive, so favourites and overrides survive the upgrade.
          */
         private val MIGRATION_16_17 = object : Migration(16, 17) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `sources` ADD COLUMN `sortIndex` INTEGER NOT NULL DEFAULT 0")
             }
         }
@@ -351,7 +348,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * EPG sync rewrites them with the flag.
          */
         private val MIGRATION_17_18 = object : Migration(17, 18) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `programmes` ADD COLUMN `isLive` INTEGER NOT NULL DEFAULT 0")
             }
         }
@@ -362,7 +359,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
          * the entity's @ColumnInfo so the schema-identity check passes.
          */
         private val MIGRATION_18_19 = object : Migration(18, 19) {
-            override fun migrate(connection: SQLiteConnection) {
+            override suspend fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `channels` ADD COLUMN `catchupMode` TEXT NOT NULL DEFAULT ''")
                 connection.execSQL("ALTER TABLE `channels` ADD COLUMN `catchupCorrectionMin` INTEGER NOT NULL DEFAULT 0")
             }
@@ -370,6 +367,9 @@ abstract class OpenTvDatabase : RoomDatabase() {
 
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
+                // Room 3 requires an explicit driver. BundledSQLiteDriver ships the
+                // newest SQLite everywhere, so cheap sticks behave like flagships.
+                .setDriver(BundledSQLiteDriver())
                 // WAL keeps guide writes from blocking guide reads, so a background EPG
                 // refresh cannot make the UI stutter on a slow TV box.
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
@@ -388,7 +388,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
                  */
                 .fallbackToDestructiveMigration()
                 .addCallback(object : RoomDatabase.Callback() {
-                    override fun onOpen(connection: SQLiteConnection) {
+                    override suspend fun onOpen(connection: SQLiteConnection) {
                         super.onOpen(connection)
                         runCatching {
                             connection.execSQL("PRAGMA wal_autocheckpoint=1000;")

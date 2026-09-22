@@ -8,8 +8,8 @@ activityCompose = "1.9.3"
 composeBom = "2024.11.00"
 tvCompose = "1.0.0"
 media3 = "1.5.0"
-room = "2.8.4"
-sqlite = "2.6.2"
+room3 = "3.0.1"
+sqlite = "2.7.0"
 okhttp = "4.12.0"
 serialization = "1.8.1"
 coroutines = "1.9.0"
@@ -53,12 +53,12 @@ media3-ui-compose = { group = "androidx.media3", name = "media3-ui-compose", ver
 media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
 media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
 
-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+room3-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room3" }
+room3-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room3" }
+room3-testing = { module = "androidx.room3:room3-testing", version.ref = "room3" }
 androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
-androidx-room-sqlite-wrapper = { module = "androidx.room:room-sqlite-wrapper", version.ref = "room" }
+# Room 2 compat bridge (room-sqlite-wrapper) is superseded by room3-sqlite-wrapper below.
+androidx-room3-sqlite-wrapper = { module = "androidx.room3:room3-sqlite-wrapper", version.ref = "room3" }
 
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }

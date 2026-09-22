@@ -6,6 +6,7 @@
 package app.opentv.data.repo
 
 import android.util.Log
+import androidx.room3.executeSQL
 import app.opentv.core.AppSettings
 import app.opentv.data.db.ChannelDao
 import app.opentv.data.db.EpgChannelAliasDao
@@ -440,35 +441,42 @@ class EpgRepository(
      * its high-water mark forever unless it is vacuumed. The WAL is checkpoint-truncated
      * unconditionally (cheap); a full VACUUM runs only when the freelist holds meaningful
      * space, since it rewrites the whole file. All sizes are logged for on-device diagnostics.
+     *
+     * Room 3 (no SupportSQLite): runs on a writer connection from the SQLite driver instead
+     * of the old openHelper.writableDatabase cursor API.
      */
     private suspend fun reclaimDiskSpace() {
-        val sqlite = db?.openHelper?.writableDatabase ?: return
+        val database = db ?: return
         withContext(Dispatchers.IO) {
             runCatching {
-                sqlite.query("PRAGMA wal_checkpoint(TRUNCATE);").use { it.close() }
-                fun pragmaLong(name: String): Long =
-                    sqlite.query("PRAGMA $name;").use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
-                val pageSize = pragmaLong("page_size")
-                val beforePages = pragmaLong("page_count")
-                val freeBytes = pageSize * pragmaLong("freelist_count")
-                Log.i(
-                    TAG,
-                    "EPG db: %.1f MB on disk, %.1f MB reclaimable".format(
-                        beforePages * pageSize / 1048576.0,
-                        freeBytes / 1048576.0,
-                    ),
-                )
-                if (freeBytes > VACUUM_THRESHOLD_BYTES) {
-                    Log.i(TAG, "Reclaiming %.1f MB via VACUUM...".format(freeBytes / 1048576.0))
-                    sqlite.execSQL("VACUUM")
-                    val afterBytes = pageSize * pragmaLong("page_count")
+                database.useConnection(false) { transactor ->
+                    transactor.executeSQL("PRAGMA wal_checkpoint(TRUNCATE);")
+                    suspend fun pragmaLong(name: String): Long =
+                        transactor.usePrepared("PRAGMA $name;") { stmt ->
+                            if (stmt.step()) stmt.getLong(0) else 0L
+                        }
+                    val pageSize = pragmaLong("page_size")
+                    val beforePages = pragmaLong("page_count")
+                    val freeBytes = pageSize * pragmaLong("freelist_count")
                     Log.i(
                         TAG,
-                        "VACUUM done: %.1f MB -> %.1f MB".format(
+                        "EPG db: %.1f MB on disk, %.1f MB reclaimable".format(
                             beforePages * pageSize / 1048576.0,
-                            afterBytes / 1048576.0,
+                            freeBytes / 1048576.0,
                         ),
                     )
+                    if (freeBytes > VACUUM_THRESHOLD_BYTES) {
+                        Log.i(TAG, "Reclaiming %.1f MB via VACUUM...".format(freeBytes / 1048576.0))
+                        transactor.executeSQL("VACUUM")
+                        val afterBytes = pageSize * pragmaLong("page_count")
+                        Log.i(
+                            TAG,
+                            "VACUUM done: %.1f MB -> %.1f MB".format(
+                                beforePages * pageSize / 1048576.0,
+                                afterBytes / 1048576.0,
+                            ),
+                        )
+                    }
                 }
             }.onFailure { Log.w(TAG, "Disk reclaim skipped: ${it.message}") }
         }
