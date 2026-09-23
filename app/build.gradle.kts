@@ -186,11 +186,7 @@ dependencies {
 
     // Room 3: coroutines support is built into room3-runtime (no -ktx artifact).
     implementation(libs.room3.runtime)
-    // Phase 2 (Room 3.0.1): driver cutover — setDriver(BundledSQLiteDriver())
-    // in OpenTvDatabase; the wrapper bridges the one legacy SupportSQLite
-    // call site in EpgRepository until it is rewritten natively.
     implementation(libs.androidx.sqlite.bundled)
-    implementation(libs.androidx.room3.sqlite.wrapper)
     ksp(libs.room3.compiler)
 
     implementation(libs.okhttp)
