@@ -184,9 +184,10 @@ dependencies {
     implementation(libs.media3.session)
     implementation(libs.media3.datasource.okhttp)
 
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
+    // Room 3: coroutines support is built into room3-runtime (no -ktx artifact).
+    implementation(libs.room3.runtime)
+    implementation(libs.androidx.sqlite.bundled)
+    ksp(libs.room3.compiler)
 
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
@@ -222,6 +223,6 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.robolectric)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.room.testing)
+    testImplementation(libs.room3.testing)
     testImplementation(libs.androidx.test.ext.junit)
 }
