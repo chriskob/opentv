@@ -98,20 +98,24 @@ fun GuidePreview(
     onRefresh: () -> Unit,
     onAddSource: () -> Unit,
     previewPlayer: ExoPlayer?,
+    modifier: Modifier = Modifier,
     dayLabel: String = "",
     canGoPrevDay: Boolean = false,
     onPrevDay: () -> Unit = {},
     onNextDay: () -> Unit = {},
-    /** Whether the highlighted channel can replay past programmes (guide badge rule). */
-    isCatchupChannel: Boolean = false,
-    modifier: Modifier = Modifier,
+    catchUpChannelIds: Set<Long> = emptySet(),
     onPreviewBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
     // Read the caller's highlight here rather than receiving its value, so a d-pad step only
     // recomposes this card, not the whole Live TV screen behind it.
     val row = rowState.value
     val programme = programmeState.value
+    val isCatchupChannel = row?.primary?.tvArchive == true || row?.primary?.id in catchUpChannelIds
     val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+    val context = LocalContext.current
+    val logoModel = remember(context, row?.primary?.logoUrl) {
+        logoRequest(context, row?.primary?.logoUrl, 192)
+    }
 
     Row(
         modifier
@@ -133,7 +137,7 @@ fun GuidePreview(
         ) {
             if (row != null && previewPlayer == null) {
                 AsyncImage(
-                    model = logoRequest(LocalContext.current, row.primary.logoUrl, 192),
+                    model = logoModel,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(0.65f),
                 )
@@ -279,7 +283,7 @@ fun GuidePreview(
                     if (categoryTag != null) {
                         Text(
                             text = categoryTag,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                             color = AppTheme.palette.onSurfaceVariant,
                             fontWeight = FontWeight.Normal,
                             maxLines = 1,

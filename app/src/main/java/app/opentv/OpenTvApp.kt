@@ -25,6 +25,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 /** How long startup maintenance waits for the first frame before running anyway. */
 private const val FIRST_FRAME_WAIT_MILLIS = 10_000L
+private const val STARTUP_MAINTENANCE_DELAY_MILLIS = 120_000L
 
 class OpenTvApp : Application(), ImageLoaderFactory {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -152,7 +153,7 @@ class OpenTvApp : Application(), ImageLoaderFactory {
         appScope.launch {
             // Defer startup background maintenance so the live UI and DB render immediately
             // on cold start with zero I/O contention or CPU throttling.
-            kotlinx.coroutines.delay(30000)
+            kotlinx.coroutines.delay(STARTUP_MAINTENANCE_DELAY_MILLIS)
             val prefs = getSharedPreferences("opentv", MODE_PRIVATE)
             val seen = prefs.getInt("normalizer_version", 0)
             if (seen < CatalogRepository.NORMALIZER_VERSION) {

@@ -7,6 +7,8 @@ package app.opentv.ui.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -103,11 +105,13 @@ fun SettingsScreen(
     // A page's own back control hands focus back to the drawer, which re-expands it.
     val refocusMenu: () -> Unit = { runCatching { menuFocus.requestFocus() } }
 
-    var railHasFocus by remember { mutableStateOf(false) }
+    var railHasFocus by remember { mutableStateOf(true) }
     val expanded = railHasFocus
-    // The drawer still collapses to the icon rail when focus moves into a page, but instantly:
-    // no width animation, so the menu never appears to slide.
-    val drawerWidth = if (expanded) DRAWER_EXPANDED else DRAWER_COLLAPSED
+    val drawerWidth by animateDpAsState(
+        targetValue = if (expanded) DRAWER_EXPANDED else DRAWER_COLLAPSED,
+        animationSpec = tween(durationMillis = 180),
+        label = "settingsDrawerWidth",
+    )
 
     // Back inside a section hands focus back to the menu (the way TiviMate does); Back on the menu
     // leaves Settings. Exiting straight from a page cost the viewer their place in the list.
@@ -125,17 +129,18 @@ fun SettingsScreen(
             expanded = expanded,
             selected = selected,
             menuFocus = menuFocus,
-            onSelect = { selected = it },
+            onSelect = {
+                railHasFocus = true
+                selected = it
+            },
             onOpenRemotePairing = onOpenRemotePairing,
             onRailFocus = { railHasFocus = it },
             onDone = onDismiss,
         )
-
         Box(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                // Focus entering the page collapses the drawer; going back to the menu re-expands it.
                 .onFocusChanged { if (it.hasFocus) railHasFocus = false },
         ) {
             when (selected) {
@@ -170,6 +175,7 @@ private fun SettingsDrawer(
     onOpenRemotePairing: () -> Unit,
     onRailFocus: (Boolean) -> Unit,
     onDone: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val listState = rememberScrollState()
     // The menu is the entry point, so it takes focus shortly after it is composed. A one-frame delay
@@ -180,12 +186,12 @@ private fun SettingsDrawer(
     // composed yet is silently dropped, which used to leave the cursor wherever it happened to fall
     // and scroll the menu to whatever row caught it.
     LaunchedEffect(Unit) {
-        delay(80)
+        delay(16)
         runCatching { menuFocus.requestFocus() }
     }
 
     Column(
-        Modifier
+        modifier
             .width(width)
             .fillMaxHeight()
             .background(MaterialTheme.colorScheme.surfaceContainer)

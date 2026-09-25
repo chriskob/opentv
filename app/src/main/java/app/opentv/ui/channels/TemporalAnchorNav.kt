@@ -7,6 +7,7 @@ package app.opentv.ui.channels
 
 import app.opentv.data.model.Programme
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Temporal Anchor Focus Engine: Finds the target programme in [targetChannelPrograms] that best
@@ -38,6 +39,45 @@ fun getVerticalTargetProgram(
         val mid = (p.startUtcMillis + p.endUtcMillis) / 2L
         abs(mid - temporalAnchorMillis)
     } ?: targetChannelPrograms.first()
+}
+
+fun getHorizontalTargetProgram(
+    programmes: List<Programme>,
+    currentProgramme: Programme?,
+    currentColumnMillis: Long,
+    isRight: Boolean,
+): Programme? {
+    if (programmes.isEmpty()) return null
+
+    val halfHourMs = 30 * 60 * 1000L
+    val candidate = currentColumnMillis + if (isRight) halfHourMs else -halfHourMs
+    val atCandidate = programmes.firstOrNull { programme ->
+        programme.startUtcMillis <= candidate && programme.endUtcMillis > candidate
+    }
+
+    if (!isRight) {
+        return atCandidate ?: programmes
+            .asSequence()
+            .filter { it.endUtcMillis <= candidate }
+            .maxByOrNull { it.endUtcMillis }
+    }
+
+    val current = currentProgramme
+    if (current != null && atCandidate?.id == current.id) {
+        val remaining = current.endUtcMillis - candidate
+        if (remaining > 0L && remaining < halfHourMs) {
+            return programmes
+                .asSequence()
+                .filter { it.startUtcMillis >= current.endUtcMillis }
+                .minByOrNull { it.startUtcMillis }
+                ?: atCandidate
+        }
+    }
+
+    return atCandidate ?: programmes
+        .asSequence()
+        .filter { it.startUtcMillis >= candidate }
+        .minByOrNull { it.startUtcMillis }
 }
 
 /**
@@ -82,5 +122,17 @@ fun calculateInitialScrollOffsetPx(
     val offsetMinutes = ((frameStartMillis - windowStartMillis) / 60000.0).coerceAtLeast(0.0)
     val targetDp = (offsetMinutes * minuteDp).coerceAtLeast(0.0)
     return (targetDp * density).toInt()
+}
+
+fun calculateSnappedScrollOffsetPx(
+    windowStartMillis: Long,
+    columnStartMillis: Long,
+    minuteDp: Float,
+    density: Float,
+    maxValue: Int = Int.MAX_VALUE,
+): Int {
+    val offsetMinutes = ((columnStartMillis - windowStartMillis) / 60000.0).coerceAtLeast(0.0)
+    val targetDp = offsetMinutes * minuteDp
+    return (targetDp * density).roundToInt().coerceIn(0, maxValue.coerceAtLeast(0))
 }
 

@@ -69,7 +69,9 @@ import app.opentv.ui.components.tvFocus
 import app.opentv.ui.theme.AppTheme
 import coil.compose.AsyncImage
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -96,6 +98,7 @@ fun MovieDetailScreen(
     // null = the add-on picker is closed; a (possibly empty) list = show it. Separate flag for the spinner.
     var addonStreams by remember(movieId) { mutableStateOf<List<StremioStream>?>(null) }
     var addonLoading by remember(movieId) { mutableStateOf(false) }
+    var addonRequest by remember(movieId) { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(movieId) {
         val loaded = viewModel.movieDetail(movieId)
@@ -136,10 +139,15 @@ fun MovieDetailScreen(
                         icon = Icons.Filled.Extension,
                         label = stringResource(R.string.vod_addon_sources),
                     ) {
+                        addonRequest?.cancel()
                         addonLoading = true
-                        scope.launch {
-                            addonStreams = viewModel.addonStreams(m)
-                            addonLoading = false
+                        addonRequest = scope.launch {
+                            val streams = viewModel.addonStreams(m)
+                            if (isActive) {
+                                addonStreams = streams
+                                addonLoading = false
+                                addonRequest = null
+                            }
                         }
                     }
                 }
@@ -167,10 +175,18 @@ fun MovieDetailScreen(
             loading = addonLoading,
             streams = addonStreams.orEmpty(),
             onPick = { stream ->
+                addonRequest?.cancel()
+                addonRequest = null
                 addonStreams = null
+                addonLoading = false
                 onPlayUrl("movie:${m.id}", stream.url, m.displayTitle)
             },
-            onDismiss = { addonStreams = null; addonLoading = false },
+            onDismiss = {
+                addonRequest?.cancel()
+                addonRequest = null
+                addonStreams = null
+                addonLoading = false
+            },
         )
     }
 }

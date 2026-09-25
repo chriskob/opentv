@@ -14,6 +14,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Spring
@@ -40,6 +41,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -123,8 +127,13 @@ import app.opentv.player.StreamInfo
 import app.opentv.player.declaredQuality
 import app.opentv.player.streamInfoOf
 import coil.compose.AsyncImage
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -231,11 +240,25 @@ fun VodPlayerScreen(
     val latestNext = rememberUpdatedState(nextEpisode)
 
     var controlsVisible by remember { mutableStateOf(true) }
-    var interaction by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val interactionEvents = remember {
+        MutableSharedFlow<Unit>(
+            replay = 0,
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+    }
+    val autoHideJob = remember { arrayOfNulls<Job>(1) }
     val timelineFocus = remember { FocusRequester() }
     val rootFocus = remember { FocusRequester() }
 
-    fun reveal() { controlsVisible = true; interaction++ }
+    fun signalInteraction() {
+        interactionEvents.tryEmit(Unit)
+    }
+
+    fun reveal() {
+        controlsVisible = true
+        signalInteraction()
+    }
 
     suspend fun savePosition() {
         val player = controller.player
@@ -498,13 +521,24 @@ fun VodPlayerScreen(
     // Auto-hide when playing and not paused/scrubbing and no picker open. A growing recording dips in
     // and out of Buffering as it rides the write head, so for that case Buffering counts as "playing"
     // here — otherwise a single hiccup would pin the transport bar on screen for the rest of the watch.
-    LaunchedEffect(controlsVisible, interaction, state, paused, scrubbing, vodPanel) {
-        val activelyPlaying = state is PlayerController.State.Playing ||
-            (growingRec && state is PlayerController.State.Buffering)
-        if (controlsVisible && !paused && !scrubbing && vodPanel == VodPanel.NONE && activelyPlaying) {
-            delay(5_000)
-            controlsVisible = false
-        }
+    LaunchedEffect(Unit) {
+        interactionEvents
+            .onStart { emit(Unit) }
+            .collect {
+                autoHideJob[0]?.cancel()
+                val activelyPlaying = state is PlayerController.State.Playing ||
+                    (growingRec && state is PlayerController.State.Buffering)
+                if (controlsVisible && !paused && !scrubbing && vodPanel == VodPanel.NONE && activelyPlaying) {
+                    autoHideJob[0] = launch {
+                        delay(5_000)
+                        val stillPlaying = state is PlayerController.State.Playing ||
+                            (growingRec && state is PlayerController.State.Buffering)
+                        if (controlsVisible && !paused && !scrubbing && vodPanel == VodPanel.NONE && stillPlaying) {
+                            controlsVisible = false
+                        }
+                    }
+                }
+            }
     }
 
     LaunchedEffect(controlsVisible, vodPanel) {
@@ -564,22 +598,22 @@ fun VodPlayerScreen(
                             Key.MediaRewind -> {
                                 seekRelative(-10_000L)
                                 positionMs = controller.player.currentPosition
-                                interaction++
+                                signalInteraction()
                                 true
                             }
                             Key.MediaFastForward -> {
                                 seekRelative(10_000L)
                                 positionMs = controller.player.currentPosition
-                                interaction++
+                                signalInteraction()
                                 true
                             }
                             Key.MediaPlayPause -> {
                                 paused = !paused
                                 controller.player.playWhenReady = !paused
-                                interaction++
+                                signalInteraction()
                                 true
                             }
-                            else -> { interaction++; false }
+                            else -> { signalInteraction(); false }
                         }
                     }
                     else -> false
@@ -672,61 +706,70 @@ fun VodPlayerScreen(
                         )
                         .padding(horizontal = 20.dp, vertical = 16.dp),
                 ) {
-                when (vodPanel) {
-                    VodPanel.NONE -> Unit
-                    VodPanel.SUBTITLES, VodPanel.AUDIO -> TrackPanel(
-                        panel = vodPanel,
-                        controller = controller,
-                        tracks = tracks,
-                        firstFocus = panelFocus,
-                        onDone = { vodPanel = VodPanel.NONE; interaction++ },
-                    )
-                    VodPanel.SPEED -> ChoicePanel(
-                        title = stringResource(R.string.player_speed),
-                        options = SPEED_CHOICES.map { (value, label) -> label to (playbackSpeed == value) },
-                        firstFocus = panelFocus,
-                        onPick = { index ->
-                            val (value, _) = SPEED_CHOICES[index]
-                            playbackSpeed = value
-                            controller.player.setPlaybackSpeed(value)
-                            vodPanel = VodPanel.NONE
-                            interaction++
-                        },
-                    )
-                    VodPanel.ASPECT -> ChoicePanel(
-                        title = stringResource(R.string.player_aspect_ratio_title),
-                        options = listOf(
-                            stringResource(R.string.player_aspect_fit) to
-                                (aspectMode == AspectRatioFrameLayout.RESIZE_MODE_FIT),
-                            stringResource(R.string.player_aspect_fill) to
-                                (aspectMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
-                            stringResource(R.string.player_aspect_stretch) to
-                                (aspectMode == AspectRatioFrameLayout.RESIZE_MODE_FILL),
-                        ),
-                        firstFocus = panelFocus,
-                        onPick = { index ->
-                            aspectMode = when (index) {
-                                0 -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                                1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                else -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                            }
-                            vodPanel = VodPanel.NONE
-                            interaction++
-                        },
-                    )
-                    VodPanel.FORMAT -> StreamInfoPanel(
-                        info = streamInfo,
-                        declared = declaredLabel,
-                        durationMs = durationMs,
-                        firstFocus = panelFocus,
-                    )
-                    VodPanel.NEXT_EPISODE -> NextEpisodePanel(
-                        episodes = episodeQueue,
-                        currentId = currentEpisode?.id,
-                        nextId = nextEpisode?.id,
-                        firstFocus = panelFocus,
-                        onPick = { playEpisode(it) },
-                    )
+                AnimatedContent(
+                    targetState = vodPanel,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(160)) + scaleIn(animationSpec = tween(160), initialScale = 0.96f)) togetherWith
+                            fadeOut(animationSpec = tween(120))
+                    },
+                    label = "vodOptionPanel",
+                ) { panel ->
+                    when (panel) {
+                        VodPanel.NONE -> Unit
+                        VodPanel.SUBTITLES, VodPanel.AUDIO -> TrackPanel(
+                            panel = panel,
+                            controller = controller,
+                            tracks = tracks,
+                            firstFocus = panelFocus,
+                            onDone = { vodPanel = VodPanel.NONE; signalInteraction() },
+                        )
+                        VodPanel.SPEED -> ChoicePanel(
+                            title = stringResource(R.string.player_speed),
+                            options = SPEED_CHOICES.map { (value, label) -> label to (playbackSpeed == value) },
+                            firstFocus = panelFocus,
+                            onPick = { index ->
+                                val (value, _) = SPEED_CHOICES[index]
+                                playbackSpeed = value
+                                controller.player.setPlaybackSpeed(value)
+                                vodPanel = VodPanel.NONE
+                                signalInteraction()
+                            },
+                        )
+                        VodPanel.ASPECT -> ChoicePanel(
+                            title = stringResource(R.string.player_aspect_ratio_title),
+                            options = listOf(
+                                stringResource(R.string.player_aspect_fit) to
+                                    (aspectMode == AspectRatioFrameLayout.RESIZE_MODE_FIT),
+                                stringResource(R.string.player_aspect_fill) to
+                                    (aspectMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
+                                stringResource(R.string.player_aspect_stretch) to
+                                    (aspectMode == AspectRatioFrameLayout.RESIZE_MODE_FILL),
+                            ),
+                            firstFocus = panelFocus,
+                            onPick = { index ->
+                                aspectMode = when (index) {
+                                    0 -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                    1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                    else -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                                }
+                                vodPanel = VodPanel.NONE
+                                signalInteraction()
+                            },
+                        )
+                        VodPanel.FORMAT -> StreamInfoPanel(
+                            info = streamInfo,
+                            declared = declaredLabel,
+                            durationMs = durationMs,
+                            firstFocus = panelFocus,
+                        )
+                        VodPanel.NEXT_EPISODE -> NextEpisodePanel(
+                            episodes = episodeQueue,
+                            currentId = currentEpisode?.id,
+                            nextId = nextEpisode?.id,
+                            firstFocus = panelFocus,
+                            onPick = { playEpisode(it) },
+                        )
+                    }
                 }
                 if (vodPanel != VodPanel.NONE) Spacer(Modifier.height(14.dp))
 
@@ -816,12 +859,12 @@ fun VodPlayerScreen(
                     onSeekRelative = { delta ->
                         seekRelative(delta)
                         positionMs = controller.player.currentPosition
-                        interaction++
+                        signalInteraction()
                     },
                     onSeekTo = { targetMs ->
                         controller.player.seekTo(targetMs)
                         positionMs = targetMs
-                        interaction++
+                        signalInteraction()
                     },
                     onNavigateDown = {
                         focusBar()
@@ -829,7 +872,7 @@ fun VodPlayerScreen(
                     onTogglePlayPause = {
                         paused = !paused
                         controller.player.playWhenReady = !paused
-                        interaction++
+                        signalInteraction()
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -903,7 +946,7 @@ fun VodPlayerScreen(
                                 onClick = {
                                     seekRelative(-SKIP_MILLIS)
                                     positionMs = controller.player.currentPosition
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
                             AppSettings.VodPlayerButton.PLAY_PAUSE -> VodButtonCard(
@@ -914,7 +957,7 @@ fun VodPlayerScreen(
                                 onClick = {
                                     paused = !paused
                                     controller.player.playWhenReady = !paused
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
                             AppSettings.VodPlayerButton.FORWARD -> VodButtonCard(
@@ -924,7 +967,7 @@ fun VodPlayerScreen(
                                 onClick = {
                                     seekRelative(SKIP_MILLIS)
                                     positionMs = controller.player.currentPosition
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
                             AppSettings.VodPlayerButton.SPEED -> VodButtonCard(
@@ -934,7 +977,7 @@ fun VodPlayerScreen(
                                 focusRequester = buttonFocus[button],
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.SPEED) VodPanel.NONE else VodPanel.SPEED
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
                             AppSettings.VodPlayerButton.SUBTITLES -> VodButtonCard(
@@ -944,7 +987,7 @@ fun VodPlayerScreen(
                                 focusRequester = buttonFocus[button],
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.SUBTITLES) VodPanel.NONE else VodPanel.SUBTITLES
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
 
@@ -955,7 +998,7 @@ fun VodPlayerScreen(
                                 focusRequester = buttonFocus[button],
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.AUDIO) VodPanel.NONE else VodPanel.AUDIO
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
                             AppSettings.VodPlayerButton.FORMAT -> VodButtonCard(
@@ -965,7 +1008,7 @@ fun VodPlayerScreen(
                                 focusRequester = buttonFocus[button],
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.FORMAT) VodPanel.NONE else VodPanel.FORMAT
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
                             AppSettings.VodPlayerButton.ASPECT -> VodButtonCard(
@@ -981,7 +1024,7 @@ fun VodPlayerScreen(
                                 focusRequester = buttonFocus[button],
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.ASPECT) VodPanel.NONE else VodPanel.ASPECT
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
                             AppSettings.VodPlayerButton.NEXT_EPISODE -> VodButtonCard(
@@ -1326,19 +1369,7 @@ private fun VodButtonCard(
  */
 @Composable
 private fun PanelEntrance(content: @Composable () -> Unit) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(animationSpec = tween(160)) +
-            scaleIn(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMedium,
-                ),
-                initialScale = 0.94f,
-            ),
-    ) {
-        content()
-    }
+    content()
 }
 
 /**
@@ -1661,16 +1692,35 @@ private fun PanelBodyNextEpisode(
                 modifier = Modifier.padding(8.dp),
             )
         }
-        Column(Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
-            ordered.forEachIndexed { index, ep ->
-                TrackRow(
-                    label = "S${ep.season}E${ep.episodeNumber} · ${ep.title}",
-                    selected = ep.id == currentId || ep.id == nextId,
-                    onClick = { onPick(ep) },
-                    focusRequester = if (index == 0) firstFocus else null,
-                )
-            }
+    val focusIndex = remember(ordered, currentId, nextId) {
+        val targetId = nextId ?: currentId
+        ordered.indexOfFirst { it.id == targetId }.coerceAtLeast(0)
+    }
+    val listState = rememberLazyListState()
+    LaunchedEffect(focusIndex, ordered.isNotEmpty()) {
+        if (ordered.isNotEmpty()) {
+            if (focusIndex > 0) listState.scrollToItem(focusIndex)
+            runCatching { firstFocus.requestFocus() }
         }
+    }
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.heightIn(max = 280.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        itemsIndexed(
+            items = ordered,
+            key = { _, episode -> episode.id },
+        ) { index, episode ->
+            TrackRow(
+                label = "S${episode.season}E${episode.episodeNumber} · ${episode.title}",
+                selected = episode.id == currentId || episode.id == nextId,
+                onClick = { onPick(episode) },
+                focusRequester = if (index == focusIndex) firstFocus else null,
+            )
+        }
+    }
+
 }
 
 /** The item being played. Held as state so "next episode" can swap it without a navigation. */

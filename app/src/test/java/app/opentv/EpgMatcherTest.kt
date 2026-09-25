@@ -87,6 +87,16 @@ class EpgMatcherTest {
     }
 
     @Test
+    fun `matching the same id from both prefix directions remains valid`() {
+        val idx = index(
+            "sky.uk" to "Sky",
+            "sky.uk" to "Sky Sports Main Event",
+        )
+
+        assertThat(idx.match(keyOf("SKY SPORTS MAIN"))).isEqualTo("sky.uk")
+    }
+
+    @Test
     fun `end to end - the exact names from the reporting provider`() {
         // The names that started all this, verbatim from the screen.
         val idx = index(

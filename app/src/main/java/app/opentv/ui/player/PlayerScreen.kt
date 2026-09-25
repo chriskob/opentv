@@ -11,10 +11,15 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -170,10 +175,14 @@ import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -250,6 +259,7 @@ fun PlayerScreen(
         }
     }
 
+    val channelListState = rememberLazyListState()
     var queue by remember { mutableStateOf(PlaybackQueue.items) }
     LaunchedEffect(PlaybackQueue.items) {
         if (PlaybackQueue.items.isNotEmpty()) {
@@ -273,7 +283,18 @@ fun PlayerScreen(
     // TiviMate-style timeline: each Left/Right press is an immediate skip (10s taps, accelerating
     // while held). The pip on the bar tracks the player's real position, so every skip is visible.
     // Playback seeks on every press — that's the point; the OSD stays up while keys repeat.
-    var interaction by remember { mutableIntStateOf(0) }
+    val interactionEvents = remember {
+        MutableSharedFlow<Unit>(
+            replay = 0,
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+    }
+    val autoHideJob = remember { arrayOfNulls<Job>(1) }
+
+    fun signalInteraction() {
+        interactionEvents.tryEmit(Unit)
+    }
     // Offered once per session the first time the user records here while OpenTV isn't exempt from
     // battery optimisation, so the capture survives the screen sleeping. Never blocks recording.
     var showBackgroundPrompt by remember { mutableStateOf(false) }
@@ -409,7 +430,6 @@ fun PlayerScreen(
     var selectedSubtitleLabel by remember { mutableStateOf("Off") }
     var selectedAudioLabel by remember { mutableStateOf("Stereo") }
 
-    var menuOpenedAt by remember { mutableLongStateOf(0L) }
     var videoSizeText by remember { mutableStateOf("") }
     var fpsText by remember { mutableStateOf("") }
     var videoCodecText by remember { mutableStateOf("") }
@@ -505,11 +525,10 @@ fun PlayerScreen(
     }
 
     fun reveal() {
-        menuOpenedAt = System.currentTimeMillis()
         controlsVisible = true
         panel = Panel.NONE
         osdTier = OsdTier.HISTORY
-        interaction++
+        signalInteraction()
     }
 
     fun watchFromStart() {
@@ -902,7 +921,7 @@ fun PlayerScreen(
         }
         paused = false
         Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
-        interaction++
+        signalInteraction()
     }
 
     /**
@@ -995,7 +1014,7 @@ fun PlayerScreen(
                 debounce = false,
             )
             paused = false
-            interaction++
+            signalInteraction()
         }
     }
 
@@ -1011,7 +1030,7 @@ fun PlayerScreen(
                 showBackgroundPrompt = true
             }
         }
-        interaction++
+        signalInteraction()
     }
 
     LaunchedEffect(channelId) {
@@ -1169,13 +1188,24 @@ fun PlayerScreen(
     }
 
     // Auto-hide the bar after a few seconds — but never while paused or with a picker open or scrubbing timeline.
-    LaunchedEffect(controlsVisible, interaction, state, paused, panel, osdTier) {
-        if (controlsVisible && !paused && panel == Panel.NONE && osdTier != OsdTier.TIMELINE &&
-            state is PlayerController.State.Playing
-        ) {
-            delay(CONTROLS_TIMEOUT_MILLIS)
-            controlsVisible = false
-        }
+    LaunchedEffect(Unit) {
+        interactionEvents
+            .onStart { emit(Unit) }
+            .collect {
+                autoHideJob[0]?.cancel()
+                if (controlsVisible && !paused && panel == Panel.NONE && osdTier != OsdTier.TIMELINE &&
+                    state is PlayerController.State.Playing
+                ) {
+                    autoHideJob[0] = launch {
+                        delay(CONTROLS_TIMEOUT_MILLIS)
+                        if (controlsVisible && !paused && panel == Panel.NONE && osdTier != OsdTier.TIMELINE &&
+                            state is PlayerController.State.Playing
+                        ) {
+                            controlsVisible = false
+                        }
+                    }
+                }
+            }
     }
 
     // Focus: requests appropriate focus based on panel or osdTier
@@ -1260,16 +1290,16 @@ fun PlayerScreen(
                     // Typing a channel number jumps to it, TiviMate-style.
                     digit != null -> {
                         numberEntry = (numberEntry + digit).take(4)
-                        reveal(); interaction++; true
+                        reveal(); signalInteraction(); true
                     }
                     // A picker or the channel list owns the whole d-pad while it's up.
                     channelListVisible || panel != Panel.NONE -> {
-                        interaction++
+                        signalInteraction()
                         false
                     }
                     // With the menu/controls visible:
                     controlsVisible -> {
-                        interaction++
+                        signalInteraction()
                         when (osdTier) {
                             OsdTier.TIMELINE -> {
                                 when (event.key) {
@@ -1277,7 +1307,7 @@ fun PlayerScreen(
                                         // Walk to the older programme (opens as catch-up from
                                         // its start). TiviMate's fullscreen past-programme entry.
                                         stepProgramme(-1)
-                                        interaction++
+                                        signalInteraction()
                                         true
                                     }
                                     Key.DirectionDown -> {
@@ -1286,7 +1316,7 @@ fun PlayerScreen(
                                             // to the live edge); on live TV this keeps its
                                             // old meaning and drops to the controls tier.
                                             stepProgramme(1)
-                                            interaction++
+                                            signalInteraction()
                                             true
                                         } else {
                                             osdTier = OsdTier.CONTROLS
@@ -1299,7 +1329,7 @@ fun PlayerScreen(
                                         // rewinding with the timeline focused works on live TV too
                                         // rather than only where the player already has a window.
                                         stepBack(scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting))
-                                        interaction++
+                                        signalInteraction()
                                         true
                                     }
                                     Key.DirectionRight -> {
@@ -1308,7 +1338,7 @@ fun PlayerScreen(
                                         val dur = controller.player.duration
                                         val target = if (dur > 0) (cur + step).coerceIn(0L, dur) else cur + step
                                         controller.player.seekTo(target)
-                                        interaction++
+                                        signalInteraction()
                                         true
                                     }
                                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
@@ -1567,8 +1597,8 @@ fun PlayerScreen(
         // Top Header: Source & Category on left, Date & Time on right
         AnimatedVisibility(
             visible = controlsVisible && !inPip,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(animationSpec = tween(140)) + slideInVertically(animationSpec = tween(160)) { -it / 4 },
+            exit = fadeOut(animationSpec = tween(100)) + slideOutVertically(animationSpec = tween(140)) { -it / 4 },
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
             Row(
@@ -1636,8 +1666,8 @@ fun PlayerScreen(
         // Bottom Sub Menu Overlay
         AnimatedVisibility(
             visible = controlsVisible && !inPip,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(animationSpec = tween(140)) + slideInVertically(animationSpec = tween(180)) { it / 4 },
+            exit = fadeOut(animationSpec = tween(100)) + slideOutVertically(animationSpec = tween(160)) { it / 4 },
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             Column(
@@ -1668,7 +1698,7 @@ fun PlayerScreen(
                         onResize = { resizeMode = it; settings.setPlayerResizeMode(it) },
                         onTune = { tuneTo(it) },
                         firstFocus = panelFocus,
-                        onDone = { panel = Panel.NONE; interaction++ },
+                        onDone = { panel = Panel.NONE; signalInteraction() },
                     )
                     Spacer(Modifier.height(14.dp))
                 }
@@ -1866,7 +1896,7 @@ fun PlayerScreen(
                                 onFocusChanged = { if (it) transportIndex = 0 },
                                 onClick = {
                                     controller.player.seekTo(0L)
-                                    interaction++
+                                    signalInteraction()
                                     scope.launch { delay(16); focusTransport() }
                                 },
                             )
@@ -1885,7 +1915,7 @@ fun PlayerScreen(
                                     // reaches into the provider's archive in that case. See it for
                                     // the two-stage rule.
                                     stepBack(catchupSkipSetting * 1000L)
-                                    interaction++
+                                    signalInteraction()
                                     scope.launch { delay(16); focusTransport() }
                                 },
                             )
@@ -1904,7 +1934,7 @@ fun PlayerScreen(
                                     val targetPlaying = paused
                                     controller.player.playWhenReady = targetPlaying
                                     paused = !targetPlaying
-                                    interaction++
+                                    signalInteraction()
                                     scope.launch { delay(16); focusTransport() }
                                 },
                             )
@@ -1926,7 +1956,7 @@ fun PlayerScreen(
                                     } else {
                                         controller.player.seekTo(cur + step)
                                     }
-                                    interaction++
+                                    signalInteraction()
                                     scope.launch { delay(16); focusTransport() }
                                 },
                             )
@@ -1968,7 +1998,7 @@ fun PlayerScreen(
                                     } else {
                                         watchFromStart()
                                     }
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
 
@@ -1988,7 +2018,7 @@ fun PlayerScreen(
                                     iconTint = if (isRecording) AppTheme.palette.recording else null,
                                 onClick = {
                                     toggleRecord()
-                                    interaction++
+                                    signalInteraction()
                                 },
                             )
                         }
@@ -2171,7 +2201,7 @@ fun PlayerScreen(
                                                 onFocusChanged = { if (it) subMenuFocusedIndex = index },
                                                 onClick = {
                                                     panel = if (panel == Panel.QUALITY) Panel.NONE else Panel.QUALITY
-                                                    interaction++
+                                                    signalInteraction()
                                                 },
                                             )
                                         }
@@ -2184,7 +2214,7 @@ fun PlayerScreen(
                                                 onFocusChanged = { if (it) subMenuFocusedIndex = index },
                                                 onClick = {
                                                     panel = if (panel == Panel.AUDIO) Panel.NONE else Panel.AUDIO
-                                                    interaction++
+                                                    signalInteraction()
                                                 },
                                             )
                                         }
@@ -2198,7 +2228,7 @@ fun PlayerScreen(
                                                 onFocusChanged = { if (it) subMenuFocusedIndex = index },
                                                 onClick = {
                                                     panel = if (panel == Panel.AUDIO_DELAY) Panel.NONE else Panel.AUDIO_DELAY
-                                                    interaction++
+                                                    signalInteraction()
                                                 },
                                             )
                                         }
@@ -2211,7 +2241,7 @@ fun PlayerScreen(
                                                 onFocusChanged = { if (it) subMenuFocusedIndex = index },
                                                 onClick = {
                                                     panel = if (panel == Panel.SUBTITLES) Panel.NONE else Panel.SUBTITLES
-                                                    interaction++
+                                                    signalInteraction()
                                                 },
                                             )
                                         }
@@ -2230,7 +2260,7 @@ fun PlayerScreen(
                                                 onFocusChanged = { if (it) subMenuFocusedIndex = index },
                                                 onClick = {
                                                     panel = if (panel == Panel.ASPECT) Panel.NONE else Panel.ASPECT
-                                                    interaction++
+                                                    signalInteraction()
                                                 },
                                             )
                                         }
@@ -2243,7 +2273,7 @@ fun PlayerScreen(
                                                 onFocusChanged = { if (it) subMenuFocusedIndex = index },
                                                 onClick = {
                                                     channelListVisible = !channelListVisible
-                                                    interaction++
+                                                    signalInteraction()
                                                 },
                                             )
                                         }
@@ -2269,7 +2299,7 @@ fun PlayerScreen(
                                                             }
                                                         }
                                                     }
-                                                    interaction++
+                                                    signalInteraction()
                                                 },
                                             )
                                         }
@@ -2306,13 +2336,14 @@ fun PlayerScreen(
         // Left-side transparent channel list — d-pad Left opens it, pick a channel to switch.
         AnimatedVisibility(
             visible = channelListVisible && !inPip,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(animationSpec = tween(140)) + slideInHorizontally(animationSpec = tween(180)) { -it },
+            exit = fadeOut(animationSpec = tween(100)) + slideOutHorizontally(animationSpec = tween(160)) { -it },
             modifier = Modifier.align(Alignment.CenterStart),
         ) {
             val currentIndex = queue.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
-            val listState = rememberLazyListState()
-            LaunchedEffect(Unit) { runCatching { listState.scrollToItem(currentIndex) } }
+            LaunchedEffect(channelListVisible, currentIndex) {
+                if (channelListVisible) runCatching { channelListState.scrollToItem(currentIndex) }
+            }
             Column(
                 Modifier
                     .fillMaxHeight()
@@ -2342,7 +2373,7 @@ fun PlayerScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                 }
-                LazyColumn(state = listState) {
+                LazyColumn(state = channelListState) {
                     itemsIndexed(queue, key = { _, item -> item.id }) { index, item ->
                         ChannelListRow(
                             item = item,

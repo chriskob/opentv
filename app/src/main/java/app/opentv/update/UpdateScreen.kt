@@ -43,94 +43,92 @@ import kotlinx.coroutines.launch
 fun UpdateGate(viewModel: UpdateViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
 
-    when (val s = state) {
-        UpdateUiState.Idle -> Unit
-
-        is UpdateUiState.Available -> AlertDialog(
-            onDismissRequest = viewModel::dismiss,
-            confirmButton = { TextButton(onClick = viewModel::install) { Text("Update") } },
-            dismissButton = { TextButton(onClick = viewModel::dismiss) { Text("Later") } },
-            title = { Text("Update available") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text("OpenTV ${s.update.versionName} is available. You have ${BuildConfig.VERSION_NAME}.")
-                    if (s.update.notes.isNotBlank()) {
-                        Text(
-                            text = s.update.notes,
-                            modifier = Modifier.padding(top = 12.dp),
-                            maxLines = 12,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            },
-        )
-
-        is UpdateUiState.Downloading -> AlertDialog(
-            onDismissRequest = {}, // a download in flight should not be dismissed by a stray click
-            confirmButton = {},
-            title = { Text("Downloading update…") },
-            text = {
-                Column {
-                    if (s.fraction >= 0f) {
-                        LinearProgressIndicator(
-                            progress = { s.fraction },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text("${(s.fraction * 100).toInt()}%", Modifier.padding(top = 8.dp))
-                    } else {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                    }
-                }
-            },
-        )
-
-        is UpdateUiState.Failed -> AlertDialog(
-            onDismissRequest = viewModel::dismiss,
-            confirmButton = { TextButton(onClick = viewModel::install) { Text("Retry") } },
-            dismissButton = { TextButton(onClick = viewModel::dismiss) { Text("Close") } },
-            title = { Text("Update failed") },
-            text = {
-                Column {
-                    Text(
-                        // A download failure has no reason attached; a session/install failure does.
-                        if (s.reason.isNullOrBlank()) {
-                            "Could not download the update. Check the connection and try again."
-                        } else {
-                            "The update could not be installed."
-                        },
-                    )
-                    if (!s.reason.isNullOrBlank()) {
-                        Text(
-                            text = s.reason,
-                            modifier = Modifier.padding(top = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            },
-        )
-
-        // Android is asking on the platform's behalf: installs from this app are not allowed
-        // yet. Say so plainly and keep a route back to that setting — without this the
-        // install looks like it simply did nothing.
-        is UpdateUiState.NeedsPermission -> AlertDialog(
-            onDismissRequest = viewModel::dismiss,
+    if (state !is UpdateUiState.Idle) {
+        val s = state
+        AlertDialog(
+            onDismissRequest = { if (s !is UpdateUiState.Downloading) viewModel.dismiss() },
             confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = viewModel::openInstallSettings) { Text("Settings") }
-                    TextButton(onClick = viewModel::install) { Text("Try again") }
+                when (s) {
+                    is UpdateUiState.Available -> TextButton(onClick = viewModel::install) { Text("Update") }
+                    is UpdateUiState.Failed -> TextButton(onClick = viewModel::install) { Text("Retry") }
+                    is UpdateUiState.NeedsPermission -> {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = viewModel::openInstallSettings) { Text("Settings") }
+                            TextButton(onClick = viewModel::install) { Text("Try again") }
+                        }
+                    }
+                    is UpdateUiState.Downloading -> Unit
+                    UpdateUiState.Idle -> Unit
                 }
             },
-            dismissButton = { TextButton(onClick = viewModel::dismiss) { Text("Close") } },
-            title = { Text("Allow OpenTV to install updates") },
-            text = {
+            dismissButton = {
+                when (s) {
+                    is UpdateUiState.Available -> TextButton(onClick = viewModel::dismiss) { Text("Later") }
+                    is UpdateUiState.Failed -> TextButton(onClick = viewModel::dismiss) { Text("Close") }
+                    is UpdateUiState.NeedsPermission -> TextButton(onClick = viewModel::dismiss) { Text("Close") }
+                    is UpdateUiState.Downloading -> Unit
+                    UpdateUiState.Idle -> Unit
+                }
+            },
+            title = {
                 Text(
-                    "Android will not let OpenTV install its own update until you allow it. " +
-                        "Turn on \"Allow from this source\" for OpenTV in Settings, then tap " +
-                        "Try again. On a TV, look under Settings → Security & restrictions → " +
-                        "Unknown sources.",
+                    when (s) {
+                        is UpdateUiState.Available -> "Update available"
+                        is UpdateUiState.Downloading -> "Downloading update…"
+                        is UpdateUiState.Failed -> "Update failed"
+                        is UpdateUiState.NeedsPermission -> "Allow OpenTV to install updates"
+                        UpdateUiState.Idle -> ""
+                    },
                 )
+            },
+            text = {
+                when (s) {
+                    is UpdateUiState.Available -> Column(Modifier.verticalScroll(rememberScrollState())) {
+                        Text("OpenTV ${s.update.versionName} is available. You have ${BuildConfig.VERSION_NAME}.")
+                        if (s.update.notes.isNotBlank()) {
+                            Text(
+                                text = s.update.notes,
+                                modifier = Modifier.padding(top = 12.dp),
+                                maxLines = 12,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    is UpdateUiState.Downloading -> Column {
+                        if (s.fraction >= 0f) {
+                            LinearProgressIndicator(
+                                progress = { s.fraction },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text("${(s.fraction * 100).toInt()}%", Modifier.padding(top = 8.dp))
+                        } else {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                        }
+                    }
+                    is UpdateUiState.Failed -> Column {
+                        Text(
+                            if (s.reason.isNullOrBlank()) {
+                                "Could not download the update. Check the connection and try again."
+                            } else {
+                                "The update could not be installed."
+                            },
+                        )
+                        if (!s.reason.isNullOrBlank()) {
+                            Text(
+                                text = s.reason,
+                                modifier = Modifier.padding(top = 8.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    is UpdateUiState.NeedsPermission -> Text(
+                        "Android will not let OpenTV install its own update until you allow it. " +
+                            "Turn on \"Allow from this source\" for OpenTV in Settings, then tap " +
+                            "Try again. On a TV, look under Settings → Security & restrictions → " +
+                            "Unknown sources.",
+                    )
+                    UpdateUiState.Idle -> Unit
+                }
             },
         )
     }

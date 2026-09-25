@@ -41,6 +41,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -73,6 +74,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -100,7 +102,11 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -109,25 +115,29 @@ import kotlinx.coroutines.launch
  * Line 1: Network / Main Station name (e.g., "CBS 2 CHICAGO")
  * Line 2: Station callsign / sub-brand in parentheses (e.g., "(WBBM)")
  */
+private val CHANNEL_PAREN_PATTERN = Regex("""^(.*?)\s*([(\[][A-Za-z0-9-]+[)\]])$""")
+private val CHANNEL_CALLSIGN_PATTERN = Regex("""^(.*?)\s+([A-Z0-9]{2,5}(?:-[A-Z0-9]+)?)$""")
+private val CHANNEL_WHITESPACE_PATTERN = Regex("""\s+""")
+
 internal fun formatChannelNameForDisplay(name: String): String {
     val trimmed = name.trim()
     if (trimmed.contains('\n')) return trimmed
 
     // Check if name contains a callsign or secondary label in parentheses/brackets e.g. "CBS 2 CHICAGO (WBBM)"
-    val parenMatch = Regex("""^(.*?)\s*([(\[][A-Za-z0-9-]+[)\]])$""").matchEntire(trimmed)
+    val parenMatch = CHANNEL_PAREN_PATTERN.matchEntire(trimmed)
     if (parenMatch != null && parenMatch.groupValues[1].isNotBlank()) {
         return "${parenMatch.groupValues[1]}\n${parenMatch.groupValues[2]}"
     }
 
     // Check if name ends with a 2-5 letter station callsign or quality/stream tag e.g. "CBS 2 CHICAGO WBBM" -> "CBS 2 CHICAGO\n(WBBM)"
-    val callSignMatch = Regex("""^(.*?)\s+([A-Z0-9]{2,5}(?:-[A-Z0-9]+)?)$""").matchEntire(trimmed)
+    val callSignMatch = CHANNEL_CALLSIGN_PATTERN.matchEntire(trimmed)
     if (callSignMatch != null && callSignMatch.groupValues[1].isNotBlank()) {
         val call = callSignMatch.groupValues[2]
         return "${callSignMatch.groupValues[1]}\n($call)"
     }
 
     // If channel has 2+ words (e.g. "FOX WEATHER", "CW CHICAGO"), split onto 2 lines
-    val words = trimmed.split(Regex("""\s+"""))
+    val words = trimmed.split(CHANNEL_WHITESPACE_PATTERN)
     if (words.size >= 2) {
         val line1 = words.dropLast(1).joinToString(" ")
         val line2 = words.last()
@@ -151,14 +161,6 @@ internal fun formatChannelNameForDisplay(name: String): String {
  * positioning, no measuring pass — just widths, which is cheap enough for a lazy list of
  * hundreds of channels on a weak TV box.
  *
- * ## Performance: block layout memoization
- *
- * [blockLayouts] is keyed on a content-derived hash ([contentHashKey]) rather than the list
- * identity. On Fire TV Cube (and any low-end box), Compose can re-compose with a new list
- * instance that contains the same data — the old `remember(programmes, windowStartMillis)`
- * would miss and re-run the O(n) layout pass on every stale recomposition. The content hash
- * avoids that; the pass only re-runs when the programmes actually change or the window shifts.
- *
  * ## Performance: per-block key event handlers removed
  *
  * Each [ProgrammeBlock] used to carry its own [onPreviewKeyEvent] for wrap-around navigation
@@ -166,13 +168,6 @@ internal fun formatChannelNameForDisplay(name: String): String {
  * identical key event handlers — all checking the same condition — and the Compose focus system
  * walked every one on each dpad press. Now wrap-around is handled ONLY at the [GuideRow] channel
  * column level (one handler per row), and blocks use simple [focusable] + [clickable].
- *
- * ## Performance: LazyColumn prefetching
- *
- * [beyondBoundsItemCount] tells Compose to compose items just outside the viewport before they
- * scroll into view. On a Fire TV Cube where CPU is scarce, this eliminates the "pop-in" jank
- * when dpad-scrolling quickly through a channel list. Set to 5 — enough to cover one dpad hold
- * of repeat events but not so many that we waste composition on rows the user skips past.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -180,10 +175,14 @@ fun GuideGrid(
     rows: List<ChannelsViewModel.Row>,
     windowStartMillis: Long,
     selectedKeyState: State<Any?>,
-    playingKey: Any? = null,
-    focusRequester: FocusRequester? = null,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
+    modifier: Modifier = Modifier,
+    epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
+    playingKey: Any? = null,
+    focusRequester: FocusRequester? = null,
+    horizontalScrollState: androidx.compose.foundation.ScrollState? = null,
+    providedListState: androidx.compose.foundation.lazy.LazyListState? = null,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
     onProgramme: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
     onProgrammeLongPress: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
@@ -212,7 +211,6 @@ fun GuideGrid(
     onTimeShifted: (Boolean) -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
     backScrollActive: Boolean = false,
-    modifier: Modifier = Modifier,
 ) {
     // The caller's highlight is read through its State only from key handlers and effects (via
     // selectedKeyState.value), never during composition. Reading it here would recompose the
@@ -257,14 +255,14 @@ fun GuideGrid(
             0
         }
     }
-    val scroll = rememberScrollState(initial = initialNowScrollPx)
+    val scroll = horizontalScrollState ?: rememberScrollState(initial = initialNowScrollPx)
     // Keyed on rows/key, NOT on the focused key: this only seeds the list's initial scroll, yet
     // it used to rescan every row on each d-pad focus change (an O(n) pass per step).
     val initialFirstVisible = remember(rows, playingKey) {
         val idx = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
         if (idx < 6) 0 else (idx - 2).coerceAtLeast(0)
     }
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState(
+    val listState = providedListState ?: androidx.compose.foundation.lazy.rememberLazyListState(
         initialFirstVisibleItemIndex = initialFirstVisible,
         initialFirstVisibleItemScrollOffset = 0,
     )
@@ -273,23 +271,27 @@ fun GuideGrid(
     // Exposed as state and read lazily (inside the compose window below and in the keep-visible
     // callback), so an outer layout change — e.g. the main menu sliding in and widening the guide
     // — updates the viewport without recomposing every guide row on each animation frame.
-    val timelineViewportPxState = remember {
+    val screenWidthPx = with(density) {
+        LocalConfiguration.current.screenWidthDp.dp.roundToPx()
+    }
+    val timelineViewportPxState = remember(screenWidthPx) {
         derivedStateOf {
-            (guideWidthPx - with(density) { CHANNEL_COLUMN.roundToPx() }).coerceAtLeast(0)
+            val guideWidth = if (guideWidthPx > 0) guideWidthPx else screenWidthPx
+            (guideWidth - with(density) { CHANNEL_COLUMN.roundToPx() }).coerceAtLeast(1)
         }
     }
 
     // Time span of programme blocks each row needs to compose: the viewport plus a buffer on
     // each side (so d-pad stepping and fast scrubs never outrun the built cells). Derived from
     // scroll.value but QUANTISED to a coarse step, so the value is stable while scrolling within
-    // a step and rows recompose only when the window advances a step — not on every scrolled
-    // pixel. A null pair means "not measured yet"; rows then compose everything so the guide is
-    // never blank on the first frame.
-    val composeWindow by remember(effectiveStartMillis) {
+     // a step and rows recompose only when the window advances a step — not on every scrolled
+     // pixel. The screen-width fallback keeps the first composition bounded before measurement.
+
+    val composeWindow by remember(effectiveStartMillis, screenWidthPx) {
         derivedStateOf {
             val timelineViewportPx = timelineViewportPxState.value
             val densityF = density.density
-            if (timelineViewportPx <= 0 || densityF <= 0f) {
+            if (densityF <= 0f) {
                 null
             } else {
                 val pxPerMinute = MINUTE_DP * densityF
@@ -320,6 +322,7 @@ fun GuideGrid(
     var activeFocusedKey by activeFocusedKeyState
     val targetProgKeyState = remember { mutableStateOf<Long?>(null) }
     var targetProgKey by targetProgKeyState
+    var pendingTargetProgId by remember { mutableStateOf<Long?>(null) }
     // The cursor's horizontal position, expressed as the half-hour column that contains it.
     // Always :00/:30-aligned so D-pad Left/Right steps exactly 30 minutes and Up/Down keeps the
     // same column even when a row's programme is a 1-hour (or longer) block.
@@ -328,8 +331,8 @@ fun GuideGrid(
     var isNavigatingVertically by remember { mutableStateOf(false) }
     var verticalNavJob by remember { mutableStateOf<Job?>(null) }
     var focusCenterJob by remember { mutableStateOf<Job?>(null) }
-    var horizontalScrollJob by remember { mutableStateOf<Job?>(null) }
     var columnStepJob by remember { mutableStateOf<Job?>(null) }
+    var navigationGeneration by remember { mutableLongStateOf(0L) }
     val coroutineScope = rememberCoroutineScope()
 
     // ---- TiviMate-style timeline scrub (HOLD LEFT only) ----------------------------------------
@@ -343,10 +346,6 @@ fun GuideGrid(
     var scrubEngaged by remember { mutableStateOf(false) }
     var holdTimeoutJob by remember { mutableStateOf<Job?>(null) }
     var scrubJob by remember { mutableStateOf<Job?>(null) }
-    // Until this time, keep-visible auto-scrolls are suppressed so nothing yanks the timeline
-    // while the post-scrub re-anchor settles.
-    var scrubSettlingUntilMillis by remember { mutableLongStateOf(0L) }
-
     val engageScrub: () -> Unit = {
         if (!scrubEngaged) {
             scrubEngaged = true
@@ -408,15 +407,6 @@ fun GuideGrid(
         scrubEngaged = false
         holdPressActive = false
         if (wasScrubbing) {
-            // Kill any in-flight keep-visible animation so nothing can drift after release, and
-            // suppress auto-scrolls briefly while the re-anchor settles.
-            horizontalScrollJob?.cancel()
-            scrubSettlingUntilMillis = System.currentTimeMillis() + SCRUB_SETTLE_MILLIS
-            // Re-anchor focus to the programme containing/nearest the viewport's left edge, and
-            // set targetProgKey EXPLICITLY: the picker's fallback chain ends at the live
-            // programme, which can sit far right of the scrub position — without this, focus
-            // jumps there and keep-visible animates the whole timeline back (cursor "vanishes",
-            // guide keeps moving).
             val key = activeFocusedKey ?: playingKey ?: selectedKeyState.value ?: rows.firstOrNull()?.key
             val row = rows.firstOrNull { it.key == key }
             val scrollDp = with(density) { scroll.value.toDp() }
@@ -454,6 +444,12 @@ fun GuideGrid(
 
     val focusAndCenterRow = { targetKey: Any?, animate: Boolean ->
         if (rows.isNotEmpty()) {
+            focusCenterJob?.cancel()
+            columnStepJob?.cancel()
+            verticalNavJob?.cancel()
+            val generation = navigationGeneration + 1L
+            navigationGeneration = generation
+            pendingTargetProgId = null
             val k = targetKey ?: playingKey ?: selectedKeyState.value ?: rows.first().key
             val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
             val matchedRow = rows[index]
@@ -461,6 +457,7 @@ fun GuideGrid(
             val liveProg = matchedRow.programmes.firstOrNull { now in it.startUtcMillis until it.endUtcMillis }
                 ?: matchedRow.now
                 ?: matchedRow.programmes.firstOrNull()
+            pendingTargetProgId = liveProg?.id
             activeFocusedIndex = index
             activeFocusedKey = k
             targetProgKey = liveProg?.id
@@ -477,19 +474,14 @@ fun GuideGrid(
                 index >= rows.size - 3 -> (rows.size - 6).coerceAtLeast(0)
                 else -> index - 2
             }
-            val targetPx = if (backScrollActive) {
-                val frameStart = calculateMountedFrameStartTime(now)
-                calculateInitialScrollOffsetPx(
-                    windowStartMillis = windowStartMillis,
-                    frameStartMillis = frameStart,
-                    minuteDp = MINUTE_DP,
-                    density = density.density,
-                )
-            } else {
-                0
-            }
-            focusCenterJob?.cancel()
+            val targetPx = calculateSnappedScrollOffsetPx(
+                windowStartMillis = effectiveStartMillis,
+                columnStartMillis = temporalAnchorMillis,
+                minuteDp = MINUTE_DP,
+                density = density.density,
+            )
             focusCenterJob = coroutineScope.launch {
+                if (generation != navigationGeneration) return@launch
                 if (targetPx != scroll.value) {
                     if (animate) scroll.animateScrollTo(targetPx) else scroll.scrollTo(targetPx)
                 }
@@ -498,6 +490,7 @@ fun GuideGrid(
                 } else {
                     listState.scrollToItem(targetVisible, 0)
                 }
+                if (generation != navigationGeneration) return@launch
                 delay(30)
                 // While the rail is previewing, focus must stay in the rail: centering is purely
                 // visual. Reclaiming row focus here would collapse the rail (onFocusRow closes it).
@@ -509,6 +502,7 @@ fun GuideGrid(
                         delay(30)
                     }
                 }
+                if (generation == navigationGeneration) scroll.scrollTo(targetPx)
             }
         }
     }
@@ -527,10 +521,10 @@ fun GuideGrid(
     LaunchedEffect(backScrollActive) {
         if (backScrollActive) {
             val now = System.currentTimeMillis()
-            val frameStart = calculateMountedFrameStartTime(now)
-            val targetPx = calculateInitialScrollOffsetPx(
+            temporalAnchorMillis = halfHourColumnStart(now)
+            val targetPx = calculateSnappedScrollOffsetPx(
                 windowStartMillis = windowStartMillis,
-                frameStartMillis = frameStart,
+                columnStartMillis = temporalAnchorMillis,
                 minuteDp = MINUTE_DP,
                 density = density.density,
             )
@@ -595,10 +589,9 @@ fun GuideGrid(
 
     LaunchedEffect(windowStartMillis) {
         if (backScrollActive) {
-            val frameStart = calculateMountedFrameStartTime(System.currentTimeMillis())
-            val targetPx = calculateInitialScrollOffsetPx(
+            val targetPx = calculateSnappedScrollOffsetPx(
                 windowStartMillis = windowStartMillis,
-                frameStartMillis = frameStart,
+                columnStartMillis = temporalAnchorMillis,
                 minuteDp = MINUTE_DP,
                 density = density.density,
             )
@@ -614,12 +607,19 @@ fun GuideGrid(
 
     val handleNavigateVertical: (isDown: Boolean, fromRowIndex: Int) -> Boolean = { isDown, fromRowIndex ->
         if (rows.isNotEmpty()) {
+            columnStepJob?.cancel()
+            focusCenterJob?.cancel()
+            val generation = navigationGeneration + 1L
+            navigationGeneration = generation
+            pendingTargetProgId = null
             val targetIndex = if (isDown) {
                 if (fromRowIndex < rows.size - 1) fromRowIndex + 1 else 0
             } else {
                 if (fromRowIndex > 0) fromRowIndex - 1 else rows.size - 1
             }
             val targetRow = rows[targetIndex]
+            val targetProgrammes = epgRows?.value?.get(targetRow.key)?.programmes ?: targetRow.programmes
+            pendingTargetProgId = getVerticalTargetProgram(targetProgrammes, temporalAnchorMillis)?.id
             isNavigatingVertically = true
 
             val targetRequester = rowFocusRequesters[targetRow.key]
@@ -641,20 +641,31 @@ fun GuideGrid(
                 else -> null
             }
 
-            if (targetScrollIndex != null || !success) {
-                verticalNavJob?.cancel()
-                verticalNavJob = coroutineScope.launch {
-                    if (targetScrollIndex != null) {
-                        listState.scrollToItem(targetScrollIndex, 0)
+            val snappedPx = calculateSnappedScrollOffsetPx(
+                windowStartMillis = effectiveStartMillis,
+                columnStartMillis = temporalAnchorMillis,
+                minuteDp = MINUTE_DP,
+                density = density.density,
+            )
+            verticalNavJob?.cancel()
+            verticalNavJob = coroutineScope.launch {
+                if (generation != navigationGeneration) return@launch
+                if (targetScrollIndex != null) {
+                    listState.scrollToItem(targetScrollIndex, 0)
+                }
+                if (generation != navigationGeneration) return@launch
+                if (!success) {
+                    delay(16L)
+                    for (attempt in 0..1) {
+                        val res = runCatching { rowFocusRequesters[targetRow.key]?.requestFocus() }
+                        if (res.isSuccess) break
+                        delay(16L)
                     }
-                    if (!success) {
-                        delay(25L)
-                        for (attempt in 0..3) {
-                            val res = runCatching { rowFocusRequesters[targetRow.key]?.requestFocus() }
-                            if (res.isSuccess) break
-                            delay(25L)
-                        }
-                    }
+                }
+                repeat(3) {
+                    if (generation != navigationGeneration) return@launch
+                    scroll.scrollTo(snappedPx)
+                    delay(16L)
                 }
             }
             true
@@ -669,10 +680,70 @@ fun GuideGrid(
         if (rows.isNotEmpty()) handleNavigateVertical(true, rows.size - 1)
     }
 
-    // D-pad Left/Right moves the cursor exactly one half-hour column, so the step matches the
-    // header ruler instead of varying with the focused programme's duration. A press at the first
-    // column opens the category rail (same as the old leftmost-block gesture); a press past the
-    // last column is absorbed as a no-op.
+    val snapColumnAndFocus: (Long, ChannelsViewModel.Row) -> Unit = { column, row ->
+        columnStepJob?.cancel()
+        focusCenterJob?.cancel()
+        verticalNavJob?.cancel()
+        val generation = navigationGeneration + 1L
+        navigationGeneration = generation
+        columnStepJob = coroutineScope.launch {
+            if (generation != navigationGeneration) return@launch
+            var attempts = 0
+            var positioned = false
+            while (isActive && attempts < 12) {
+                if (generation != navigationGeneration) return@launch
+                val targetPx = calculateSnappedScrollOffsetPx(
+                    windowStartMillis = effectiveStartMillis,
+                    columnStartMillis = column,
+                    minuteDp = MINUTE_DP,
+                    density = density.density,
+                    maxValue = scroll.maxValue,
+                )
+                if (scroll.maxValue > 0 || targetPx == 0) {
+                    scroll.scrollTo(targetPx)
+                    positioned = true
+                    break
+                }
+                attempts++
+                delay(16)
+            }
+            if (generation != navigationGeneration) return@launch
+            if (!positioned) {
+                scroll.scrollTo(
+                    calculateSnappedScrollOffsetPx(
+                        windowStartMillis = effectiveStartMillis,
+                        columnStartMillis = column,
+                        minuteDp = MINUTE_DP,
+                        density = density.density,
+                        maxValue = scroll.maxValue,
+                    ),
+                )
+            }
+            delay(16)
+
+            if (generation != navigationGeneration) return@launch
+            val targetReq = rowFocusRequesters[row.key]
+            if (targetReq != null) {
+                for (attempt in 0..3) {
+                    if (generation != navigationGeneration) return@launch
+                    val result = runCatching { targetReq.requestFocus() }
+                    if (result.isSuccess) break
+                    delay(20)
+                }
+            }
+            delay(16)
+            if (generation != navigationGeneration) return@launch
+            val finalPx = calculateSnappedScrollOffsetPx(
+                windowStartMillis = effectiveStartMillis,
+                columnStartMillis = column,
+                minuteDp = MINUTE_DP,
+                density = density.density,
+                maxValue = scroll.maxValue,
+            )
+            scroll.scrollTo(finalPx)
+        }
+    }
+
     val stepColumn: (Boolean) -> Boolean = { isRight ->
         if (rows.isEmpty()) {
             false
@@ -683,32 +754,37 @@ fun GuideGrid(
             val windowEndMillis = effectiveStartMillis + HOURS_IN_WINDOW * 3600_000L
             val firstColumn = halfHourColumnStart(effectiveStartMillis)
             val lastColumn = halfHourColumnStart(windowEndMillis - HALF_HOUR_MS)
-            val candidate = halfHourColumnStart(temporalAnchorMillis) +
-                (if (isRight) HALF_HOUR_MS else -HALF_HOUR_MS)
+            val candidate = temporalAnchorMillis + (if (isRight) HALF_HOUR_MS else -HALF_HOUR_MS)
             if (candidate < firstColumn) {
-                // Nowhere left to go: open the category rail, like LEFT from the leftmost block.
                 onExitLeft()
                 true
+            } else if (candidate > lastColumn) {
+                true
             } else {
-                val newColumn = candidate.coerceAtMost(lastColumn)
-                val target = row?.let { getVerticalTargetProgram(it.programmes, newColumn) }
-                temporalAnchorMillis = newColumn
+                var currentTarget: Programme? = null
+                val target = row?.let {
+                    val programmes = epgRows?.value?.get(it.key)?.programmes ?: it.programmes
+                    currentTarget = targetProgKey?.let { id ->
+                        programmes.firstOrNull { programme -> programme.id == id }
+                    } ?: getVerticalTargetProgram(programmes, temporalAnchorMillis)
+                    getHorizontalTargetProgram(
+                        programmes = programmes,
+                        currentProgramme = currentTarget,
+                        currentColumnMillis = temporalAnchorMillis,
+                        isRight = isRight,
+                    )
+                }
+                val newColumn = candidate
+                val boundedColumn = newColumn.coerceIn(firstColumn, lastColumn)
+                temporalAnchorMillis = boundedColumn
+                pendingTargetProgId = target?.id
+                targetProgKey = target?.id
                 isNavigatingVertically = false
                 if (row != null) {
                     activeFocusedIndex = rowIndex
                     activeFocusedKey = row.key
-                    targetProgKey = target?.id
-                    // The row's shared FocusRequester re-attaches to the block at the new column
-                    // on the next recomposition, so give it a frame before requesting focus.
-                    columnStepJob?.cancel()
-                    columnStepJob = coroutineScope.launch {
-                        delay(16)
-                        for (attempt in 0..3) {
-                            val res = runCatching { rowFocusRequesters[row.key]?.requestFocus() }
-                            if (res.isSuccess) break
-                            delay(20)
-                        }
-                    }
+                    onFocusRow(row, target)
+                    snapColumnAndFocus(boundedColumn, row)
                 }
                 true
             }
@@ -756,20 +832,19 @@ fun GuideGrid(
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight -> {
                         if (e.nativeKeyEvent.repeatCount == 0) {
                             onDirectionPressStarted(true)
-                            false
+                            stepColumn(true)
+                            true
                         } else {
-                            // Forward time-travel is not a hold gesture; swallow key repeats.
                             true
                         }
                     }
                     e.type == KeyEventType.KeyUp && e.key == Key.DirectionRight -> {
                         if (scrubEngaged) {
                             releaseScrub()
-                            true
                         } else {
                             holdPressActive = false
-                            false
                         }
+                        true
                     }
                     else -> false
                 }
@@ -789,6 +864,7 @@ fun GuideGrid(
                     state = listState,
                     contentPadding = PaddingValues(top = 2.dp, bottom = 2.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
+
                 ) {
                     if (rows.isEmpty()) {
                         // Focusable empty state: exiting the rail onto an empty category (e.g.
@@ -825,8 +901,10 @@ fun GuideGrid(
                         // the rail opened, even when the playing channel sat mid-list.
                         val isPreviewAnchor = previewTopRow && row.key == previewAnchorKey
                         GuideRow(
-                            row = row,
+                            baseRow = row,
+                            epgRows = epgRows,
                             rowIndex = index,
+
                             totalRows = rows.size,
                             windowStartMillis = effectiveStartMillis,
                             composeStartMillis = composeWindow?.first ?: Long.MIN_VALUE,
@@ -837,6 +915,8 @@ fun GuideGrid(
                             targetProgKeyState = targetProgKeyState,
                             anchorState = temporalAnchorState,
                             scroll = scroll,
+                            visibleStartMillis = effectiveStartMillis +
+                                (scroll.value / (MINUTE_DP * density.density)).toLong() * 60_000L,
                             catchUpChannelIds = catchUpChannelIds,
                             reminderKeys = reminderKeys,
                             isSelected = isPlaying,
@@ -845,46 +925,22 @@ fun GuideGrid(
                             externalFocusRequester = activeCellFocusRequester,
                             onSelect = { onSelectRow(row) },
                             onLongSelect = { onLongSelectRow(row) },
-                            onFocus = { prog ->
-                                // The temporal anchor is the half-hour column, and it is only moved
-                                // by an explicit horizontal step (stepColumn), a scrub release, or a
-                                // jump to live — never by gaining focus. Rewriting it from the
-                                // programme's midpoint here is what made the cursor slide right a
-                                // column when a row contained a 1-hour block.
-                                if (isNavigatingVertically) isNavigatingVertically = false
-                                activeFocusedIndex = index
-                                activeFocusedKey = row.key
-                                targetProgKey = prog?.id
-                                onFocusRow(row, prog)
+                             onFocus = { prog ->
+                                 if (pendingTargetProgId == null || pendingTargetProgId == prog?.id) {
+                                     // The temporal anchor is the half-hour column, and it is only moved
+                                     // by an explicit horizontal step (stepColumn), a scrub release, or a
+                                     // jump to live — never by gaining focus. Rewriting it from the
+                                     // programme's midpoint here is what made the cursor slide right a
+                                     // column when a row contained a 1-hour block.
+                                     if (isNavigatingVertically) isNavigatingVertically = false
 
-                                // Keep horizontally visible if focused block is outside current viewport
-                                // Only scroll if NOT navigating vertically AND programme is completely offscreen
-                                if (prog != null && !isNavigatingVertically &&
-                                    System.currentTimeMillis() >= scrubSettlingUntilMillis
-                                ) {
-                                    val progStartX = widthFor(effectiveStartMillis, prog.startUtcMillis)
-                                    val progEndX = widthFor(effectiveStartMillis, prog.endUtcMillis)
-                                    val currentScrollDp = with(density) { scroll.value.toDp() }
-                                    // Use the measured timeline width (fallback to a sane estimate
-                                    // before the first layout) so a focused block at the right
-                                    // edge is scrolled in by the exact amount, not a guess.
-                                    val viewportPx = timelineViewportPxState.value
-                                    val viewportWidthDp = if (viewportPx > 0) {
-                                        with(density) { viewportPx.toDp() }
-                                    } else {
-                                        800.dp
-                                    }
-                                    if (progEndX <= currentScrollDp) {
-                                        val targetPx = with(density) { (progStartX - 10.dp).coerceAtLeast(0.dp).roundToPx() }
-                                        horizontalScrollJob?.cancel()
-                                        horizontalScrollJob = coroutineScope.launch { scroll.animateScrollTo(targetPx) }
-                                    } else if (progStartX >= currentScrollDp + viewportWidthDp) {
-                                        val targetPx = with(density) { (progEndX - viewportWidthDp + 10.dp).coerceAtLeast(0.dp).roundToPx() }
-                                        horizontalScrollJob?.cancel()
-                                        horizontalScrollJob = coroutineScope.launch { scroll.animateScrollTo(targetPx) }
-                                    }
-                                }
+                                     activeFocusedIndex = index
+                                     activeFocusedKey = row.key
+                                     targetProgKey = prog?.id
+                                     onFocusRow(row, prog)
+                                 }
                             },
+
                             onProgramme = { programme -> onProgramme(row, programme) },
                             onProgrammeLongPress = { programme -> onProgrammeLongPress(row, programme) },
                             onToggleFavourite = { onToggleFavourite(row) },
@@ -947,20 +1003,20 @@ fun GuideGrid(
 fun ChannelList(
     rows: List<ChannelsViewModel.Row>,
     selectedKeyState: State<Any?>,
-    playingKey: Any? = null,
-    focusRequester: FocusRequester? = null,
     onSelectRow: (ChannelsViewModel.Row) -> Unit,
     onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
+    modifier: Modifier = Modifier,
+    epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
+    playingKey: Any? = null,
+    focusRequester: FocusRequester? = null,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
     onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
     onExitLeftFromChannel: () -> Boolean = { false },
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
-    modifier: Modifier = Modifier,
 ) {
-    val selectedKey = selectedKeyState.value
-    val focusTargetKey = playingKey ?: selectedKey ?: rows.firstOrNull()?.key
+    val focusTargetKey = playingKey ?: rows.firstOrNull()?.key
     // See GuideGrid: seed-only, so it must not rescan on every focus change.
     val initialFirstVisible = remember(rows, playingKey) {
         val idx = if (focusTargetKey == null) 0 else rows.indexOfFirst { it.key == focusTargetKey }.coerceAtLeast(0)
@@ -973,11 +1029,16 @@ fun ChannelList(
     val internalFocusRequester = remember { FocusRequester() }
     val activeCellRequester = focusRequester ?: internalFocusRequester
     var activeFocusedIndex by remember { mutableStateOf<Int?>(null) }
+    val activeKeyState = remember(rows, playingKey) {
+        derivedStateOf {
+            activeFocusedIndex?.let { rows.getOrNull(it)?.key } ?: playingKey ?: rows.firstOrNull()?.key
+        }
+    }
     val coroutineScope = rememberCoroutineScope()
 
     val focusAndCenter = { targetKey: Any? ->
         if (rows.isNotEmpty()) {
-            val k = targetKey ?: playingKey ?: selectedKey ?: rows.first().key
+            val k = targetKey ?: playingKey ?: selectedKeyState.value ?: rows.first().key
             val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
             activeFocusedIndex = index
             val target = when {
@@ -1001,7 +1062,7 @@ fun ChannelList(
     var initializedKey by remember { mutableStateOf<Any?>(null) }
     LaunchedEffect(focusTargetKey, rows.isNotEmpty()) {
         if (rows.isNotEmpty()) {
-            val targetKey = playingKey ?: selectedKey ?: rows.first().key
+            val targetKey = playingKey ?: selectedKeyState.value ?: rows.first().key
             if (initializedKey != targetKey) {
                 initializedKey = targetKey
                 focusAndCenter(targetKey)
@@ -1063,16 +1124,18 @@ fun ChannelList(
             }
         }
         itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
-            val currentActiveKey = activeFocusedIndex?.let { rows.getOrNull(it)?.key } ?: selectedKey ?: playingKey ?: rows.firstOrNull()?.key
             val isPlaying = row.key == playingKey
-            val rowRequester = if (row.key == currentActiveKey) activeCellRequester else null
-            ChannelListRow(
-                row = row,
+             ChannelListRow(
+                 baseRow = row,
+                 epgRows = epgRows,
+                 activeKeyState = activeKeyState,
+                 fallbackKey = playingKey ?: rows.firstOrNull()?.key,
+
                 rowIndex = index,
                 totalRows = rows.size,
                 nowMillis = nowMillis,
                 isSelected = isPlaying,
-                focusRequester = rowRequester,
+                focusRequester = activeCellRequester,
                 onSelect = { onSelectRow(row) },
                 onLongSelect = { onLongSelectRow(row) },
                 onFocus = { prog ->
@@ -1094,11 +1157,14 @@ private val GuideCellShape = RoundedCornerShape(6.dp)
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChannelListRow(
-    row: ChannelsViewModel.Row,
+    baseRow: ChannelsViewModel.Row,
+    epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
     rowIndex: Int = 0,
     totalRows: Int = 1,
     nowMillis: Long,
     isSelected: Boolean,
+    activeKeyState: State<Any?>,
+    fallbackKey: Any?,
     focusRequester: FocusRequester? = null,
     onSelect: () -> Unit,
     onLongSelect: () -> Unit = {},
@@ -1108,19 +1174,33 @@ private fun ChannelListRow(
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
 ) {
+    val epgRowFlow = remember(baseRow.key, epgRows) {
+        epgRows?.map { it[baseRow.key] }?.distinctUntilChanged() ?: emptyFlow<ChannelsViewModel.Row?>()
+    }
+    val epgRow by epgRowFlow.collectAsState(initial = null)
+    val row = epgRow ?: baseRow
+    val isActive by remember(baseRow.key, activeKeyState, fallbackKey) {
+        derivedStateOf { (activeKeyState.value ?: fallbackKey) == baseRow.key }
+    }
+    val effectiveFocusRequester = if (isActive) focusRequester else null
     var focused by remember { mutableStateOf(false) }
 
     val clockFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+    val displayName = remember(row.primary.shownName) { formatChannelNameForDisplay(row.primary.shownName) }
+    val context = LocalContext.current
+    val logoModel = remember(context, row.primary.logoUrl) {
+        logoRequest(context, row.primary.logoUrl, 96)
+    }
 
     val isLive = isSelected
     // See LocalGuideChromeAlpha: only the unfocused fills fade, so the cursor stays legible.
     val chromeAlpha = LocalGuideChromeAlpha.current
     // Opaque-focus themes (white cell) need dark ink while focused/selected.
-    val listHighlighted = focused || isSelected
+    val listHighlighted = isActive || focused || isSelected
 
     Row(
         Modifier
-            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .then(if (effectiveFocusRequester != null) Modifier.focusRequester(effectiveFocusRequester) else Modifier)
             .fillMaxWidth()
             .height(ROW_HEIGHT)
             .background(
@@ -1163,14 +1243,14 @@ private fun ChannelListRow(
         val displayNum = rowIndex + 1
         Text(
             "$displayNum",
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 14.sp),
             color = if (listHighlighted) AppTheme.palette.onCursor else AppTheme.palette.textMuted,
             maxLines = 1,
             modifier = Modifier.width(32.dp),
         )
         // Channel Logo — enlarged for high legibility across the room
         AsyncImage(
-            model = logoRequest(LocalContext.current, row.primary.logoUrl, 96),
+            model = logoModel,
             contentDescription = null,
             contentScale = ContentScale.Fit,
             modifier = Modifier.size(36.dp).clip(RoundedCornerShape(4.dp)),
@@ -1179,7 +1259,7 @@ private fun ChannelListRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    formatChannelNameForDisplay(row.primary.shownName),
+                    displayName,
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
                     fontWeight = if (isLive || focused) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (listHighlighted) AppTheme.palette.onCursor else if (isLive) AppTheme.primary else AppTheme.palette.onSurface,
@@ -1220,6 +1300,11 @@ private fun TimeHeader(
 ) {
     val currentDateTimeFmt = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
     val slotTimeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+    val slotLabels = remember(windowStartMillis) {
+        List(HOURS_IN_WINDOW * 2) { i ->
+            slotTimeFmt.format(Date(windowStartMillis + i * HALF_HOUR_MS))
+        }
+    }
     val chromeAlpha = LocalGuideChromeAlpha.current
 
     Row(
@@ -1270,7 +1355,6 @@ private fun TimeHeader(
         ) {
             Row {
                 repeat(HOURS_IN_WINDOW * 2) { i ->
-                    val slotStart = windowStartMillis + i * HALF_HOUR_MS
                     Box(
                         Modifier
                             .width(HALF_HOUR_WIDTH)
@@ -1279,7 +1363,7 @@ private fun TimeHeader(
                         contentAlignment = Alignment.CenterStart,
                     ) {
                         Text(
-                            slotTimeFmt.format(Date(slotStart)),
+                            slotLabels[i],
                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                             color = AppTheme.palette.onSurface,
                             fontWeight = FontWeight.Normal,
@@ -1294,7 +1378,8 @@ private fun TimeHeader(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GuideRow(
-    row: ChannelsViewModel.Row,
+    baseRow: ChannelsViewModel.Row,
+    epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
     rowIndex: Int = 0,
     totalRows: Int = 1,
     windowStartMillis: Long,
@@ -1303,6 +1388,7 @@ private fun GuideRow(
     composeEndMillis: Long = Long.MAX_VALUE,
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
+    visibleStartMillis: Long,
     catchUpChannelIds: Set<Long> = emptySet(),
     reminderKeys: Set<Pair<Long, Long>> = emptySet(),
     previewHighlight: Boolean = false,
@@ -1326,6 +1412,20 @@ private fun GuideRow(
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
 ) {
+    val epgRowFlow = remember(baseRow.key, epgRows) {
+        epgRows?.map { it[baseRow.key] }?.distinctUntilChanged() ?: emptyFlow<ChannelsViewModel.Row?>()
+    }
+    val epgRow by epgRowFlow.collectAsState(initial = null)
+    val row = epgRow ?: baseRow
+    val displayName = remember(row.primary.shownName) { formatChannelNameForDisplay(row.primary.shownName) }
+    val context = LocalContext.current
+    val logoModel = remember(context, row.primary.logoUrl) {
+        logoRequest(context, row.primary.logoUrl, 96)
+    }
+    val reminderStartsByChannel = remember(reminderKeys) {
+        reminderKeys.groupBy({ it.first }, { it.second }).mapValues { it.value.toHashSet() }
+    }
+
     // Read focus/anchor state through derivedStateOf: this row recomposes only when ITS
     // highlight or target block changes, not whenever focus moves anywhere in the grid.
     val isFocused by remember(row.key, activeKeyState, fallbackKey) {
@@ -1387,7 +1487,7 @@ private fun GuideRow(
 
             // Channel Logo
             AsyncImage(
-                model = logoRequest(LocalContext.current, row.primary.logoUrl, 96),
+                model = logoModel,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.size(32.dp).clip(RoundedCornerShape(4.dp)),
@@ -1398,7 +1498,7 @@ private fun GuideRow(
             // Channel Name & Icons
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                 Text(
-                    formatChannelNameForDisplay(row.primary.shownName),
+                    displayName,
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
                     fontWeight = if (isRowHighlighted) FontWeight.Bold else FontWeight.Medium,
                     color = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.onSurface,
@@ -1466,7 +1566,7 @@ private fun GuideRow(
                             GuideCellShape,
                         )
                         .then(
-                            if (emptyHighlighted) Modifier.border(1.5.dp, AppTheme.palette.cursorBorder, GuideCellShape)
+                            if (emptyHighlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, GuideCellShape)
                             else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), GuideCellShape),
                         )
                         .onFocusChanged {
@@ -1476,11 +1576,12 @@ private fun GuideRow(
                         .onPreviewKeyEvent { e ->
                             if (e.type == KeyEventType.KeyDown) {
                                 when (e.key) {
-                                    Key.DirectionUp -> onNavigateVertical(false)
-                                    Key.DirectionDown -> onNavigateVertical(true)
-                                    Key.DirectionLeft -> onStepColumn(false)
-                                    Key.DirectionRight -> onStepColumn(true)
-                                    else -> false
+                                     Key.DirectionUp -> onNavigateVertical(false)
+                                     Key.DirectionDown -> onNavigateVertical(true)
+                                     Key.DirectionLeft -> false
+                                     Key.DirectionRight -> false
+                                     else -> false
+
                                 }
                             } else false
                         }
@@ -1496,10 +1597,9 @@ private fun GuideRow(
                     )
                 }
             } else {
-                // Keyed on a content-derived hash so the layout pass only re-runs when
-                // the programmes actually change — not on stale recompositions.
-                val contentKey = contentHashKey(programmes, windowStartMillis)
-                val blockLayouts = remember(contentKey) {
+                val programmeTitles = remember(programmes) { programmes.map { it.resolvedTitle() } }
+                val programmeIsNew = remember(programmes) { programmes.map { it.isNewEpisode() } }
+                val blockLayouts = remember(programmes, windowStartMillis) {
                     val layouts = mutableListOf<BlockLayout>()
                     var cursor = windowStartMillis
                     for ((pIdx, programme) in programmes.withIndex()) {
@@ -1529,46 +1629,36 @@ private fun GuideRow(
                     layouts
                 }
 
-                // Determine target block index for focus: matches the focused programme, or
-                // closest to the temporal anchor, or live show, or first block. Computed in a
-                // derivedStateOf that reads the anchor lazily, so moving focus elsewhere does not
-                // recompose this row unless the resulting target block index actually changes.
-                val targetBlockIdx by remember(blockLayouts, nowMillis) {
+                val targetBlockIdx by remember(blockLayouts, nowMillis, rowTargetProgKey) {
                     derivedStateOf {
-                        val targetProgKey = rowTargetProgKey
-                        val temporalAnchorMillis = anchorState.value
-                        val targetMatch = if (targetProgKey != null) {
+                        val explicitTargetId = rowTargetProgKey
+                        val explicitMatch = explicitTargetId?.let { id ->
                             blockLayouts.indexOfFirst { layout ->
-                                programmes.getOrNull(layout.programmeIndex)?.id == targetProgKey
+                                programmes.getOrNull(layout.programmeIndex)?.id == id
                             }
-                        } else -1
-
-                        if (targetMatch >= 0) {
-                            targetMatch
+                        } ?: -1
+                        if (explicitMatch >= 0) {
+                            explicitMatch
                         } else {
-                            val anchorProg = getVerticalTargetProgram(programmes, temporalAnchorMillis)
-                            val anchorMatch = if (anchorProg != null) {
-                                blockLayouts.indexOfFirst { layout ->
-                                    programmes.getOrNull(layout.programmeIndex)?.id == anchorProg.id
-                                }
-                            } else -1
-
+                            val temporalAnchorMillis = anchorState.value
+                            val anchorMatch = blockLayouts.indexOfFirst { layout ->
+                                layout.startMillis <= temporalAnchorMillis && layout.endMillis > temporalAnchorMillis
+                            }
                             if (anchorMatch >= 0) {
                                 anchorMatch
                             } else {
-                                val liveIdx = blockLayouts.indexOfFirst { layout ->
-                                    val prog = programmes[layout.programmeIndex]
-                                    nowMillis in prog.startUtcMillis until prog.endUtcMillis
-                                }
-                                if (liveIdx >= 0) liveIdx else 0
+                                blockLayouts.indexOfFirst { it.startMillis >= temporalAnchorMillis }
+                                    .takeIf { it >= 0 }
+                                    ?: blockLayouts.lastIndex
                             }
                         }
                     }
                 }
 
-                val blockFocusRequesters = remember(blockLayouts.size) {
-                    List(blockLayouts.size) { FocusRequester() }
+                val blockFocusRequesters = remember(programmes) {
+                    mutableMapOf<Int, FocusRequester>()
                 }
+
 
                 // ---- Windowed composition --------------------------------------------------
                 // Only build the blocks that are on (or just off) the horizontal viewport, plus
@@ -1590,11 +1680,11 @@ private fun GuideRow(
                             blockLayouts.indices.toList()
                         } else {
                             val visible = ArrayList<Int>()
-                            for (i in blockLayouts.indices) {
+                            val first = firstBlockEndingAfter(blockLayouts, composeStartMillis)
+                            for (i in first until blockLayouts.size) {
                                 val b = blockLayouts[i]
-                                if (b.endMillis > composeStartMillis && b.startMillis < composeEndMillis) {
-                                    visible.add(i)
-                                }
+                                if (b.startMillis >= composeEndMillis) break
+                                if (b.endMillis > composeStartMillis) visible.add(i)
                             }
                             if (targetBlockIdx in blockLayouts.indices && targetBlockIdx !in visible) {
                                 visible.add(targetBlockIdx)
@@ -1620,24 +1710,36 @@ private fun GuideRow(
                     val isPast = prog.endUtcMillis <= nowMillis
                     val canReplay = isPast &&
                         (row.primary.tvArchive || row.primary.id in catchUpChannelIds)
-                    val blockRequester = blockFocusRequesters.getOrNull(pOrder)
+                    val blockRequester = blockFocusRequesters.getOrPut(pOrder) { FocusRequester() }
+                    val textOffset = if (layout.startMillis < visibleStartMillis) {
+                        minOf(widthFor(layout.startMillis, visibleStartMillis), layout.blockWidth)
+                    } else {
+                        0.dp
+                    }
+
                     val extReq = if (isTarget && isFocused) externalFocusRequester else null
                     // A reminder is stored against one channel id, but the row groups every quality
                     // variant, so test them all — the bell then survives the primary changing.
-                    val hasReminder = row.variants.any { (it.id to prog.startUtcMillis) in reminderKeys }
+                    val hasReminder = row.variants.any { variant ->
+                        prog.startUtcMillis in reminderStartsByChannel[variant.id].orEmpty()
+                    }
+
 
                     key(prog.id) {
                         ProgrammeBlock(
-                            title = prog.resolvedTitle(),
+                             title = programmeTitles.getOrElse(layout.programmeIndex) { prog.title },
+
                             width = layout.blockWidth,
+                            textOffset = textOffset,
                             isNow = isNow,
                             progress = if (isNow) prog.progressAt(nowMillis) else 0f,
-                            isNew = prog.isNewEpisode(),
+                             isNew = programmeIsNew.getOrElse(layout.programmeIndex) { false },
+
                             isLive = prog.isLive,
                             hasReminder = hasReminder,
                             isPast = isPast,
                             canReplay = canReplay,
-                            pseudoFocused = previewHighlight && isTarget,
+                             pseudoFocused = (previewHighlight || isRowHighlighted) && isTarget,
                             isRowHighlighted = isRowHighlighted,
                             focusRequester = blockRequester,
                             rowFocusRequester = if (isTarget) rowFocusRequester else null,
@@ -1687,24 +1789,6 @@ private fun GuideRow(
     }
 }
 
-/**
- * Produces a stable key from the programme list content so `remember` only re-runs the
- * O(n) block-layout pass when the data actually differs, not on every stale recomposition.
- */
-private fun contentHashKey(programmes: List<Programme>, windowStartMillis: Long): Long {
-    var hash = windowStartMillis
-    // XOR the count and the first+last+middle IDs — enough signal to change when the
-    // programme window shifts (new EPG arrives, day offset changes) but stable across
-    // recompositions where the list instance differs but content hasn't changed.
-    hash = hash xor programmes.size.toLong()
-    if (programmes.isNotEmpty()) {
-        hash = hash xor programmes.first().id
-        hash = hash xor programmes.last().id
-        hash = hash xor programmes[programmes.size / 2].id
-    }
-    return hash
-}
-
 /** A tiny state chip on a programme cell — "NEW" (amber) or "LIVE" (red). */
 @Composable
 private fun GuideBadge(text: String, background: Color) {
@@ -1719,9 +1803,9 @@ private fun GuideBadge(text: String, background: Color) {
         Text(
             text = text,
             color = AppTheme.palette.onPrimary,
-            fontSize = 9.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            lineHeight = 10.sp,
+            lineHeight = 11.sp,
         )
     }
 }
@@ -1737,6 +1821,7 @@ private fun GuideBadge(text: String, background: Color) {
 private fun ProgrammeBlock(
     title: String,
     width: Dp,
+    textOffset: Dp = 0.dp,
     isNow: Boolean,
     progress: Float,
     isNew: Boolean = false,
@@ -1763,7 +1848,7 @@ private fun ProgrammeBlock(
     var focused by remember { mutableStateOf(false) }
 
     // Pseudo-cursor: rendered like focus without stealing it (rail category preview).
-    val highlighted = focused || pseudoFocused
+    val highlighted = pseudoFocused
     val chromeAlpha = LocalGuideChromeAlpha.current
     // D-pad long-OK detection. combinedClickable's onLongClick never fires for a held
     // DPAD_CENTER/ENTER from a TV remote, and a timer is the wrong shape for it anyway:
@@ -1794,7 +1879,7 @@ private fun ProgrammeBlock(
                 GuideCellShape,
             )
             .then(
-                if (highlighted) Modifier.border(1.5.dp, AppTheme.palette.cursorBorder, GuideCellShape)
+                if (highlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, GuideCellShape)
                 else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), GuideCellShape)
             )
             .onPreviewKeyEvent { e ->
@@ -1807,22 +1892,9 @@ private fun ProgrammeBlock(
                         onNavigateVertical(true)
                     } else false
                 } else if (e.key == Key.DirectionLeft) {
-                    // A single Left tap moves the cursor one half-hour column; from the first
-                    // column it opens the category rail. HOLD Left is the timeline scrub, handled
-                    // at the GuideGrid root.
-                    if (e.type == KeyEventType.KeyDown) {
-                        if (onStepColumn != null) {
-                            onStepColumn(false)
-                            true
-                        } else false
-                    } else false
+                    false
                 } else if (e.key == Key.DirectionRight) {
-                    if (e.type == KeyEventType.KeyDown) {
-                        if (onStepColumn != null) {
-                            onStepColumn(true)
-                            true
-                        } else false
-                    } else false
+                    false
                 } else if (e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter) {
                     if (onLongClick == null) {
                         false
@@ -1853,7 +1925,8 @@ private fun ProgrammeBlock(
         Row(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .fillMaxWidth()
+                .width((width - textOffset).coerceAtLeast(0.dp))
+                .offset(x = textOffset)
                 .padding(horizontal = 7.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1893,39 +1966,46 @@ private fun ProgrammeBlock(
     }
 }
 
-/** Minutes between two instants, as guide width. */
+internal fun firstBlockEndingAfter(layouts: List<BlockLayout>, millis: Long): Int {
+    var low = 0
+    var high = layouts.size
+    while (low < high) {
+        val mid = (low + high) ushr 1
+        if (layouts[mid].endMillis <= millis) low = mid + 1 else high = mid
+    }
+    return low
+}
+
 private fun widthFor(fromMillis: Long, toMillis: Long): Dp {
     val minutes = ((toMillis - fromMillis) / 60_000L).coerceAtLeast(0)
     return (minutes * MINUTE_DP).dp
 }
 
-private const val MINUTE_DP = 7.0f
+private const val MINUTE_DP = 5.5f
 
 // ---- TiviMate-style hold-to-scrub tuning ------------------------------------------------
 /** How long LEFT must be held before the back-in-time scrub engages (a tap stays a tap). */
 private const val SCRUB_ENGAGE_MILLIS = 400L
 /** Delay between the discrete 30-minute steps while LEFT is held. */
 private const val SCRUB_STEP_INTERVAL_MILLIS = 160L
-/** How long after a scrub release keep-visible auto-scrolls stay suppressed. */
-private const val SCRUB_SETTLE_MILLIS = 400L
 private const val PAST_HOURS = 24
 private const val FUTURE_HOURS = 24
 private const val HOURS_IN_WINDOW = PAST_HOURS + FUTURE_HOURS
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
-private val CHANNEL_COLUMN = 238.dp
-private val ROW_HEIGHT = 48.dp
+private val CHANNEL_COLUMN = 258.dp
+private val ROW_HEIGHT = 44.dp
 private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 
 /**
  * Extra timeline millis composed on each side of the visible viewport, so d-pad stepping and
  * fast scrubs never outrun the built cells (and the focused block is never decomposed).
  */
-private const val COMPOSE_WINDOW_PAST_MILLIS = 60 * 60 * 1000L
-private const val COMPOSE_WINDOW_FUTURE_MILLIS = 60 * 60 * 1000L
+private const val COMPOSE_WINDOW_PAST_MILLIS = 90 * 60 * 1000L
+private const val COMPOSE_WINDOW_FUTURE_MILLIS = 90 * 60 * 1000L
 /** Coarse step the composed window snaps to, so scrolling does not recompose rows per pixel. */
-private const val COMPOSE_QUANTUM_MILLIS = 15 * 60 * 1000L
+private const val COMPOSE_QUANTUM_MILLIS = 30 * 60 * 1000L
 
-private data class BlockLayout(
+internal data class BlockLayout(
     val startMillis: Long,
     val endMillis: Long,
     val blockWidth: Dp,

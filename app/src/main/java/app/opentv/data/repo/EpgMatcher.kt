@@ -35,6 +35,7 @@ object EpgMatcher {
     class Index internal constructor(
         private val exact: Map<String, String>,
         private val sortedKeys: List<Alias>,
+        private val prefixes: Map<String, String?>,
     ) {
         /** Returns the epg id for a provider channel's group key, or null. */
         fun match(groupKey: String): String? {
@@ -42,18 +43,25 @@ object EpgMatcher {
 
             exact[groupKey]?.let { return it }
 
-            // Prefix tier: the provider name extends the guide name or vice versa
-            // ("skysportsmainevent" vs "skysportsmainevt"; "bbcone" vs "bbconelondon").
-            // Only accepted when every candidate agrees on a single epg id.
             var found: String? = null
-            for (alias in sortedKeys) {
-                val hit = (alias.key.length >= MIN_KEY_LENGTH) &&
-                    (alias.key.startsWith(groupKey) || groupKey.startsWith(alias.key))
-                if (!hit) continue
+            if (prefixes.containsKey(groupKey)) {
+                found = prefixes[groupKey]
+                if (found == null) return null
+            }
+
+            var low = 0
+            var high = sortedKeys.size
+            while (low < high) {
+                val mid = (low + high) ushr 1
+                if (sortedKeys[mid].key < groupKey) low = mid + 1 else high = mid
+            }
+            for (i in low until sortedKeys.size) {
+                val alias = sortedKeys[i]
+                if (!alias.key.startsWith(groupKey)) break
                 if (found == null) {
                     found = alias.epgId
                 } else if (found != alias.epgId) {
-                    return null // ambiguous — refuse to guess
+                    return null
                 }
             }
             return found
@@ -70,27 +78,32 @@ object EpgMatcher {
     fun buildIndex(aliases: Iterable<Pair<String, String>>): Index {
         val exact = HashMap<String, String>()
         val ambiguous = HashSet<String>()
+        val prefixes = HashMap<String, String?>()
         val all = ArrayList<Alias>()
 
         for ((epgId, name) in aliases) {
             for (candidate in listOf(name, epgId)) {
-                // Full normalise, not bare groupKeyOf: free guides append 'HD' to display
-                // names ('BBC One East HD'), which would otherwise never key-match a
-                // provider's 'BBC ONE EAST'. normalize() strips the quality token.
                 val key = ChannelNameNormalizer.normalize(candidate).groupKey
                 if (key.length < MIN_KEY_LENGTH) continue
                 all += Alias(epgId, key)
                 val existing = exact.putIfAbsent(key, epgId)
                 if (existing != null && existing != epgId) {
-                    // Two different guide channels normalise to the same key. Neither can
-                    // be trusted for exact matching; drop the key rather than pick a side.
                     ambiguous += key
+                }
+                for (end in MIN_KEY_LENGTH..key.length) {
+                    val prefix = key.take(end)
+                    if (!prefixes.containsKey(prefix)) {
+                        prefixes[prefix] = epgId
+                    } else if (prefixes[prefix] != epgId) {
+                        prefixes[prefix] = null
+                    }
                 }
             }
         }
         ambiguous.forEach(exact::remove)
+        all.sortWith(compareBy<Alias> { it.key }.thenBy { it.epgId })
 
-        return Index(exact, all)
+        return Index(exact, all, prefixes)
     }
 
     /**

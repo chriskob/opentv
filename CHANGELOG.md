@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.14
+
+- **Guide navigation now handles irregular programme lengths cleanly.** The timeline stays snapped to the half-hour column while short tails are skipped, the next programme is selected, and moving back restores the full previous card.
+- **TiviMate-style guide presentation and smoother menu transitions.** The Live TV guide uses the darker slate/cyan treatment, compact programme cards, and push-style navigation rails.
+
 ## 0.16.13
 
 - **Long-press OK in the guide opens the programme menu.** Holding OK on a programme now opens

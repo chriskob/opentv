@@ -16,6 +16,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import app.opentv.core.AppSettings
 import app.opentv.core.ServiceLocator
 import app.opentv.data.repo.CatalogRepository
@@ -40,9 +41,16 @@ class SyncWorker(
         val sources = graph.sourceRepository.enabled()
         if (sources.isEmpty()) return Result.success()
 
+        val forceCatalogSync = inputData.getBoolean(FORCE_CATALOG_SYNC, false)
+        val catalogIntervalMillis = TimeUnit.HOURS.toMillis(
+            settings.playlistRefreshHours.value.toLong().coerceAtLeast(1L),
+        )
         var anyFailed = false
 
         for (source in sources) {
+            if (!forceCatalogSync && now - source.lastCatalogSyncMillis < catalogIntervalMillis) {
+                continue
+            }
             when (val result = graph.catalogRepository.sync(source, now)) {
                 is CatalogRepository.SyncResult.Success ->
                     Log.i(TAG, "Catalogue for ${source.name}: ${result.channelCount} channels")
@@ -86,6 +94,7 @@ class SyncWorker(
         private const val TAG = "SyncWorker"
         private const val WORK_NAME = "opentv-periodic-sync"
         private const val ONE_SHOT_WORK_NAME = "opentv-manual-sync"
+        private const val FORCE_CATALOG_SYNC = "force_catalog_sync"
 
         /**
          * Kick a single catalogue + guide refresh now, off the UI. Runs the same [doWork] as the
@@ -100,6 +109,7 @@ class SyncWorker(
                         .setRequiredNetworkType(NetworkType.CONNECTED)
                         .build(),
                 )
+                .setInputData(workDataOf(FORCE_CATALOG_SYNC to true))
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 ONE_SHOT_WORK_NAME,
@@ -112,8 +122,8 @@ class SyncWorker(
          * Schedule (or cancel) the periodic background sync.
          *
          * @param intervalHours How often to run, in hours. Pass 0 to cancel the periodic job
-         *   (manual-only mode). Uses [ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE] so a
-         *   changed interval takes effect immediately.
+         *   (manual-only mode). Uses [ExistingPeriodicWorkPolicy.UPDATE] so a changed interval
+         *   takes effect without resetting the existing schedule.
          */
         fun schedule(context: Context, intervalHours: Int = 6) {
             val wm = WorkManager.getInstance(context)
@@ -136,7 +146,7 @@ class SyncWorker(
 
             wm.enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 request,
             )
         }

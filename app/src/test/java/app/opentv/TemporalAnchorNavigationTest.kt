@@ -7,7 +7,9 @@ package app.opentv
 
 import app.opentv.data.model.Programme
 import app.opentv.ui.channels.calculateInitialScrollOffsetPx
+import app.opentv.ui.channels.calculateSnappedScrollOffsetPx
 import app.opentv.ui.channels.calculateMountedFrameStartTime
+import app.opentv.ui.channels.getHorizontalTargetProgram
 import app.opentv.ui.channels.getVerticalTargetProgram
 import app.opentv.ui.channels.halfHourColumnStart
 import com.google.common.truth.Truth.assertThat
@@ -88,6 +90,66 @@ class TemporalAnchorNavigationTest {
     }
 
     @Test
+    fun `right skips a short remaining tail and selects the next programme`() {
+        val current = prog("CBS News", 0, 35)
+        val next = prog("Comics Unleashed", 35, 65)
+
+        val target = getHorizontalTargetProgram(
+            programmes = listOf(current, next),
+            currentProgramme = current,
+            currentColumnMillis = baseTime,
+            isRight = true,
+        )
+
+        assertThat(target).isEqualTo(next)
+    }
+
+    @Test
+    fun `right keeps a programme when a full half-hour remains`() {
+        val current = prog("One Hour Show", 0, 60)
+        val next = prog("Next Show", 60, 90)
+
+        val target = getHorizontalTargetProgram(
+            programmes = listOf(current, next),
+            currentProgramme = current,
+            currentColumnMillis = baseTime,
+            isRight = true,
+        )
+
+        assertThat(target).isEqualTo(current)
+    }
+
+    @Test
+    fun `right selects the next programme at a normal boundary`() {
+        val current = prog("Current Show", 0, 30)
+        val next = prog("Next Show", 30, 60)
+
+        val target = getHorizontalTargetProgram(
+            programmes = listOf(current, next),
+            currentProgramme = current,
+            currentColumnMillis = baseTime,
+            isRight = true,
+        )
+
+        assertThat(target).isEqualTo(next)
+    }
+
+    @Test
+    fun `left selects the preceding programme`() {
+        val previous = prog("CBS News", 0, 35)
+        val current = prog("Comics Unleashed", 35, 65)
+
+        val target = getHorizontalTargetProgram(
+            programmes = listOf(previous, current),
+            currentProgramme = current,
+            currentColumnMillis = baseTime + 30 * 60_000L,
+            isRight = false,
+        )
+
+        assertThat(target).isEqualTo(previous)
+    }
+
+    @Test
     fun `one hour programme does not move the cursor out of its half-hour column`() {
         // Regression: the anchor used to be the focused programme's midpoint, so a 1:00-2:00
         // block anchored at 1:30 and the next row's cursor jumped to the 1:30 show. A column
@@ -165,6 +227,39 @@ class TemporalAnchorNavigationTest {
         )
         // Expected: 11:00 AM (current half hour)
         assertThat(frameStart).isEqualTo(elevenAm)
+    }
+
+    @Test
+    fun `snapped column scroll offset is exact and clamps to the viewport`() {
+        val halfHourMs = 30 * 60 * 1000L
+        val minuteDp = 5.5f
+        val density = 2.0f
+
+        assertThat(
+            calculateSnappedScrollOffsetPx(
+                windowStartMillis = baseTime,
+                columnStartMillis = baseTime + halfHourMs,
+                minuteDp = minuteDp,
+                density = density,
+            ),
+        ).isEqualTo(330)
+        assertThat(
+            calculateSnappedScrollOffsetPx(
+                windowStartMillis = baseTime,
+                columnStartMillis = baseTime - halfHourMs,
+                minuteDp = minuteDp,
+                density = density,
+            ),
+        ).isEqualTo(0)
+        assertThat(
+            calculateSnappedScrollOffsetPx(
+                windowStartMillis = baseTime,
+                columnStartMillis = baseTime + halfHourMs,
+                minuteDp = minuteDp,
+                density = density,
+                maxValue = 200,
+            ),
+        ).isEqualTo(200)
     }
 
     @Test

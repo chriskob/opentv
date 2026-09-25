@@ -5,6 +5,10 @@
  */
 package app.opentv.ui.channels
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -71,6 +75,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
@@ -79,13 +85,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.annotation.OptIn
 import android.content.Intent
 import android.view.WindowManager
 import android.widget.Toast
@@ -111,6 +117,7 @@ import app.opentv.ui.theme.AppTheme
 import app.opentv.ui.theme.LocalGuideChromeAlpha
 import app.opentv.ui.RecordingBackgroundDialog
 import app.opentv.ui.RecordingBackgroundPrompt
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.compose.ui.viewinterop.AndroidView
@@ -124,6 +131,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -140,6 +149,7 @@ import kotlinx.coroutines.withContext
  * permanent, glanceable health indicator for the guide: when the EPG stops updating, these
  * lines say so honestly instead of going quietly stale.
  */
+@OptIn(UnstableApi::class)
 @Composable
 fun HomeScreen(
     isTelevision: Boolean,
@@ -174,6 +184,7 @@ fun HomeScreen(
         }
     }
     val previewEnabled by settings.guidePreviewVideo.collectAsState()
+    val playerResizeMode by settings.playerResizeMode.collectAsState()
     val channelLayout by settings.channelLayout.collectAsState()
     val guideResetOnOpen by settings.guideResetOnOpen.collectAsState()
 
@@ -262,7 +273,29 @@ fun HomeScreen(
     var highlightedProgramme by highlightedProgrammeState
     var selectedRow by remember { mutableStateOf<ChannelsViewModel.Row?>(null) }
     val previewSound by settings.guidePreviewSound.collectAsState()
-    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+     LaunchedEffect(Unit) {
+         snapshotFlow { highlightedRowState.value?.key }
+             .distinctUntilChanged()
+             .collectLatest { key ->
+                 if (key == null) return@collectLatest
+                 viewModel.epgRows
+                     .map { it[key] }
+                     .distinctUntilChanged()
+                     .collect { hydrated ->
+                         if (hydrated != null && highlightedRowState.value?.key == key) {
+                             highlightedRow = hydrated
+                             val now = System.currentTimeMillis()
+                             highlightedProgramme = hydrated.programmes.firstOrNull {
+                                 now in it.startUtcMillis until it.endUtcMillis
+                             } ?: hydrated.now
+                         }
+                     }
+             }
+     }
+
+
 
     // The archive programme the shared live player is currently on (null = live). Set when a past
     // programme is picked in the guide; the same player surface shows it in the preview and
@@ -362,6 +395,9 @@ fun HomeScreen(
     // the user did not choose. The intended entry is carried in [railOpenFocusKey].
     var suppressRailPreviewSelection by remember { mutableStateOf(false) }
     val guideFocusRequester = remember { FocusRequester() }
+    val guideListState = rememberLazyListState()
+    val guideScrollState = rememberScrollState()
+
     // Set when LEFT reopens the rail; the effect waits for the rail to be laid out again before
     // moving focus onto it — a just-revealed node isn't focusable on the very same frame.
     var pendingRailFocus by remember { mutableStateOf(false) }
@@ -456,7 +492,7 @@ fun HomeScreen(
             // handler below.
             val targetIndex = if (railScrollToIndex >= 0) railScrollToIndex else railFocusTargetIndex()
             var scrolled = false
-            for (attempt in 0..9) {
+            for (attempt in 0..4) {
                 val targetKey = railRows.getOrNull(targetIndex)?.key
                 val req = targetKey?.let { railFocusRequesters[it] }
                 val res = if (req != null) {
@@ -465,14 +501,12 @@ fun HomeScreen(
                     Result.failure(IllegalStateException("rail entry not composed yet"))
                 }
                 if (res.isSuccess) break
-                // Off-screen (or not composed yet): bring it into range, then retry.
                 if (!scrolled) {
                     runCatching { railListState.scrollToItem(targetIndex) }
                     scrolled = true
                 }
-                delay(40)
+                delay(16)
             }
-            delay(200)
             pendingRailFocus = false
         }
     }
@@ -616,6 +650,7 @@ fun HomeScreen(
         viewModel.tick()
         viewModel.guideToNow()
         backScrollActive = false
+        scope.launch { guideScrollState.scrollTo(0) }
         pendingGuideFocus = true
         leaveFullScreen()
     }
@@ -640,6 +675,7 @@ fun HomeScreen(
             viewModel.tick()
             viewModel.guideToNow()
             backScrollActive = false
+            scope.launch { guideScrollState.scrollTo(0) }
             // Leaving the archive: clearing the session lets the preview effect re-tune the live
             // stream now that the guide is back at "now".
             catchup = null
@@ -872,12 +908,18 @@ fun HomeScreen(
                 }
                 Lifecycle.Event.ON_STOP -> {
                     screenResumed = false
+                    previewController.player.pause()
+                    previewController.player.volume = 0f
                 }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            previewController.player.pause()
+            previewController.player.volume = 0f
+        }
     }
 
     // The channel the preview pane is currently streaming (it shares the live player with
@@ -896,9 +938,6 @@ fun HomeScreen(
         // not the live one, so a naive "already playing" check would leave it stuck in the past.
         val wasArchive = catchup != null
         catchup = null
-        PlaybackQueue.items = rows.mapIndexed { index, row ->
-            PlaybackQueue.Item(row.primary.id, row.primary.shownName, row.primary.logoUrl, index + 1)
-        }
         val match = rows.firstOrNull { it.primary.id == channel.id || it.variants.any { v -> v.id == channel.id } }
         if (match != null) {
             selectedRow = match
@@ -910,10 +949,6 @@ fun HomeScreen(
              previewController.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)
 
         settings.lastChannelId = channel.id
-        if (!isAlreadyPlayingThisChannel || wasArchive) {
-            previewController.player.stop()
-            previewController.player.clearMediaItems()
-        }
         isFullScreen = true
     }
     fun requestLive(channel: Channel) {
@@ -1021,6 +1056,10 @@ fun HomeScreen(
         // While an archive programme is playing, the preview keeps the timeshift stream the shared
         // player is already on — re-tuning the live URL here would yank the viewer back to now.
         if (isFullScreen || !previewEnabled || !screenResumed || recordingActive || catchup != null) {
+            if (!isFullScreen && catchup == null && (!previewEnabled || !screenResumed || recordingActive)) {
+                previewController.player.pause()
+                previewController.player.volume = 0f
+            }
             return@LaunchedEffect
         }
         val channel = row.primary
@@ -1067,8 +1106,8 @@ fun HomeScreen(
     // Observed via snapshotFlow instead of keying the effect on lastInteractionTime: that value is
     // refreshed on EVERY guide focus, so keying on it recomposed this whole screen on every d-pad
     // step. Watching it as a flow restarts the countdown without any recomposition.
-    LaunchedEffect(isFullScreen, channelMenu, recordTarget, showBackgroundPrompt, pendingLiveChannel) {
-        if (!isFullScreen && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
+    LaunchedEffect(isFullScreen, channelMenu, recordTarget, showBackgroundPrompt, pendingLiveChannel, rows.isNotEmpty()) {
+        if (!isFullScreen && rows.isNotEmpty() && channelMenu == null && recordTarget == null && !showBackgroundPrompt && pendingLiveChannel == null) {
             snapshotFlow { lastInteractionState.value }
                 .collectLatest {
                     delay(60_000L)
@@ -1080,7 +1119,7 @@ fun HomeScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(AppTheme.palette.background)
             .onGloballyPositioned {
                 homeOrigin = it.boundsInRoot().topLeft
                 homeSize = it.size
@@ -1095,9 +1134,11 @@ fun HomeScreen(
                         // header's prev/next-day buttons; HOLD LEFT remains the back-in-time
                         // scrub, and MediaPlay still snaps back to live.
                         Key.MediaPlay, Key.MediaPlayPause -> {
-                            viewModel.guideToNow()
-                            backScrollActive = false
-                            // Jumping back to live ends any archive playback.
+                             viewModel.guideToNow()
+                             backScrollActive = false
+                             scope.launch { guideScrollState.scrollTo(0) }
+                             // Jumping back to live ends any archive playback.
+
                             catchup = null
                             val active = activeSelectedRow ?: rows.firstOrNull()
                             if (active != null) {
@@ -1125,18 +1166,20 @@ fun HomeScreen(
         val surfaceFullScreen = isFullScreen && !shrinkingFromFullScreen
         val guideVisible = !isFullScreen || shrinkingFromFullScreen
         val showPlayerOsd = isFullScreen && !shrinkingFromFullScreen
-        PersistentVideoSurface(
-            player = previewController.player,
-            isFullScreen = surfaceFullScreen,
-            cardBounds = previewBounds,
-            rootOrigin = homeOrigin,
-            rootSize = homeSize,
-            resizeMode = if (surfaceFullScreen) {
-                settings.playerResizeMode.value
-            } else {
-                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-            },
-        )
+        if (previewEnabled || isFullScreen || shrinkingFromFullScreen || catchup != null) {
+            PersistentVideoSurface(
+                player = previewController.player,
+                isFullScreen = surfaceFullScreen,
+                cardBounds = previewBounds,
+                rootOrigin = homeOrigin,
+                rootSize = homeSize,
+                resizeMode = if (surfaceFullScreen) {
+                    playerResizeMode
+                } else {
+                    androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                },
+            )
+        }
 
         if (showPlayerOsd) {
             PlayerScreen(
@@ -1188,9 +1231,11 @@ fun HomeScreen(
                     }
                     nowMillis = System.currentTimeMillis()
                     viewModel.tick()
-                    viewModel.guideToNow()
-                    backScrollActive = false
-                    pendingGuideFocus = true
+                     viewModel.guideToNow()
+                     backScrollActive = false
+                     scope.launch { guideScrollState.scrollTo(0) }
+                     pendingGuideFocus = true
+
                     railExpanded = false
                     leaveFullScreen()
                 },
@@ -1250,11 +1295,10 @@ fun HomeScreen(
             )
         }
         if (guideVisible) {
-            // TiviMate-style: the category rail is a real column beside the guide, so opening it
-            // pushes the guide across instead of sliding a panel over it. It appears and disappears
-            // instantly — no width animation — so the grid re-lays-out once per open/close rather
-            // than every frame, which is what the old overlay slide was built to avoid.
-            // Composed underneath during the shrink (below-zero layer keeps the video on top),
+             // TiviMate-style: the category rail is a real column beside the guide, so opening it
+             // makes room for the category list before focus moves into it.
+             // Composed underneath during the shrink (below-zero layer keeps the video on top),
+
             // dimmed until the picture docks. Deliberately not focusable: a focusable container
             // traps focus on itself instead of a grid cell, which ate the first Back press at
             // every stage (guide->categories, categories->menu).
@@ -1265,7 +1309,12 @@ fun HomeScreen(
                     .zIndex(-1f)
                     .alpha(if (shrinkingFromFullScreen) 0.35f else 1f),
             ) {
-        if (railExpanded) {
+         AnimatedVisibility(
+             visible = railExpanded,
+             enter = expandHorizontally(animationSpec = tween(180)),
+             exit = shrinkHorizontally(animationSpec = tween(160)),
+             modifier = Modifier.width(240.dp),
+         ) {
         // ---- Category rail -----------------------------------------------------------------
         // d-pad LEFT from the guide's channel column opens it; it closes once focus moves back
         // into the guide.
@@ -1283,10 +1332,10 @@ fun HomeScreen(
                                 railPreviewing = false
                                 railExpanded = false
                                 suppressRailPreviewSelection = false
-                                guideRestoreTick++
-                                runCatching { guideFocusRequester.requestFocus() }
-                                pendingGuideFocus = true
-                                true
+                                 guideRestoreTick++
+                                 pendingGuideFocus = true
+                                 true
+
                             }
                             Key.DirectionLeft -> {
                                 railExpanded = false
@@ -1350,8 +1399,8 @@ fun HomeScreen(
                                 railExpanded = false
                                 suppressRailPreviewSelection = false
                                 guideRestoreTick++
-                                runCatching { guideFocusRequester.requestFocus() }
-                                pendingGuideFocus = true
+                                 pendingGuideFocus = true
+
                             },
                             modifier = entryModifier,
                         )
@@ -1380,8 +1429,8 @@ fun HomeScreen(
                                 railExpanded = false
                                 suppressRailPreviewSelection = false
                                 guideRestoreTick++
-                                runCatching { guideFocusRequester.requestFocus() }
-                                pendingGuideFocus = true
+                                 pendingGuideFocus = true
+
                             },
                             modifier = entryModifier,
                             nested = true,
@@ -1472,12 +1521,9 @@ fun HomeScreen(
                 //     duration as evidence badged channels that have no archive.
                 //
                 // Runs once per channel over the whole list, so it is computed off the main thread.
-                val catchUpChannelIds by produceState(
-                    initialValue = emptySet<Long>(),
-                    sources,
-                    rows,
-                ) {
-                    value = withContext(Dispatchers.Default) {
+                var catchUpChannelIds by remember(sources, rows) { mutableStateOf(emptySet<Long>()) }
+                LaunchedEffect(sources, rows) {
+                    catchUpChannelIds = withContext(Dispatchers.Default) {
                         val byId = sources.associateBy { it.id }
                         rows.mapNotNull { row ->
                             val ch = row.primary
@@ -1504,10 +1550,9 @@ fun HomeScreen(
                             previewBounds = rect
                         }
                     },
-                    isCatchupChannel = highlightedRow?.let {
-                        it.primary.tvArchive || it.primary.id in catchUpChannelIds
-                    } == true,
+                    catchUpChannelIds = catchUpChannelIds,
                 )
+
                 // TiviMate-style guide header stamp: when the guide last synced + channel count.
                 val epgInfoLine = if (settings.lastGuideUpdatedMillis > 0L) {
                     "EPG updated ${formatTime(settings.lastGuideUpdatedMillis)} · ${settings.lastGuideChannelCount} channels"
@@ -1543,6 +1588,7 @@ fun HomeScreen(
                 if (channelLayout == AppSettings.ChannelLayout.LIST) {
                     ChannelList(
                         rows = rows,
+                        epgRows = viewModel.epgRows,
                         selectedKeyState = selectedKeyState,
                         playingKey = activeSelectedRow?.key,
                         focusRequester = guideFocusRequester,
@@ -1567,6 +1613,9 @@ fun HomeScreen(
                 } else {
                     GuideGrid(
                         rows = rows,
+                        epgRows = viewModel.epgRows,
+                        horizontalScrollState = guideScrollState,
+                        providedListState = guideListState,
                         windowStartMillis = windowStart,
                         dayOffset = guideHourOffset / 24,
                         catchUpChannelIds = catchUpChannelIds,
@@ -1608,9 +1657,11 @@ fun HomeScreen(
                         onJumpToLive = {
                             nowMillis = System.currentTimeMillis()
                             viewModel.tick()
-                            viewModel.guideToNow()
-                            backScrollActive = false
-                            val active = activeSelectedRow ?: rows.firstOrNull()
+                             viewModel.guideToNow()
+                             backScrollActive = false
+                             scope.launch { guideScrollState.scrollTo(0) }
+                             val active = activeSelectedRow ?: rows.firstOrNull()
+
                             if (active != null) {
                                 highlightedRow = active
                                 val now = System.currentTimeMillis()
@@ -2138,8 +2189,8 @@ private fun RailEntry(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    onFocused: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onFocused: (() -> Unit)? = null,
     /**
      * null = a plain entry. Otherwise this row is a playlist group header, and the value says whether
      * its categories are drawn — a chevron at the end, so a collapsed group is still visible as one
@@ -2478,17 +2529,22 @@ private fun PersistentVideoSurface(
         )
     }
     val t = progress
-    val modifier = with(density) {
-        val fullW = rootSize.width.toDp()
-        val fullH = rootSize.height.toDp()
-        val width = card.width.toDp() * (1f - t) + fullW * t
-        val height = card.height.toDp() * (1f - t) + fullH * t
-        Modifier
-            .offset(x = card.left.toDp() * (1f - t), y = card.top.toDp() * (1f - t))
-            .size(width = width, height = height)
-            // Square the corners off as it grows so full screen is never nicked at the edges.
-            .clip(RoundedCornerShape((10f * (1f - t)).dp))
-    }
+    val rootWidth = rootSize.width.toFloat().coerceAtLeast(1f)
+    val rootHeight = rootSize.height.toFloat().coerceAtLeast(1f)
+    val targetWidth = card.width * (1f - t) + rootWidth * t
+    val targetHeight = card.height * (1f - t) + rootHeight * t
+    val targetLeft = card.left * (1f - t)
+    val targetTop = card.top * (1f - t)
+    val modifier = Modifier
+        .fillMaxSize()
+        .graphicsLayer {
+            transformOrigin = TransformOrigin(0f, 0f)
+            translationX = targetLeft
+            translationY = targetTop
+            scaleX = (targetWidth / rootWidth).coerceAtLeast(0.01f)
+            scaleY = (targetHeight / rootHeight).coerceAtLeast(0.01f)
+        }
+        .clip(RoundedCornerShape(with(density) { (10f * (1f - t)).dp }))
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),

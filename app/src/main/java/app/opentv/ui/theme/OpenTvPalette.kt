@@ -384,40 +384,37 @@ private val SlateGuidePalette = OpenTvPalette(
 )
 
 /**
- * The classic blue-grey + teal look: the Material blue-grey ramp as the surface ladder
- * (`#263238` background, `#37474F` surfaces) with teal 200 (`#80CBC4`) as the accent, and the
- * stock Material semantic hues for recording/favourite/live. Reconstructed from the reference's
- * base theme tokens (colorPrimary #37474F, colorPrimaryDark/windowBackground #263238, colorAccent
- * #80CBC4, colorButtonNormal #5A595B, colorControlHighlight #33FFFFFF).
+ * TiviMate-like navy guide palette: near-black blue surfaces, slate programme cells, cyan
+ * navigation accents, and a light selected cell with dark ink.
  */
 private val TvPlayerPalette = OpenTvPalette(
-    background = Color(0xFF263238),
-    surface = Color(0xFF37474F),
-    subtle = Color(0xFF455A64),
-    onSurface = Color(0xFFECEFF1),
-    onSurfaceVariant = Color(0xFFB0BEC5),
-    outline = Color(0xFF546E7A),
-    borderHover = Color(0xFF78909C),
-    focusBorder = Color(0xFF80CBC4),
-    primary = Color(0xFF80CBC4),
-    onPrimary = Color(0xFF1B2A32),
-    primaryHover = Color(0xFF4DB6AC),
-    primaryActive = Color(0xFFB2DFDB),
-    focusRing = Color(0x5580CBC4),
-    selection = Color(0x33FFFFFF),
-    hover = Color(0x1FFFFFFF),
-    recording = Color(0xFFF44336),
-    favourite = Color(0xFFFFC107),
-    live = Color(0xFF4DD0E1),
-    error = Color(0xFFF44336),
-    errorContainer = Color(0x33F44336),
-    success = Color(0xFF4CAF50),
-    successContainer = Color(0x204CAF50),
-    warning = Color(0xFFFFC107),
-    info = Color(0xFF00BCD4),
-    onCursor = Color(0xFFFFFFFF),
-    cellFocus = Color(0xFF80CBC4),
-    onCellFocus = Color(0xFF1B2A32),
+    background = Color(0xFF0D1824),
+    surface = Color(0xFF1B2A3A),
+    subtle = Color(0xFF24384C),
+    onSurface = Color(0xFFF3F6F8),
+    onSurfaceVariant = Color(0xFFB6C5D2),
+    outline = Color(0xFF30485D),
+    borderHover = Color(0xFF46647D),
+    focusBorder = Color(0xFF4ED7DA),
+    primary = Color(0xFF4ED7DA),
+    onPrimary = Color(0xFF07131F),
+    primaryHover = Color(0xFF35BFC8),
+    primaryActive = Color(0xFF8BE8E8),
+    focusRing = Color(0x664ED7DA),
+    selection = Color(0xFF263E52),
+    hover = Color(0xFF1C3347),
+    recording = Color(0xFFF15B63),
+    favourite = Color(0xFFF5C85B),
+    live = Color(0xFF4ED7DA),
+    error = Color(0xFFF15B63),
+    errorContainer = Color(0x33F15B63),
+    success = Color(0xFF64D58A),
+    successContainer = Color(0x2064D58A),
+    warning = Color(0xFFF5C85B),
+    info = Color(0xFF4ED7DA),
+    onCursor = Color(0xFFF3F6F8),
+    cellFocus = Color(0xFFE5E9EC),
+    onCellFocus = Color(0xFF0D1824),
 )
 
 /** The resolved palette for this selection. */

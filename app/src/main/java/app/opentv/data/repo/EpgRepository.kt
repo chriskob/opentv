@@ -31,6 +31,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
@@ -147,9 +150,15 @@ class EpgRepository(
      * bounds-driven counter moved twice per run — which invalidated the guide's row cache every
      * time and quietly reduced it to a no-op).
      */
+    private val _dataGeneration = MutableStateFlow(0L)
+    val dataGenerationFlow: StateFlow<Long> = _dataGeneration.asStateFlow()
+
     @Volatile
     var dataGeneration: Long = 0L
         private set
+
+    @Volatile
+    private var matcherChanged = false
 
     suspend fun windowForChannelsCached(
         epgIds: List<String>,
@@ -361,6 +370,7 @@ class EpgRepository(
             val feeds = feedDao.enabled()
             var succeeded = 0
             var failed = 0
+            var processed = 0
             var written = 0
 
             onProgress?.invoke(SyncProgress(feedsDone = 0, feedsTotal = feeds.size, programmesWritten = 0))
@@ -376,6 +386,7 @@ class EpgRepository(
                 when (val result = syncFeed(feed, nowUtcMillis)) {
                     is FeedResult.Success -> {
                         succeeded++
+                        processed++
                         written += result.programmes
                         feedDao.markSynced(
                             feed.id,
@@ -396,41 +407,42 @@ class EpgRepository(
                 )
             }
 
-            if (succeeded > 0) {
+            if (processed > 0) {
                 programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
                 programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
+                reclaimDiskSpace()
             }
-            reclaimDiskSpace()
 
-            // The matcher is its own long stretch on a big catalogue; say so rather than letting the
-            // bar sit at the end of the feeds with no explanation.
-            onProgress?.invoke(
-                SyncProgress(feeds.size, feeds.size, written, "Matching channels…", matching = true),
-            )
-            val (matched, total) = runMatcher { scanned, toScan ->
+            val (matched, total) = if (processed > 0) {
                 onProgress?.invoke(
-                    SyncProgress(
-                        feedsDone = feeds.size,
-                        feedsTotal = feeds.size,
-                        programmesWritten = written,
-                        currentFeed = "Matching channels…",
-                        matching = true,
-                        channelsScanned = scanned,
-                        channelsToScan = toScan,
-                    ),
+                    SyncProgress(feeds.size, feeds.size, written, "Matching channels…", matching = true),
                 )
+                runMatcher { scanned, toScan ->
+                    onProgress?.invoke(
+                        SyncProgress(
+                            feedsDone = feeds.size,
+                            feedsTotal = feeds.size,
+                            programmesWritten = written,
+                            currentFeed = "Matching channels…",
+                            matching = true,
+                            channelsScanned = scanned,
+                            channelsToScan = toScan,
+                        ),
+                    )
+                }
+            } else {
+                0 to 0
             }
-            // (The post-sync 6-hour `loadWindow` pre-warm that used to run here is gone: it held
-            // every channel's programmes in memory for no reader — see the note by [scope].)
-            // Stamp for the guide header ("EPG updated … · N channels"). total = channels the
-            // guide covers; written above is programme rows, not channels, hence total here.
-            settings?.lastGuideUpdatedMillis = nowUtcMillis
-            settings?.lastGuideChannelCount = total
-            // Fresh guide data — drop the stale window cache so the guide re-reads it, and move the
-            // generation so every cached row built from the old data re-reads too.
-            windowCacheMutex.withLock {
-                railWindowCache.clear()
-                dataGeneration++
+            if (processed > 0) {
+                settings?.lastGuideUpdatedMillis = nowUtcMillis
+                settings?.lastGuideChannelCount = total
+            }
+            if (processed > 0 || matcherChanged) {
+                windowCacheMutex.withLock {
+                    railWindowCache.clear()
+                    dataGeneration++
+                    _dataGeneration.value = dataGeneration
+                }
             }
             SyncSummary(succeeded, failed, written, matched, total)
         }
@@ -445,6 +457,7 @@ class EpgRepository(
      * Room 3 (no SupportSQLite): runs on a writer connection from the SQLite driver instead
      * of the old openHelper.writableDatabase cursor API.
      */
+    @Suppress("RestrictedApi")
     private suspend fun reclaimDiskSpace() {
         val database = db ?: return
         withContext(Dispatchers.IO) {
@@ -601,6 +614,7 @@ class EpgRepository(
     suspend fun runMatcher(
         onProgress: ((scanned: Int, total: Int) -> Unit)? = null,
     ): Pair<Int, Int> {
+        matcherChanged = false
         val aliases = aliasDao.all()
         val index = EpgMatcher.buildIndex(aliases.map { it.epgId to it.displayName })
         // Only ids that actually have programmes count as "working" — a match against a
@@ -629,9 +643,8 @@ class EpgRepository(
         onProgress?.invoke(channels.size, channels.size)
 
         if (updates.isNotEmpty()) {
-            updates.chunked(BATCH_SIZE).forEach { chunk ->
-                channelDao.updateMatchedEpgIds(chunk)
-            }
+            matcherChanged = true
+            channelDao.updateMatchedEpgIds(updates)
         }
 
         Log.i(

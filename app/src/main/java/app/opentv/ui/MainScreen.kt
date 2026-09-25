@@ -96,8 +96,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 /**
  * The shell: a slim navigation rail down the left over a content area. The rail sits collapsed as
  * an icon strip and expands to show labels the moment focus lands in it — the TiviMate-style side
- * menu people asked for, instead of a top bar that ate a row of the guide. It overlays the content
- * rather than pushing it, so expanding the menu never reflows the guide underneath.
+ * menu people asked for, instead of a top bar that ate a row of the guide. The rail expands beside
+ * the content and pushes it sideways, so the guide is never covered.
  */
 enum class Tab(val labelRes: Int, val icon: ImageVector) {
     LIVE(R.string.nav_live_tv, Icons.Filled.LiveTv),
@@ -237,88 +237,81 @@ fun MainScreen(
         )
     }
 
-    // The rail sits beside the content and pushes it, rather than floating over it. The Live TV
-    // screen has its own category rail down its left edge, and an overlaying menu would land on top
-    // of it and leave a sliver poking out — so they live side by side and never collide.
     Column(Modifier.fillMaxSize()) {
-      Row(Modifier.weight(1f).fillMaxWidth()) {
-        // The main menu is always on screen: a slim icon rail that eases open to labels when focus
-        // is inside it (or the user opened it with Back), and pushes the content across rather than
-        // floating over it. This is what makes it "stay open" like TiviMate instead of appearing and
-        // vanishing on a hard cut.
-        val railExpanded = railFocused || navRailVisible
-        val railWidth by animateDpAsState(
-            targetValue = if (railExpanded) RAIL_EXPANDED else RAIL_COLLAPSED,
-            animationSpec = tween(durationMillis = 220),
-            label = "mainRailWidth",
-        )
-        // Hidden while browsing the Live TV guide: the guide has its own category rail, and a strip
-        // of menu icons next to it just clutters the screen. It eases in only when the user asks for
-        // it (Back / moving left), and stays on screen as the icon rail on every other tab.
-        val showRail = !isLiveFullScreen && (tab != Tab.LIVE || railExpanded)
-        AnimatedVisibility(
-            visible = showRail,
-            enter = expandHorizontally(),
-            exit = shrinkHorizontally(),
-        ) {
-            NavRail(
-                width = railWidth,
-                expanded = railExpanded,
-                tabs = visibleTabs,
-                current = tab,
-                onSelect = { tab = it },
-                onOpenSearch = onOpenSearch,
-                onOpenSettings = onOpenSettings,
-                onOpenProfiles = onOpenProfiles,
-                activeProfileName = activeProfileName,
-                requestFocusOnStart = navRailVisible,
-                onRailFocus = { railFocused = it },
-                onExitRight = { navRailVisible = false },
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            val railExpanded = railFocused || navRailVisible
+            val railWidth by animateDpAsState(
+                targetValue = if (railExpanded) RAIL_EXPANDED else RAIL_COLLAPSED,
+                animationSpec = tween(durationMillis = 180),
+                label = "mainRailWidth",
             )
-        }
-
-        Box(Modifier.weight(1f).fillMaxHeight()) {
-            when (tab) {
-                Tab.LIVE -> HomeScreen(
-                    isTelevision = isTelevision,
-                    hasSources = hasSources,
-                    isSyncing = isSyncing,
-                    viewModel = channelsViewModel,
-                    onPlayChannel = onPlayChannel,
-                    onAddSource = onAddSource,
-                    onRefresh = onRefresh,
-                    onOpenMainMenu = { navRailVisible = true },
-                    onDismissMainMenu = { navRailVisible = false },
-                    mainMenuVisible = navRailVisible,
-                    onFullScreenChanged = { fs ->
-                        isLiveFullScreen = fs
-                        if (fs) {
-                            navRailVisible = false
-                        }
-                    },
+            val showRail = !isLiveFullScreen && (tab != Tab.LIVE || railExpanded)
+            AnimatedVisibility(
+                visible = showRail,
+                enter = expandHorizontally(animationSpec = tween(220)),
+                exit = shrinkHorizontally(animationSpec = tween(180)),
+            ) {
+                NavRail(
+                    width = railWidth,
+                    expanded = railExpanded,
+                    tabs = visibleTabs,
+                    current = tab,
+                    onSelect = { tab = it },
                     onOpenSearch = onOpenSearch,
                     onOpenSettings = onOpenSettings,
-                    onOpenMultiview = onOpenMultiview,
+                    onOpenProfiles = onOpenProfiles,
+                    activeProfileName = activeProfileName,
+                    requestFocusOnStart = navRailVisible,
+                    onRailFocus = { railFocused = it },
+                    onExitRight = {
+                        navRailVisible = false
+                        railFocused = false
+                    },
                 )
-                Tab.MOVIES -> MoviesScreen(
-                    onOpenMovie = onOpenMovie,
-                    onResume = onResume,
-                    onOpenSearch = onOpenSearch,
-                    hasSources = hasSources,
-                    isSyncing = isSyncing,
-                )
-                Tab.SHOWS -> SeriesScreen(
-                    onOpenSeries = onOpenSeries,
-                    onResume = onResume,
-                    onOpenSearch = onOpenSearch,
-                    hasSources = hasSources,
-                    isSyncing = isSyncing,
-                )
-                Tab.RECORDINGS -> RecordingsScreen(onPlay = onPlayRecording)
+            }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                when (tab) {
+                    Tab.LIVE -> HomeScreen(
+                        isTelevision = isTelevision,
+                        hasSources = hasSources,
+                        isSyncing = isSyncing,
+                        viewModel = channelsViewModel,
+                        onPlayChannel = onPlayChannel,
+                        onAddSource = onAddSource,
+                        onRefresh = onRefresh,
+                        onOpenMainMenu = { navRailVisible = true },
+                        onDismissMainMenu = { navRailVisible = false },
+                        mainMenuVisible = navRailVisible,
+                        onFullScreenChanged = { fs ->
+                            isLiveFullScreen = fs
+                            if (fs) {
+                                navRailVisible = false
+                                railFocused = false
+                            }
+                        },
+                        onOpenSearch = onOpenSearch,
+                        onOpenSettings = onOpenSettings,
+                        onOpenMultiview = onOpenMultiview,
+                    )
+                    Tab.MOVIES -> MoviesScreen(
+                        onOpenMovie = onOpenMovie,
+                        onResume = onResume,
+                        onOpenSearch = onOpenSearch,
+                        hasSources = hasSources,
+                        isSyncing = isSyncing,
+                    )
+                    Tab.SHOWS -> SeriesScreen(
+                        onOpenSeries = onOpenSeries,
+                        onResume = onResume,
+                        onOpenSearch = onOpenSearch,
+                        hasSources = hasSources,
+                        isSyncing = isSyncing,
+                    )
+                    Tab.RECORDINGS -> RecordingsScreen(onPlay = onPlayRecording)
+                }
             }
         }
-      }
-      StatusBar()
+        StatusBar()
     }
 }
 
@@ -390,8 +383,10 @@ private fun NavRail(
     val navFocusRequester = remember { FocusRequester() }
     LaunchedEffect(requestFocusOnStart) {
         if (requestFocusOnStart) {
-            delay(50)
-            runCatching { navFocusRequester.requestFocus() }
+            repeat(3) {
+                if (runCatching { navFocusRequester.requestFocus() }.isSuccess) return@LaunchedEffect
+                delay(16)
+            }
         }
     }
 

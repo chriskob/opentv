@@ -68,6 +68,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -1156,6 +1157,18 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile
     private var hydratedCacheGeneration: Long = -1L
 
+    private val _epgRows = MutableStateFlow<Map<Any, Row>>(emptyMap())
+    val epgRows: StateFlow<Map<Any, Row>> = _epgRows.asStateFlow()
+
+    private fun publishEpgRows(rows: Iterable<Row>) {
+        val updates = rows.asSequence()
+            .filter { it.programmes.isNotEmpty() }
+            .associateBy { it.key }
+        if (updates.isNotEmpty()) {
+            _epgRows.update { current -> current + updates }
+        }
+    }
+
     /**
      * Drops the row cache when the guide window has moved on, or when a sync delivered fresh
      * programmes. Returns true when the cache was cleared, i.e. everything must be re-read.
@@ -1213,16 +1226,17 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         .combine(graph.settings.liveEnabled) { (key, source), liveOn ->
             Triple(key, source, liveOn)
         }
-        // identity restarts of the pipeline (equal RowsKey re-emitted after a DB refresh)
-        // must not re-run the channel query and re-hydrate the EPG window.
+        .combine(graph.epgRepository.dataGenerationFlow) { state, generation -> state to generation }
         .distinctUntilChanged()
-        .flatMapLatest { (key, source, liveOn) ->
+        .flatMapLatest { (state, _) ->
+            val (key, source, liveOn) = state
             if (!liveOn) {
                 // Live TV is switched off in Settings → Content. Emit no live rows at all:
                 // the section is gone from the navigation, and this makes any surface that
                 // still reads the guide agree.
                 guideBuilt = true
                 StatusBus.set(null)
+                _epgRows.value = emptyMap()
                 return@flatMapLatest flowOf(emptyList())
             }
             val channelFlow = (when {
@@ -1260,12 +1274,16 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                         // instead of a flash of empty cells that then re-measures. That re-attach is
                         // the fix for the five-second Back: no SQLite read, no object churn.
                         val windowMoved = prepareRowCache(windowStart)
+                        if (windowMoved) {
+                            _epgRows.value = emptyMap()
+                        }
                         val rowsReused = !windowMoved && hydratedRowCache.isNotEmpty()
                         val allRows = if (rowsReused) {
                             builtRows.map { r -> hydratedRowCache[r.key]?.let { attachProgrammes(r, it, now) } ?: r }
                         } else {
                             builtRows
                         }
+                        publishEpgRows(allRows)
                         emit(allRows)
                         if (allRows.isNotEmpty()) {
                             android.util.Log.i(
@@ -1292,7 +1310,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                             )
                             android.util.Log.i("GuidePerf", "quick window: ${SystemClock.elapsedRealtime() - tQuick}ms (rows=${firstRows.size} ids=${quickIds.size})")
                             firstRows.forEachIndexed { i, r -> rows[i] = hydrateWithCache(r, quick, now) }
-                            emit(rows.toList())
+                            publishEpgRows(firstRows.mapIndexed { i, _ -> rows[i] })
                         }
                         // Phase 3: full 48h window in row-chunks, BOUNDED to the rows a viewer can
                         // actually reach (EPG_MAX_ROWS). Hydrating every channel of a 25k-channel
@@ -1303,7 +1321,6 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                         val tFull = SystemClock.elapsedRealtime()
                         val hydrateLimit = minOf(allRows.size, EPG_MAX_ROWS)
                         var base = 0
-                        var lastEmit = SystemClock.elapsedRealtime()
                         while (base < hydrateLimit) {
                             val end = minOf(base + FULL_WINDOW_ROW_CHUNK, hydrateLimit)
                             val chunk = allRows.subList(base, end)
@@ -1332,14 +1349,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                                 rows[base + i] = if (cached == null) r else attachProgrammes(r, cached, now)
                             }
                             base = end
-                            // Conflate: every emission hands Compose a fresh list and re-measures the
-                            // visible rows — main-thread work for no visual gain. The final chunk
-                            // always emits, so the grid can never end up short.
-                            val stamp = SystemClock.elapsedRealtime()
-                            if (stamp - lastEmit >= FILL_EMIT_INTERVAL_MILLIS || base >= hydrateLimit) {
-                                emit(rows.toList())
-                                lastEmit = stamp
-                            }
+                            publishEpgRows((base until end).map { rows[it] })
                         }
                         android.util.Log.i("GuidePerf", "full 48h window (chunked ${hydrateLimit}/${allRows.size} rows, cached=${hydratedRowCache.size}): ${SystemClock.elapsedRealtime() - tFull}ms")
                         android.util.Log.i("GuidePerf", "pipeline complete: ${SystemClock.elapsedRealtime() - t0}ms total")
@@ -1351,7 +1361,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             // whole pipeline off the main thread so the list just appears when it's ready.
             .flowOn(Dispatchers.Default)
             .onEach { if (!guideBuilt && it.isNotEmpty()) { guideBuilt = true; StatusBus.set(null) } }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * Attaches an EPG window to ONE already-built row — the per-chunk patch used by the
@@ -1701,15 +1711,6 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
         /** Row-chunk granularity for the progressive 48h window fill. */
         const val FULL_WINDOW_ROW_CHUNK = 24
-
-        /**
-         * Minimum gap between the progressive fill's emissions. Every emission hands Compose a
-         * new row list, and the visible rows re-measure their programme blocks — on a TV box
-         * that is the main thread's whole frame budget. Conflating intermediate chunks (the
-         * final one always emits) costs nothing visually: the row cache below means the lost
-         * intermediates were only ever a partially-filled grid.
-         */
-        const val FILL_EMIT_INTERVAL_MILLIS = 180L
 
         /**
          * LRU bound on the guide's hydrated-row cache. A full fill of a [EPG_MAX_ROWS] category
