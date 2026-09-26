@@ -21,4 +21,19 @@ data class CatchupPlayback(
     val endUtcMillis: Long,
     val url: String,
     val userAgent: String,
-)
+) {
+    fun reachedLiveEdge(
+        positionMillis: Long,
+        nowMillis: Long,
+        correctionMillis: Long = 0L,
+        toleranceMillis: Long = LIVE_EDGE_TOLERANCE_MILLIS,
+    ): Boolean {
+        if (endUtcMillis <= nowMillis) return false
+        val livePosition = nowMillis - (startUtcMillis + correctionMillis)
+        return positionMillis >= livePosition - toleranceMillis
+    }
+
+    companion object {
+        const val LIVE_EDGE_TOLERANCE_MILLIS = 2_000L
+    }
+}

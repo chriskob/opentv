@@ -240,6 +240,10 @@ fun PlayerScreen(
     }
     val state by controller.state.collectAsState()
     val tracks by controller.tracks.collectAsState()
+    val playbackStarted = state is PlayerController.State.Playing
+    LaunchedEffect(playbackStarted) {
+        if (playbackStarted) app.opentv.core.Startup.mark("playbackStarted")
+    }
     // What's recording right now, so the Record button can show as armed for this channel.
     val activeRecordings by graph.recordingRepository.observeActive().collectAsState(initial = emptyList())
 
@@ -336,8 +340,9 @@ fun PlayerScreen(
     // First-run opt-in: asked once per player open until answered. A bare dismiss re-arms
     // (answered stays false); Turn On / No thanks settle it for good via Settings afterwards.
     var showWeatherOptIn by remember { mutableStateOf(!settings.weatherPromptAnswered && !settings.weatherEnabled.value) }
-    LaunchedEffect(weatherZip, weatherEnabled, weatherRefreshTick) {
+    LaunchedEffect(playbackStarted, weatherZip, weatherEnabled, weatherRefreshTick) {
         weatherNow = null
+        if (!playbackStarted) return@LaunchedEffect
         if (!weatherEnabled || !WeatherClient.isValidZip(weatherZip)) return@LaunchedEffect
         while (true) {
             weatherNow = runCatching { weatherClient.currentForZip(weatherZip) }.getOrNull()
@@ -693,6 +698,8 @@ fun PlayerScreen(
             settings.recordChannelWatched(target.sourceId, target.streamId)
             onChannelChange?.invoke(target.id)
 
+            app.opentv.core.Startup.mark("playResolved")
+
             controller.play(
                 PlayerController.Request(
                     url = url,
@@ -891,7 +898,7 @@ fun PlayerScreen(
      * than now, so the live edge is a re-tune of the live URL, not a seek. The media item is swapped
      * on the same player, so it costs one connection — the same as changing channel.
      */
-    fun goLive() {
+    fun goLive(announce: Boolean = true) {
         val ch = currentChannel
         val inArchive = controller.currentRequest?.isLive == false
         // Returning to the live edge also ends the archive session the guide tracks.
@@ -920,8 +927,27 @@ fun PlayerScreen(
             controller.player.playWhenReady = true
         }
         paused = false
-        Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
-        signalInteraction()
+        if (announce) {
+            Toast.makeText(context, "LIVE", Toast.LENGTH_SHORT).show()
+            signalInteraction()
+        }
+    }
+
+    LaunchedEffect(activeCatchup, currentChannel?.id, catchupCorrectionSetting) {
+        val archive = activeCatchup ?: return@LaunchedEffect
+        val correction = ((currentChannel?.catchupCorrectionMin ?: 0) + catchupCorrectionSetting) * 60_000L
+        while (true) {
+            delay(1_000L)
+            if (activeCatchup == null) break
+            val now = System.currentTimeMillis()
+            val stillAiring = archive.endUtcMillis > now
+            val atEdge = controller.player.playbackState == androidx.media3.common.Player.STATE_ENDED ||
+                archive.reachedLiveEdge(controller.player.currentPosition, now, correction)
+            if (stillAiring && controller.player.playWhenReady && !paused && atEdge) {
+                goLive(announce = false)
+                break
+            }
+        }
     }
 
     /**
@@ -1035,6 +1061,7 @@ fun PlayerScreen(
 
     LaunchedEffect(channelId) {
         val id = channelId ?: return@LaunchedEffect
+        app.opentv.core.Startup.mark("playRequested")
         // While an archive programme plays, the shared player is already on the timeshift stream:
         // re-tuning the live channel here would yank the viewer back to now.
         if (activeCatchup == null) playChannelId(id)
@@ -1108,7 +1135,8 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(recentChannelRefs, currentId) {
+    LaunchedEffect(playbackStarted, recentChannelRefs, currentId) {
+        if (!playbackStarted) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             // Bring the history across from the row ids older versions stored, once. Ids a sync has
             // already invalidated cannot be converted to refs and are dropped — they were lost
@@ -1302,14 +1330,10 @@ fun PlayerScreen(
                         signalInteraction()
                         when (osdTier) {
                             OsdTier.TIMELINE -> {
-                                when (event.key) {
-                                    Key.DirectionUp -> {
-                                        // Walk to the older programme (opens as catch-up from
-                                        // its start). TiviMate's fullscreen past-programme entry.
-                                        stepProgramme(-1)
-                                        signalInteraction()
-                                        true
-                                    }
+                                if (isPlayerUpKey(event.key, event.nativeKeyEvent.keyCode)) {
+                                    signalInteraction()
+                                    true
+                                } else when (event.key) {
                                     Key.DirectionDown -> {
                                         if (activeCatchup != null) {
                                             // In archive, walk newer (reaching live returns
@@ -1411,13 +1435,10 @@ fun PlayerScreen(
                     // While an ARCHIVE programme plays, channel up/down scrub the recording by the
                     // catch-up skip step instead of zapping — there is no "next channel" while
                     // watching a finished show.
-                    activeCatchup != null && (
-                        event.key == Key.ChannelUp ||
-                        event.key == Key.PageUp ||
-                        event.nativeKeyEvent.keyCode == 166 || // KEYCODE_CHANNEL_UP
-                        event.nativeKeyEvent.keyCode == 92 ||  // KEYCODE_PAGE_UP
-                        event.key == Key.DirectionUp
-                    ) -> { seekBy(catchupSkipSetting * 1000L); true }
+                    activeCatchup != null && isPlayerUpKey(event.key, event.nativeKeyEvent.keyCode) -> {
+                        seekBy(catchupSkipSetting * 1000L)
+                        true
+                    }
 
                     activeCatchup != null && (
                         event.key == Key.ChannelDown ||
@@ -1435,11 +1456,7 @@ fun PlayerScreen(
                     // *and* threw the history bar and the shortcut row up over the picture, so the
                     // key read as "open the bar" rather than "next channel". A zap is a channel
                     // change; the bar is still on OK.
-                    event.key == Key.ChannelUp ||
-                    event.key == Key.PageUp ||
-                    event.nativeKeyEvent.keyCode == 166 || // KEYCODE_CHANNEL_UP
-                    event.nativeKeyEvent.keyCode == 92 ||  // KEYCODE_PAGE_UP
-                    event.key == Key.DirectionUp
+                    isPlayerUpKey(event.key, event.nativeKeyEvent.keyCode)
                     -> { zapBy(1); true }
 
                     // D-Pad Down, or a dedicated Channel Down / Page Down: the channel before it.
@@ -1514,7 +1531,6 @@ fun PlayerScreen(
                 factory = { ctx ->
                     val targetResizeMode = resizeMode
                     (android.view.LayoutInflater.from(ctx).inflate(R.layout.view_player, null) as PlayerView).apply {
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         subtitleView?.setUserDefaultStyle()
                         subtitleView?.setUserDefaultTextSize()
                         this.resizeMode = targetResizeMode
@@ -2955,6 +2971,13 @@ private fun LiveTimelineBar(
         }
     }
 }
+
+internal fun isPlayerUpKey(key: Key, nativeKeyCode: Int): Boolean =
+    key == Key.DirectionUp ||
+        key == Key.ChannelUp ||
+        key == Key.PageUp ||
+        nativeKeyCode == 166 ||
+        nativeKeyCode == 92
 
 /** TiviMate-style accelerating seek step: taps move the skip-step; holding ramps up. */
 private fun scrubStepMillis(repeatCount: Int, baseSec: Int = 10): Long {

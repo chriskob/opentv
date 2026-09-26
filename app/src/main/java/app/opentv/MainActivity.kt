@@ -117,6 +117,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        app.opentv.core.Startup.mark("activityCreated")
         enableEdgeToEdge()
         val filter = IntentFilter(ACTION_PIP_CLOSE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -155,16 +156,35 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handlePlayIntent(intent)
+        val handled = handlePlayIntent(intent)
+        if (isPlainLauncherRelaunch(intent, handled)) {
+            app.opentv.core.PlayRequests.requestResumePlayer()
+        }
     }
 
-    private fun handlePlayIntent(intent: Intent?) {
+    private fun handlePlayIntent(intent: Intent?): Boolean {
         val id = intent?.getLongExtra(EXTRA_PLAY_CHANNEL, 0L) ?: 0L
         if (id != 0L) app.opentv.core.PlayRequests.request(id)
         val recId = intent?.getLongExtra(EXTRA_WATCH_RECORDING, 0L) ?: 0L
         if (recId != 0L) {
             app.opentv.core.RecordingSignals.requestWatch(recId, System.currentTimeMillis())
         }
+        return id != 0L || recId != 0L
+    }
+
+    /**
+     * A launcher icon tap on an already-running task arrives here as a plain ACTION_MAIN intent.
+     * singleTask means no fresh onCreate, so the existing back stack survives — which is why
+     * reopening the app after Back left the viewer sitting on the guide instead of resuming video.
+     * Treat that tap as "show me my channel again"; an intent carrying a channel or recording is
+     * already handled and must not also bounce to the player.
+     */
+    private fun isPlainLauncherRelaunch(intent: Intent?, handled: Boolean): Boolean {
+        if (handled) return false
+        if (intent == null) return false
+        if (intent.action != Intent.ACTION_MAIN) return false
+        if (!intent.hasCategory(Intent.CATEGORY_LAUNCHER)) return false
+        return !app.opentv.core.PipState.inPip.value
     }
 
     private val backHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -421,16 +441,21 @@ private fun OpenTvApp(isTelevision: Boolean) {
     // returning user — and guessing "first run" drops a returning user on the setup screen and
     // asks for their provider again. NavHost locks in its start destination on first
     // composition, so wait for that first load before building it.
-    if (!sourcesUi.loaded) {
+    val bootContext = androidx.compose.ui.platform.LocalContext.current
+    val bootGraph = remember { ServiceLocator.get(bootContext) }
+    val bootSettings = remember { bootGraph.settings }
+    val resumeChannelId = bootSettings.lastChannelId
+    val canResumeLastChannel = bootSettings.resumeLastChannel.value && resumeChannelId > 0L
+
+    // A returning viewer does not need the source list to start playing: the last channel id lives
+    // in preferences, so the player can be built and tuned while that query is still in flight.
+    // Only the first-run decision genuinely needs it.
+    if (!canResumeLastChannel && !sourcesUi.loaded) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
     }
-
-    val bootContext = androidx.compose.ui.platform.LocalContext.current
-    val bootGraph = remember { ServiceLocator.get(bootContext) }
-    val bootSettings = remember { bootGraph.settings }
 
     // First run goes straight to setup — an empty channel list with no explanation is the
     // worst possible first impression. When "Resume last channel" is enabled, boot directly into
@@ -444,11 +469,41 @@ private fun OpenTvApp(isTelevision: Boolean) {
     // guide's own loading state in its place while the sync was still running. Leaving setup now
     // happens only where it is asked for: `onFinished` from the flow itself.
     val start = remember {
-        when {
+        val resolved = when {
+            canResumeLastChannel -> Routes.player(resumeChannelId)
             sourcesUi.sources.isEmpty() -> Routes.ADD_SOURCE
-            bootSettings.resumeLastChannel.value && bootSettings.lastChannelId > 0L -> Routes.player(bootSettings.lastChannelId)
             else -> Routes.HOME
         }
+        app.opentv.core.Startup.mark("startRouteResolved:$resolved")
+        resolved
+    }
+
+    // Resuming needs no source list, but a stale last-channel id can outlive the sources it came
+    // from. Once the list arrives empty, send the viewer to setup rather than a player that cannot
+    // resolve anything.
+    LaunchedEffect(sourcesUi.loaded, sourcesUi.sources.size) {
+        if (sourcesUi.loaded) app.opentv.core.Startup.mark("sourcesLoaded:${sourcesUi.sources.size}")
+        if (canResumeLastChannel && sourcesUi.loaded && sourcesUi.sources.isEmpty()) {
+            navController.navigate(Routes.ADD_SOURCE) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
+
+    val resumePlayerTick by app.opentv.core.PlayRequests.resumePlayerRequest.collectAsState()
+    LaunchedEffect(resumePlayerTick) {
+        val tick = resumePlayerTick ?: return@LaunchedEffect
+        app.opentv.core.PlayRequests.consumeResumePlayer()
+        val id = bootSettings.lastChannelId
+        if (id <= 0L || !bootSettings.resumeLastChannel.value) return@LaunchedEffect
+        if (app.opentv.core.PipState.inPip.value) return@LaunchedEffect
+        val currentRoute = navController.currentBackStackEntry?.destination?.route
+        if (currentRoute != null && currentRoute.startsWith("player/")) return@LaunchedEffect
+        app.opentv.core.Startup.mark("launcherRelaunch")
+        navController.navigate(Routes.player(id)) {
+            launchSingleTop = true
+        }
+        app.opentv.core.Startup.mark("resumeNavigateIssued")
     }
 
     var activeReminderPrompt by remember { mutableStateOf<app.opentv.core.ReminderSignal?>(null) }
@@ -534,6 +589,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
             }
 
             composable(Routes.HOME) {
+                LaunchedEffect(Unit) { app.opentv.core.Startup.markEach("homeRouteEntered") }
                 MainScreen(
                     isTelevision = isTelevision,
                     hasSources = sourcesUi.sources.isNotEmpty(),
@@ -683,6 +739,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
 
             composable(Routes.PLAYER) { entry ->
                 val channelId = entry.arguments?.getString("channelId")?.toLongOrNull()
+                LaunchedEffect(Unit) { app.opentv.core.Startup.markEach("playerRouteEntered") }
                 PlayerScreen(
                     channelId = channelId,
                     onBack = {

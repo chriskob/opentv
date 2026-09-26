@@ -24,6 +24,9 @@ object PlayRequests {
     private val _backScrollRequest = MutableStateFlow<Long?>(null)
     val backScrollRequest: StateFlow<Long?> = _backScrollRequest.asStateFlow()
 
+    private val _resumePlayerRequest = MutableStateFlow<Long?>(null)
+    val resumePlayerRequest: StateFlow<Long?> = _resumePlayerRequest.asStateFlow()
+
     fun request(id: Long) {
         if (id != 0L) _channelId.value = id
     }
@@ -36,6 +39,10 @@ object PlayRequests {
         _backScrollRequest.value = System.currentTimeMillis()
     }
 
+    fun requestResumePlayer() {
+        _resumePlayerRequest.value = System.currentTimeMillis()
+    }
+
     fun consume() {
         _channelId.value = null
     }
@@ -46,5 +53,9 @@ object PlayRequests {
 
     fun consumeBackScroll() {
         _backScrollRequest.value = null
+    }
+
+    fun consumeResumePlayer() {
+        _resumePlayerRequest.value = null
     }
 }

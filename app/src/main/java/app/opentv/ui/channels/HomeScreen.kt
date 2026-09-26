@@ -60,7 +60,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.zIndex
@@ -75,8 +74,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
@@ -176,6 +173,7 @@ fun HomeScreen(
     // underneath during the shrink (guideVisible below) so the video lands into a live card;
     // focus stays locked until the shrink ends (see pendingGuideFocus effect).
     var shrinkingFromFullScreen by remember { mutableStateOf(false) }
+    var fullScreenTransitionJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(isFullScreen) {
         onFullScreenChanged(isFullScreen)
@@ -317,16 +315,24 @@ fun HomeScreen(
      * guide is already visible underneath. Focus is handed over once the shrink lands, so d-pad
      * input cannot escape into a half-built guide mid-animation.
      */
+    fun enterFullScreen() {
+        fullScreenTransitionJob?.cancel()
+        fullScreenTransitionJob = null
+        shrinkingFromFullScreen = false
+        isFullScreen = true
+    }
+
     fun leaveFullScreen() {
-        if (shrinkingFromFullScreen || !isFullScreen) {
-            isFullScreen = false
-            return
-        }
+        if (!isFullScreen || shrinkingFromFullScreen) return
+        fullScreenTransitionJob?.cancel()
         shrinkingFromFullScreen = true
-        scope.launch {
+        fullScreenTransitionJob = scope.launch {
             delay(PLAYER_TRANSITION_MILLIS.toLong())
-            isFullScreen = false
-            shrinkingFromFullScreen = false
+            if (shrinkingFromFullScreen) {
+                isFullScreen = false
+                shrinkingFromFullScreen = false
+            }
+            fullScreenTransitionJob = null
         }
     }
     val recordScope = scope
@@ -638,21 +644,25 @@ fun HomeScreen(
                 }
             }
         }
-        // Switch to the playing channel's category ONLY when it actually differs from the
-        // rows already on screen. Unconditionally calling selectCategoryForChannel re-emitted
-        // selectedCategory → flatMapLatest restarted the whole pipeline (channel query +
-        // quick EPG + full 48h window) on EVERY Back from fullscreen — a ~10s rebuild on a
-        // 25k-channel category for nothing, since the data was already loaded.
-        if (currentId > 0L && (rows.isEmpty() || rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } })) {
-            viewModel.selectCategoryForChannel(currentId)
-        }
-        nowMillis = System.currentTimeMillis()
-        viewModel.tick()
-        viewModel.guideToNow()
-        backScrollActive = false
-        scope.launch { guideScrollState.scrollTo(0) }
-        pendingGuideFocus = true
-        leaveFullScreen()
+         val channelOutsideCurrentRows = currentId > 0L &&
+             (rows.isEmpty() || rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } })
+         if (channelOutsideCurrentRows) {
+             viewModel.selectCategoryForChannel(currentId)
+         }
+         nowMillis = System.currentTimeMillis()
+         viewModel.tick()
+         if (guideResetOnOpen) {
+             scope.launch {
+                 delay(PLAYER_TRANSITION_MILLIS + 100L)
+                 if (!isFullScreen && !shrinkingFromFullScreen) {
+                     viewModel.guideToNow()
+                     guideScrollState.scrollTo(0)
+                     backScrollActive = false
+                 }
+             }
+         }
+         pendingGuideFocus = true
+         leaveFullScreen()
     }
 
     // 1. If channel menu / recording dialog / background prompt is open, close it.
@@ -730,7 +740,7 @@ fun HomeScreen(
     LaunchedEffect(fullScreenReq) {
         if (fullScreenReq != null) {
             app.opentv.core.PlayRequests.consumeFullScreen()
-            isFullScreen = true
+            enterFullScreen()
         }
     }
 
@@ -743,7 +753,7 @@ fun HomeScreen(
             app.opentv.core.PlayRequests.consume()
             selectedRow = match
             highlightedRow = match
-            isFullScreen = true
+            enterFullScreen()
         } else {
             app.opentv.core.PlayRequests.consume()
             scope.launch {
@@ -761,7 +771,7 @@ fun HomeScreen(
                 }
                 settings.lastChannelId = reqId
                 viewModel.selectCategoryForChannel(reqId)
-                isFullScreen = true
+                enterFullScreen()
             }
         }
     }
@@ -862,6 +872,9 @@ fun HomeScreen(
      * the Live tab resumes the same stream, and the preview only re-tunes if the channel changed.
      */
     fun leaveLiveForTab(tab: String) {
+        fullScreenTransitionJob?.cancel()
+        fullScreenTransitionJob = null
+        shrinkingFromFullScreen = false
         isFullScreen = false
         // Leaving the Live tab ends any archive session, so returning does not resume a paused
         // timeshift stream with the guide still parked in the past.
@@ -947,9 +960,10 @@ fun HomeScreen(
         val isAlreadyPlayingThisChannel = (settings.lastChannelId == channel.id || previewedChannelId == channel.id) &&
             (previewController.player.playbackState == androidx.media3.common.Player.STATE_READY ||
              previewController.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+        if (isAlreadyPlayingThisChannel) previewedChannelId = channel.id
 
         settings.lastChannelId = channel.id
-        isFullScreen = true
+        enterFullScreen()
     }
     fun requestLive(channel: Channel) {
         if (activeRecordings.isNotEmpty()) pendingLiveChannel = channel else startLive(channel)
@@ -1033,7 +1047,7 @@ fun HomeScreen(
                 debounce = false,
             )
             previewedChannelId = channel.id
-            isFullScreen = true
+            enterFullScreen()
         }
     }
 
@@ -1063,11 +1077,21 @@ fun HomeScreen(
             return@LaunchedEffect
         }
         val channel = row.primary
+        val isCurrentChannel = previewedChannelId == channel.id &&
+            previewController.player.currentMediaItem != null &&
+            (previewController.player.playbackState == androidx.media3.common.Player.STATE_READY ||
+                previewController.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+        if (isCurrentChannel) {
+            previewedChannelId = channel.id
+            return@LaunchedEffect
+        }
         val source = sources.firstOrNull { it.id == channel.sourceId }
             ?: graph.sourceRepository.byId(channel.sourceId)
         val url = graph.catalogRepository.resolvePlaybackUrl(channel, source)
-        if (previewController.currentRequest?.url == url && (previewController.player.playbackState == androidx.media3.common.Player.STATE_READY || previewController.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)) {
-            previewController.player.playWhenReady = true
+        if (previewController.currentRequest?.url == url &&
+            (previewController.player.playbackState == androidx.media3.common.Player.STATE_READY ||
+                previewController.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING)
+        ) {
             previewedChannelId = channel.id
             return@LaunchedEffect
         }
@@ -1111,7 +1135,7 @@ fun HomeScreen(
             snapshotFlow { lastInteractionState.value }
                 .collectLatest {
                     delay(60_000L)
-                    isFullScreen = true
+                    enterFullScreen()
                 }
         }
     }
@@ -1224,20 +1248,27 @@ fun HomeScreen(
                             }
                         }
                     }
-                    // Always switch to the playing channel's category — not just when it's
-                    // missing from current rows. Fixes "Back always opens Favourites" bug.
-                    if (currentId > 0L) {
-                        viewModel.selectCategoryForChannel(currentId)
-                    }
-                    nowMillis = System.currentTimeMillis()
-                    viewModel.tick()
-                     viewModel.guideToNow()
-                     backScrollActive = false
-                     scope.launch { guideScrollState.scrollTo(0) }
+                     val channelOutsideCurrentRows = currentId > 0L &&
+                         rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }
+                     if (channelOutsideCurrentRows) {
+                         viewModel.selectCategoryForChannel(currentId)
+                     }
+                     nowMillis = System.currentTimeMillis()
+                     viewModel.tick()
+                     if (guideResetOnOpen) {
+                         scope.launch {
+                             delay(PLAYER_TRANSITION_MILLIS + 100L)
+                             if (!isFullScreen && !shrinkingFromFullScreen) {
+                                 viewModel.guideToNow()
+                                 guideScrollState.scrollTo(0)
+                                 backScrollActive = false
+                             }
+                         }
+                     }
                      pendingGuideFocus = true
 
-                    railExpanded = false
-                    leaveFullScreen()
+                     railExpanded = false
+                     leaveFullScreen()
                 },
                 onOpenSearch = onOpenSearch,
                 // These three leave the live player for another content type. Asking the tab
@@ -1252,9 +1283,12 @@ fun HomeScreen(
                 onOpenRecordings = { leaveLiveForTab("recordings") },
                 onOpenSettings = onOpenSettings,
                 onOpenMultiview = { channelId ->
-                    // Multiview brings its own two decoders; silence the shared player first so
-                    // we never hold three streams (and three lots of provider connections) at once.
-                    isFullScreen = false
+                     // Multiview brings its own two decoders; silence the shared player first so
+                     // we never hold three streams (and three lots of provider connections) at once.
+                     fullScreenTransitionJob?.cancel()
+                     fullScreenTransitionJob = null
+                     shrinkingFromFullScreen = false
+                     isFullScreen = false
                     catchup = null
                     graph.livePlayer.player.apply {
                         volume = 0f
@@ -1267,6 +1301,7 @@ fun HomeScreen(
                 renderPlayerView = false,
                 onChannelChange = { newId ->
                     // A genuine live tune (zap / channel-list pick) ends archive playback.
+                    previewedChannelId = newId
                     catchup = null
                     val match = rows.firstOrNull { it.primary.id == newId || it.variants.any { v -> v.id == newId } }
                     if (match != null) {
@@ -1295,19 +1330,11 @@ fun HomeScreen(
             )
         }
         if (guideVisible) {
-             // TiviMate-style: the category rail is a real column beside the guide, so opening it
-             // makes room for the category list before focus moves into it.
-             // Composed underneath during the shrink (below-zero layer keeps the video on top),
-
-            // dimmed until the picture docks. Deliberately not focusable: a focusable container
-            // traps focus on itself instead of a grid cell, which ate the first Back press at
-            // every stage (guide->categories, categories->menu).
             Row(
                 Modifier
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .zIndex(-1f)
-                    .alpha(if (shrinkingFromFullScreen) 0.35f else 1f),
+                    .zIndex(-1f),
             ) {
          AnimatedVisibility(
              visible = railExpanded,
@@ -1446,7 +1473,7 @@ fun HomeScreen(
             if (rows.isEmpty()) {
                 when {
                     favouritesOnly -> NoFavouritesState()
-                    isSyncing || channelsPresent == null -> LoadingState(isSyncing)
+                    isSyncing || channelsPresent == null || shrinkingFromFullScreen -> LoadingState(isSyncing)
                     channelsPresent == true -> {
                         // Channels are on the box but the current filter matches none (stale
                         // category/provider after a playlist change, mid-transition). A bare
@@ -2513,12 +2540,23 @@ private fun PersistentVideoSurface(
         ),
         label = "playerSurfaceProgress",
     )
-    // Before the card has been measured (first frame, or a guide that is still loading) treat the
-    // card as the whole screen rather than a 0x0 hole.
-    val card = if (cardBounds.isEmpty) {
+    val defaultLeft = with(density) { 16.dp.toPx() }
+    val defaultTop = with(density) { 16.dp.toPx() }
+    val defaultWidth = with(density) { 320.dp.toPx() }
+    val defaultHeight = with(density) { 180.dp.toPx() }
+    val rootWidth = rootSize.width.toFloat().coerceAtLeast(1f)
+    val rootHeight = rootSize.height.toFloat().coerceAtLeast(1f)
+    val card = if (cardBounds.isEmpty && !isFullScreen) {
+        androidx.compose.ui.geometry.Rect(
+            left = defaultLeft.coerceAtMost(rootWidth - 1f),
+            top = defaultTop.coerceAtMost(rootHeight - 1f),
+            right = (defaultLeft + defaultWidth).coerceAtMost(rootWidth),
+            bottom = (defaultTop + defaultHeight).coerceAtMost(rootHeight),
+        )
+    } else if (cardBounds.isEmpty) {
         androidx.compose.ui.geometry.Rect(
             androidx.compose.ui.geometry.Offset.Zero,
-            androidx.compose.ui.geometry.Size(rootSize.width.toFloat(), rootSize.height.toFloat()),
+            androidx.compose.ui.geometry.Size(rootWidth, rootHeight),
         )
     } else {
         androidx.compose.ui.geometry.Rect(
@@ -2529,22 +2567,16 @@ private fun PersistentVideoSurface(
         )
     }
     val t = progress
-    val rootWidth = rootSize.width.toFloat().coerceAtLeast(1f)
-    val rootHeight = rootSize.height.toFloat().coerceAtLeast(1f)
     val targetWidth = card.width * (1f - t) + rootWidth * t
     val targetHeight = card.height * (1f - t) + rootHeight * t
     val targetLeft = card.left * (1f - t)
     val targetTop = card.top * (1f - t)
-    val modifier = Modifier
-        .fillMaxSize()
-        .graphicsLayer {
-            transformOrigin = TransformOrigin(0f, 0f)
-            translationX = targetLeft
-            translationY = targetTop
-            scaleX = (targetWidth / rootWidth).coerceAtLeast(0.01f)
-            scaleY = (targetHeight / rootHeight).coerceAtLeast(0.01f)
-        }
-        .clip(RoundedCornerShape(with(density) { (10f * (1f - t)).dp }))
+    val modifier = with(density) {
+        Modifier
+            .offset(x = targetLeft.toDp(), y = targetTop.toDp())
+            .size(width = targetWidth.toDp(), height = targetHeight.toDp())
+            .clip(RoundedCornerShape((10f * (1f - t)).dp))
+    }
     Box(modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),

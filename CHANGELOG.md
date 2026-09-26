@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.16.15
+
+- **Opening the app now goes straight to your channel, fullscreen.** Tapping the launcher icon
+  resumes the last channel you were watching instead of leaving you on the guide, and a cold start
+  no longer waits for the saved sources to load before it can begin playing.
+- **Catch-up now hands off to live by itself.** Watching a programme through catch-up jumps
+  seamlessly back to the live edge the moment the programme ends, without the viewer having to
+  reach for the LIVE button.
+- **Leaving fullscreen no longer flashes.** The guide now takes the player's real on-screen
+  bounds, so the video shrinks into the preview instead of snapping to a full-size surface.
+
 ## 0.16.14
 
 - **Guide navigation now handles irregular programme lengths cleanly.** The timeline stays snapped to the half-hour column while short tails are skipped, the next programme is selected, and moving back restores the full previous card.
