@@ -16,6 +16,7 @@ import app.opentv.data.db.OpenTvDatabase
 import app.opentv.data.db.SourceDao
 import app.opentv.data.model.EpgChannelAlias
 import app.opentv.data.model.EpgFeed
+import app.opentv.data.model.SourceKind
 import app.opentv.data.model.Programme
 import app.opentv.data.model.Source
 import app.opentv.core.HeavyWork
@@ -277,6 +278,11 @@ class EpgRepository(
             }
         }
         for (source in sourceDao.enabled()) {
+            // A Plex server has no XMLTV endpoint. Creating a "provider guide" feed for one made
+            // every EPG sync try to download a guide from it and fail with a 403, once per sync,
+            // forever - noise that looks like a broken guide rather than a source that never
+            // had one. Plex contributes no live channels, so it has no guide to fetch.
+            if (source.kind == SourceKind.PLEX) continue
             val key = "provider:${source.id}"
             if (key !in deleted && "feed_name:${source.name} (provider guide)" !in deleted && feedDao.forProvider(source.id) == null) {
                 feedDao.insert(

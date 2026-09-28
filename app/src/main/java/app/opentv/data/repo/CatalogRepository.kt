@@ -40,6 +40,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -258,16 +259,18 @@ class CatalogRepository(
     // these into home rows and detail screens.
 
     /** "Recently Added" movies, newest first. Reactive. */
-    fun recentlyAddedMovies(limit: Int = 30): Flow<List<Movie>> = movieDao.observeRecentlyAdded(limit)
+    fun recentlyAddedMovies(limit: Int = 30): Flow<List<Movie>> =
+        movieDao.observeRecentlyAdded(limit).map { it.withoutPlex() }
 
     /** "Recently Added" series, newest first. Reactive. */
-    fun recentlyAddedSeries(limit: Int = 30): Flow<List<Series>> = seriesDao.observeRecentlyAdded(limit)
+    fun recentlyAddedSeries(limit: Int = 30): Flow<List<Series>> =
+        seriesDao.observeRecentlyAdded(limit).map { it.withoutPlexSeries() }
 
     /** Every movie, newest first — for a caller that wants to build its own groupings. */
-    suspend fun allMovies(): List<Movie> = withContext(Dispatchers.IO) { movieDao.all() }
+    suspend fun allMovies(): List<Movie> = withContext(Dispatchers.IO) { movieDao.all().withoutPlex() }
 
     /** Every series, newest first. */
-    suspend fun allSeries(): List<Series> = withContext(Dispatchers.IO) { seriesDao.all() }
+    suspend fun allSeries(): List<Series> = withContext(Dispatchers.IO) { seriesDao.all().withoutPlexSeries() }
 
     /** How many movies / series are on disk — a cheap COUNT the home screen uses to tell "the
      *  library grew" from "unchanged since last open" without loading every row. */
@@ -281,11 +284,11 @@ class CatalogRepository(
      * are split on comma and pipe (see [splitGenres]).
      */
     suspend fun moviesByGenre(maxGenres: Int = 12, perGenre: Int = 30): List<GenreGroup<Movie>> =
-        withContext(Dispatchers.IO) { groupByGenre(movieDao.all(), Movie::genre, maxGenres, perGenre) }
+        withContext(Dispatchers.IO) { groupByGenre(movieDao.all().withoutPlex(), Movie::genre, maxGenres, perGenre) }
 
     /** Series grouped by genre for the by-genre home rows. See [moviesByGenre]. */
     suspend fun seriesByGenre(maxGenres: Int = 12, perGenre: Int = 30): List<GenreGroup<Series>> =
-        withContext(Dispatchers.IO) { groupByGenre(seriesDao.all(), Series::genre, maxGenres, perGenre) }
+        withContext(Dispatchers.IO) { groupByGenre(seriesDao.all().withoutPlexSeries(), Series::genre, maxGenres, perGenre) }
 
     /**
      * Movies grouped by genre from an ALREADY-LOADED list — the single-scan path the home screen
@@ -309,7 +312,7 @@ class CatalogRepository(
      * only watched movies that carry no genre — it falls back to top-rated, then recently-added.
      */
     suspend fun recommendedMovies(profileId: Long, limit: Int = 30): List<Movie> =
-        withContext(Dispatchers.IO) { recommendFrom(movieDao.all(), watchedMovieIds(profileId), limit) }
+        withContext(Dispatchers.IO) { recommendFrom(movieDao.all().withoutPlex(), watchedMovieIds(profileId), limit) }
 
     /**
      * "Recommended for you" from an ALREADY-LOADED movie list — the single-scan path (see
@@ -366,7 +369,7 @@ class CatalogRepository(
         if (genres.isEmpty()) {
             return@withContext movieDao.similarByCategory(movie.sourceId, movie.categoryId, movie.id, limit)
         }
-        movieDao.all().asSequence()
+        movieDao.all().withoutPlex().asSequence()
             .filter { it.id != movie.id }
             .map { it to sharedGenreCount(it.genre, genres) }
             .filter { it.second > 0 }
@@ -428,7 +431,7 @@ class CatalogRepository(
         if (genres.isEmpty()) {
             return@withContext seriesDao.similarByCategory(series.sourceId, series.categoryId, series.id, limit)
         }
-        seriesDao.all().asSequence()
+        seriesDao.all().withoutPlexSeries().asSequence()
             .filter { it.id != series.id }
             .map { it to sharedGenreCount(it.genre, genres) }
             .filter { it.second > 0 }
@@ -981,6 +984,14 @@ class CatalogRepository(
             }
         val serverBase = source.url.trimEnd('/')
         val sections = plexApi.sections(serverBase, token)
+        // Which libraries were on the server, and which of them were used. Plex servers routinely
+        // carry libraries OpenTV has no business reading - photos, music, playlists - and the
+        // request asks for those and then discards them. Naming them makes that visible instead of
+        // leaving it to be inferred.
+        Log.i(
+            TAG,
+            "Plex libraries: " + sections.joinToString { "${it.title}(${it.type})" },
+        )
         if (sections.isEmpty()) return VodSyncResult.NONE
 
         var movies = 0
@@ -1546,6 +1557,27 @@ class CatalogRepository(
 
         /** Category every Plex item shares, so Plex rows group together rather than by Plex library. */
         const val PLEX_CATEGORY_ID = "plex"
+
+        /**
+         * Whether this row came from Plex rather than a live-TV provider.
+         *
+         * Plex items live in the same `movies`/`series` tables as everything else - that reuse is
+         * what makes artwork, detail pages and playback work with no special-casing - and the cost
+         * is that they would otherwise appear in the Movies and Shows screens too. The Plex shelf
+         * was asked for as a separate thing, so the separation happens here, at one predicate
+         * rather than as a `sourceId NOT IN (...)` clause repeated across a dozen SQL queries.
+         *
+         * Keyed on the category rather than a join to `sources` because the category is already
+         * stamped on every Plex row at write time and cannot disagree with itself later.
+         */
+        fun Movie.isPlex(): Boolean = categoryId == PLEX_CATEGORY_ID
+
+        fun Series.isPlex(): Boolean = categoryId == PLEX_CATEGORY_ID
+
+        /** Drops Plex rows from a Movies/Shows feed. See [Movie.isPlex]. */
+        fun List<Movie>.withoutPlex(): List<Movie> = filterNot { it.isPlex() }
+
+        fun List<Series>.withoutPlexSeries(): List<Series> = filterNot { it.isPlex() }
 
         /** How many items are taken from each Plex library. See [syncPlex] for why this is small. */
         const val PLEX_RECENT_LIMIT = 10

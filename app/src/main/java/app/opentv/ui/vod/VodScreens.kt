@@ -77,6 +77,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.data.model.Movie
+import app.opentv.data.remote.PlexUrls
 import app.opentv.data.model.Series
 import app.opentv.data.model.Source
 import app.opentv.data.parser.displayTitle
@@ -865,7 +866,13 @@ internal fun PosterImage(
                     failed = true
                     // Coil failures are otherwise invisible; the URL + state is what
                     // distinguishes a dead host from a client-side decode/timeout problem.
-                    android.util.Log.w("OpenTV", "Poster failed for '$title' <$posterUrl>: $state")
+                    // The URL is redacted before it is logged. Poster URLs can carry a credential -
+                // a Plex token travels in the query string, and this line printed it in full,
+                // token and all, the first time a Plex image failed to load.
+                android.util.Log.w(
+                    "OpenTV",
+                    "Poster failed for '$title' <${PlexUrls.redact(posterUrl)}>: $state",
+                )
                     onLoadError()
                 },
             )
