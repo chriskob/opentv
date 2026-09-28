@@ -51,6 +51,12 @@ data class PlexRecentItem(
     val parentRatingKey: String? = null,
     /** The series an episode belongs to. Null for everything that is not an episode. */
     val grandparentTitle: String? = null,
+    /**
+     * The series' own poster. An episode's `thumb` is a still from that episode - a random
+     * screenshot - while `grandparentThumb` is the show's actual poster art. Using the episode
+     * still as the card made every show row look like a blurry frame grab instead of the series.
+     */
+    val grandparentThumb: String? = null,
     val viewOffsetMillis: Long? = null,
     val viewCount: Int? = null,
 ) {

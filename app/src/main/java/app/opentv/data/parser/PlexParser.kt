@@ -76,6 +76,7 @@ object PlexParser {
                         artPath = parser.attr("art"),
                         parentRatingKey = parser.attr("parentRatingKey"),
                         grandparentTitle = parser.attr("grandparentTitle"),
+                        grandparentThumb = parser.attr("grandparentThumb"),
                         viewOffsetMillis = parser.attr("viewOffset")?.toLongOrNull()?.times(1000L),
                         viewCount = parser.attr("viewCount")?.toIntOrNull(),
                     )

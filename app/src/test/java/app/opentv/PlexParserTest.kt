@@ -239,6 +239,24 @@ class PlexParserTest {
     }
 
     @Test
+    fun `an episode carries the series poster separately from its own still`() {
+        // A show section's feed returns episodes. The episode's `thumb` is a still from that
+        // episode; `grandparentThumb` is the series poster. The shelf card must use the latter.
+        val xml = """
+            <MediaContainer>
+              <Video ratingKey="501" type="episode" title="Pilot" index="1"
+                     grandparentTitle="The Series" thumb="/library/metadata/501/thumb/11"
+                     grandparentThumb="/library/metadata/500/thumb/22" />
+            </MediaContainer>
+        """
+        val item = PlexParser.recentlyAdded(stream(xml)).single()
+        assertThat(item.isEpisode).isTrue()
+        assertThat(item.displayTitle).isEqualTo("The Series")
+        assertThat(item.thumbPath).isEqualTo("/library/metadata/501/thumb/11")
+        assertThat(item.grandparentThumb).isEqualTo("/library/metadata/500/thumb/22")
+    }
+
+    @Test
     fun `an empty document yields nothing rather than throwing`() {
         assertThat(PlexParser.sections(emptyStream())).isEmpty()
         assertThat(PlexParser.recentlyAdded(emptyStream())).isEmpty()

@@ -1194,7 +1194,16 @@ class CatalogRepository(
         // "Episode 12" as a shelf title was the item's own name leaking through.
         name = displayTitle,
         categoryId = plexCategoryId(sectionKey),
-        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH, height = PLEX_POSTER_HEIGHT),
+        // An episode's own thumb is a still from that episode. The card must show the series'
+        // poster instead, which is grandparentThumb - otherwise every show row is a random frame
+        // grab rather than the artwork for the show.
+        posterUrl = PlexUrls.image(
+            serverBase,
+            if (isEpisode) grandparentThumb ?: thumbPath else thumbPath,
+            token,
+            width = PLEX_POSTER_WIDTH,
+            height = PLEX_POSTER_HEIGHT,
+        ),
         rating = null,
         year = year,
         plot = summary,
