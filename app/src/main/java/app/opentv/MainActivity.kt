@@ -65,6 +65,8 @@ import androidx.navigation.compose.rememberNavController
 import app.opentv.core.AppSettings
 import app.opentv.core.ServiceLocator
 import app.opentv.data.parser.displayTitle
+import app.opentv.ui.plex.PlexConnectScreen
+import app.opentv.ui.plex.PlexScreen
 import app.opentv.ui.MainScreen
 import app.opentv.ui.ProfilesViewModel
 import app.opentv.ui.SourcesViewModel
@@ -392,6 +394,8 @@ object Routes {
     const val PROVIDERS = "providers"
     const val ADDONS = "addons"
     const val CHANNELS = "channels"
+    const val PLEX = "plex"
+    const val PLEX_CONNECT = "plex/connect"
     const val WEB_MANAGER = "web-manager"
     const val PROFILES = "profiles"
     const val PARENTAL = "parental"
@@ -642,6 +646,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                             ),
                         )
                     },
+                    onOpenPlex = { navController.navigate(Routes.PLEX) },
                     activeProfileName = activeProfileName,
                 )
             }
@@ -763,6 +768,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                             navController.navigate(Routes.HOME)
                         }
                     },
+                    onOpenPlex = { navController.navigate(Routes.PLEX) },
                     onOpenRecordings = {
                         bootSettings.requestHomeTab("recordings")
                         if (!navController.popBackStack()) {
@@ -786,6 +792,22 @@ private fun OpenTvApp(isTelevision: Boolean) {
                 )
             }
 
+            composable(Routes.PLEX_CONNECT) {
+                PlexConnectScreen(
+                    onConnected = { navController.popBackStack() },
+                    onCancel = { navController.popBackStack() },
+                )
+            }
+            composable(Routes.PLEX) {
+                PlexScreen(
+                    onPlay = { mediaKey, url, title ->
+                        navController.navigate(
+                            Routes.vodPlayer(mediaKey, url, title, "OpenTV/0.1 (Android)"),
+                        )
+                    },
+                    onConnect = { navController.navigate(Routes.PLEX_CONNECT) },
+                )
+            }
             composable(Routes.MULTIVIEW) { entry ->
                 val aId = entry.arguments?.getString("channelAId")?.toLongOrNull()
                 val bId = entry.arguments?.getString("channelBId")?.toLongOrNull()

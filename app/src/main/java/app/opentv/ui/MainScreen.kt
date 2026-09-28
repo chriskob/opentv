@@ -123,6 +123,7 @@ fun MainScreen(
     onRefresh: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenPlex: () -> Unit,
     onOpenProfiles: () -> Unit,
     onOpenMultiview: (Long) -> Unit = {},
     onPlayRecording: (Recording) -> Unit,
@@ -259,6 +260,7 @@ fun MainScreen(
                     onSelect = { tab = it },
                     onOpenSearch = onOpenSearch,
                     onOpenSettings = onOpenSettings,
+                    onOpenPlex = onOpenPlex,
                     onOpenProfiles = onOpenProfiles,
                     activeProfileName = activeProfileName,
                     requestFocusOnStart = navRailVisible,
@@ -291,6 +293,7 @@ fun MainScreen(
                         },
                         onOpenSearch = onOpenSearch,
                         onOpenSettings = onOpenSettings,
+                    onOpenPlex = onOpenPlex,
                         onOpenMultiview = onOpenMultiview,
                     )
                     Tab.MOVIES -> MoviesScreen(
@@ -373,6 +376,7 @@ private fun NavRail(
     onSelect: (Tab) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenPlex: () -> Unit,
     onOpenProfiles: () -> Unit,
     activeProfileName: String,
     onRailFocus: (Boolean) -> Unit = {},

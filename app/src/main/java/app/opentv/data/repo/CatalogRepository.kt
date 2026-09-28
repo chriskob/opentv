@@ -29,6 +29,9 @@ import app.opentv.data.model.StreamKind
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.parser.M3uParser
 import app.opentv.data.parser.VodTitleCleaner
+import app.opentv.data.model.PlexRecentItem
+import app.opentv.data.remote.PlexApi
+import app.opentv.data.remote.PlexUrls
 import app.opentv.data.remote.StalkerApi
 import app.opentv.data.remote.TmdbClient
 import app.opentv.data.remote.XtreamApi
@@ -36,6 +39,7 @@ import app.opentv.data.remote.XtreamPanelDiscovery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -132,6 +136,7 @@ class CatalogRepository(
     private val positionDao: PlaybackPositionDao,
     private val api: XtreamApi,
     private val stalkerApi: StalkerApi,
+    private val plexApi: PlexApi,
     private val http: OkHttpClient,
     private val settings: AppSettings,
 ) {
@@ -870,6 +875,10 @@ class CatalogRepository(
                 SourceKind.XTREAM -> syncXtreamLive(source, nowUtcMillis, onProgress)
                 SourceKind.M3U -> syncM3u(source, nowUtcMillis, onProgress)
                 SourceKind.STALKER -> syncStalkerLive(source, nowUtcMillis, onProgress)
+                // A Plex source has no live half at all - it is added with Channels unticked, so
+                // this is unreachable in practice. Reported as an empty success rather than a
+                // failure because "Plex has no channels" is not a fault worth showing anyone.
+                SourceKind.PLEX -> SyncResult.Success(0, 0, 0)
             }
         } catch (e: CancellationException) {
             throw e
@@ -939,12 +948,154 @@ class CatalogRepository(
         onProgress: ((Int, Int, Int, Int) -> Unit)? = null,
     ): VodSyncResult = withContext(Dispatchers.IO) {
         runCatching {
-            if (source.kind == SourceKind.XTREAM) syncXtreamVod(source, nowUtcMillis, onProgress)
-            else VodSyncResult.NONE
+            when (source.kind) {
+                SourceKind.XTREAM -> syncXtreamVod(source, nowUtcMillis, onProgress)
+                SourceKind.PLEX -> syncPlex(source, nowUtcMillis)
+                else -> VodSyncResult.NONE
+            }
         }
             .onFailure { Log.w(TAG, "VOD sync failed for source ${source.id}", it) }
             .getOrDefault(VodSyncResult.NONE)
     }
+
+    /**
+     * Pulls the newest items from every movie and show library on a Plex server.
+     *
+     * Deliberately *not* the whole library. A Plex server is a personal collection that can hold
+     * tens of thousands of items with artwork for each, and OpenTV is on a television that
+     * re-syncs in the background - importing all of it would cost a great deal of transfer and
+     * database churn for content nobody asked to see on a shelf. What is wanted here is the same
+     * thing the Movies screen's "Recently Added" row is for, so exactly that is fetched: [PLEX_RECENT_LIMIT]
+     * per library, asked of the server rather than trimmed locally, so the response is already the
+     * size it needs to be.
+     *
+     * Rows are written with a [PLEX_SCHEME] placeholder instead of a playable URL. Plex's part
+     * paths are not stable across a library re-scan, so a stored URL would eventually point at
+     * nothing; the real URL is built at play time, when the part is looked up against the server
+     * that is actually there.
+     */
+    private suspend fun syncPlex(source: Source, nowUtcMillis: Long): VodSyncResult {
+        val token = source.password?.takeIf { it.isNotBlank() }
+            ?: return VodSyncResult.NONE.also {
+                Log.w(TAG, "Plex source ${source.id} has no token; skipping its library")
+            }
+        val serverBase = source.url.trimEnd('/')
+        val sections = plexApi.sections(serverBase, token)
+        if (sections.isEmpty()) return VodSyncResult.NONE
+
+        var movies = 0
+        var shows = 0
+
+        for (section in sections) {
+            val items = plexApi.recentlyAdded(serverBase, token, section.key, PLEX_RECENT_LIMIT)
+            if (items.isEmpty()) continue
+            if (section.isMovies) {
+                movieDao.upsertAll(
+                    items.map { it.toMovie(source.id, serverBase, token, nowUtcMillis) },
+                )
+                movies += items.size
+            } else if (section.isShows) {
+                seriesDao.upsertAll(
+                    items.map { it.toSeries(source.id, serverBase, token, nowUtcMillis) },
+                )
+                shows += items.size
+            }
+        }
+        Log.i(TAG, "Plex sync: $movies movie(s), $shows show(s) from ${sections.size} librar(y/ies)")
+        return VodSyncResult(movies, shows)
+    }
+
+    /**
+     * The Plex sources configured on this device.
+     *
+     * More than one is possible - two servers, or the same server added twice - and the shelf shows
+     * them together, so the Plex screen does not have to care which is which.
+     */
+    fun observePlexSources(): Flow<List<Source>> = sourceDao.observeByKind(SourceKind.PLEX.name)
+
+    fun observePlexSource(id: Long): Flow<Source?> = sourceDao.observeById(id)
+
+    /**
+     * The newest movies and shows across every configured Plex server.
+     *
+     * Rows are gathered per source and concatenated, each already ordered newest-first by its own
+     * query, so the combined list is not globally sorted - correct for a shelf of ten where the
+     * viewer is choosing rather than studying, and one sort over a handful of rows is not worth
+     * the machinery to get exactly right.
+     */
+    fun observePlexMovies(sourceIds: List<Long>, limit: Int): Flow<List<Movie>> =
+        combine(sourceIds.map { movieDao.observeRecentlyAddedForSource(it, limit) }) { lists ->
+            lists.flatMap { it }
+        }
+
+    fun observePlexSeries(sourceIds: List<Long>, limit: Int): Flow<List<Series>> =
+        combine(sourceIds.map { seriesDao.observeRecentlyAddedForSource(it, limit) }) { lists ->
+            lists.flatMap { it }
+        }
+
+    suspend fun plexItemCounts(sourceIds: List<Long>): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        sourceIds.sumOf { movieDao.countForSource(it) } to sourceIds.sumOf { seriesDao.countForSource(it) }
+    }
+
+    /** The play URL for a Plex item, resolved against the server at the moment of playback. */
+    suspend fun plexPlayUrl(source: Source, ratingKey: String): String? {
+        val token = source.password?.takeIf { it.isNotBlank() } ?: return null
+        val serverBase = source.url.trimEnd('/')
+        val part = plexApi.mediaParts(serverBase, token, ratingKey).firstOrNull() ?: return null
+        return PlexUrls.play(
+            serverBase = serverBase,
+            partKey = part.key,
+            token = token,
+            clientIdentifier = settings.plexClientIdentifier,
+        )
+    }
+
+    /** Splits a stored [PLEX_SCHEME] placeholder back into the rating key it stands for. */
+    fun plexRatingKey(streamUrl: String): String? =
+        streamUrl.takeIf { it.startsWith(PLEX_SCHEME) }?.removePrefix(PLEX_SCHEME)?.takeIf { it.isNotBlank() }
+
+    private fun PlexRecentItem.toMovie(
+        sourceId: Long,
+        serverBase: String,
+        token: String,
+        fallbackAddedMillis: Long,
+    ) = Movie(
+        sourceId = sourceId,
+        // Plex's ratingKey is the stable identity and the only thing a play request can address.
+        streamId = ratingKey,
+        name = title,
+        categoryId = PLEX_CATEGORY_ID,
+        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH),
+        backdropUrl = PlexUrls.image(serverBase, artPath ?: thumbPath, token, width = PLEX_BACKDROP_WIDTH),
+        rating = null,
+        year = year,
+        plot = summary,
+        durationSeconds = durationMillis?.div(1000L)?.toInt(),
+        containerExtension = null,
+        streamUrl = "$PLEX_SCHEME$ratingKey",
+        // Plex's own addedAt is what "recently added" means. Without it the item still has to
+        // be stored, so it is stamped now rather than dropped - it will simply look newest.
+        addedMillis = addedAtEpochSeconds?.times(1000L)?.takeIf { it > 0L } ?: fallbackAddedMillis,
+    )
+
+    private fun PlexRecentItem.toSeries(
+        sourceId: Long,
+        serverBase: String,
+        token: String,
+        fallbackAddedMillis: Long,
+    ) = Series(
+        sourceId = sourceId,
+        seriesId = ratingKey,
+        name = title,
+        categoryId = PLEX_CATEGORY_ID,
+        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH),
+        rating = null,
+        year = year,
+        plot = summary,
+        // Plex's own addedAt is what "recently added" means. Without it the item still has to
+        // be stored, so it is stamped now rather than dropped - it will simply look newest.
+        addedMillis = addedAtEpochSeconds?.times(1000L)?.takeIf { it > 0L } ?: fallbackAddedMillis,
+    )
 
     private suspend fun syncXtreamLive(
         source: Source,
@@ -1381,6 +1532,27 @@ class CatalogRepository(
 
     companion object {
         private const val TAG = "CatalogRepository"
+
+        /**
+         * Placeholder scheme for a Plex item that has been stored but not yet resolved to a
+         * playable URL. Carries the rating key so the row is self-describing: anything holding one
+         * of these knows the real URL needs building, and knows which item to build it for.
+         *
+         * The alternative - storing the resolved URL - looks simpler and is wrong. Plex can change
+         * a part's path when it re-scans a library, and a stored path that has gone stale is a
+         * play that fails with no way back. Resolving at play time costs one request and cannot rot.
+         */
+        const val PLEX_SCHEME = "plex://"
+
+        /** Category every Plex item shares, so Plex rows group together rather than by Plex library. */
+        const val PLEX_CATEGORY_ID = "plex"
+
+        /** How many items are taken from each Plex library. See [syncPlex] for why this is small. */
+        const val PLEX_RECENT_LIMIT = 10
+
+        /** Artwork widths asked of Plex, sized for a television rather than a phone. */
+        const val PLEX_POSTER_WIDTH = 300
+        const val PLEX_BACKDROP_WIDTH = 1280
 
         /** Import cost reporting — `adb logcat -s VodPerf` (see [syncXtreamVodLocked]). */
         private const val VOD_PERF_TAG = "VodPerf"

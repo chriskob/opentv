@@ -8,6 +8,7 @@ package app.opentv.data.repo
 import app.opentv.data.db.SourceDao
 import app.opentv.data.model.Source
 import app.opentv.data.model.SourceKind
+import app.opentv.data.remote.PlexApi
 import app.opentv.data.remote.StalkerApi
 import app.opentv.data.remote.XtreamApi
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,7 @@ class SourceRepository(
     private val dao: SourceDao,
     private val api: XtreamApi,
     private val stalkerApi: StalkerApi,
+    private val plexApi: PlexApi,
 ) {
     fun observeAll(): Flow<List<Source>> = dao.observeAll()
 
@@ -75,6 +77,21 @@ class SourceRepository(
                         info.expiryMillis?.let {
                             append(" · expires ${java.text.DateFormat.getDateInstance().format(java.util.Date(it))}")
                         }
+                    }
+                }
+                SourceKind.PLEX -> {
+                    // Reaches the server the user typed, not plex.tv: the token was obtained
+                    // separately and the media lives on this address. Asking for the sections
+                    // proves the address and the token in one request.
+                    val sections = plexApi.sections(
+                        normaliseUrl(source.url, source.kind),
+                        source.password.orEmpty(),
+                    )
+                    if (sections.isEmpty()) {
+                        "Plex answered, but this account has no movie or show libraries."
+                    } else {
+                        "Connected to Plex. ${sections.size} " +
+                            if (sections.size == 1) "library." else "libraries."
                     }
                 }
                 SourceKind.M3U -> "Playlist address looks valid. It will be checked on first sync."

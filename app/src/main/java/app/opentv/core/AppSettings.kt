@@ -560,6 +560,21 @@ class AppSettings private constructor(context: Context) {
         get() = prefs.getString(KEY_SYNC_DEVICE_ID, null) ?: java.util.UUID.randomUUID().toString()
             .also { prefs.edit().putString(KEY_SYNC_DEVICE_ID, it).apply() }
 
+    /**
+     * This install's identity as far as Plex is concerned, generated once and then never changed.
+     *
+     * Plex pairs a sign-in with the device that requested it: the PIN is polled using the same
+     * identifier it was created with, and Plex hands the token to whichever client presents a
+     * match. An identifier that changed between the two would leave the viewer staring at a code
+     * that never resolves.
+     *
+     * Deliberately *not* [syncDeviceId]. Reusing it would work, and would quietly tie Plex to the
+     * NAS bundle filename - so regenerating one for an unrelated reason would break the other.
+     */
+    val plexClientIdentifier: String
+        get() = prefs.getString(KEY_PLEX_CLIENT_ID, null) ?: java.util.UUID.randomUUID().toString()
+            .also { prefs.edit().putString(KEY_PLEX_CLIENT_ID, it).apply() }
+
     /** Whether to run a NAS sync automatically each time the app is opened. Off by default. */
     private val _nasAutoSync = MutableStateFlow(prefs.getBoolean(KEY_NAS_AUTO_SYNC, false))
     val nasAutoSync: StateFlow<Boolean> = _nasAutoSync.asStateFlow()
@@ -742,6 +757,7 @@ class AppSettings private constructor(context: Context) {
         SUBTITLES("subtitles", app.opentv.R.string.submenu_btn_subtitles, "Subtitles and Closed Captions"),
         ASPECT_RATIO("aspect", app.opentv.R.string.submenu_btn_aspect, "Aspect ratio (Normal, Fill, Stretch)"),
         CHANNELS_LIST("channels_list", app.opentv.R.string.submenu_btn_channels_list, "Side channel list and guide overlay"),
+        PLEX("plex", app.opentv.R.string.submenu_btn_plex, "Recently added films and shows from a Plex server"),
         FAVORITES("favorites", app.opentv.R.string.submenu_btn_favorites, "Add or remove channel from favorites"),
         CHANNEL_OPTIONS("channel_options", app.opentv.R.string.submenu_btn_channel_options, "Channel details, stream specs, and timer"),
         SETTINGS("settings", app.opentv.R.string.submenu_btn_settings, "Open application settings hub"),
@@ -1033,6 +1049,7 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_SMB_PASS = "smb_password"
         private const val KEY_USB_TREE = "usb_tree_uri"
         private const val KEY_USB_LABEL = "usb_folder_label"
+        const val KEY_PLEX_CLIENT_ID = "plex_client_id"
         private const val KEY_SYNC_DEVICE_ID = "sync_device_id"
         private const val KEY_NAS_AUTO_SYNC = "nas_auto_sync"
         private const val KEY_VOD_SYNCED_AT = "vod_synced_at"

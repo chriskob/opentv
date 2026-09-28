@@ -33,6 +33,16 @@ enum class SourceKind {
      * carry a [Channel.cmd] resolved to a real URL on demand at play time.
      */
     STALKER,
+
+    /**
+     * A Plex Media Server, contributing no live channels and only recently-added movies and shows.
+     *
+     * The sign-in token is held in [Source.password] and the server's own address in [Source.url],
+     * deliberately reusing those columns rather than adding new ones. There is no live half, and
+     * the address is user-typed rather than discovered, so plex.tv is needed only to obtain the
+     * token - never to reach the media.
+     */
+    PLEX,
 }
 
 /** Live-stream container the panel is asked for. Xtream panels serve one or both. */

@@ -162,6 +162,7 @@ fun HomeScreen(
     onFullScreenChanged: (Boolean) -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenPlex: () -> Unit = {},
     onOpenMultiview: (Long) -> Unit = {},
     viewModel: ChannelsViewModel = viewModel(),
 ) {
@@ -1315,6 +1316,7 @@ fun HomeScreen(
                 onOpenShows = { leaveLiveForTab("shows") },
                 onOpenRecordings = { leaveLiveForTab("recordings") },
                 onOpenSettings = onOpenSettings,
+                onOpenPlex = onOpenPlex,
                 onOpenMultiview = { channelId ->
                      // Multiview brings its own two decoders; silence the shared player first so
                      // we never hold three streams (and three lots of provider connections) at once.

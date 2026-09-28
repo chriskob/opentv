@@ -313,6 +313,7 @@ private fun ProviderRow(
                     SourceKind.XTREAM -> AppTheme.palette.info
                     SourceKind.M3U -> AppTheme.palette.success
                     SourceKind.STALKER -> AppTheme.palette.warning
+                    SourceKind.PLEX -> AppTheme.palette.favourite
                 }
                 Box(
                     Modifier
@@ -550,6 +551,7 @@ private fun EditSourceDialog(
                                 SourceKind.XTREAM -> "Server Address"
                                 SourceKind.M3U -> "Playlist URL"
                                 SourceKind.STALKER -> "Portal URL"
+                                SourceKind.PLEX -> "Plex Server Address"
                             }
                         )
                     },

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * This file is part of OpenTV.
  * Copyright (C) 2026 The OpenTV Contributors
  * Licensed under the GNU General Public License v3.0 or later.
@@ -136,6 +136,10 @@ fun AddSourceScreen(
         SourceKind.XTREAM -> username.isNotBlank() && password.isNotBlank()
         SourceKind.M3U -> true
         SourceKind.STALKER -> mac.isNotBlank()
+        // Plex is deliberately not offered by this form and cannot be created here: getting a token
+        // needs the plex.tv sign-in handshake, which has its own screen. Reachable only if this
+        // form is ever reused for a kind it was not designed around, and false is the honest answer.
+        SourceKind.PLEX -> false
     }
 
     Column(
@@ -194,6 +198,7 @@ fun AddSourceScreen(
                             SourceKind.XTREAM -> stringResource(R.string.onboarding_server_address)
                             SourceKind.M3U -> stringResource(R.string.onboarding_playlist_url)
                             SourceKind.STALKER -> stringResource(R.string.onboarding_portal_url)
+                            SourceKind.PLEX -> stringResource(R.string.plex_server_address)
                         },
                     )
                 },
@@ -203,6 +208,7 @@ fun AddSourceScreen(
                             SourceKind.XTREAM -> stringResource(R.string.onboarding_server_help)
                             SourceKind.M3U -> stringResource(R.string.onboarding_playlist_help)
                             SourceKind.STALKER -> stringResource(R.string.onboarding_portal_help)
+                            SourceKind.PLEX -> stringResource(R.string.plex_server_help)
                         },
                     )
                 },

@@ -2,6 +2,11 @@
 
 ## 0.16.16
 
+- **New: a Plex shelf.** A "Plex" button on the playback shortcut row opens a screen showing the ten
+  most recently added films and shows from your Plex server, with the same poster cards, focus
+  behaviour and playback controls as everywhere else in the app. Connect it from the same screen:
+  type your server's address, approve a short code on your phone, and it carries on by itself. A
+  television cannot show a Plex login page, so the code is the whole handshake.
 - **Catch-up now plays the programme you picked.** Choosing a programme in the guide could open a
   different one: the guide and the on-screen title both named the right programme while the
   picture showed something else.

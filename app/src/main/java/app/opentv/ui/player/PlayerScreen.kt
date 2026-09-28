@@ -213,6 +213,7 @@ fun PlayerScreen(
     onOpenSearch: () -> Unit = {},
     onOpenMovies: () -> Unit = {},
     onOpenShows: () -> Unit = {},
+    onOpenPlex: () -> Unit = {},
     onOpenRecordings: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     /** Opens 2-up split-screen multiview for [Long] = the channel for pane A. */
@@ -2419,6 +2420,18 @@ fun PlayerScreen(
                                                 onClick = {
                                                     controlsVisible = false
                                                     onOpenShows()
+                                                },
+                                            )
+                                        }
+                                        AppSettings.SubMenuButton.PLEX -> {
+                                            SubMenuButtonCard(
+                                                icon = Icons.Filled.Movie,
+                                                label = stringResource(R.string.submenu_btn_plex),
+                                                focusRequester = subMenuFocusRequesters.getOrPut(btn) { FocusRequester() },
+                                                onFocusChanged = { if (it) subMenuFocusedIndex = index },
+                                                onClick = {
+                                                    controlsVisible = false
+                                                    onOpenPlex()
                                                 },
                                             )
                                         }

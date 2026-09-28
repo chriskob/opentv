@@ -58,6 +58,18 @@ interface SourceDao {
     @Query("SELECT id FROM sources")
     suspend fun allIds(): List<Long>
 
+    /**
+     * Every source of one kind, ordered as the rest of the app shows them.
+     *
+     * Kind is stored by name, so 'PLEX' is a stable literal here rather than an ordinal a future
+     * enum entry would silently shift. See `sourceKindToString`.
+     */
+    @Query("SELECT * FROM sources WHERE kind = :kind ORDER BY sortIndex, id")
+    fun observeByKind(kind: String): Flow<List<Source>>
+
+    @Query("SELECT * FROM sources WHERE id = :id")
+    fun observeById(id: Long): Flow<Source?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(source: Source): Long
 
@@ -647,6 +659,20 @@ interface MovieDao {
     fun observeRecentlyAdded(limit: Int): Flow<List<Movie>>
 
     /**
+     * A Plex server's newest movies, for that server's own shelf.
+     *
+     * Scoped by source so one Plex server's additions never appear under another's, and limited
+     * because that is all a shelf shows - [app.opentv.data.repo.CatalogRepository.PLEX_RECENT_LIMIT]
+     * of them were fetched, and asking for more would be asking for rows that do not exist.
+     */
+    @Query("SELECT * FROM movies WHERE sourceId = :sourceId ORDER BY addedMillis DESC LIMIT :limit")
+    fun observeRecentlyAddedForSource(sourceId: Long, limit: Int): Flow<List<Movie>>
+
+    /** Every stored movie for one source. Used to offer a sync when a Plex shelf is empty. */
+    @Query("SELECT COUNT(*) FROM movies WHERE sourceId = :sourceId")
+    suspend fun countForSource(sourceId: Long): Int
+
+    /**
      * Every movie, newest first — the working set for the Kotlin-side feeds (by-genre grouping,
      * genre-affinity recommendations, more-like-this). One pass over a few thousand rows is cheap;
      * per-genre `LIKE` queries would multiply round-trips and risk substring false positives.
@@ -763,6 +789,13 @@ interface SeriesDao {
     /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
     @Query("SELECT * FROM series ORDER BY addedMillis DESC LIMIT :limit")
     fun observeRecentlyAdded(limit: Int): Flow<List<Series>>
+
+    /** A Plex server's newest shows, for that server's own shelf. See the movie equivalent. */
+    @Query("SELECT * FROM series WHERE sourceId = :sourceId ORDER BY addedMillis DESC LIMIT :limit")
+    fun observeRecentlyAddedForSource(sourceId: Long, limit: Int): Flow<List<Series>>
+
+    @Query("SELECT COUNT(*) FROM series WHERE sourceId = :sourceId")
+    suspend fun countForSource(sourceId: Long): Int
 
     /** Every series, newest first — working set for the Kotlin-side by-genre / more-like-this feeds. */
     @Query("SELECT * FROM series ORDER BY addedMillis DESC")

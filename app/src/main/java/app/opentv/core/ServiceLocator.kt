@@ -8,6 +8,7 @@ package app.opentv.core
 import android.content.Context
 import app.opentv.data.db.OpenTvDatabase
 import app.opentv.data.remote.StalkerApi
+import app.opentv.data.remote.PlexApi
 import app.opentv.data.remote.StremioClient
 import app.opentv.data.remote.XtreamApi
 import app.opentv.data.repo.CatalogRepository
@@ -96,11 +97,17 @@ object ServiceLocator {
         /** Stalker / Ministra portal client (MAC handshake + create_link). */
         val stalkerApi: StalkerApi by lazy { StalkerApi(httpClient) }
 
+        /**
+         * Plex Media Server client. Used only for the sign-in handshake against plex.tv and for
+         * reading libraries, artwork and playback from the address the user typed.
+         */
+        val plexApi: PlexApi by lazy { PlexApi(httpClient) }
+
         /** Neutral Stremio add-on protocol client. Talks only to user-added manifest URLs. */
         val stremioClient: StremioClient by lazy { StremioClient(httpClient) }
 
         val sourceRepository: SourceRepository by lazy {
-            SourceRepository(database.sources(), xtreamApi, stalkerApi)
+            SourceRepository(database.sources(), xtreamApi, stalkerApi, plexApi)
         }
 
         val catalogRepository: CatalogRepository by lazy {
@@ -114,6 +121,7 @@ object ServiceLocator {
                 positionDao = database.positions(),
                 api = xtreamApi,
                 stalkerApi = stalkerApi,
+                plexApi = plexApi,
                 http = httpClient,
                 settings = settings,
             )

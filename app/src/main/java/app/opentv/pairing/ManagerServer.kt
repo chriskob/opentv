@@ -490,6 +490,8 @@ class ManagerServer(
         when (k) {
             SourceKind.XTREAM -> if (username.isNullOrBlank() || password.isNullOrBlank()) return null
             SourceKind.STALKER -> if (mac.isNullOrBlank()) return null
+            // A Plex source's credential is the token, which travels in the password column.
+            SourceKind.PLEX -> if (password.isNullOrBlank()) return null
             SourceKind.M3U -> Unit
         }
         return Source(

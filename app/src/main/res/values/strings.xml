@@ -680,4 +680,27 @@
     <string name="settings_weather_update_now">Update now</string>
     <string name="settings_weather_updating">Updating weather…</string>
     <string name="settings_weather_need_setup">Saved. Turn weather on to refresh the header.</string>
+    <string name="plex_server_address">Plex server address</string>
+    <string name="plex_server_help">The address of your Plex server, for example https://plex.example.com</string>
+    <string name="plex_title">New on Plex</string>
+    <string name="plex_subtitle">The ten most recently added films and shows</string>
+    <string name="plex_recent_movies">Recently added films</string>
+    <string name="plex_recent_shows">Recently added shows</string>
+    <string name="plex_not_connected_title">No Plex server yet</string>
+    <string name="plex_not_connected_body">Connect your Plex server to see what has just been added to it.</string>
+    <string name="plex_empty_title">Nothing new right now</string>
+    <string name="plex_empty_body">Plex did not return anything recently added. Adding something to a library will show it here.</string>
+    <string name="plex_connect_action">Connect Plex</string>
+    <string name="plex_refresh_action">Check again</string>
+    <string name="plex_fetching">Asking Plex what is new…</string>
+    <string name="plex_dismiss">Dismiss</string>
+    <string name="plex_connect_title">Connect Plex</string>
+    <string name="plex_connect_step1">First, the address of your Plex server.</string>
+    <string name="plex_connect_step1_help">This is your own server, not plex.tv. You can find it in Plex under Settings, then Network, as a Secure or LAN address.</string>
+    <string name="plex_connect_step2">Now approve this code on your phone.</string>
+    <string name="plex_connect_step2_help">Open Plex on a phone or computer, go to Settings, then Link Account with your TV, and enter the code above. This screen will continue on its own.</string>
+    <string name="plex_connect_next">Next</string>
+    <string name="plex_connect_connecting">Connected. Finishing…</string>
+    <string name="plex_cancel">Cancel</string>
+    <string name="submenu_btn_plex">Plex</string>
 </resources>
