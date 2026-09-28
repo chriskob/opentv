@@ -30,6 +30,12 @@ private const val STARTUP_MAINTENANCE_DELAY_MILLIS = 120_000L
 class OpenTvApp : Application(), ImageLoaderFactory {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    // Read through the service locator rather than held directly: the interceptor runs on an image
+    // thread where a synchronous SharedPreferences read is fine but constructing a second AppSettings
+    // would not be.
+    private val plexServerHost: String? get() = ServiceLocator.get(this).settings.plexServerHost
+    private val plexAuthToken: String? get() = ServiceLocator.get(this).settings.plexAuthToken
+
     /**
      * The app-wide Coil loader, tuned for a poster-and-logo heavy UI on a low-end TV box. The
      * default loader keeps a small memory cache and no disk cache, so scrolling back through a
@@ -66,11 +72,25 @@ class OpenTvApp : Application(), ImageLoaderFactory {
                         },
                     )
                     .addNetworkInterceptor { chain ->
-                        chain.proceed(
-                            chain.request().newBuilder()
-                                .header("User-Agent", "OpenTV")
-                                .build(),
-                        )
+                        val request = chain.request()
+                        val builder = request.newBuilder().header("User-Agent", "OpenTV")
+                        // Plex artwork is authenticated with a header, not a query parameter.
+                        //
+                        // Every Plex poster failed to load while the token rode in the URL. That
+                        // puts a live credential into Coil's disk-cache keys, into any log line
+                        // that prints a poster URL, and - through the reverse proxy in front of the
+                        // server - in front of whatever rules that proxy applies to query strings.
+                        // As a header it is scoped to [plexServerHost] and to nowhere else, so it is
+                        // never sent to a third-party image host either.
+                        val host = plexServerHost
+                        val token = plexAuthToken
+                        if (host != null && token != null &&
+                            request.url.host.equals(host, ignoreCase = true) &&
+                            request.header("X-Plex-Token") == null
+                        ) {
+                            builder.header("X-Plex-Token", token)
+                        }
+                        chain.proceed(builder.build())
                     }
                     .build()
             }

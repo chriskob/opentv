@@ -13,7 +13,6 @@ import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
 import app.opentv.data.model.Source
-import app.opentv.data.model.PlexLibraryOption
 import app.opentv.data.model.SourceKind
 import app.opentv.data.repo.CatalogRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -23,9 +22,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -167,45 +163,45 @@ class PlexViewModel(app: Application) : AndroidViewModel(app) {
         play(movie.sourceId, movie.streamId, movie.name, onReady)
     }
 
-    /** A show has no single file, so this opens its most recent episode - the one someone adding a
-     *  series to a "newly added" shelf almost always means. */
+    /**
+     * Plays a show by opening its most recent episode.
+     *
+     * A series has no playable part of its own - `/library/metadata/{seriesKey}` describes a show,
+     * not a file, and asking it for parts returned nothing, so pressing a show said "Plex would not
+     * give a playable file" for every show. The episodes are a level down: `/children` on the
+     * series. The newest is played, which is what a card on a "recently added" shelf should open -
+     * someone seeing a show appear there means the latest of it.
+     */
     fun playSeries(series: Series, onReady: (mediaKey: String, url: String, title: String) -> Unit) {
-        play(series.sourceId, series.seriesId, series.name, onReady)
+        viewModelScope.launch {
+            val source = withContext(Dispatchers.IO) { graph.database.sources().byId(series.sourceId) }
+            if (source == null) {
+                _lastError.value = "That Plex server is no longer set up."
+                return@launch
+            }
+            val episode = withContext(Dispatchers.IO) {
+                runCatching { repo.plexLatestEpisodeKey(source, series.seriesId) }.getOrNull()
+            }
+            if (episode == null) {
+                _lastError.value = "Plex has no episodes for \"${series.name}\"."
+                return@launch
+            }
+            val url = withContext(Dispatchers.IO) { repo.plexPlayUrl(source, episode.ratingKey) }
+            if (url == null) {
+                _lastError.value = "Plex would not give a playable file for \"${series.name}\"."
+                return@launch
+            }
+            onReady(episode.ratingKey, url, "${series.name} — ${episode.title}")
+        }
     }
 
     /**
-     * The libraries on the connected servers, with the ones switched off marked as such.
+     * A Plex episode, enough to look one up and play it.
      *
-     * The shelf reads every movie and show library a server exposes, which on a real account is
-     * more than the two the viewer cares about - including Discover and Recommended content that
-     * is indistinguishable from their own once it arrives. So the choice is offered rather than
-     * assumed, and switching a library off re-syncs so the shelf stops carrying its rows.
+     * Carries its own title and index so the OSD names what is actually playing rather than the
+     * series it came from - "Series — Pilot" and "Series — The Return" are different things.
      */
-    private val _libraryTick = MutableStateFlow(0)
-
-    val libraries: StateFlow<List<PlexLibraryOption>> =
-        combine(sources, _libraryTick) { plex, _ -> plex }
-            .flatMapLatest { plexSources ->
-                if (plexSources.isEmpty()) {
-                    flowOf(emptyList())
-                } else {
-                    flow {
-                        for (source in plexSources) {
-                            emitAll(flowOf(repo.plexLibraries(source)))
-                        }
-                    }
-                }
-            }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    fun setLibraryEnabled(option: PlexLibraryOption, enabled: Boolean) {
-        settings.setPlexLibraryEnabled(option.sourceId, option.key, enabled)
-        // Re-read the list so the chip flips at once, then re-sync: the rows for a library the
-        // viewer has just switched off are already on disk and would otherwise stay on the shelf
-        // until the next scheduled sync.
-        _libraryTick.value = _libraryTick.value + 1
-        sync()
-    }
+    data class PlexEpisodeRef(val ratingKey: String, val title: String, val index: Long)
 
     private fun play(sourceId: Long, ratingKey: String, title: String, onReady: (String, String, String) -> Unit) {
         viewModelScope.launch {

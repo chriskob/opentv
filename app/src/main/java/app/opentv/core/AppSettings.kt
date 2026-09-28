@@ -576,34 +576,39 @@ class AppSettings private constructor(context: Context) {
             .also { prefs.edit().putString(KEY_PLEX_CLIENT_ID, it).apply() }
 
     /**
-     * Plex libraries the viewer has switched OFF, as `sourceId:sectionKey`.
+     * The Plex account's token and server host, cached outside the database.
      *
-     * Everything is on by default, and that default is wrong often enough to be worth fixing: a
-     * Plex server can carry several movie and show libraries, plus Discover and Recommended
-     * content that arrives looking exactly like the viewer's own. Merging every one of them gave a
-     * shelf that was neither "my libraries" nor reliably "the last ten added" - ten from each of
-     * five libraries is fifty rows, ordered by a timestamp nobody had checked.
+     * Here so the image loader can authenticate without a database read on a network thread. Plex
+     * image requests carry the token as an `X-Plex-Token` **header** rather than in the URL: a
+     * credential in a query string lands in Coil's disk-cache keys, in any log that prints a poster
+     * URL, and - behind a reverse proxy - in front of whatever rules that proxy applies. Every Plex
+     * poster failed to load while the token was in the URL, and a header takes the credential out of
+     * all three places at once.
      *
-     * Stored as exclusions rather than inclusions so a library added to the server later is picked
-     * up without revisiting this, and so an unrecognised key is never treated as permission.
+     * Scoped to [plexServerHost] by the image interceptor, so the token is never sent to any other
+     * host. A token that reaches a third party is a token that has to be reissued.
      */
-    private val _plexExcludedLibraries =
-        MutableStateFlow(prefs.getStringSet(KEY_PLEX_EXCLUDED_LIBRARIES, emptySet()).orEmpty())
-    val plexExcludedLibraries: StateFlow<Set<String>> = _plexExcludedLibraries.asStateFlow()
+    val plexAuthToken: String? get() = prefs.getString(KEY_PLEX_TOKEN, null)?.takeIf { it.isNotBlank() }
+    val plexServerHost: String? get() = prefs.getString(KEY_PLEX_HOST, null)?.takeIf { it.isNotBlank() }
 
-    fun isPlexLibraryEnabled(sourceId: Long, sectionKey: String): Boolean =
-        plexLibraryTag(sourceId, sectionKey) !in _plexExcludedLibraries.value
-
-    fun setPlexLibraryEnabled(sourceId: Long, sectionKey: String, enabled: Boolean) {
-        val tag = plexLibraryTag(sourceId, sectionKey)
-        val next = _plexExcludedLibraries.value.toMutableSet()
-        if (enabled) next.remove(tag) else next.add(tag)
-        prefs.edit().putStringSet(KEY_PLEX_EXCLUDED_LIBRARIES, next).apply()
-        _plexExcludedLibraries.value = next
+    fun rememberPlexCredentials(serverUrl: String, token: String) {
+        val host = runCatching { java.net.URI(serverUrl).host }.getOrNull() ?: return
+        prefs.edit()
+            .putString(KEY_PLEX_TOKEN, token)
+            .putString(KEY_PLEX_HOST, host)
+            .apply()
     }
 
-    /** Stable identity for one library on one server. */
-    fun plexLibraryTag(sourceId: Long, sectionKey: String): String = "$sourceId:$sectionKey"
+    /**
+     * Whether the Plex shelf has already been wiped and rebuilt from the named libraries.
+     *
+     * One flag rather than a version: the rows it exists to clear cannot be identified
+     * individually, so the only correct action is to empty the shelf once and start again. Without
+     * it, every sync would delete what the previous one just wrote.
+     */
+    var plexShelfRebuilt: Boolean
+        get() = prefs.getBoolean(KEY_PLEX_SHELF_REBUILT, false)
+        set(value) = prefs.edit().putBoolean(KEY_PLEX_SHELF_REBUILT, value).apply()
 
     /** Whether to run a NAS sync automatically each time the app is opened. Off by default. */
     private val _nasAutoSync = MutableStateFlow(prefs.getBoolean(KEY_NAS_AUTO_SYNC, false))
@@ -1080,7 +1085,9 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_USB_TREE = "usb_tree_uri"
         private const val KEY_USB_LABEL = "usb_folder_label"
         const val KEY_PLEX_CLIENT_ID = "plex_client_id"
-    private const val KEY_PLEX_EXCLUDED_LIBRARIES = "plex_excluded_libraries"
+    private const val KEY_PLEX_TOKEN = "plex_token"
+    private const val KEY_PLEX_HOST = "plex_host"
+    private const val KEY_PLEX_SHELF_REBUILT = "plex_shelf_rebuilt"
         private const val KEY_SYNC_DEVICE_ID = "sync_device_id"
         private const val KEY_NAS_AUTO_SYNC = "nas_auto_sync"
         private const val KEY_VOD_SYNCED_AT = "vod_synced_at"

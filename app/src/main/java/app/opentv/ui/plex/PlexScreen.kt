@@ -7,7 +7,6 @@
 package app.opentv.ui.plex
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,7 +40,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
 import app.opentv.data.model.Movie
-import app.opentv.data.model.PlexLibraryOption
 import app.opentv.data.model.Series
 import app.opentv.ui.theme.AppTheme
 import app.opentv.ui.vod.PosterCard
@@ -68,7 +66,6 @@ fun PlexScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val error by viewModel.lastError.collectAsStateWithLifecycle()
-    val libraries by viewModel.libraries.collectAsStateWithLifecycle()
 
     // Pull once per open. A shelf of ten is cheap to refresh and is the whole point of the screen,
     // so arriving and seeing yesterday's titles would make it look broken.
@@ -76,7 +73,6 @@ fun PlexScreen(
 
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         PlexHeader(isRefreshing = state is PlexShelfState.Syncing)
-        PlexLibraryRow(libraries, viewModel::setLibraryEnabled)
 
         when (val s = state) {
             is PlexShelfState.NotConnected -> PlexNotConnected(onConnect)
@@ -108,60 +104,6 @@ fun PlexScreen(
                 isError = true,
                 onDismiss = { viewModel.clearError() },
             )
-        }
-    }
-}
-
-/**
- * The libraries the shelf is reading, as switches.
- *
- * A Plex server carries more libraries than anyone wants on a television shelf - Discover and
- * Recommended content arrives looking exactly like your own, and there is no way to tell them apart
- * once they are rows in a grid. So the choice is put in the viewer's hands and named plainly.
- * Switch one off and the shelf re-syncs, so its titles actually leave rather than lingering until
- * the next scheduled run.
- */
-@Composable
-private fun PlexLibraryRow(
-    libraries: List<PlexLibraryOption>,
-    onToggle: (PlexLibraryOption, Boolean) -> Unit,
-) {
-    if (libraries.isEmpty()) return
-    Column {
-        SectionHeader(stringResource(R.string.plex_libraries))
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(vertical = 4.dp),
-        ) {
-            items(libraries, key = { "lib:${it.sourceId}:${it.key}" }) { library ->
-                val on = library.isEnabled
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(
-                            if (on) AppTheme.palette.favourite.copy(alpha = 0.22f)
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        )
-                        .clickable { onToggle(library, !on) }
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                ) {
-                    Text(
-                        text = if (on) "✓  " else "✕  ",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (on) AppTheme.palette.favourite
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = library.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (on) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
         }
     }
 }

@@ -107,24 +107,29 @@ object PlexUrls {
     }
 
     /**
-     * An absolute URL for a library image.
+     * An absolute URL for a library image, **without** the token.
      *
-     * Plex reports artwork as a server-relative path, and it will not serve it without the token -
-     * so a bare path renders as a broken poster. Resolving against the server here means the stored
-     * value is complete and the image loader needs no Plex-specific knowledge.
+     * The token used to be appended here, and every Plex poster failed to load. A credential in a
+     * query string lands in Coil's disk-cache keys, in any log that prints a poster URL, and -
+     * behind a reverse proxy - in front of whatever rules that proxy applies. It is now sent as an
+     * `X-Plex-Token` header by the image loader instead (see `OpenTvApp.newImageLoader`), so this
+     * returns a clean URL that is safe to store, cache, log and compare.
      */
-    fun image(serverBase: String, path: String?, token: String, width: Int? = null): String? {
+    fun image(serverBase: String, path: String?, width: Int? = null): String? {
         if (path.isNullOrBlank()) return null
-        if (path.startsWith("http://") || path.startsWith("https://")) {
-            // Already absolute - some libraries hand back full URLs for remote artwork. Only the
-            // token is added, and only if the caller did not already include one.
-            val sep = if ('?' in path) "&" else "?"
-            return if (path.contains(TOKEN_PARAM)) path else "$path$sep$TOKEN_PARAM=$token"
+        // Any query is dropped, whether the path was relative or already absolute. A width appended
+        // after a query string lands in the query rather than the path and yields a URL that is not
+        // an image at all, which looks exactly like "Plex does not serve this artwork".
+        val clean = path.substringBefore('?')
+        if (clean.isBlank()) return null
+        if (clean.startsWith("http://") || clean.startsWith("https://")) {
+            // Already absolute - some libraries hand back full URLs for remote artwork.
+            return clean
         }
         val base = serverBase.trimEnd('/')
         val suffix = if (width != null) "/$width" else ""
-        val p = if (path.startsWith("/")) path else "/$path"
-        return "$base$p$suffix?$TOKEN_PARAM=$token"
+        val p = if (clean.startsWith("/")) clean else "/$clean"
+        return "$base$p$suffix"
     }
 
     /**

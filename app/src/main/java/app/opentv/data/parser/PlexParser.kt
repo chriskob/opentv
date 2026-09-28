@@ -7,6 +7,7 @@
 package app.opentv.data.parser
 
 import android.util.Xml
+import app.opentv.data.model.PlexEpisode
 import app.opentv.data.model.PlexMediaPart
 import app.opentv.data.model.PlexRecentItem
 import app.opentv.data.model.PlexSection
@@ -99,6 +100,25 @@ object PlexParser {
             durationMillis = parser.attr("duration")?.toLongOrNull()?.times(1000L),
             videoCodec = parser.attr("videoCodec"),
             audioCodec = parser.attr("audioCodec"),
+        )
+    }
+
+    /**
+     * `/library/metadata/{seriesKey}/children` - the episodes of one show.
+     *
+     * Only `episode` elements are taken. A children list can also contain a trailer or a deleted
+     * stub, and either would be a dead card rather than something to play.
+     */
+    fun episodes(input: InputStream): List<PlexEpisode> = parse(input) { parser, sink ->
+        if (parser.name != "Video") return@parse
+        val ratingKey = parser.attr("ratingKey") ?: return@parse
+        if (!parser.attr("type").equals("episode", ignoreCase = true)) return@parse
+        sink += PlexEpisode(
+            ratingKey = ratingKey,
+            title = parser.attr("title") ?: "Episode",
+            // `index` is Plex's ordering within the series. Absent on odd libraries, and 0 is a
+            // valid real index, so a missing one sorts last rather than pretending to be first.
+            index = parser.attr("index")?.toLongOrNull() ?: Long.MIN_VALUE,
         )
     }
 

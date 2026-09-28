@@ -7,6 +7,7 @@
 package app.opentv.data.remote
 
 import android.util.Log
+import app.opentv.data.model.PlexEpisode
 import app.opentv.data.model.PlexMediaPart
 import app.opentv.data.model.PlexRecentItem
 import app.opentv.data.model.PlexSection
@@ -178,6 +179,67 @@ class PlexApi(private val http: OkHttpClient) {
             throw PlexException("Plex has no playable file for that item.")
         }
     }
+
+    /**
+     * Fetches one piece of artwork and reports what came back, so a failure names its cause.
+     *
+     * "Every poster is broken" is not a diagnosis. This distinguishes the cases that look
+     * identical from the UI and need completely different fixes: a 403 or 503 is the reverse proxy
+     * refusing the request, a 404 is a wrong path, a 200 whose content type is not an image is a
+     * challenge or error page dressed up as artwork, and a 200 image means the loader - not the
+     * server - is at fault.
+     *
+     * Runs once per sync at most, and reports the status and content type only. The token goes in
+     * the header, exactly as the image loader now sends it, so this also proves the header works
+     * independently of Coil.
+     */
+    suspend fun probeArtwork(serverBase: String, token: String, ratingKey: String) {
+        withContext(Dispatchers.IO) {
+            val url = endpoint(serverBase, "library/metadata/$ratingKey/thumb", token, "width=300")
+            if (url == null) {
+                Log.w(TAG, "artwork probe: '$serverBase' is not a usable address")
+                return@withContext
+            }
+            val request = Request.Builder()
+                .url(url)
+                .header("X-Plex-Token", token)
+                .header("User-Agent", "OpenTV")
+                .get()
+                .build()
+            val outcome = runCatching {
+                http.newCall(request).execute().use { response ->
+                    val type = response.header("Content-Type") ?: "(none)"
+                    "http=${response.code} contentType=$type bytes=${response.body?.contentLength()}"
+                }
+            }.getOrElse { "threw ${it.javaClass.simpleName}: ${it.message}" }
+            Log.i(TAG, "artwork probe: $outcome")
+        }
+    }
+
+    // ---- library ----------------------------------------------------------------------------
+
+    /**
+     * The episodes of one show, newest first.
+     *
+     * A series is a container, not a file: `/library/metadata/{seriesKey}` describes the show and
+     * carries no playable part, so asking it for parts returned nothing and every show on the
+     * shelf reported "no playable file". The episodes are one level down, on `/children`.
+     *
+     * Ordered by index descending, because a "recently added" shelf should open the latest of a
+     * show. Plex returns children in its own order and does not promise that is the useful one, so
+     * it is sorted here rather than assumed.
+     */
+    suspend fun episodes(serverBase: String, token: String, seriesKey: String): List<PlexEpisode> =
+        withContext(Dispatchers.IO) {
+            val url = endpoint(
+                serverBase,
+                "library/metadata/$seriesKey/children",
+                token,
+                "includeGuids=0",
+            ) ?: throw PlexException("That Plex address does not look like a web address.")
+            val body = execute(url, "Plex would not list that show's episodes.").use { it.body?.string().orEmpty() }
+            PlexParser.episodes(body.byteInputStream()).sortedByDescending { it.index }
+        }
 
     // ---- plumbing ---------------------------------------------------------------------------
 

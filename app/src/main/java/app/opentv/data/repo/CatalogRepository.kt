@@ -29,7 +29,6 @@ import app.opentv.data.model.StreamKind
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.parser.M3uParser
 import app.opentv.data.parser.VodTitleCleaner
-import app.opentv.data.model.PlexLibraryOption
 import app.opentv.data.model.PlexRecentItem
 import app.opentv.data.remote.PlexApi
 import app.opentv.data.remote.PlexUrls
@@ -899,6 +898,22 @@ class CatalogRepository(
         }
     }
 
+    /**
+     * Deletes every Plex row on disk, whatever library produced it.
+     *
+     * Used to clear a shelf built before the library was known, when the wrong titles were already
+     * on screen and could not be told apart from the right ones. Nothing here is worth keeping -
+     * the next sync rebuilds it from the two libraries - so the honest move is to empty the shelf
+     * completely rather than leave a mixture that nothing can clear.
+     */
+    suspend fun clearPlexShelf() = withContext(Dispatchers.IO) {
+        val films = movieDao.deleteAllPlexRows()
+        val shows = seriesDao.deleteAllPlexRows()
+        if (films + shows > 0) {
+            Log.i(TAG, "Plex shelf cleared: removed $films film(s) and $shows show(s)")
+        }
+    }
+
     /** Hides every stored channel for a source, so rows an earlier add left behind stop appearing in
      *  the guide. One statement rather than a row-by-row loop — see [ChannelDao.hideAllForSource]. */
     suspend fun hideChannelsForSource(sourceId: Long) = withContext(Dispatchers.IO) {
@@ -984,75 +999,89 @@ class CatalogRepository(
                 Log.w(TAG, "Plex source ${source.id} has no token; skipping its library")
             }
         val serverBase = source.url.trimEnd('/')
+        // The image loader authenticates by header, so it needs the host and token outside the
+        // database. Recorded on every sync so a token rotated in Plex cannot leave artwork failing.
+        settings.rememberPlexCredentials(serverBase, token)
+
+        // One-time: rows written before categories carried a library key cannot be told apart from
+        // the ones this shelf wants, and no setting can clear them. Wiping the shelf is the only
+        // honest way to guarantee what is on screen came from the two libraries.
+        if (settings.plexShelfRebuilt.not()) {
+            clearPlexShelf()
+            settings.plexShelfRebuilt = true
+        }
+
         val sections = plexApi.sections(serverBase, token)
-        // Which libraries were on the server, and which of them were used. Plex servers routinely
-        // carry libraries OpenTV has no business reading - photos, music, playlists - and the
-        // request asks for those and then discards them. Naming them makes that visible instead of
-        // leaving it to be inferred.
         Log.i(
             TAG,
-            "Plex libraries: " + sections.joinToString { "${it.title}(${it.type})" },
+            "Plex libraries on the server: " +
+                if (sections.isEmpty()) "(none)" else sections.joinToString { "${it.title}[${it.type}]" },
         )
-        if (sections.isEmpty()) return VodSyncResult.NONE
+
+        // Only the two libraries this is for. Reading everything the server exposes is what made
+        // the shelf neither "my libraries" nor reliably "the newest ten": a server can carry several
+        // movie and show sections plus Discover and Recommended content that arrives looking exactly
+        // like the viewer's own, and ten from each of several is a shelf of dozens from which the
+        // app then picked whichever ten sorted first.
+        val wanted = sections.filter { section ->
+            PLEX_LIBRARY_NAMES.any { it.equals(section.title.trim(), ignoreCase = true) }
+        }
+        val missing = PLEX_LIBRARY_NAMES.filter { name ->
+            wanted.none { it.title.trim().equals(name, ignoreCase = true) }
+        }
+        if (missing.isNotEmpty()) {
+            // Said out loud, because matching by name is the cost of there being no picker: rename
+            // a library in Plex and OpenTV stops finding it. Failing quietly would show an empty
+            // shelf and leave nobody knowing why.
+            Log.w(TAG, "Plex: library not found on the server: ${missing.joinToString()}")
+        }
+        if (wanted.isEmpty()) {
+            Log.w(TAG, "Plex: neither expected library is present; nothing synced")
+            return VodSyncResult.NONE
+        }
+
+        // Replace, never merge. Whatever is on the shelf is what this sync saw, which is what makes
+        // "the last ten added" true rather than nearly true - a library that stopped syncing, or a
+        // title since removed, cannot leave a row behind to sort to the top of the shelf.
+        movieDao.deletePlexRowsForSource(source.id)
+        seriesDao.deletePlexRowsForSource(source.id)
 
         var movies = 0
         var shows = 0
-
-        // Only the libraries the viewer has left switched on. Reading all of them and merging was
-        // the reason the shelf was neither "my libraries" nor reliably "the last ten added": ten
-        // from each of five libraries is fifty rows, and the shelf then showed whichever ten
-        // happened to sort first rather than the ten newest overall.
-        val wanted = sections.filter { settings.isPlexLibraryEnabled(source.id, it.key) }
-        if (wanted.size != sections.size) {
-            Log.i(
-                TAG,
-                "Plex: skipping ${sections.size - wanted.size} librar(y/ies) the viewer has switched off",
-            )
-        }
+        var probed = false
         for (section in wanted) {
             val items = plexApi.recentlyAdded(serverBase, token, section.key, PLEX_RECENT_LIMIT)
             if (items.isEmpty()) continue
             if (section.isMovies) {
                 movieDao.upsertAll(
-                    items.map { it.toMovie(source.id, serverBase, token, nowUtcMillis) },
+                    items.map { it.toMovie(source.id, serverBase, section.key, nowUtcMillis) },
                 )
                 movies += items.size
             } else if (section.isShows) {
                 seriesDao.upsertAll(
-                    items.map { it.toSeries(source.id, serverBase, token, nowUtcMillis) },
+                    items.map { it.toSeries(source.id, serverBase, section.key, nowUtcMillis) },
                 )
                 shows += items.size
+            }
+            // Once per sync, on the first item that has artwork, but WITHOUT stopping the loop -
+            // both libraries have to be read. See [plexApi.probeArtwork]: if posters are failing,
+            // this says whether the server refused, the path is wrong, or the response was an error
+            // page - three problems with three different fixes.
+            if (!probed) {
+                probed = true
+                items.firstOrNull { !it.thumbPath.isNullOrBlank() }?.let { sample ->
+                    plexApi.probeArtwork(serverBase, token, sample.ratingKey)
+                }
             }
         }
         Log.i(
             TAG,
-            "Plex sync: $movies movie(s), $shows show(s) from ${wanted.size} of " +
-                "${sections.size} librar(y/ies)",
+            "Plex sync: $movies film(s), $shows show(s) from " +
+                wanted.joinToString { it.title },
         )
         return VodSyncResult(movies, shows)
     }
 
-    /**
-     * The libraries on a server, paired with whether the viewer has them switched on.
-     *
-     * Surfaced so the shelf can offer a choice rather than reading whatever the server happens to
-     * expose. `isEnabled` is resolved at read time from the settings, not stored here, so a change
-     * takes effect the moment it is made.
-     */
-    suspend fun plexLibraries(source: Source): List<PlexLibraryOption> {
-        val token = source.password?.takeIf { it.isNotBlank() } ?: return emptyList()
-        return runCatching {
-            plexApi.sections(source.url.trimEnd('/'), token)
-        }.getOrDefault(emptyList()).map { section ->
-            PlexLibraryOption(
-                sourceId = source.id,
-                key = section.key,
-                title = section.title,
-                isMovies = section.isMovies,
-                isEnabled = settings.isPlexLibraryEnabled(source.id, section.key),
-            )
-        }
-    }
 
     /**
      * The Plex sources configured on this device.
@@ -1086,6 +1115,22 @@ class CatalogRepository(
         sourceIds.sumOf { movieDao.countForSource(it) } to sourceIds.sumOf { seriesDao.countForSource(it) }
     }
 
+    /**
+     * The newest episode of a show, as a rating key ready to play.
+     *
+     * A series has no playable part of its own; its episodes are listed one level down. Played by
+     * the shelf rather than opening a series screen, so a "recently added" card leads straight to
+     * something watchable.
+     */
+    suspend fun plexLatestEpisodeKey(source: Source, seriesKey: String): app.opentv.ui.plex.PlexViewModel.PlexEpisodeRef? {
+        val token = source.password?.takeIf { it.isNotBlank() } ?: return null
+        val episode = plexApi.episodes(source.url.trimEnd('/'), token, seriesKey).firstOrNull() ?: return null
+        return app.opentv.ui.plex.PlexViewModel.PlexEpisodeRef(
+            ratingKey = episode.ratingKey,
+            title = episode.title,
+            index = episode.index,
+        )
+    }
     /** The play URL for a Plex item, resolved against the server at the moment of playback. */
     suspend fun plexPlayUrl(source: Source, ratingKey: String): String? {
         val token = source.password?.takeIf { it.isNotBlank() } ?: return null
@@ -1106,16 +1151,16 @@ class CatalogRepository(
     private fun PlexRecentItem.toMovie(
         sourceId: Long,
         serverBase: String,
-        token: String,
+        sectionKey: String,
         fallbackAddedMillis: Long,
     ) = Movie(
         sourceId = sourceId,
         // Plex's ratingKey is the stable identity and the only thing a play request can address.
         streamId = ratingKey,
         name = title,
-        categoryId = PLEX_CATEGORY_ID,
-        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH),
-        backdropUrl = PlexUrls.image(serverBase, artPath ?: thumbPath, token, width = PLEX_BACKDROP_WIDTH),
+        categoryId = plexCategoryId(sectionKey),
+        posterUrl = PlexUrls.image(serverBase, thumbPath, width = PLEX_POSTER_WIDTH),
+        backdropUrl = PlexUrls.image(serverBase, artPath ?: thumbPath, width = PLEX_BACKDROP_WIDTH),
         rating = null,
         year = year,
         plot = summary,
@@ -1130,14 +1175,14 @@ class CatalogRepository(
     private fun PlexRecentItem.toSeries(
         sourceId: Long,
         serverBase: String,
-        token: String,
+        sectionKey: String,
         fallbackAddedMillis: Long,
     ) = Series(
         sourceId = sourceId,
         seriesId = ratingKey,
         name = title,
-        categoryId = PLEX_CATEGORY_ID,
-        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH),
+        categoryId = plexCategoryId(sectionKey),
+        posterUrl = PlexUrls.image(serverBase, thumbPath, width = PLEX_POSTER_WIDTH),
         rating = null,
         year = year,
         plot = summary,
@@ -1593,8 +1638,45 @@ class CatalogRepository(
          */
         const val PLEX_SCHEME = "plex://"
 
-        /** Category every Plex item shares, so Plex rows group together rather than by Plex library. */
-        const val PLEX_CATEGORY_ID = "plex"
+            /**
+         * The libraries this shelf reads, by name.
+         *
+         * Fixed rather than chosen. A Plex server can carry several movie and show libraries plus
+         * Discover and Recommended content that is indistinguishable from the viewer's own once it
+         * is a row in a grid, and reading all of them produced a shelf that was neither "my
+         * libraries" nor reliably "the last ten added".
+         *
+         * Matched case-insensitively on the library title. The cost of there being no picker is
+         * that renaming a library in Plex stops OpenTV finding it - so the sync names any that are
+         * missing rather than quietly showing an empty shelf.
+         */
+        val PLEX_LIBRARY_NAMES = listOf("HOME-SERVER", "TV Shows")
+
+        /**
+         * Category for a Plex row, carrying the library it came from.
+         *
+         * The library key rides in the category so a row is attributable to the library that
+         * produced it, and so a sync can replace one server's whole shelf with what it just read.
+         * Deliberately no schema change: the category column is an ordinary nullable string.
+         */
+        fun plexCategoryId(sectionKey: String): String = "$PLEX_CATEGORY_PREFIX$sectionKey"
+
+        /**
+     * Deletes every Plex row on disk, whatever library produced it.
+     *
+     * Used to clear a shelf built before the library was known, when the wrong titles were already
+     * on screen and could not be told apart from the right ones. Nothing here is worth keeping -
+     * the next sync rebuilds it from the two libraries - so the honest move is to empty the shelf
+     * completely rather than leave a mixture that no setting can clear.
+     */
+
+
+    /** True for any Plex row, whatever library it came from. */
+        fun isPlexCategory(categoryId: String?): Boolean =
+            categoryId != null && categoryId.startsWith(PLEX_CATEGORY_PREFIX)
+
+        /** Prefix every Plex row's category starts with. */
+        const val PLEX_CATEGORY_PREFIX = "plex:"
 
         /**
          * Whether this row came from Plex rather than a live-TV provider.
@@ -1608,9 +1690,9 @@ class CatalogRepository(
          * Keyed on the category rather than a join to `sources` because the category is already
          * stamped on every Plex row at write time and cannot disagree with itself later.
          */
-        fun Movie.isPlex(): Boolean = categoryId == PLEX_CATEGORY_ID
+        fun Movie.isPlex(): Boolean = isPlexCategory(categoryId)
 
-        fun Series.isPlex(): Boolean = categoryId == PLEX_CATEGORY_ID
+        fun Series.isPlex(): Boolean = isPlexCategory(categoryId)
 
         /** Drops Plex rows from a Movies/Shows feed. See [Movie.isPlex]. */
         fun List<Movie>.withoutPlex(): List<Movie> = filterNot { it.isPlex() }

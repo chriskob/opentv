@@ -222,6 +222,23 @@ class PlexParserTest {
     }
 
     @Test
+    fun `a show's episodes are read and a trailer or stub is not mistaken for one`() {
+        val xml = """
+            <MediaContainer>
+              <Video ratingKey="501" type="episode" title="Pilot" index="1" />
+              <Video ratingKey="502" type="episode" title="The Return" index="2" />
+              <Video ratingKey="503" type="trailer" title="Some Trailer" index="3" />
+              <Video ratingKey="504" type="episode" title="Next" />
+            </MediaContainer>
+        """
+        val episodes = PlexParser.episodes(stream(xml))
+        assertThat(episodes.map { it.title }).containsExactly("Pilot", "The Return", "Next").inOrder()
+        assertThat(episodes.map { it.ratingKey }).containsExactly("501", "502", "504").inOrder()
+        // A missing index must sort last rather than pretending to be the first episode.
+        assertThat(episodes.last().index).isEqualTo(Long.MIN_VALUE)
+    }
+
+    @Test
     fun `an empty document yields nothing rather than throwing`() {
         assertThat(PlexParser.sections(emptyStream())).isEmpty()
         assertThat(PlexParser.recentlyAdded(emptyStream())).isEmpty()

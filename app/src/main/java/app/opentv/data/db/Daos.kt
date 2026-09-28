@@ -659,6 +659,26 @@ interface MovieDao {
     fun observeRecentlyAdded(limit: Int): Flow<List<Movie>>
 
     /**
+     * Removes every Plex row for one source, so a sync can replace its shelf rather than merge
+     * into it. Matched on the category prefix rather than an exact value because the category
+     * carries the library key.
+     */
+    @Query("DELETE FROM movies WHERE sourceId = :sourceId AND categoryId LIKE 'plex:%'")
+    suspend fun deletePlexRowsForSource(sourceId: Long)
+
+    /**
+     * Removes Plex rows written before categories carried a library key, plus any whose source is
+     * gone. One-time: the old rows cannot be attributed to a library, so the first sync of a
+     * shelf built this way could not tell which of them to keep.
+     */
+    @Query("DELETE FROM movies WHERE categoryId = 'plex' OR (categoryId LIKE 'plex:%' AND sourceId NOT IN (SELECT id FROM sources))")
+    suspend fun deleteLegacyOrphanPlexRows()
+
+    /** Removes every Plex row, whatever library produced it. See clearPlexShelf. */
+    @Query("DELETE FROM movies WHERE categoryId = 'plex' OR categoryId LIKE 'plex:%'")
+    suspend fun deleteAllPlexRows(): Int
+
+    /**
      * A Plex server's newest movies, for that server's own shelf.
      *
      * Scoped by source so one Plex server's additions never appear under another's, and limited
@@ -789,6 +809,16 @@ interface SeriesDao {
     /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
     @Query("SELECT * FROM series ORDER BY addedMillis DESC LIMIT :limit")
     fun observeRecentlyAdded(limit: Int): Flow<List<Series>>
+
+    @Query("DELETE FROM series WHERE sourceId = :sourceId AND categoryId LIKE 'plex:%'")
+    suspend fun deletePlexRowsForSource(sourceId: Long)
+
+    @Query("DELETE FROM series WHERE categoryId = 'plex' OR (categoryId LIKE 'plex:%' AND sourceId NOT IN (SELECT id FROM sources))")
+    suspend fun deleteLegacyOrphanPlexRows()
+
+    /** Removes every Plex row, whatever library produced it. See clearPlexShelf. */
+    @Query("DELETE FROM series WHERE categoryId = 'plex' OR categoryId LIKE 'plex:%'")
+    suspend fun deleteAllPlexRows(): Int
 
     /** A Plex server's newest shows, for that server's own shelf. See the movie equivalent. */
     @Query("SELECT * FROM series WHERE sourceId = :sourceId ORDER BY addedMillis DESC LIMIT :limit")

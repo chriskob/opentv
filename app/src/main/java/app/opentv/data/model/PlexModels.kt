@@ -56,13 +56,12 @@ data class PlexRecentItem(
     val isShow: Boolean get() = type.equals("show", ignoreCase = true)
 }
 
-/** One library on a Plex server, as offered to the viewer on the Plex shelf. */
-data class PlexLibraryOption(
-    val sourceId: Long,
-    val key: String,
+/** One episode of a show, from `/library/metadata/{seriesKey}/children`. */
+data class PlexEpisode(
+    val ratingKey: String,
     val title: String,
-    val isMovies: Boolean,
-    val isEnabled: Boolean,
+    /** Plex's own ordering hint within the series; higher is later. */
+    val index: Long,
 )
 
 /** The playable file behind a Plex item, from `/library/metadata/{ratingKey}`. */
