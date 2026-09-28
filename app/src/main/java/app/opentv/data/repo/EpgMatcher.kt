@@ -64,8 +64,41 @@ object EpgMatcher {
                     return null
                 }
             }
-            return found
+            if (found != null) return found
+
+            // The other direction. Providers ship one guide channel and several live feeds for
+            // it, which is why a playlist carries both `BRAVO` and `BRAVO (WEST)` while the guide
+            // only has the first. Those variants are the guide's name PLUS a qualifier, so their
+            // key is the guide key with a tail — and every lookup above searched the opposite way,
+            // aliases that START WITH the channel's key. Without this the whole regional-variant
+            // family reads "No guide information" however much guide data the provider sent.
+            //
+            // Done as a stripped stem, not a loose prefix. An arbitrary prefix would map
+            // `foxnews` onto a `fox` guide, attaching the wrong channel's schedule — worse than
+            // showing none, because it looks authoritative. Only known qualifiers are removed,
+            // and only when what remains still matches a guide exactly.
+            for (stem in variantStems(groupKey)) {
+                exact[stem]?.let { return it }
+            }
+            return null
         }
+    }
+
+    /**
+     * Candidate stems for a key that is a guide channel plus a feed qualifier, longest qualifier
+     * removed first: `bravowesthd` → `bravowest` → `bravo`.
+     */
+    private fun variantStems(groupKey: String): List<String> {
+        val stems = ArrayList<String>(2)
+        var rest = groupKey
+        // At most two: feeds are labelled at most that often (`bravo west hd`).
+        repeat(2) {
+            val cut = FEED_QUALIFIERS.firstOrNull { rest.length > it.length + MIN_KEY_LENGTH && rest.endsWith(it) }
+                ?: return stems
+            rest = rest.dropLast(cut.length)
+            stems += rest
+        }
+        return stems
     }
 
     /**
@@ -111,4 +144,15 @@ object EpgMatcher {
      * single letters match everything. 2 keeps `e4`/`5usa`-style names alive.
      */
     private const val MIN_KEY_LENGTH = 2
+
+    /**
+     * Tails a provider appends to a feed name when it ships several feeds for one guide channel:
+     * `BRAVO (WEST)`, `BUZZR PLUS`, `E4 HD`. Longest first, so `…WESTHD` strips `hd` then
+     * `west`. Deliberately only region/quality/feed words — never a word that could be part of a
+     * channel's actual name.
+     */
+    private val FEED_QUALIFIERS = listOf(
+        "west", "east", "north", "south", "central", "midwest", "national",
+        "plus", "family", "extra", "hd", "sd", "uhd", "4k", "raw", "feed", "backup", "alt",
+    ).sortedByDescending { it.length }
 }

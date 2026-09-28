@@ -89,9 +89,44 @@ object CatchupResolver {
         globalCorrectionMin: Int = 0,
     ): String? {
         val url = resolveInternal(source, channel, programme, globalCorrectionMin)
-        android.util.Log.i("OpenTV-Catchup", "resolved ${url ?: "null"} (base=${channel.streamUrl})")
+        // Shape only. The URL itself carries the account credentials in its path
+        // (…/timeshift/<user>/<pass>/…), and this ships in release builds, where logcat is
+        // readable over ADB and ends up pasted into bug reports.
+        android.util.Log.i(
+            "OpenTV-Catchup",
+            "resolved ${if (url == null) "null" else redactCredentials(url)} " +
+                "(base=${redactCredentials(channel.streamUrl)})",
+        )
         return url
     }
+
+    /**
+     * Strips account credentials out of a URL so it can be logged.
+     *
+     * Both halves of the pair go, not just the password: the username is half the secret, and a
+     * log that keeps it still identifies the account to anyone holding a list of portals. Covers
+     * the shapes an Xtream credential actually arrives in — a `user/pass` path segment
+     * (`/live/…`, `/timeshift/…`), a `username=…&password=…` query, and `user:pass@host`
+     * userinfo. Deliberately crude; it only ever runs on strings bound for a log line, and it
+     * fails toward over-masking rather than under-masking.
+     */
+    internal fun redactCredentials(url: String): String = url
+        .replace(Regex("""(/(?:live/|timeshift/))[^/]+/[^/]+(?=/)"""), "$1***/***/")
+        .replace(
+            Regex("""([?&](?:username|user|password|pass|token|api_key)=)[^&#]*""", RegexOption.IGNORE_CASE),
+            "$1***",
+        )
+        .replace(Regex("""//[^/@\s]+:[^/@\s]+@"""), "//***:***@")
+
+    /**
+     * Strips a container extension from a provider stream id.
+     *
+     * Only a known trailing extension goes. Cutting at the last dot unconditionally mangles any
+     * id that legitimately contains one — `cnn.us.hd` becomes `cnn.us` — and asking a panel for
+     * a stream id it does not have is how catch-up lands on the wrong channel entirely.
+     */
+    private fun stripStreamExtension(streamId: String): String =
+        streamId.replace(Regex("""\.(ts|m3u8|mp4|mpegts)$""", RegexOption.IGNORE_CASE), "")
 
     private fun resolveInternal(
         source: Source,
@@ -116,11 +151,19 @@ object CatchupResolver {
         val nowSec = nowMillis / 1000L
         val offsetSec = (nowSec - startUtcSec).coerceAtLeast(0L)
         val utcTz = TimeZone.getTimeZone("UTC")
-        val stamp = SimpleDateFormat("yyyy-MM-dd:HH-mm", Locale.US).apply { timeZone = utcTz }.format(Date(startUtcMillis))
+        // The stamp is a wall clock. Measured against a real provider whose panel is not on UTC,
+        // the panel reads it as UTC and resolves it correctly — the mismatch that actually
+        // shipped was a session-state bug, not a timezone. So the stamp stays UTC, and
+        // Settings > Catch-up > Correction is the offset that absorbs a provider's real skew.
+        val stamp = SimpleDateFormat("yyyy-MM-dd:HH-mm", Locale.US)
+            .apply { timeZone = utcTz }
+            .format(Date(startUtcMillis))
 
         // 1. Native Xtream Codes source
         if (source.kind == SourceKind.XTREAM) {
-            val cleanStreamId = channel.streamId.removePrefix("tvg:").removePrefix("url:").substringBeforeLast('.')
+            val cleanStreamId = stripStreamExtension(
+                channel.streamId.removePrefix("tvg:").removePrefix("url:"),
+            )
             val baseUrl = source.url.trimEnd('/')
             val u = source.username.orEmpty()
             val p = source.password.orEmpty()
@@ -134,7 +177,9 @@ object CatchupResolver {
         // its explicit `catchup-source` template when one was supplied.
         if (template != null && mode != "shift") {
             val stampXtream = stamp
-            val stampFlussonic = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply { timeZone = utcTz }.format(Date(startUtcMillis))
+            val stampFlussonic = SimpleDateFormat("yyyyMMddHHmmss", Locale.US)
+                .apply { timeZone = utcTz }
+                .format(Date(startUtcMillis))
 
             var url = template
                 .replace("{utc}", startUtcSec.toString())

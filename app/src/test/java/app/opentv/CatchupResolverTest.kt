@@ -143,4 +143,96 @@ class CatchupResolverTest {
         assertThat(plain).contains("2023-11-14:22-15")
         assertThat(shifted).contains("2023-11-14:22-10")
     }
+
+    private fun xtreamSource() = Source(
+        name = "X",
+        kind = SourceKind.XTREAM,
+        url = "http://panel.example.com",
+        username = "u",
+        password = "p",
+    )
+
+    /**
+     * The timeshift stamp is a wall clock written in UTC, and that is deliberate.
+     *
+     * This was briefly switched to the provider's own timezone on the theory that panels read it
+     * locally. A real request disproved it: 10:00 America/Chicago went out as `15-00`, which is
+     * exactly correct, and the content that came back was still the wrong programme. A timezone
+     * offset is a whole number of hours; the skew actually observed was about 53 minutes. Real
+     * provider skew is what Catch-up Correction is for, and it now spans hours.
+     */
+    @Test
+    fun `timeshift stamp is the utc wall clock for the requested instant`() {
+        val ch = m3uChannel().copy(streamId = "4242", sourceId = 7)
+        val url = CatchupResolver.resolve(xtreamSource(), ch, programme())!!
+        // 22:13:20Z, and 10:00 America/Chicago on the same day is 15:00Z.
+        assertThat(url).contains("2023-11-14:22-13")
+        assertThat(CatchupResolver.resolve(xtreamSource(), ch, programme(), globalCorrectionMin = -470))
+            .contains("2023-11-14:14-23")
+    }
+
+    @Test
+    fun `epoch placeholders are unaffected by the stamp`() {
+        val ch = m3uChannel(
+            tvArchive = true,
+            days = 3,
+            cmd = "http://arch.example.com/c/{utc}/{duration}/{(b)yyyy-MM-dd:HH-mm}.m3u8",
+        )
+        val url = CatchupResolver.resolve(m3uSource(), ch, programme())!!
+        assertThat(url).isEqualTo(
+            "http://arch.example.com/c/${startMillis / 1000L}/3600/2023-11-14:22-13.m3u8",
+        )
+    }
+
+    /**
+     * Stream ids legitimately contain dots. Cutting at the last one asked the panel for a
+     * stream that does not exist, which is how catch-up ends up on the wrong channel.
+     */
+    @Test
+    fun `only a known container extension is stripped from the stream id`() {
+        val ch = m3uChannel().copy(streamId = "cnn.us.hd", sourceId = 8)
+        assertThat(CatchupResolver.resolve(xtreamSource(), ch, programme()))
+            .endsWith("/cnn.us.hd.ts")
+
+        val suffixed = m3uChannel().copy(streamId = "12345.ts", sourceId = 8)
+        assertThat(CatchupResolver.resolve(xtreamSource(), suffixed, programme()))
+            .endsWith("/12345.ts")
+
+        val hls = m3uChannel().copy(streamId = "9999.m3u8", sourceId = 8)
+        assertThat(CatchupResolver.resolve(xtreamSource(), hls, programme()))
+            .endsWith("/9999.ts")
+    }
+
+    /**
+     * The resolved URL carries the account credentials in its path, and this is a release build:
+     * logcat is readable over ADB and gets pasted into bug reports. Both halves of the pair have
+     * to go — a log that keeps the username still identifies the account to anyone holding a list
+     * of portals.
+     */
+    @Test
+    fun `logging a resolved url never leaks either half of the credentials`() {
+        val redacted = CatchupResolver.redactCredentials(
+            "http://panel.example.com:8080/timeshift/alice/secret123/60/2023-11-15:01-13/4242.ts",
+        )
+        assertThat(redacted).doesNotContain("alice")
+        assertThat(redacted).doesNotContain("secret123")
+        // The parts that make the line diagnosable have to survive.
+        assertThat(redacted).contains("panel.example.com:8080")
+        assertThat(redacted).contains("2023-11-15:01-13")
+        assertThat(redacted).contains("4242.ts")
+    }
+
+    @Test
+    fun `redaction covers query-string and userinfo credential shapes too`() {
+        val query = CatchupResolver.redactCredentials(
+            "http://host/get.php?username=bob&password=hunter2&type=m3u_plus",
+        )
+        assertThat(query).doesNotContain("bob")
+        assertThat(query).doesNotContain("hunter2")
+        assertThat(query).contains("type=m3u_plus")
+
+        val userinfo = CatchupResolver.redactCredentials("http://carol:pw@host:8080/live/1.ts")
+        assertThat(userinfo).doesNotContain("carol")
+        assertThat(userinfo).doesNotContain("pw@")
+    }
 }

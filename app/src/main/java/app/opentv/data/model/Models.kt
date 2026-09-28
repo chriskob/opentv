@@ -75,6 +75,16 @@ data class Source(
      * Ignored for M3U sources, whose channel URLs come straight from the playlist.
      */
     val liveFormat: LiveStreamFormat = LiveStreamFormat.HLS,
+    /**
+     * Retained for schema compatibility only — nothing reads it.
+     *
+     * It was added for a provider-timezone catch-up feature that measurement disproved, and the
+     * feature was removed. The COLUMN stays because the schema is live on real devices: dropping
+     * it means shipping a LOWER schema version than boxes already hold, and a downgrade is not a
+     * migration Room can perform. See `fallbackToDestructiveMigration` in OpenTvDatabase for what
+     * that did. Always null on a fresh install, ignored everywhere else.
+     */
+    val serverTimezone: String? = null,
     val enabled: Boolean = true,
     /**
      * Content types this playlist was added for — the phone manager portal's

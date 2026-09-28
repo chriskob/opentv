@@ -211,8 +211,10 @@
     <string name="settings_catchup_days_title">Catch-up days</string>
     <string name="settings_catchup_days_subtitle">Cap how far back catch-up reaches. Provider follows tv_archive_duration / catchup-days; this can only narrow it, never extend past the 3-day guide.</string>
     <string name="settings_catchup_days_provider">Provider</string>
+    <string name="player_retrying">Retrying %1$d of %2$d…</string>
+    <string name="guide_loading_info">Loading guide…</string>
     <string name="settings_catchup_correction_title">Catch-up correction</string>
-    <string name="settings_catchup_correction_subtitle">Shift the archive start when the stream runs early or late vs the guide.</string>
+    <string name="settings_catchup_correction_subtitle">Fine-tune the archive start when the stream still runs early or late vs the guide. Left/Right to adjust.</string>
     <string name="settings_catchup_skip_title">Catch-up skip step</string>
     <string name="settings_catchup_skip_subtitle">Left/Right scrub while an archive plays. Minutes are coarse on Xtream .ts streams.</string>
     <string name="settings_section_vod_buttons">Movie &amp; show player buttons</string>

@@ -150,7 +150,7 @@ internal fun formatChannelNameForDisplay(name: String): String {
 /**
  * The programme guide: channels down the left, a scrolling time-line to the right, with
  * each programme drawn as a block whose width is its duration. This is the "grid" a TV guide
- * is supposed to be — you can see what is on now, what is next, and read across the evening.
+ * is supposed to be â€” you can see what is on now, what is next, and read across the evening.
  *
  * ## How it lays out without a custom Layout
  *
@@ -158,14 +158,14 @@ internal fun formatChannelNameForDisplay(name: String): String {
  * scrolls all of them in lock-step and the columns stay time-aligned. Within a row, blocks
  * are placed left to right at [MINUTE] width per minute; a leading spacer covers any gap
  * before the first programme, and gaps between programmes get their own spacer. No absolute
- * positioning, no measuring pass — just widths, which is cheap enough for a lazy list of
+ * positioning, no measuring pass â€” just widths, which is cheap enough for a lazy list of
  * hundreds of channels on a weak TV box.
  *
  * ## Performance: per-block key event handlers removed
  *
  * Each [ProgrammeBlock] used to carry its own [onPreviewKeyEvent] for wrap-around navigation
  * (up from first row / down from last row). On a row with 20+ programmes, that meant 20+
- * identical key event handlers — all checking the same condition — and the Compose focus system
+ * identical key event handlers â€” all checking the same condition â€” and the Compose focus system
  * walked every one on each dpad press. Now wrap-around is handled ONLY at the [GuideRow] channel
  * column level (one handler per row), and blocks use simple [focusable] + [clickable].
  */
@@ -179,6 +179,7 @@ fun GuideGrid(
     onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
     modifier: Modifier = Modifier,
     epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
+    epgHydrationComplete: StateFlow<Boolean>? = null,
     playingKey: Any? = null,
     focusRequester: FocusRequester? = null,
     horizontalScrollState: androidx.compose.foundation.ScrollState? = null,
@@ -191,15 +192,15 @@ fun GuideGrid(
     onJumpToLive: () -> Unit = {},
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
-    /** Fired when LEFT is pressed on the leftmost programme block — opens the category rail. */
+    /** Fired when LEFT is pressed on the leftmost programme block â€” opens the category rail. */
     onExitLeft: () -> Boolean = { false },
     dayOffset: Int = 0,
-    /** Channel ids whose catch-up the resolver can actually build (per-channel capability) —
+    /** Channel ids whose catch-up the resolver can actually build (per-channel capability) â€”
      *  the guide's catch-up badge shows exactly for these, never for the rest. */
     catchUpChannelIds: Set<Long> = emptySet(),
-    /** (channelId, programme start) pairs the viewer has set a reminder for — each draws a bell. */
+    /** (channelId, programme start) pairs the viewer has set a reminder for â€” each draws a bell. */
     reminderKeys: Set<Pair<Long, Long>> = emptySet(),
-    /** "EPG updated … · N channels" stamp shown in the time header, or null until first sync. */
+    /** "EPG updated â€¦ Â· N channels" stamp shown in the time header, or null until first sync. */
     epgInfoLine: String? = null,
     /** Increment to ask the grid to restore the cursor onto the playing channel at "now". */
     restoreTick: Int = 0,
@@ -214,7 +215,7 @@ fun GuideGrid(
 ) {
     // The caller's highlight is read through its State only from key handlers and effects (via
     // selectedKeyState.value), never during composition. Reading it here would recompose the
-    // whole grid on every d-pad step — and the grid is the source of that very value.
+    // whole grid on every d-pad step â€” and the grid is the source of that very value.
     val density = LocalDensity.current
     val focusTargetKey = playingKey ?: rows.firstOrNull()?.key
     // Rail-preview pseudo-cursor anchor: the playing channel's row when visible, else the first.
@@ -269,8 +270,8 @@ fun GuideGrid(
 
     // Width of the horizontally-scrollable timeline (guide area minus the fixed channel column).
     // Exposed as state and read lazily (inside the compose window below and in the keep-visible
-    // callback), so an outer layout change — e.g. the main menu sliding in and widening the guide
-    // — updates the viewport without recomposing every guide row on each animation frame.
+    // callback), so an outer layout change â€” e.g. the main menu sliding in and widening the guide
+    // â€” updates the viewport without recomposing every guide row on each animation frame.
     val screenWidthPx = with(density) {
         LocalConfiguration.current.screenWidthDp.dp.roundToPx()
     }
@@ -284,7 +285,7 @@ fun GuideGrid(
     // Time span of programme blocks each row needs to compose: the viewport plus a buffer on
     // each side (so d-pad stepping and fast scrubs never outrun the built cells). Derived from
     // scroll.value but QUANTISED to a coarse step, so the value is stable while scrolling within
-     // a step and rows recompose only when the window advances a step — not on every scrolled
+     // a step and rows recompose only when the window advances a step â€” not on every scrolled
      // pixel. The screen-width fallback keeps the first composition bounded before measurement.
 
     val composeWindow by remember(effectiveStartMillis, screenWidthPx) {
@@ -316,7 +317,7 @@ fun GuideGrid(
     var activeFocusedIndex by remember { mutableStateOf<Int?>(null) }
     // Focus/anchor state is exposed as State objects and read by each row through a
     // derivedStateOf. The LazyColumn item lambda no longer reads the values directly, so a
-    // d-pad move no longer recomposes every visible row — only the rows whose highlight or
+    // d-pad move no longer recomposes every visible row â€” only the rows whose highlight or
     // target block actually changed.
     val activeFocusedKeyState = remember { mutableStateOf<Any?>(playingKey ?: rows.firstOrNull()?.key) }
     var activeFocusedKey by activeFocusedKeyState
@@ -337,8 +338,8 @@ fun GuideGrid(
 
     // ---- TiviMate-style timeline scrub (HOLD LEFT only) ----------------------------------------
     // HOLD Left anywhere on the timeline travels back through the guide in 30-minute steps, aligned
-    // to the header ruler. Forward scrubbing is deliberately not a hold gesture — TiviMate only uses
-    // hold-LEFT to reach the archive — so a held RIGHT does nothing beyond its single-tap column
+    // to the header ruler. Forward scrubbing is deliberately not a hold gesture â€” TiviMate only uses
+    // hold-LEFT to reach the archive â€” so a held RIGHT does nothing beyond its single-tap column
     // step. On release, focus re-anchors to the programme now under the viewport's left edge, so the
     // cursor is back on screen and Up/Down continues from the scrubbed time. Back returns to live
     // (HomeScreen's backScrollActive handler), which is also how the category rail is reached.
@@ -353,7 +354,7 @@ fun GuideGrid(
             scrubJob?.cancel()
             scrubJob = coroutineScope.launch {
                 // Enter back-scroll layout: rows re-lay out from the loaded window's start and the
-                // viewport is anchored on "now" first — so pressing Back afterwards restores
+                // viewport is anchored on "now" first â€” so pressing Back afterwards restores
                 // "now + playing channel".
                 onEnableBackScroll()
                 val frameStart = calculateMountedFrameStartTime(System.currentTimeMillis())
@@ -367,7 +368,7 @@ fun GuideGrid(
                 delay(30)
                 // One half-hour column per tick: the timeline walks back in 30-minute increments,
                 // matching the guide's header ruler, rather than scrolling by pixels. Wait for the
-                // back-scroll layout to give the timeline a real scroll extent first — until then
+                // back-scroll layout to give the timeline a real scroll extent first â€” until then
                 // the range is 0 and every step would clamp straight back to the start.
                 val stepPx = (HALF_HOUR_MS / 60_000.0 * MINUTE_DP * density.density).roundToInt()
                 var anchored = false
@@ -462,7 +463,7 @@ fun GuideGrid(
             activeFocusedKey = k
             targetProgKey = liveProg?.id
             // The live cursor sits on "now"'s half-hour column, which is also the viewport's left
-            // edge in live mode — not the live programme's midpoint, which drifted into the 2pm
+            // edge in live mode â€” not the live programme's midpoint, which drifted into the 2pm
             // slot for a 1-hour show.
             temporalAnchorMillis = halfHourColumnStart(now)
             isNavigatingVertically = false
@@ -535,14 +536,14 @@ fun GuideGrid(
     }
 
     // HomeScreen Back handler: restore the cursor onto the playing channel at "now".
-    // During a rail preview the rail owns focus — focusAndCenterRow calls onFocusRow, which
-    // collapses the rail — so only center the list visually and park the focus-box state.
+    // During a rail preview the rail owns focus â€” focusAndCenterRow calls onFocusRow, which
+    // collapses the rail â€” so only center the list visually and park the focus-box state.
     LaunchedEffect(restoreTick) {
         if (restoreTick > 0) {
             if (previewTopRow) {
                 if (rows.isNotEmpty()) {
                     // Anchor on the playing channel when the previewed category contains it, else
-                    // the first row — never a key that matches no drawn row, or the cursor vanishes.
+                    // the first row â€” never a key that matches no drawn row, or the cursor vanishes.
                     val k = rows.firstOrNull { it.key == (playingKey ?: selectedKeyState.value) }?.key
                         ?: rows.first().key
                     val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
@@ -568,7 +569,7 @@ fun GuideGrid(
     // Observed with snapshotFlow + distinctUntilChanged rather than keyed on `scroll.value`.
     // Keying a LaunchedEffect on the scroll position restarted (cancelled + relaunched) this
     // coroutine on EVERY scrolled pixel, and each restart pushed a state write up to HomeScreen
-    // — a whole-screen recomposition per frame. Now it fires only when the threshold flips.
+    // â€” a whole-screen recomposition per frame. Now it fires only when the threshold flips.
     val currentOnTimeShifted by rememberUpdatedState(onTimeShifted)
     LaunchedEffect(backScrollActive) {
         snapshotFlow { backScrollActive || scroll.value > 4 }
@@ -803,7 +804,7 @@ fun GuideGrid(
                     }
                     // TiviMate-style scrub: HOLD Left anywhere on the timeline to travel back
                     // through the guide in 30-minute steps. A single Left tap falls through and
-                    // steps the cursor one column. RIGHT is tap-only — a held RIGHT is swallowed so
+                    // steps the cursor one column. RIGHT is tap-only â€” a held RIGHT is swallowed so
                     // it never walks the timeline forward.
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft -> {
                         if (e.nativeKeyEvent.repeatCount == 0) {
@@ -896,13 +897,14 @@ fun GuideGrid(
                         val isPlaying = row.key == playingKey
                         val rowRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() }
                         // During a rail preview the pseudo-cursor must sit on the ANCHOR row (the
-                        // playing channel when visible, else the first row) — NOT hard-bound to
+                        // playing channel when visible, else the first row) â€” NOT hard-bound to
                         // index 0. Hard-binding it made the cursor jump to the top block whenever
                         // the rail opened, even when the playing channel sat mid-list.
                         val isPreviewAnchor = previewTopRow && row.key == previewAnchorKey
                         GuideRow(
                             baseRow = row,
                             epgRows = epgRows,
+                            epgHydrationComplete = epgHydrationComplete,
                             rowIndex = index,
 
                             totalRows = rows.size,
@@ -929,7 +931,7 @@ fun GuideGrid(
                                  if (pendingTargetProgId == null || pendingTargetProgId == prog?.id) {
                                      // The temporal anchor is the half-hour column, and it is only moved
                                      // by an explicit horizontal step (stepColumn), a scrub release, or a
-                                     // jump to live — never by gaining focus. Rewriting it from the
+                                     // jump to live â€” never by gaining focus. Rewriting it from the
                                      // programme's midpoint here is what made the cursor slide right a
                                      // column when a row contained a 1-hour block.
                                      if (isNavigatingVertically) isNavigatingVertically = false
@@ -1007,6 +1009,7 @@ fun ChannelList(
     onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
     modifier: Modifier = Modifier,
     epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
+    epgHydrationComplete: StateFlow<Boolean>? = null,
     playingKey: Any? = null,
     focusRequester: FocusRequester? = null,
     onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
@@ -1103,7 +1106,7 @@ fun ChannelList(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         if (rows.isEmpty()) {
-            // Focusable empty state — same reason as GuideGrid's: the guide must always offer
+            // Focusable empty state â€” same reason as GuideGrid's: the guide must always offer
             // a focus target, or leaving the rail onto an empty category strands the cursor.
             item(key = "guide-empty") {
                 Box(
@@ -1128,6 +1131,7 @@ fun ChannelList(
              ChannelListRow(
                  baseRow = row,
                  epgRows = epgRows,
+                 epgHydrationComplete = epgHydrationComplete,
                  activeKeyState = activeKeyState,
                  fallbackKey = playingKey ?: rows.firstOrNull()?.key,
 
@@ -1159,6 +1163,7 @@ private val GuideCellShape = RoundedCornerShape(6.dp)
 private fun ChannelListRow(
     baseRow: ChannelsViewModel.Row,
     epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
+    epgHydrationComplete: StateFlow<Boolean>? = null,
     rowIndex: Int = 0,
     totalRows: Int = 1,
     nowMillis: Long,
@@ -1248,7 +1253,7 @@ private fun ChannelListRow(
             maxLines = 1,
             modifier = Modifier.width(32.dp),
         )
-        // Channel Logo — enlarged for high legibility across the room
+        // Channel Logo â€” enlarged for high legibility across the room
         AsyncImage(
             model = logoModel,
             contentDescription = null,
@@ -1315,7 +1320,7 @@ private fun TimeHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Top-left label: Current Date & Time in clean Cyan, matching TiviMate, with the
-        // EPG sync stamp ("EPG updated … · N channels") stacked underneath it.
+        // EPG sync stamp ("EPG updated â€¦ Â· N channels") stacked underneath it.
         Row(
             Modifier
                 .width(CHANNEL_COLUMN)
@@ -1380,6 +1385,7 @@ private fun TimeHeader(
 private fun GuideRow(
     baseRow: ChannelsViewModel.Row,
     epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
+    epgHydrationComplete: StateFlow<Boolean>? = null,
     rowIndex: Int = 0,
     totalRows: Int = 1,
     windowStartMillis: Long,
@@ -1518,7 +1524,7 @@ private fun GuideRow(
                 )
             }
 
-            // Catchup Icon if available (circular replay icon ↺) — per-channel, mirroring what
+            // Catchup Icon if available (circular replay icon â†º) â€” per-channel, mirroring what
             // CatchupResolver can actually build for THIS channel (flag, template, portal source,
             // or Xtream-format stream URL). Channels outside that get no badge.
             if (row.primary.tvArchive || row.primary.id in catchUpChannelIds) {
@@ -1546,6 +1552,22 @@ private fun GuideRow(
         // ---- Scrolling programme timeline blocks ----
         Row(Modifier.horizontalScroll(scroll)) {
             val programmes = row.programmes
+            // Rows are deliberately emitted before their guide data (see the three-phase emission
+            // in ChannelsViewModel: every row first with no EPG, then the visible ones, then the
+            // rest in chunks). So an empty row here usually means "not loaded yet" â€” and calling
+            // that "No guide information" states something false that the guide contradicts a
+            // moment later. That is what it looked like: real channels reported as having no
+            // guide, then filling in after a category change forced a re-query.
+            //
+            // The switch back to the honest answer is [epgHydrationComplete], not [epgRow]: a
+            // channel that genuinely has no guide data never gets a non-null epgRow either, so
+            // keying off that alone left those rows reading "Loading guide…" forever. Hydration
+            // being finished is what tells the two cases apart.
+            val guideSettled = epgHydrationComplete?.collectAsState(initial = false)?.value ?: true
+            val awaitingGuide = programmes.isEmpty() && !guideSettled
+            val emptyRowLabel = stringResource(
+                if (awaitingGuide) R.string.guide_loading_info else R.string.guide_no_info,
+            )
             val windowEndMillis = windowStartMillis + (HOURS_IN_WINDOW * 3600_000L)
             if (programmes.isEmpty()) {
                 var emptyFocused by remember { mutableStateOf(false) }
@@ -1591,7 +1613,7 @@ private fun GuideRow(
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
-                        stringResource(R.string.guide_no_info),
+                        emptyRowLabel,
                         style = MaterialTheme.typography.bodyLarge.copy(fontSize = 13.sp),
                         color = if (emptyHighlighted) AppTheme.palette.onCellFocus else AppTheme.palette.textMuted,
                     )
@@ -1664,8 +1686,8 @@ private fun GuideRow(
                 // Only build the blocks that are on (or just off) the horizontal viewport, plus
                 // the focus target. Positions stay exact because layout x is linear in time
                 // (every width goes through widthFor), so a single Spacer covers every skipped
-                // block and the row's total width — and therefore the shared ScrollState's
-                // maxValue — is identical to a full render. The set changes only when the
+                // block and the row's total width â€” and therefore the shared ScrollState's
+                // maxValue â€” is identical to a full render. The set changes only when the
                 // viewport crosses a block boundary, so scrolling does not recompose rows.
                 val composedIndices by remember(
                     blockLayouts,
@@ -1719,7 +1741,7 @@ private fun GuideRow(
 
                     val extReq = if (isTarget && isFocused) externalFocusRequester else null
                     // A reminder is stored against one channel id, but the row groups every quality
-                    // variant, so test them all — the bell then survives the primary changing.
+                    // variant, so test them all â€” the bell then survives the primary changing.
                     val hasReminder = row.variants.any { variant ->
                         prog.startUtcMillis in reminderStartsByChannel[variant.id].orEmpty()
                     }
@@ -1769,7 +1791,7 @@ private fun GuideRow(
                     val isFillerTarget = blockLayouts.isEmpty() || targetBlockIdx < 0
                     val extReq = if (isFillerTarget && isFocused) externalFocusRequester else null
                     ProgrammeBlock(
-                        title = stringResource(R.string.guide_no_info),
+                        title = emptyRowLabel,
                         width = remainingWidth,
                         isNow = false,
                         progress = 0f,
@@ -1789,7 +1811,7 @@ private fun GuideRow(
     }
 }
 
-/** A tiny state chip on a programme cell — "NEW" (amber) or "LIVE" (red). */
+/** A tiny state chip on a programme cell â€” "NEW" (amber) or "LIVE" (red). */
 @Composable
 private fun GuideBadge(text: String, background: Color) {
     Box(
@@ -1829,9 +1851,9 @@ private fun ProgrammeBlock(
     isLive: Boolean = false,
     /** The viewer has a reminder set for this programme, so it wears a bell. */
     hasReminder: Boolean = false,
-    /** Finished airing — drawn dimmed, TiviMate-style, unless focused. */
+    /** Finished airing â€” drawn dimmed, TiviMate-style, unless focused. */
     isPast: Boolean = false,
-    /** Past programme on an archive channel — wears the replay marker. */
+    /** Past programme on an archive channel â€” wears the replay marker. */
     canReplay: Boolean = false,
     pseudoFocused: Boolean = false,
     isRowHighlighted: Boolean = false,
@@ -1853,7 +1875,7 @@ private fun ProgrammeBlock(
     // D-pad long-OK detection. combinedClickable's onLongClick never fires for a held
     // DPAD_CENTER/ENTER from a TV remote, and a timer is the wrong shape for it anyway:
     // firing mid-hold while the key is still down leaves the remaining repeat events (and the
-    // release) to land on whatever the action opened — which immediately activated the menu's
+    // release) to land on whatever the action opened â€” which immediately activated the menu's
     // auto-focused first row. So the hold is measured from the system's own event timestamps
     // and fired on key-UP, and that up is consumed so the short-press click never reaches
     // `clickable` (nor activates the menu the action just opened).
@@ -1919,7 +1941,7 @@ private fun ProgrammeBlock(
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             // One accessibility node per programme cell, not two (the cell + its title Text).
             // Projectivy's accessibility service is active on these boxes, so Compose walks the
-            // semantics tree every frame — merging halves the nodes on the guide's busiest screen.
+            // semantics tree every frame â€” merging halves the nodes on the guide's busiest screen.
             .semantics(mergeDescendants = true) {},
     ) {
         Row(

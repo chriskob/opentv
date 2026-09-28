@@ -893,15 +893,36 @@ class AppSettings private constructor(context: Context) {
      * Global start-time correction in minutes, signed (TiviMate: Catch-up Correction).
      * Added to the channel's own `catchup-correction` before building the timeshift
      * stamp/utc, to align streams whose archive starts early/late vs the EPG.
+     *
+     * The range spans hours, not minutes, and that is the whole point. This used to clamp to
+     * +/-30, which cannot express the most common real fault there is: a panel that reads the
+     * timeshift stamp in its own timezone is out by that timezone's offset, so a provider three
+     * hours ahead needed +180 and the control refused to go past +30. The user was left with a
+     * catch-up that played confidently, titled correctly, and hours from the programme chosen.
      */
     private val _catchupCorrectionMin = MutableStateFlow(prefs.getInt(KEY_CATCHUP_CORRECTION, 0))
     val catchupCorrectionMin: StateFlow<Int> = _catchupCorrectionMin.asStateFlow()
 
     fun setCatchupCorrectionMin(value: Int) {
-        val clamped = value.coerceIn(-30, 30)
+        val clamped = value.coerceIn(-CATCHUP_CORRECTION_LIMIT_MIN, CATCHUP_CORRECTION_LIMIT_MIN)
         prefs.edit().putInt(KEY_CATCHUP_CORRECTION, clamped).apply()
         _catchupCorrectionMin.value = clamped
     }
+
+    /**
+     * Whether a timeshift `start` stamp is written in the provider's own timezone.
+     *
+     * Removed. It was built on a measured guess that catch-up was landing hours off because
+     * panels read the stamp as their own wall clock, and the log disproved it: a real request for
+     * 10:00 America/Chicago went out as 15:00 UTC, which is exactly right, and the content that
+     * came back was wrong for a different reason entirely (a session-state bug). A timezone offset
+     * is a whole number of hours, and the observed skew was about 53 minutes.
+     *
+     * It could also never have engaged for the common case: the zone only exists on a native
+     * Xtream source, and most providers are added as an M3U playlist that never authenticates
+     * against player_api.php. So it would have sat in Settings looking meaningful while doing
+     * nothing. [catchupCorrectionMin] is the real lever, and it now spans hours.
+     */
 
     /**
      * Seek step for catch-up/archive playback in seconds (TiviMate: Playback > Skip Steps).
@@ -945,6 +966,12 @@ class AppSettings private constructor(context: Context) {
     }
 
     companion object {
+        /** +/- 12 hours. Beyond any real panel offset, and still one tap from either end. */
+        const val CATCHUP_CORRECTION_LIMIT_MIN = 720
+
+        /** One press of the stepper. A minute at this magnitude is a rounding error, not a nudge. */
+        const val CATCHUP_CORRECTION_STEP_MIN = 15
+
         private const val KEY_PALETTE = "app_palette"
         /**
          * One-shot gate for the v138 TVPlayer takeover: every install — new or upgrading —

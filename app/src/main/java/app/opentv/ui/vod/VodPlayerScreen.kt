@@ -649,6 +649,38 @@ fun VodPlayerScreen(
         )
 
         when (val current = state) {
+            is PlayerController.State.Stalled ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(48.dp)) {
+                        if (!current.canRetry) CircularProgressIndicator()
+                        if (!current.canRetry) Spacer(Modifier.height(16.dp))
+                        Text(current.title, color = Color.White)
+                        Spacer(Modifier.height(12.dp))
+                        Text(current.message, color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center)
+                        if (current.canRetry) {
+                            Spacer(Modifier.height(24.dp))
+                            Button(onClick = { controller.retry() }) { Text(stringResource(R.string.common_try_again)) }
+                        }
+                    }
+                }
+
+            is PlayerController.State.Retrying ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(48.dp)) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(16.dp))
+                        Text(current.title, color = Color.White)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.player_retrying, current.attempt, current.maxAttempts),
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(current.message, color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center)
+                    }
+                }
+
             is PlayerController.State.Buffering ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {

@@ -63,6 +63,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -805,7 +810,19 @@ fun <T> SettingsDropdown(
     }
 }
 
-/** A labelled number stepper (− value +). */
+/**
+ * A labelled number stepper (− value +).
+ *
+ * The whole row is the one focus target, and LEFT/RIGHT move the value. It used to be two
+ * separately focusable − and + buttons nested inside a bare Row — and on a real box neither
+ * button could be reached: d-pad traversal stepped straight over the row, from the setting above
+ * to the one below. So the control rendered, looked interactive, and could not be operated with a
+ * remote at all. For Catch-up correction that meant the single setting able to fix an archive
+ * running early or late was unreachable, which is very likely why it went unused for so long.
+ *
+ * One row, one focus stop, arrows to adjust — the same shape as every other settings row, and the
+ * same left/right idiom the rest of the app uses for stepping and scrubbing.
+ */
 @Composable
 fun SettingsStepperRow(
     title: String,
@@ -817,15 +834,29 @@ fun SettingsStepperRow(
     canDecrement: Boolean = true,
     canIncrement: Boolean = true,
 ) {
+    var focused by remember { mutableStateOf(false) }
     Row(
         modifier
             .fillMaxWidth()
+            .settingsFocus(
+                shape = SettingsShape.Row,
+                onFocusChange = { focused = it },
+            )
+            .focusable()
+            .onPreviewKeyEvent { e ->
+                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (e.key) {
+                    Key.DirectionLeft -> if (canDecrement) { onDecrement(); true } else false
+                    Key.DirectionRight -> if (canIncrement) { onIncrement(); true } else false
+                    else -> false
+                }
+            }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingsRowText(title = title, subtitle = subtitle)
         Spacer(Modifier.width(16.dp))
-        StepperButton("−", onDecrement, canDecrement)
+        StepperGlyph("−", enabled = canDecrement, muted = !canDecrement)
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
@@ -834,34 +865,28 @@ fun SettingsStepperRow(
             modifier = Modifier.widthIn(min = 64.dp).padding(horizontal = 8.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
-        StepperButton("+", onIncrement, canIncrement)
+        StepperGlyph("+", enabled = canIncrement, muted = !canIncrement)
     }
 }
 
+/**
+ * The −/+ marks on a stepper row. Decorative: the row itself takes focus and LEFT/RIGHT adjust, so
+ * these must not be focus stops or they would re-introduce the unreachable-targets bug.
+ */
 @Composable
-private fun StepperButton(glyph: String, onClick: () -> Unit, enabled: Boolean) {
-    var focused by remember { mutableStateOf(false) }
+private fun StepperGlyph(glyph: String, enabled: Boolean, muted: Boolean) {
     Box(
-        Modifier
-            .size(44.dp)
-            .settingsFocus(
-                shape = SettingsShape.Control,
-                enabled = enabled,
-                focusScale = 1.06f,
-                onFocusChange = { focused = it },
-            )
-            .focusable(enabled)
-            .clickable(enabled = enabled, indication = null, interactionSource = remember { MutableInteractionSource() }) { onClick() },
+        Modifier.size(44.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = glyph,
             style = MaterialTheme.typography.headlineSmall.copy(fontSize = 18.sp),
             fontWeight = FontWeight.Medium,
-            color = when {
-                focused -> MaterialTheme.colorScheme.onSurface
-                enabled -> MaterialTheme.colorScheme.onSurface
-                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            color = if (muted) {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.onSurface
             },
         )
     }

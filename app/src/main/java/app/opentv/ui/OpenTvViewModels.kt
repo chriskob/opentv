@@ -1160,6 +1160,19 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private val _epgRows = MutableStateFlow<Map<Any, Row>>(emptyMap())
     val epgRows: StateFlow<Map<Any, Row>> = _epgRows.asStateFlow()
 
+    /**
+     * Whether the current window has finished hydrating every row.
+     *
+     * The guide builds all rows first and attaches guide data afterwards, in chunks, so for a
+     * while "no programmes" means "not yet" — and saying so is the difference between an honest
+     * "Loading guide…" and a flat "No guide information" that the guide then contradicts. But
+     * some channels genuinely have no guide data at all, and for those the phrase must eventually
+     * become the honest one. This flag is that moment: false while chunks are outstanding, true
+     * once the pipeline has been through every row it intends to reach.
+     */
+    private val _epgHydrationComplete = MutableStateFlow(false)
+    val epgHydrationComplete: StateFlow<Boolean> = _epgHydrationComplete.asStateFlow()
+
     private fun publishEpgRows(rows: Iterable<Row>) {
         val updates = rows.asSequence()
             .filter { it.programmes.isNotEmpty() }
@@ -1276,6 +1289,9 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                         val windowMoved = prepareRowCache(windowStart)
                         if (windowMoved) {
                             _epgRows.value = emptyMap()
+                            // A new window invalidates every row's hydration, so the guide goes
+                            // back to "loading" until this pass has been through the rows.
+                            _epgHydrationComplete.value = false
                         }
                         val rowsReused = !windowMoved && hydratedRowCache.isNotEmpty()
                         val allRows = if (rowsReused) {
@@ -1352,6 +1368,22 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                             publishEpgRows((base until end).map { rows[it] })
                         }
                         android.util.Log.i("GuidePerf", "full 48h window (chunked ${hydrateLimit}/${allRows.size} rows, cached=${hydratedRowCache.size}): ${SystemClock.elapsedRealtime() - tFull}ms")
+                        // Every row this pass intended to reach has now been offered the guide, so a
+                        // row still empty has been answered: it genuinely has no guide data.
+                        _epgHydrationComplete.value = true
+                        // Name the rows that came out empty, and whether they were ever asked.
+                        // A row with no EPG candidates is never queried at all, which is a
+                        // different problem from one the provider answered with nothing.
+                        val starved = rows.take(hydrateLimit).filter { it.programmes.isEmpty() }
+                        if (starved.isNotEmpty()) {
+                            android.util.Log.i(
+                                "GuidePerf",
+                                "empty rows: ${starved.size} " + starved.take(12).joinToString { r ->
+                                    val cands = r.variants.flatMap { it.epgCandidates }.filter { it.isNotBlank() }
+                                    "${r.primary.displayName}[cand=${cands.distinct().size}]"
+                                },
+                            )
+                        }
                         android.util.Log.i("GuidePerf", "pipeline complete: ${SystemClock.elapsedRealtime() - t0}ms total")
                     }
                 }.flatMapLatest { it }
@@ -1703,11 +1735,16 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
 
         /**
          * Rows (not ids) covered by the quick 8h fill — the rows on screen when the guide
-         * opens plus a deep scroll buffer. Small categories are fully covered; a 25k-channel
-         * category gets its on-screen rows' programmes in well under a second while the full
-         * 48h window streams in behind.
+         * opens plus a scroll buffer.
+         *
+         * Was 24, which looked generous and was not: the guide opens at the top, a TV screen
+         * shows about ten rows, and 24 put rows 25+ outside the fast path entirely. Those rows
+         * then sat blank for the whole chunked pass — measured at 8.9s for a 253-row category,
+         * against 3.0s when the machine was less busy. The fast pass costs ~290ms for 24 rows, so
+         * covering three screens' worth costs almost nothing next to a multi-second wait, and a
+         * viewer who scrolls no further than a television is away never sees an empty row at all.
          */
-        const val QUICK_FIRST_ROWS = 24
+        const val QUICK_FIRST_ROWS = 60
 
         /** Row-chunk granularity for the progressive 48h window fill. */
         const val FULL_WINDOW_ROW_CHUNK = 24

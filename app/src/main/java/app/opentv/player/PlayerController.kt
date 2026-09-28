@@ -101,8 +101,43 @@ class PlayerController(
         data object Idle : State
         data class Buffering(val title: String) : State
         data class Playing(val title: String) : State
-        /** Playback stopped and retries are exhausted. [message] is written for humans. */
+        /**
+         * A stream failed and is being retried automatically, [attempt] of [maxAttempts].
+         *
+         * This exists because the old behaviour dropped straight back to a bare [Buffering]
+         * between attempts. A provider gateway timeout takes the better part of a minute to
+         * fail, so with a short restart delay the viewer was left watching an unexplained spinner
+         * for minutes, with no way to tell a struggling provider from a hung app. Naming the
+         * reason and counting the attempts turns "it is broken" into "it is trying, and here is
+         * how far it has got".
+         */
+        data class Retrying(
+            val title: String,
+            val message: String,
+            val attempt: Int,
+            val maxAttempts: Int,
+        ) : State
+
+        /**
+         * Playback stopped and automatic retries are exhausted. [message] is written for humans.
+         * [canRetry] says whether a retry button is worth offering.
+         */
         data class Error(val title: String, val message: String, val canRetry: Boolean) : State
+
+        /**
+         * Buffering, but for longer than any real stream takes.
+         *
+         * This exists because the commonest provider failure raises NO error at all: the panel
+         * accepts the connection and then stops sending, so ExoPlayer sits in BUFFERING
+         * indefinitely and never calls back. The viewer gets a naked spinner that could mean
+         * anything from a slow channel to a dead one, and no way to tell. [canRetry] false is a
+         * warning; true means the budget is spent and this is now an error.
+         */
+        data class Stalled(
+            val title: String,
+            val message: String,
+            val canRetry: Boolean,
+        ) : State
     }
 
     data class Request(
@@ -125,6 +160,51 @@ class PlayerController(
     private var current: Request? = null
     val currentRequest: Request? get() = current
     private var consecutiveFailures = 0
+
+    /**
+     * The retry banner currently on screen, so it survives the re-prepare a retry causes.
+     * Without this, [play] overwrites it with a plain buffering state and the explanation
+     * vanishes for the whole time the next attempt spends failing.
+     */
+    private var pendingRetry: State.Retrying? = null
+
+    /**
+     * Watches how long a tune has spent buffering, so a provider that connects and then goes
+     * quiet does not look like an app that has hung. See [State.Stalled].
+     */
+    private var stallJob: Job? = null
+
+    /** The stream [stallJob] is watching, so a re-tune of the same one cannot reset the clock. */
+    private var stallUrl: String? = null
+
+    private fun watchForStall(request: Request) {
+        stallJob?.cancel()
+        stallUrl = request.url
+        stallJob = scope.launch {
+            delay(STALL_WARN_MILLIS)
+            val warned = _state.value
+            if (warned is State.Buffering) {
+                _state.value = State.Stalled(
+                    title = request.title,
+                    message = "Still waiting for this channel. The provider has accepted the " +
+                        "request but is not sending video yet — a slow or overloaded provider, " +
+                        "not a problem with this device.",
+                    canRetry = false,
+                )
+            }
+            delay((STALL_GIVE_UP_MILLIS - STALL_WARN_MILLIS).coerceAtLeast(0L))
+            val still = _state.value
+            if (still is State.Buffering || still is State.Stalled) {
+                _state.value = State.Error(
+                    title = request.title,
+                    message = "This channel never started playing. The provider stopped sending " +
+                        "video, so there is nothing left to wait for — try again, or pick " +
+                        "another channel.",
+                    canRetry = current != null,
+                )
+            }
+        }
+    }
 
     /**
      * Set true by [stop] and [release]. Once stopped, the error-listener auto-restart is
@@ -260,6 +340,13 @@ class PlayerController(
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     val title = current?.title.orEmpty()
+                    // Playback recovered: the retry banner has done its job, and the stall
+                    // watchdog no longer has anything to watch.
+                    if (playbackState == Player.STATE_READY) {
+                        pendingRetry = null
+                        stallUrl = null
+                        stallJob?.cancel()
+                    }
                     _state.value = when (playbackState) {
                         Player.STATE_BUFFERING -> State.Buffering(title)
                         Player.STATE_READY -> {
@@ -280,20 +367,41 @@ class PlayerController(
 
                     consecutiveFailures++
                     val request = current
-                    _state.value = State.Error(
-                        title = request?.title.orEmpty(),
-                        message = PlaybackErrors.describe(error),
-                        canRetry = consecutiveFailures < MAX_AUTO_RESTARTS,
-                    )
-                    // One silent restart covers the common case of a provider dropping the
-                    // connection when another device on the account starts streaming.
-                    if (consecutiveFailures < MAX_AUTO_RESTARTS && request != null) {
+                    val message = PlaybackErrors.describe(error)
+
+                    if (request != null && consecutiveFailures < MAX_AUTO_RETRIES) {
+                        // Say what went wrong and how many attempts there are, rather than
+                        // falling back to an anonymous spinner.
+                        val banner = State.Retrying(
+                            title = request.title,
+                            message = message,
+                            attempt = consecutiveFailures,
+                            maxAttempts = MAX_AUTO_RETRIES,
+                        )
+                        pendingRetry = banner
+                        _state.value = banner
                         scope.launch {
                             delay(AUTO_RESTART_DELAY_MILLIS)
                             // Re-check stopped flag after the delay — the user may have
-                            // navigated away during the 1.5s wait.
-                            if (!stopped && current == request) play(request, debounce = false)
+                            // navigated away during the wait.
+                            if (!stopped && current == request) {
+                                // preserveRetry holds the banner up across the re-prepare.
+                                // Without it play() replaces it with a plain Buffering, and the
+                                // viewer is back to the bare spinner this is fixing.
+                                play(request, debounce = false, preserveRetry = true)
+                            }
                         }
+                    } else {
+                        // Attempts are spent. Stop and hand the decision to the viewer with a
+                        // button: a provider having a bad hour should not look like the app
+                        // abandoned them, and it should not look like the app is still busy
+                        // trying when it has actually stopped.
+                        pendingRetry = null
+                        _state.value = State.Error(
+                            title = request?.title.orEmpty(),
+                            message = message,
+                            canRetry = request != null,
+                        )
                     }
                 }
             })
@@ -304,8 +412,11 @@ class PlayerController(
      *
      * @param debounce when true (the default for channel surfing) the switch waits briefly so
      * that rapid presses collapse into a single tune. Pass false for a deliberate selection.
+     * @param preserveRetry keeps an on-screen retry banner up across the switch, so an automatic
+     * retry does not flash back to an unexplained spinner. A deliberate tune or a channel change
+     * leaves this false and clears the banner.
      */
-    fun play(request: Request, debounce: Boolean = true) {
+    fun play(request: Request, debounce: Boolean = true, preserveRetry: Boolean = false) {
         if (current?.url == request.url && (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)) {
             current = request
             player.playWhenReady = true
@@ -317,15 +428,29 @@ class PlayerController(
         current = request
         stopped = false
 
-        // Immediately stop old stream and show buffering for the new channel
-        _state.value = State.Buffering(request.title)
+        if (!preserveRetry) pendingRetry = null
+        // Immediately stop old stream and show buffering for the new channel.
+        //
+        // A stall message is deliberately NOT replaced here. The guide re-tunes the same channel
+        // routinely (volume, resume, focus changes), and each of those came through play() and
+        // wiped the explanation back to a naked spinner — which is the exact symptom the stall
+        // state exists to remove. It survives until the stream plays or the viewer acts.
+        _state.value = when {
+            pendingRetry != null -> pendingRetry!!
+            stallUrl == request.url && _state.value is State.Stalled -> _state.value!!
+            else -> State.Buffering(request.title)
+        }
+        watchForStall(request)
         player.stop()
         player.clearMediaItems()
 
         switchJob = scope.launch {
             if (debounce) delay(switchDebounceMillis)
 
-            consecutiveFailures = 0
+            // Only a genuinely new tune clears the count. A retry deliberately keeps it, or the
+            // counter would restart at 1 on every attempt and the app would retry a broken
+            // provider forever instead of eventually stopping and offering the button.
+            if (!preserveRetry) consecutiveFailures = 0
             httpFactory.setDefaultRequestProperties(mapOf("User-Agent" to request.userAgent))
 
             val mediaItem = MediaItem.Builder()
@@ -344,6 +469,10 @@ class PlayerController(
     }
 
     fun retry() {
+        // A deliberate press starts the whole budget again, and forgets any stall message —
+        // otherwise the sticky banner would outlive the reason for it.
+        pendingRetry = null
+        stallUrl = null
         current?.let { play(it, debounce = false) }
     }
 
@@ -435,8 +564,27 @@ class PlayerController(
         const val INITIAL_BACKOFF_MILLIS = 500L
         const val MAX_BACKOFF_MILLIS = 8_000L
         const val MAX_LOAD_RETRIES = 5
-        const val MAX_AUTO_RESTARTS = 3
+        /**
+         * Automatic attempts before the player stops and offers a retry button.
+         *
+         * Was 3, and was invisible besides. A provider gateway timeout can take the better part
+         * of a minute to fail, so three silent attempts meant minutes of unexplained spinner.
+         * The count is now on screen, and the budget is 5: long enough to ride out a provider
+         * blip, short enough that a genuinely dead stream reaches the button instead of looping.
+         */
+        const val MAX_AUTO_RETRIES = 5
         const val AUTO_RESTART_DELAY_MILLIS = 1_500L
+
+        /**
+         * How long a tune may buffer before we say so, and how long before we stop waiting.
+         *
+         * Calibrated against this provider, which took 28s to start a stream that then played
+         * perfectly. A 15s warning would have fired on healthy playback and taught the viewer to
+         * ignore it, so both numbers sit clearly above a slow start. 30s is where "waiting" stops
+         * being plausible; 75s is where it stops being reasonable at all.
+         */
+        const val STALL_WARN_MILLIS = 30_000L
+        const val STALL_GIVE_UP_MILLIS = 75_000L
 
         /** Memory caps for low-RAM TV hardware (1GB/1.5GB RAM). */
         const val TARGET_BUFFER_BYTES = 16 * 1024 * 1024

@@ -78,7 +78,7 @@ class Converters {
         SeriesRule::class,
         Reminder::class,
     ],
-    version = 19,
+    version = 20,
     exportSchema = true,
 )
 @ColumnTypeConverters(Converters::class)
@@ -365,6 +365,19 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v19 → v20: the panel's timezone on sources. Added for a catch-up feature that turned out
+         * to be chasing the wrong cause, so the feature is gone but the column stays — see
+         * `Source.serverTimezone`. Removing a column from a schema that real devices already hold
+         * would mean shipping a lower version, which is exactly the downgrade that destroys data.
+         */
+        private val MIGRATION_19_20 = object : Migration(19, 20) {
+            override suspend fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `sources` ADD COLUMN `serverTimezone` TEXT")
+            }
+        }
+
+
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
                 // Room 3 requires an explicit driver. BundledSQLiteDriver ships the
@@ -377,16 +390,27 @@ abstract class OpenTvDatabase : RoomDatabase() {
                     MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                     MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-                    MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
+                    MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20,
                 )
                 /*
-                 * Pre-1.0 policy: schema changes drop and rebuild the database. Everything
-                 * in it is re-derivable from the provider (one sync away) except favourites
-                 * and overrides, which is a real but small loss for testers. The policy
-                 * flips to real migrations at the first tagged release — from then on,
-                 * every schema change ships a Migration and this line is deleted.
+                 * NO destructive fallback, and never again.
+                 *
+                 * This used to call .fallbackToDestructiveMigration(), which silently DROPS the
+                 * whole database whenever the on-disk schema version isn't one it has a Migration
+                 * for. It is not only for forward jumps: a DOWNGRADE qualifies too, because Room
+                 * only ever writes upward migrations. Shipping a build whose schema version was
+                 * lower than the one already on a box therefore wiped that user's providers,
+                 * channels, favourites and guide in one silent step on next launch — which is
+                 * what happened here, for exactly that reason, and it is not recoverable by the
+                 * user: the playlist URLs and their credentials lived only in the dropped file.
+                 *
+                 * Without the fallback, an unhandled schema change fails loudly at open instead
+                 * of destroying someone's library quietly. That is the correct trade at any
+                 * version: a crash is visible and recoverable, a wiped database is neither.
+                 *
+                 * Every schema change from here ships a Migration. If one is ever forgotten, the
+                 * build says so on the first launch instead of eating the data.
                  */
-                .fallbackToDestructiveMigration()
                 .addCallback(object : RoomDatabase.Callback() {
                     override suspend fun onOpen(connection: SQLiteConnection) {
                         super.onOpen(connection)

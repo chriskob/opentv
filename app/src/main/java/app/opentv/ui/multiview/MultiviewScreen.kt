@@ -377,6 +377,30 @@ private fun MultiviewPane(
         )
 
         when (state) {
+            // Retrying and a stall read the same as buffering here — a small tile has no room for
+            // a count or a paragraph, and a spinning dot plus the label is the honest summary.
+            is PlayerController.State.Retrying -> {
+                if (controller.player.playbackState != Player.STATE_READY) {
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(8.dp))
+                            Text(label, color = Color.White, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+            is PlayerController.State.Stalled -> {
+                if (controller.player.playbackState != Player.STATE_READY) {
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(8.dp))
+                            Text(state.title, color = Color.White, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
             is PlayerController.State.Buffering -> {
                 if (controller.player.playbackState != Player.STATE_READY) {
                     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {

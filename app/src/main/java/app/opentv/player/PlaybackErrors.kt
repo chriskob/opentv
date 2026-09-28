@@ -61,6 +61,7 @@ object PlaybackErrors {
     }
 
     fun describeHttpStatus(code: Int): String = when (code) {
+        400 -> "The provider rejected the request as invalid (400). The stream address may be wrong for this provider."
         401 -> "The server rejected these credentials. Check the username and password."
         403 -> "The server refused this stream (403). Often this means the account is already " +
             "streaming on another device, or the provider is blocking this app's User-Agent — " +
@@ -68,9 +69,17 @@ object PlaybackErrors {
         404 -> "That channel no longer exists on the server. Refresh the channel list."
         405 -> "The server rejected the request (405). The stream address looks wrong for this " +
             "provider — try switching the source between Xtream and playlist mode."
+        408 -> "The provider took too long to answer (408). Usually a busy provider — try again shortly."
         429 -> "Too many requests. The provider is rate-limiting this device."
         451 -> "Blocked for legal reasons in this region."
-        in 500..599 -> "The provider's server is having problems ($code)."
+        500 -> "The provider's server hit an internal error (500). Nothing is wrong on this device."
+        502 -> "The provider's gateway got no answer from upstream (502). A provider-side fault."
+        503 -> "The provider's service is unavailable (503). It may be down for maintenance."
+        504 -> "The provider's gateway timed out reaching the stream (504). The channel is " +
+            "probably live but its source is not answering right now — a provider-side problem, " +
+            "not a fault on this device."
+        520, 521, 522, 523 -> "The provider is having trouble serving this stream ($code). That end of the service is down."
+        in 500..599 -> "The provider's server is having problems ($code). Nothing is wrong on this device."
         else -> "The server returned HTTP $code."
     }
 }

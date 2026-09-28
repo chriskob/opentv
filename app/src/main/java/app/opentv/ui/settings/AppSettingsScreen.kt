@@ -339,11 +339,19 @@ fun AppSettingsScreen(onBack: () -> Unit) {
             SettingsStepperRow(
                 title = stringResource(R.string.settings_catchup_correction_title),
                 subtitle = stringResource(R.string.settings_catchup_correction_subtitle),
-                value = if (catchupCorrection >= 0) "+$catchupCorrection min" else "$catchupCorrection min",
-                onDecrement = { settings.setCatchupCorrectionMin(catchupCorrection - 1) },
-                onIncrement = { settings.setCatchupCorrectionMin(catchupCorrection + 1) },
-                canDecrement = catchupCorrection > -30,
-                canIncrement = catchupCorrection < 30,
+                value = formatCatchupCorrection(catchupCorrection),
+                onDecrement = {
+                    settings.setCatchupCorrectionMin(
+                        catchupCorrection - AppSettings.CATCHUP_CORRECTION_STEP_MIN,
+                    )
+                },
+                onIncrement = {
+                    settings.setCatchupCorrectionMin(
+                        catchupCorrection + AppSettings.CATCHUP_CORRECTION_STEP_MIN,
+                    )
+                },
+                canDecrement = catchupCorrection > -AppSettings.CATCHUP_CORRECTION_LIMIT_MIN,
+                canIncrement = catchupCorrection < AppSettings.CATCHUP_CORRECTION_LIMIT_MIN,
             )
             SettingsDropdown(
                 title = stringResource(R.string.settings_catchup_skip_title),
@@ -477,5 +485,24 @@ fun AppSettingsScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(SettingsSpacing.SectionGap))
 
         SleepTimerSection()
+    }
+}
+
+/**
+ * Renders a catch-up correction the way the offset is actually reasoned about.
+ *
+ * The interesting failures are whole hours — a panel three hours ahead needs "+3h 0m", not
+ * "+180 min". Showing minutes forced the user to convert by hand and to count presses, which
+ * is how a setting meant to rescue catch-up ended up unused.
+ */
+private fun formatCatchupCorrection(minutes: Int): String {
+    val sign = if (minutes < 0) "-" else "+"
+    val abs = kotlin.math.abs(minutes)
+    val hours = abs / 60
+    val mins = abs % 60
+    return when {
+        hours > 0 && mins > 0 -> "$sign${hours}h ${mins}m"
+        hours > 0 -> "$sign${hours}h"
+        else -> "$sign${mins}m"
     }
 }

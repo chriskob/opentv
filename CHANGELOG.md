@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.16.16
+
+- **Catch-up now plays the programme you picked.** Choosing a programme in the guide could open a
+  different one: the guide and the on-screen title both named the right programme while the
+  picture showed something else.
+- **Going back to live actually goes back to live.** Returning to the live edge now releases the
+  timeshift stream and tunes the live one, and a catch-up you have just started is no longer
+  overwritten by the app's start-up resume.
+- **Catch-up correction can actually correct hours.** It stopped at 30 minutes, so the most common
+  fault - a provider an hour or three out - was not something the setting could express. It now
+  spans 12 hours in 15-minute steps, reads in hours ("+3h"), and the row is reachable with a
+  D-pad.
+- **Skipping ahead in catch-up no longer hangs.** Skipping forward 30 seconds during a catch-up
+  could spin for minutes. A catch-up stream is a recording the provider is still writing, so seeking
+  inside it re-opens the stream and re-buffers, with nothing but a spinner to show for it. A skip
+  in an archive is now a request for the minute you asked for - one new connection, the cost of a
+  channel change, and it starts playing. This is what TiviMate does, and it now works in both
+  directions; skipping forward was the one case guaranteed to hang.
+- **Catch-up skips now actually move.** Having found the right stream, OpenTV was still asking the
+  player to seek inside it - and that seek is issued before the stream is prepared, into a recording
+  of unknown length, so it was dropped and playback started from the beginning while a message
+  claimed otherwise. The wanted minute is now part of the request itself, and the position is
+  confirmed once the stream reports ready.
+- **Skips now add up.** Each press in a burst was counted from a playhead that had not caught up
+  with the previous seek yet, so three presses all asked for the same place. They now accumulate,
+  and the skip buttons on the playback bar behave the same way and show where they are going.
+- **The catch-up progress bar no longer invents a length.** It reported 22 hours 44 minutes for a
+  one-hour programme, because an archive stream's own length is only "however much has been
+  produced so far". It now uses the programme's real length from the guide.
+- **Down no longer changes the programme.** With the playback bar open, Down used to jump to the
+  next show on the channel - throwing away your place in the programme you chose and re-tuning the
+  stream to a different one, from a key that looks like plain menu navigation. It now moves down
+  through the on-screen controls, in an archive exactly as on live. Programmes are picked from the
+  guide.
+- **The guide stops claiming channels have no guide before it has looked.** Rows say "Loading
+  guide..." while they are genuinely still loading, and "No guide information" now only appears
+  once the guide has finished asking. Channels that really do have no guide data upstream - HUNT,
+  MOTORTREND, SPACE CITY and a few others on this provider - correctly say so.
+- **The guide fills in far faster.** The quick pass covered only the first 24 rows, so anything
+  past that waited for the full sweep - measured at up to 8.9 seconds. It now covers 60 rows, and
+  the same guide builds in about 1.4 seconds.
+- **Guide channels match better.** Variants of the same channel (`FOX` against `FOX NEWS`) are
+  matched on their shared stem, so a channel stopped borrowing the wrong neighbour's listings.
+- **Playback errors now explain themselves.** Each failure says what went wrong and whether it is
+  anything to do with your setup, retrying is counted on screen ("Retrying 2 of 5"), and a stream
+  that stops responding says so instead of spinning indefinitely.
+- **Removed a database setting that could quietly delete your library.** If the app's database
+  version did not line up, it would drop every source, channel and recording to start again. A
+  mismatch now fails loudly instead of destroying anything.
+- **Stream ids containing dots are no longer truncated.** `cnn.us.hd` was being cut to `cnn.us`
+  before being sent to the provider.
+
 ## 0.16.15
 
 - **Opening the app now goes straight to your channel, fullscreen.** Tapping the launcher icon

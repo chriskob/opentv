@@ -190,12 +190,12 @@ import kotlinx.coroutines.withContext
  * Full-screen live playback.
  *
  * The video fills the screen with no chrome. A single control bar slides up from the bottom and
- * holds everything — transport (play/pause, rewind, forward), and pickers for subtitles, audio,
+ * holds everything â€” transport (play/pause, rewind, forward), and pickers for subtitles, audio,
  * quality and aspect ratio. It hides after a few seconds and any remote button brings it back.
  * Nothing is ever left permanently painted over the picture.
  *
  * Subtitles and audio come from the actual tracks in the stream ([PlayerController.tracks]) and
- * are selected explicitly — that is the fix for "captions on but nothing shows", which happens
+ * are selected explicitly â€” that is the fix for "captions on but nothing shows", which happens
  * when the renderer is merely enabled and left to guess a language.
  */
 enum class OsdTier {
@@ -239,6 +239,27 @@ fun PlayerScreen(
         }
     }
     val state by controller.state.collectAsState()
+    /**
+     * Where the last skip is heading, and when that was decided. -1 means no skip in flight.
+     * Shown so a seek reads as movement rather than as the screen going blank.
+     */
+    var seekTargetMillis by remember { mutableLongStateOf(-1L) }
+    var seekTargetSetAtUptime by remember { mutableLongStateOf(0L) }
+
+    /**
+     * An offset a freshly opened timeshift stream is supposed to start at, waiting to be confirmed.
+     * -1 when there is nothing outstanding.
+     *
+     * The position of a catch-up stream lives in its URL, so there is nothing to seek to
+     * afterwards - but if the opening offset seek is refused the stream plays from its head and the
+     * skip looks like it did nothing at all, which is exactly the "it says it skipped, but it
+     * didn't" symptom. Once the stream reports itself ready we check we actually landed, and move
+     * the playhead ourselves if not. Once only: a stream that refuses a second time is a stream
+     * that will stall, and hammering it is worse than playing slightly out of place.
+     */
+    var pendingStreamOffset by remember { mutableLongStateOf(-1L) }
+    val showSeekTarget = seekTargetMillis >= 0L &&
+        android.os.SystemClock.elapsedRealtime() - seekTargetSetAtUptime < SEEK_TARGET_HOLD_MILLIS
     val tracks by controller.tracks.collectAsState()
     val playbackStarted = state is PlayerController.State.Playing
     LaunchedEffect(playbackStarted) {
@@ -248,7 +269,7 @@ fun PlayerScreen(
     val activeRecordings by graph.recordingRepository.observeActive().collectAsState(initial = emptyList())
 
     // Hold the screen awake while the player is on screen. A view-level keepScreenOn flag isn't
-    // reliable on every TV box, so we set the window flag on the Activity directly — that's what
+    // reliable on every TV box, so we set the window flag on the Activity directly â€” that's what
     // actually stops the system screensaver from firing mid-programme. keepScreenOn stays on too,
     // as a belt-and-braces backstop.
     DisposableEffect(Unit) {
@@ -272,7 +293,7 @@ fun PlayerScreen(
     }
     var variants by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var currentId by remember { mutableStateOf(channelId) }
-    // The channel we were on before this one — powers the "Last channel" recall in the list.
+    // The channel we were on before this one â€” powers the "Last channel" recall in the list.
     var previousId by remember { mutableStateOf<Long?>(null) }
     // Digits typed on the remote accumulate here, then jump to that channel number after a beat.
     var numberEntry by remember { mutableStateOf("") }
@@ -286,7 +307,7 @@ fun PlayerScreen(
 
     // TiviMate-style timeline: each Left/Right press is an immediate skip (10s taps, accelerating
     // while held). The pip on the bar tracks the player's real position, so every skip is visible.
-    // Playback seeks on every press — that's the point; the OSD stays up while keys repeat.
+    // Playback seeks on every press â€” that's the point; the OSD stays up while keys repeat.
     val interactionEvents = remember {
         MutableSharedFlow<Unit>(
             replay = 0,
@@ -312,6 +333,38 @@ fun PlayerScreen(
     // kept in step with it; "Watch from start" can promote the current channel into catch-up too.
     var activeCatchup by remember { mutableStateOf(catchup) }
     LaunchedEffect(catchup) { activeCatchup = catchup }
+
+    /**
+     * Whether the player is genuinely on an archive item, read from the player itself.
+     *
+     * Key routing must not trust [activeCatchup]. That marker is seeded from the guide and then
+     * maintained by several independent paths (the guide's "watch live", multiview, backing out,
+     * "watch from start"), and any one of them can clear it while the timeshift stream is still
+     * open. When the two disagree the marker wins and every archive key falls through to its
+     * default â€” RIGHT became "previous channel", which is the last thing a viewer watching an
+     * archive programme expects. The player cannot be lied to about what it is playing.
+     *
+     * A function, not a val: it is consulted from key handlers, so it must read the controller at
+     * press time rather than at composition time.
+     */
+    fun playingArchive(): Boolean = controller.currentRequest?.isLive == false
+
+    /**
+     * Diagnostic: why a LEFT/RIGHT/DOWN press was routed the way it was. A skip in an archive
+     * that quietly does nothing, and a DOWN that zaps a channel, look identical from the sofa â€”
+     * but they mean the player and the session disagree about whether an archive is open, and
+     * several paths can clear one without the other. This records which way the code actually saw
+     * it, so the next report is a fact rather than another inference. No URL, no credentials.
+     */
+    fun logKeyRoute(key: Key) {
+        val req = controller.currentRequest
+        android.util.Log.i(
+            "OpenTV-KeyRoute",
+            "key=$key playingArchive=${playingArchive()} reqIsLive=${req?.isLive} " +
+                "reqTail=${req?.url?.substringAfterLast('/')?.take(18) ?: "none"} " +
+                "session=${activeCatchup != null} dur=${req?.let { controller.player.duration }}",
+        )
+    }
     var queueProgrammes by remember { mutableStateOf<Map<Long, Programme>>(emptyMap()) }
     val recentChannelRefs by settings.recentChannelRefs.collectAsState()
     var recentChannels by remember { mutableStateOf<List<Channel>>(emptyList()) }
@@ -463,7 +516,7 @@ fun PlayerScreen(
                     }
                     if (videoFormat.frameRate > 0f) {
                         fpsText = "${videoFormat.frameRate.toInt()} fps"
-                        // Match the panel to the stream — 50 Hz for a 50 fps channel — so a panning
+                        // Match the panel to the stream â€” 50 Hz for a 50 fps channel â€” so a panning
                         // camera stops hitching once a second. Opt-in: see DisplayRefresh.
                         if (settings.matchRefreshRate.value) {
                             context.findActivity()?.let { DisplayRefresh.match(it, videoFormat.frameRate) }
@@ -535,6 +588,53 @@ fun PlayerScreen(
         osdTier = OsdTier.HISTORY
         signalInteraction()
     }
+    /**
+     * The position the next skip press should count from.
+     *
+     * A catch-up stream is a finished recording fetched over a slow link, so a seek re-opens the
+     * stream and takes a moment to land. Until it does, [Player.currentPosition] keeps reporting
+     * the position we were at *before* the seek â€” so every press in a burst computed `cur + step`
+     * from the same stale origin and overwrote the last one. Three Rights moved 30 seconds, not
+     * 90; holding Right did nothing beyond the first step. That was the whole of "pressing right
+     * multiple times won't keep advancing".
+     *
+     * The last target we asked for is the truer answer while it is still fresh, so a burst
+     * accumulates the way the viewer expects and TiviMate's does. The window is deliberately short:
+     * a deliberate second press seconds later, once the seek has landed, counts from where the
+     * playhead really is, and a stream that refuses to move cannot keep inflating a target that
+     * never gets clamped to anything.
+     */
+    fun seekBaseMillis(): Long = seekBaseFor(
+        pendingTarget = seekTargetMillis,
+        pendingAgeMillis = android.os.SystemClock.elapsedRealtime() - seekTargetSetAtUptime,
+        playhead = controller.player.currentPosition,
+    )
+
+    /**
+     * Records where a seek is going, so the next press in a burst can add to it ([seekBaseMillis])
+     * and the on-screen readout has something to point at. Seeking a timeshift stream re-buffers,
+     * and with nothing to point at the viewer just sees a spinner and cannot tell they moved.
+     */
+    fun noteSeekTarget(target: Long) {
+        seekTargetMillis = target
+        seekTargetSetAtUptime = android.os.SystemClock.elapsedRealtime()
+    }
+
+    /** Drops the pending target, so the next press counts from the playhead and the readout hides. */
+    fun clearSeekTarget() {
+        seekTargetMillis = -1L
+    }
+
+    /**
+     * Seeks to an absolute [target], clamped to what the stream actually has, recording it as the
+     * new origin for any following skip press. Used by the jump-to-start control.
+     */
+    fun seekToPosition(target: Long) {
+        val p = controller.player
+        val clamped = if (p.duration > 0L) target.coerceIn(0L, p.duration) else target.coerceAtLeast(0L)
+        noteSeekTarget(clamped)
+        p.seekTo(clamped)
+    }
 
     fun watchFromStart() {
         val ch = currentChannel ?: return
@@ -562,7 +662,12 @@ fun PlayerScreen(
             }
             val catchupUrl = if (source != null) {
                 withContext(Dispatchers.IO) {
-                    CatchupResolver.resolve(source, ch, effectiveProg, catchupCorrectionSetting)
+                    CatchupResolver.resolve(
+                        source,
+                        ch,
+                        effectiveProg,
+                        catchupCorrectionSetting,
+                    )
                 }
             } else null
 
@@ -583,7 +688,7 @@ fun PlayerScreen(
                 controller.play(
                     PlayerController.Request(
                         url = catchupUrl,
-                        title = "${ch.shownName} — ${effectiveProg.title}",
+                        title = "${ch.shownName} â€” ${effectiveProg.title}",
                         userAgent = source?.userAgent ?: "OpenTV/0.1 (Android)",
                         startPositionMillis = 0L,
                         isLive = false,
@@ -592,7 +697,7 @@ fun PlayerScreen(
                 )
                 Toast.makeText(context, "Catch-up: Playing from start", Toast.LENGTH_SHORT).show()
             } else {
-                controller.player.seekTo(0L)
+                seekToPosition(0L)
                 controller.player.playWhenReady = true
                 paused = false
                 Toast.makeText(context, "Playing from start", Toast.LENGTH_SHORT).show()
@@ -604,6 +709,10 @@ fun PlayerScreen(
         currentId = channel.id
         currentChannel = channel
         paused = false
+        // A different channel is a different timeline: a pending skip target from the last one
+        // means nothing here, and zapping within the accumulate window of a skip would otherwise
+        // jump by the difference between the two streams' positions.
+        clearSeekTarget()
         if (activeCatchup != null) {
             activeCatchup = null
             onCatchupChange(null)
@@ -634,7 +743,12 @@ fun PlayerScreen(
         // Zapping (or picking from the channel list) leaves archive playback. Force a retune even if
         // the same channel id is already open, because the media item is currently the timeshift
         // stream, not the live one.
-        val wasArchive = activeCatchup != null
+        //
+        // Asked of the player as well as the session marker. Relying on the marker alone let a
+        // drifted marker skip the release entirely: `isAlreadyPlaying` then matched on the
+        // archive item and returned early, so the timeshift stream was never stopped and kept
+        // its provider connection â€” the next stream came back 458.
+        val wasArchive = activeCatchup != null || playingArchive()
         if (wasArchive) {
             activeCatchup = null
             onCatchupChange(null)
@@ -666,13 +780,13 @@ fun PlayerScreen(
                 // channel a provider did not list in the latest sync, and one that comes back is
                 // INSERTED, so it returns under a *new* id; deleting and re-adding a playlist
                 // reassigns them all at once. Resolving strictly by id therefore finds nothing while
-                // the channel itself is alive — and because the previous stream was already cut
+                // the channel itself is alive â€” and because the previous stream was already cut
                 // above, the player would sit on a blank screen with no error to explain it.
                 //
                 // This is the path boot-to-last-channel takes, since it resumes settings
                 // .lastChannelId, a bare row id. Fall back to the newest watched ref instead: it is
                 // the same channel (watch history is written on every tune right beside the id), and
-                // its source+stream key is precisely what survives a re-sync — see RecentChannels.
+                // its source+stream key is precisely what survives a re-sync â€” see RecentChannels.
                 // The id is repaired further down on success, so the next launch resolves first try.
                 val ch = graph.catalogRepository.channel(id)
                     ?: graph.catalogRepository.channelsForRefs(settings.recentChannelRefs.value).firstOrNull()
@@ -750,7 +864,7 @@ fun PlayerScreen(
             graph.database.channels().observe(sourceId, null).firstOrNull()
         }.orEmpty()
         if (channels.isNotEmpty()) {
-            // `number` is the list position here, matching what the guide hands over — the
+            // `number` is the list position here, matching what the guide hands over â€” the
             // field feeds numeric entry and the on-screen channel number, so the two entry
             // paths have to fill it the same way.
             queue = channels.mapIndexed { index, ch ->
@@ -762,7 +876,7 @@ fun PlayerScreen(
     /**
      * Steps one channel along the list, the way a remote's CH+ / CH- does: [delta] of +1 moves
      * forward through the list and -1 back, so d-pad up is channel up and d-pad down is channel
-     * down. Order is the list's own order — whatever order the channels are shown in — never a
+     * down. Order is the list's own order â€” whatever order the channels are shown in â€” never a
      * channel number. Stops at either end rather than wrapping, so the first and last channel
      * say so by doing nothing.
      */
@@ -776,7 +890,7 @@ fun PlayerScreen(
     /**
      * Steps back through the stream and reports whether it took the seek.
      *
-     * Live HLS with a DVR window — what Xtream live gives us — accepts this, which is how a live
+     * Live HLS with a DVR window â€” what Xtream live gives us â€” accepts this, which is how a live
      * channel can be rewound without changing stream. A stream with no window, such as plain
      * progressive TS, reports itself unseekable; the caller then falls back to what left used to
      * do rather than swallowing the press.
@@ -785,53 +899,71 @@ fun PlayerScreen(
      * carousel, so revealing would make the second press of a quick double-press scroll the list
      * instead of rewinding further.
      */
+
     fun seekBackBy(stepMillis: Long): Boolean {
         if (!controller.isSeekable) return false
-        val cur = controller.player.currentPosition
-        controller.player.seekTo((cur - stepMillis).coerceAtLeast(0L))
+        val target = (seekBaseMillis() - stepMillis).coerceAtLeast(0L)
+        noteSeekTarget(target)
+        controller.player.seekTo(target)
         return true
     }
 
     /**
      * Seeks by [deltaMillis] within a seekable stream, clamped to [0, duration]. Used by the
-     * ±30-second channel-up/down scrub while an archive programme plays.
+     * Â±30-second channel-up/down scrub while an archive programme plays, and by the skip buttons
+     * so a burst of either accumulates â€” see [seekBaseMillis] for why counting from the playhead
+     * every time is not good enough.
      */
     fun seekBy(deltaMillis: Long) {
         val p = controller.player
         val dur = p.duration
-        val target = if (dur > 0L) (p.currentPosition + deltaMillis).coerceIn(0L, dur)
-        else (p.currentPosition + deltaMillis).coerceAtLeast(0L)
+        val base = seekBaseMillis()
+        val target = if (dur > 0L) (base + deltaMillis).coerceIn(0L, dur) else (base + deltaMillis).coerceAtLeast(0L)
+        noteSeekTarget(target)
         p.seekTo(target)
     }
 
     /**
-     * Steps the viewer back [stepMillis], reporting whether the press was handled.
+     * Skips [deltaMillis] - negative for back, positive for forward - and reports whether the
+     * press was handled.
      *
-     * Two ways back, tried in order:
+     * Which mechanism is right depends entirely on what is open, and getting that wrong is what
+     * made a 30-second skip on catch-up spin for minutes:
      *
-     *  1. Inside the stream already open — the whole story for VOD, for a catch-up item already
-     *     playing, and for live HLS whose playlist reaches back far enough. See [seekBackBy].
-     *  2. Through the provider's catch-up archive. A plain live stream sits at the live edge, so
-     *     there is no window behind it to step into and the local seek is refused — but a catch-up
-     *     channel can be asked for *any* past minute as its own timeshift stream. That is what makes
-     *     "back 10 seconds" work on live TV, and it is what TiviMate does: the timeshift URL for the
-     *     programme covering the target time, opened at the offset inside that programme. The player
-     *     is not recreated — the same instance swaps media item the way a channel change does — and
-     *     because a timeshift stream is a finished recording, the timeline becomes real, so the
-     *     skip buttons and the timeline pip work properly from then on too.
+     *  - An archive programme. The provider is still writing the file. Its length is whatever
+     *    exists so far - the panel happily reported 22 hours 44 minutes for a one-hour programme -
+     *    and seeking inside it re-opens the stream from the new offset and re-buffers for a very
+     *    long time, with nothing but a spinner to show for it. So a skip here is not a seek at all:
+     *    it is a *request for the minute the viewer asked for*, opened at the right offset inside
+     *    the programme covering it. One new connection, the same cost as a channel change, and it
+     *    starts playing. This is what TiviMate does, and it works in *both* directions - the old
+     *    code sent forward skips down the local-seek path and reached for the archive only on
+     *    rewind, so skipping ahead on catch-up was the one case guaranteed to hang.
+     *  - Live or VOD. The stream has a real, known length, so a local seek is both cheap and
+     *    exact. Live only needs the archive when there is no window behind the playhead to step
+     *    into, which is the whole of "back 10 seconds" on a channel sitting at the live edge.
      *
      * False means no attempt was made at all, so the caller can keep the key's old meaning. A
      * channel that looks catch-up capable but whose URL cannot be built reports through a toast
      * instead of falling back, because by then the press has already been claimed.
      */
-    fun stepBack(stepMillis: Long): Boolean {
-        if (seekBackBy(stepMillis)) return true
+    fun archiveStep(deltaMillis: Long): Boolean {
         if (!catchupEnabledSetting) return false
 
         val ch = currentChannel ?: return false
         val source = currentSource
         val now = System.currentTimeMillis()
-        val target = now - stepMillis
+        // Where the playhead is, as a wall-clock instant, because that is the only thing the
+        // provider understands. In an archive it is the programme's start plus how far into it we
+        // are - via seekBaseMillis(), so a burst of skips still adds up while the previous
+        // re-tune is still buffering and the playhead has not caught up. On live it is simply now.
+        val archive = activeCatchup
+        val target = archiveSkipTarget(
+            archiveStartMillis = archive?.startUtcMillis ?: 0L,
+            positionMillis = seekBaseMillis(),
+            deltaMillis = deltaMillis,
+            nowMillis = now,
+        )
         // Stepping past the provider's retention only earns a 404, so refuse locally rather than
         // spending a request on it. Honours Settings > Catch-up > Days, and never reaches past
         // what the guide actually kept (3 days).
@@ -845,7 +977,7 @@ fun PlayerScreen(
             ).show()
             return true
         }
-        // Trust the channel's own flags, its catch-up template, or a portal source — whose channels
+        // Trust the channel's own flags, its catch-up template, or a portal source â€” whose channels
         // routinely do catch-up without ever saying so in the playlist. This is the same rule the
         // guide's badge uses before offering a finished programme.
         val capable = CatchupResolver.isSupported(source, ch) ||
@@ -863,40 +995,130 @@ fun PlayerScreen(
             val resolveSource = source ?: withContext(Dispatchers.IO) {
                 graph.sourceRepository.byId(ch.sourceId)
             }
-            val url = if (prog == null || resolveSource == null) null else {
+            // The position belongs in the URL, not in a seek.
+            //
+            // A timeshift stamp only has minute resolution, so the stream is requested from the
+            // minute the target falls in and the leftover seconds - at most 59 - are the offset.
+            // The alternative, seeking deep into a stream whose length the player cannot know yet,
+            // does not survive contact with the provider: the seek is issued before prepare() and
+            // into an unfinished recording, so it is silently dropped and playback starts at the
+            // beginning regardless. A skip that reported itself in a toast while doing nothing was
+            // that, exactly. Asking for a stream that *begins* at the wanted minute cannot be
+            // dropped, and costs the same single connection.
+            //
+            // The window keeps the programme's own length so the duration the provider is asked for
+            // is unchanged.
+            val progLength = prog?.let { (it.endUtcMillis - it.startUtcMillis).coerceAtLeast(60_000L) }
+            val request = archiveRequestFor(target)
+            val streamStart = request.streamStartMillis
+            val requested = prog?.copy(
+                startUtcMillis = streamStart,
+                endUtcMillis = streamStart + (progLength ?: 60 * 60_000L),
+            )
+            val offsetInStream = request.offsetInStreamMillis
+            val url = if (requested == null || resolveSource == null) null else {
                 withContext(Dispatchers.IO) {
-                    CatchupResolver.resolve(resolveSource, ch, prog, catchupCorrectionSetting)
+                    CatchupResolver.resolve(
+                        resolveSource,
+                        ch,
+                        requested,
+                        catchupCorrectionSetting,
+                    )
                 }
             }
             if (prog == null || resolveSource == null || url == null) {
                 Toast.makeText(context, "No catch-up for this channel", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            // The offset is what puts the viewer exactly [stepMillis] back instead of at the top of
-            // the programme, which is what "Watch from start" (Replay) is for.
+            // Record this as the archive session before playing, so the next skip can turn the
+            // playhead back into a wall-clock time. The start is the *stream's* start, not the
+            // programme's, because that is what the playhead will be measured against.
+            activeCatchup = CatchupPlayback(
+                channelId = ch.id,
+                channelName = ch.shownName,
+                programmeTitle = prog.title,
+                startUtcMillis = streamStart,
+                endUtcMillis = streamStart + (progLength ?: 60 * 60_000L),
+                url = url,
+                userAgent = resolveSource.userAgent ?: "OpenTV/0.1 (Android)",
+            )
+            onCatchupChange(activeCatchup)
+            android.util.Log.i(
+                "OpenTV-Catchup",
+                "archive skip delta=${deltaMillis}ms target=$target streamStart=$streamStart " +
+                    "offset=${offsetInStream}ms url=" + CatchupResolver.redactCredentials(url),
+            )
             controller.play(
                 PlayerController.Request(
                     url = url,
                     title = ch.shownName,
                     userAgent = resolveSource.userAgent ?: "OpenTV/0.1 (Android)",
-                    startPositionMillis = (target - prog.startUtcMillis).coerceAtLeast(0L),
+                    startPositionMillis = offsetInStream,
                     isLive = false,
                 ),
                 debounce = false,
             )
+            // The new stream opens at [offsetInStream], so that is where we now are - record it
+            // before the playhead has caught up, or a quick follow-up press would read 0 and go
+            // nowhere.
+            noteSeekTarget(offsetInStream)
+            pendingStreamOffset = offsetInStream
             paused = false
-            Toast.makeText(context, "Rewind ${stepMillis / 1000}s", Toast.LENGTH_SHORT).show()
+            val verb = if (deltaMillis < 0L) "Rewind" else "Forward"
+            Toast.makeText(context, "$verb ${kotlin.math.abs(deltaMillis) / 1000}s", Toast.LENGTH_SHORT).show()
         }
         return true
     }
 
+    LaunchedEffect(pendingStreamOffset) {
+        val want = pendingStreamOffset
+        if (want <= 0L) return@LaunchedEffect
+        pendingStreamOffset = -1L
+        repeat(40) {
+            if (controller.player.playbackState == androidx.media3.common.Player.STATE_READY) {
+                val p = controller.player
+                if (kotlin.math.abs(p.currentPosition - want) > 2_000L) {
+                    android.util.Log.i(
+                        "OpenTV-Catchup",
+                        "opening offset ${want}ms was not honoured (at ${p.currentPosition}ms) - seeking",
+                    )
+                    p.seekTo(want)
+                }
+                return@LaunchedEffect
+            }
+            delay(500)
+        }
+    }
+
+    fun stepSeek(deltaMillis: Long): Boolean {
+        if (deltaMillis == 0L) return false
+        if (playingArchive() && catchupEnabledSetting && archiveStep(deltaMillis)) return true
+        if (deltaMillis < 0L && seekBackBy(-deltaMillis)) return true
+        if (deltaMillis > 0L) {
+            seekBy(deltaMillis)
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Asks the provider for the archive stream covering the target time and opens it at the right
+     * offset inside the programme that covers it. Reports whether the request could be made; the
+     * cases where it could be made but failed report through a toast instead, because by then the
+     * press has already been claimed and must not fall through to a different meaning.
+     *
+     * Also records the new stream as the archive session. That is not bookkeeping for its own sake:
+     * without it the *next* skip has no programme to be relative to, so it would fall back to "now"
+     * and jump the viewer to the live edge instead of stepping.
+     */
+
     /**
      * Back to the live edge.
      *
-     * Usually that is just the end of the open stream. After [stepBack] has moved into the archive,
+     * Usually that is just the end of the open stream. After [stepSeek] has moved into the archive,
      * though, the player is holding a *catch-up* item whose end is the end of that programme rather
      * than now, so the live edge is a re-tune of the live URL, not a seek. The media item is swapped
-     * on the same player, so it costs one connection — the same as changing channel.
+     * on the same player, so it costs one connection â€” the same as changing channel.
      */
     fun goLive(announce: Boolean = true) {
         val ch = currentChannel
@@ -906,6 +1128,10 @@ fun PlayerScreen(
             activeCatchup = null
             onCatchupChange(null)
         }
+        // The new stream starts at its own live edge, so a pending skip target from the archive
+        // is meaningless against it â€” keeping it would let the next skip press jump by the
+        // difference between an archive position and a live one.
+        clearSeekTarget()
         if (inArchive && ch != null) {
             scope.launch {
                 val (source, url) = withContext(Dispatchers.IO) {
@@ -950,99 +1176,6 @@ fun PlayerScreen(
         }
     }
 
-    /**
-     * Steps the programme column while the timeline is focused (TiviMate: fullscreen Left opens
-     * the timeline, then Up/Down walks past programmes, OK plays).
-     *
-     * [delta] < 0 walks to the older programme, > 0 to the newer one. Past targets open as
-     * catch-up from their start; stepping into the live programme returns to the live edge.
-     */
-    fun stepProgramme(delta: Int) {
-        val ch = currentChannel ?: return
-        if (!catchupEnabledSetting) {
-            Toast.makeText(context, "Catch-up is turned off in Settings", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val anchor = if (delta < 0) {
-            currentProg?.startUtcMillis ?: System.currentTimeMillis()
-        } else {
-            currentProg?.endUtcMillis ?: System.currentTimeMillis()
-        }
-        scope.launch {
-            val now = System.currentTimeMillis()
-            val target = withContext(Dispatchers.IO) {
-                val candidates = ch.epgCandidates.ifEmpty { listOfNotNull(ch.epgChannelId ?: ch.streamId) }
-                val probe = if (delta < 0) anchor - 1L else anchor + 1L
-                graph.epgRepository.windowForChannels(
-                    candidates,
-                    probe - 30 * 60 * 1000L,
-                    probe + 30 * 60 * 1000L,
-                ).values.firstOrNull()?.let { list ->
-                    if (delta < 0) {
-                        list.lastOrNull { it.endUtcMillis <= anchor }
-                            ?: list.lastOrNull { it.startUtcMillis < anchor }
-                    } else {
-                        list.firstOrNull { it.startUtcMillis >= anchor }
-                            ?: list.firstOrNull { it.endUtcMillis > anchor }
-                    }
-                }
-            }
-            if (target == null) {
-                Toast.makeText(context, "No programme there", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            if (target.startUtcMillis > now) {
-                Toast.makeText(context, "That programme has not aired yet", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            if (target.endUtcMillis > now) {
-                goLive()
-                return@launch
-            }
-            val effectiveDays = settings.effectiveArchiveDays(ch.tvArchiveDays)
-            if (effectiveDays > 0 && target.startUtcMillis < now - effectiveDays * 86_400_000L) {
-                Toast.makeText(
-                    context,
-                    "That programme has left the archive (guide keeps 3 days back)",
-                    Toast.LENGTH_SHORT,
-                ).show()
-                return@launch
-            }
-            val resolveSource = currentSource ?: withContext(Dispatchers.IO) {
-                graph.sourceRepository.byId(ch.sourceId)
-            } ?: return@launch
-            val url = withContext(Dispatchers.IO) {
-                CatchupResolver.resolve(resolveSource, ch, target, catchupCorrectionSetting)
-            }
-            if (url == null) {
-                Toast.makeText(context, "Couldn't build the catch-up link", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            val session = CatchupPlayback(
-                channelId = ch.id,
-                channelName = ch.shownName,
-                programmeTitle = target.title,
-                startUtcMillis = target.startUtcMillis,
-                endUtcMillis = target.endUtcMillis,
-                url = url,
-                userAgent = resolveSource.userAgent ?: "OpenTV/0.1 (Android)",
-            )
-            activeCatchup = session
-            onCatchupChange(session)
-            controller.play(
-                PlayerController.Request(
-                    url = url,
-                    title = "${ch.shownName} — ${target.title}",
-                    userAgent = resolveSource.userAgent ?: "OpenTV/0.1 (Android)",
-                    startPositionMillis = 0L,
-                    isLive = false,
-                ),
-                debounce = false,
-            )
-            paused = false
-            signalInteraction()
-        }
-    }
 
     fun toggleRecord() {
         val active = activeRecordings.firstOrNull { it.channelId == currentId }
@@ -1064,7 +1197,14 @@ fun PlayerScreen(
         app.opentv.core.Startup.mark("playRequested")
         // While an archive programme plays, the shared player is already on the timeshift stream:
         // re-tuning the live channel here would yank the viewer back to now.
-        if (activeCatchup == null) playChannelId(id)
+        //
+        // The second guard covers the case the first one missed. This screen is also embedded in
+        // the guide's full-screen, where a catch-up chosen in the guide arrives as a session rather
+        // than as a channel to tune â€” and the two land on separate effects, so activeCatchup is
+        // not yet set the first time this runs. It used to fall through to playChannelId on the
+        // strength of a session that had not arrived yet, which stopped the timeshift stream the
+        // viewer had just started and put live back in its place.
+        if (activeCatchup == null && !playingArchive()) playChannelId(id)
     }
 
     val playRequest by app.opentv.core.PlayRequests.channelId.collectAsState()
@@ -1081,7 +1221,7 @@ fun PlayerScreen(
     LaunchedEffect(currentId, nowMillis, activeCatchup) {
         val id = currentId ?: return@LaunchedEffect
         // Archive playback labels the OSD with the PROGRAMME BEING WATCHED, not whatever is on the
-        // channel now — the guide's "now" lookup below would otherwise show the wrong title.
+        // channel now â€” the guide's "now" lookup below would otherwise show the wrong title.
         val archive = activeCatchup
         if (archive != null) {
             withContext(Dispatchers.IO) {
@@ -1139,7 +1279,7 @@ fun PlayerScreen(
         if (!playbackStarted) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             // Bring the history across from the row ids older versions stored, once. Ids a sync has
-            // already invalidated cannot be converted to refs and are dropped — they were lost
+            // already invalidated cannot be converted to refs and are dropped â€” they were lost
             // already, and there is nothing left to point at.
             val legacyIds = settings.legacyRecentChannelIds()
             if (legacyIds.isNotEmpty()) {
@@ -1159,7 +1299,7 @@ fun PlayerScreen(
             val loaded = graph.catalogRepository.channelsForRefs(refs)
 
             // Only entries whose playlist has been deleted are retired. A channel the catalogue does
-            // not hold this instant is not gone — the next sync brings it back, and a ref resolves
+            // not hold this instant is not gone â€” the next sync brings it back, and a ref resolves
             // it there just as well because a ref is not the row id. Sweeping on absence, which is
             // what this used to do, is what emptied this bar of channels that were still there.
             val dead = RecentChannels.refsToForget(
@@ -1215,7 +1355,7 @@ fun PlayerScreen(
         if (subtitlesDefault && hasText && !textChosen) controller.setSubtitlesEnabled(true)
     }
 
-    // Auto-hide the bar after a few seconds — but never while paused or with a picker open or scrubbing timeline.
+    // Auto-hide the bar after a few seconds â€” but never while paused or with a picker open or scrubbing timeline.
     LaunchedEffect(Unit) {
         interactionEvents
             .onStart { emit(Unit) }
@@ -1313,7 +1453,7 @@ fun PlayerScreen(
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val digit = keyToDigit(event.key)
                 when {
-                    // Never swallow Back/Escape — they must reach the back handler.
+                    // Never swallow Back/Escape â€” they must reach the back handler.
                     event.key == Key.Back || event.key == Key.Escape -> false
                     // Typing a channel number jumps to it, TiviMate-style.
                     digit != null -> {
@@ -1335,33 +1475,34 @@ fun PlayerScreen(
                                     true
                                 } else when (event.key) {
                                     Key.DirectionDown -> {
-                                        if (activeCatchup != null) {
-                                            // In archive, walk newer (reaching live returns
-                                            // to the live edge); on live TV this keeps its
-                                            // old meaning and drops to the controls tier.
-                                            stepProgramme(1)
-                                            signalInteraction()
-                                            true
-                                        } else {
-                                            osdTier = OsdTier.CONTROLS
-                                            scope.launch { delay(16); focusTransport() }
-                                            true
-                                        }
+                                        // Down moves through the on-screen controls, in an archive
+                                        // exactly as on live. It used to mean "the next programme
+                                        // on this channel" while a catch-up was playing, which threw
+                                        // away the viewer's place in the programme they had chosen
+                                        // and re-tuned the stream to a different one - on a catch-up
+                                        // that means a fresh archive request and a long re-buffer,
+                                        // from a key that looks like plain menu navigation.
+                                        // Programmes are picked from the guide, which is where
+                                        // catch-up is started from anyway.
+                                        osdTier = OsdTier.CONTROLS
+                                        scope.launch { delay(16); focusTransport() }
+                                        true
                                     }
                                     Key.DirectionLeft -> {
                                         // Same two-stage step as the D-pad-left handler below, so
                                         // rewinding with the timeline focused works on live TV too
                                         // rather than only where the player already has a window.
-                                        stepBack(scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting))
+                                        stepSeek(-scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting))
                                         signalInteraction()
                                         true
                                     }
                                     Key.DirectionRight -> {
-                                        val cur = controller.player.currentPosition
-                                        val step = scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting)
-                                        val dur = controller.player.duration
-                                        val target = if (dur > 0) (cur + step).coerceIn(0L, dur) else cur + step
-                                        controller.player.seekTo(target)
+                                        // seekBy so a burst of Rights accumulates and the
+                                        // readout names the destination â€” the old inline seek
+                                        // recomputed from currentPosition every press, which on a
+                                        // re-buffering catch-up stream kept landing on the same
+                                        // place.
+                                        stepSeek(scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting))
                                         signalInteraction()
                                         true
                                     }
@@ -1433,23 +1574,24 @@ fun PlayerScreen(
                         }
                     }
                     // While an ARCHIVE programme plays, channel up/down scrub the recording by the
-                    // catch-up skip step instead of zapping — there is no "next channel" while
+                    // catch-up skip step instead of zapping â€” there is no "next channel" while
                     // watching a finished show.
-                    activeCatchup != null && isPlayerUpKey(event.key, event.nativeKeyEvent.keyCode) -> {
-                        seekBy(catchupSkipSetting * 1000L)
+                    playingArchive() && isPlayerUpKey(event.key, event.nativeKeyEvent.keyCode) -> {
+                        logKeyRoute(event.key)
+                        stepSeek(catchupSkipSetting * 1000L)
                         true
                     }
 
-                    activeCatchup != null && (
+                    playingArchive() && (
                         event.key == Key.ChannelDown ||
                         event.key == Key.PageDown ||
                         event.nativeKeyEvent.keyCode == 167 || // KEYCODE_CHANNEL_DOWN
                         event.nativeKeyEvent.keyCode == 93 ||  // KEYCODE_PAGE_DOWN
                         event.key == Key.DirectionDown
-                    ) -> { seekBy(-catchupSkipSetting * 1000L); true }
+                    ) -> { logKeyRoute(event.key); stepSeek(-catchupSkipSetting * 1000L); true }
 
                     // D-Pad Up, or a dedicated Channel Up / Page Up (ONN 4k box remote), while
-                    // full-screen: the next channel up the list — the next channel number.
+                    // full-screen: the next channel up the list â€” the next channel number.
                     //
                     // Deliberately does not reveal the OSD. It used to, and on the ONN remote that
                     // made channel up/down behave like a menu key: every press zapped the channel
@@ -1460,13 +1602,13 @@ fun PlayerScreen(
                     -> { zapBy(1); true }
 
                     // D-Pad Down, or a dedicated Channel Down / Page Down: the channel before it.
-                    // Same reasoning as above — no reveal.
+                    // Same reasoning as above â€” no reveal.
                     event.key == Key.ChannelDown ||
                     event.key == Key.PageDown ||
                     event.nativeKeyEvent.keyCode == 167 || // KEYCODE_CHANNEL_DOWN
                     event.nativeKeyEvent.keyCode == 93 ||  // KEYCODE_PAGE_DOWN
                     event.key == Key.DirectionDown
-                    -> { zapBy(-1); true }
+                    -> { logKeyRoute(event.key); zapBy(-1); true }
 
                     // Center/Enter/OK/Info button on remote: reveals the OSD menu without pausing playback.
                     event.key == Key.DirectionCenter ||
@@ -1481,22 +1623,23 @@ fun PlayerScreen(
 
                     // D-pad left while watching: the transparent channel list. Rewind stays
                     // available with the bar showing (timeline tier) and on the transport
-                    // rewind button — hidden-bar left is the list, as it always was.
+                    // rewind button â€” hidden-bar left is the list, as it always was.
                     event.key == Key.DirectionLeft -> {
                         if (queue.isNotEmpty()) channelListVisible = true
                         true
                     }
 
-                    // The Guide key — and the ONN box's dedicated key — still open the channel
+                    // The Guide key â€” and the ONN box's dedicated key â€” still open the channel
                     // list, which is where left used to lead on every stream.
                     event.key == Key.Guide ||
                     event.nativeKeyEvent.keyCode == 172 // KEYCODE_GUIDE
                     -> { if (queue.isNotEmpty()) channelListVisible = true; true }
 
-                    // In archive, Right is the matching forward skip to Left's stepBack (the
+                    // In archive, Right is the matching forward skip to Left's rewind (the
                     // catch-up skip step, scaling with key repeat), not "previous channel".
-                    activeCatchup != null && event.key == Key.DirectionRight -> {
-                        seekBy(scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting))
+                    playingArchive() && event.key == Key.DirectionRight -> {
+                        logKeyRoute(event.key)
+                        stepSeek(scrubStepMillis(event.nativeKeyEvent.repeatCount, catchupSkipSetting))
                         true
                     }
 
@@ -1504,10 +1647,11 @@ fun PlayerScreen(
                         // The channel watched before this one. previousId only knows about swaps
                         // made inside this visit, so fall back to the one recorded across player
                         // instances before reaching for the watch history.
+                        logKeyRoute(event.key)
                         val targetId = previousId
                             ?: PlaybackQueue.previousChannelId.takeIf { it > 0L && it != currentId }
                             // Resolved channels only. This used to fall back to a raw stored id when
-                            // the bar had not resolved yet — the very kind of id that goes stale when
+                            // the bar had not resolved yet â€” the very kind of id that goes stale when
                             // a sync rebuilds a row, so the fallback could only fail when it mattered
                             // (see core/RecentChannels.kt).
                             ?: recentChannels.firstOrNull { it.id != currentId }?.id
@@ -1565,12 +1709,86 @@ fun PlayerScreen(
 
         when (val current = state) {
             is PlayerController.State.Buffering -> {
-                if (!controller.player.isPlaying && controller.player.playbackState != androidx.media3.common.Player.STATE_READY) {
+                // Never cover the OSD while it is up. A skip on a timeshift stream re-buffers, and
+                // a full-screen spinner drawn over the controls is exactly what hid the timeline
+                // during a catch-up skip: the viewer pressed Right, the whole scrubber vanished
+                // behind a spinner, and the skip read as a freeze rather than a move.
+                if (!controller.player.isPlaying &&
+                    controller.player.playbackState != androidx.media3.common.Player.STATE_READY &&
+                    !controlsVisible
+                ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(Modifier.height(16.dp))
                             Text(current.title, color = Color.White)
+                        }
+                    }
+                }
+            }
+
+            is PlayerController.State.Stalled -> {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = if (current.canRetry) 0.85f else 0.55f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(48.dp),
+                    ) {
+                        if (!current.canRetry) CircularProgressIndicator()
+                        if (!current.canRetry) Spacer(Modifier.height(16.dp))
+                        Text(
+                            current.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = Color.White,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            current.message,
+                            color = Color.White.copy(alpha = 0.85f),
+                            textAlign = TextAlign.Center,
+                        )
+                        if (current.canRetry) {
+                            Spacer(Modifier.height(24.dp))
+                            Button(onClick = { controller.retry() }) {
+                                Text(stringResource(R.string.common_try_again))
+                            }
+                        }
+                    }
+                }
+            }
+
+            is PlayerController.State.Retrying -> {
+                if (!controller.player.isPlaying && controller.player.playbackState != androidx.media3.common.Player.STATE_READY) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(48.dp),
+                        ) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(16.dp))
+                            Text(current.title, color = Color.White)
+                            Spacer(Modifier.height(8.dp))
+                            // "Retrying 2 of 5" rather than a bare spinner: it says the app is
+                            // still working on it, and how much longer it intends to.
+                            Text(
+                                stringResource(
+                                    R.string.player_retrying,
+                                    current.attempt,
+                                    current.maxAttempts,
+                                ),
+                                color = AppTheme.primary,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                current.message,
+                                color = Color.White.copy(alpha = 0.85f),
+                                textAlign = TextAlign.Center,
+                            )
                         }
                     }
                 }
@@ -1606,6 +1824,8 @@ fun PlayerScreen(
         val channelTitle = when (val s = state) {
             is PlayerController.State.Buffering -> s.title
             is PlayerController.State.Playing -> s.title
+            is PlayerController.State.Retrying -> s.title
+            is PlayerController.State.Stalled -> s.title
             is PlayerController.State.Error -> s.title
             else -> ""
         }
@@ -1631,7 +1851,7 @@ fun PlayerScreen(
             ) {
                 val groupText = buildString {
                     currentSource?.name?.takeIf { it.isNotBlank() }?.let { append(it) }
-                    if (isNotEmpty() && !currentCategoryName.isNullOrBlank()) append(" • ")
+                    if (isNotEmpty() && !currentCategoryName.isNullOrBlank()) append(" â€¢ ")
                     currentCategoryName?.takeIf { it.isNotBlank() }?.let { append(it) }
                 }.ifEmpty { currentChannel?.shownName ?: "" }
 
@@ -1643,7 +1863,7 @@ fun PlayerScreen(
                 )
 
                 // Right: display-only weather chip (temp + condition icon) next to the
-                // clock. Nothing here is tappable — the zip code and on/off toggle live
+                // clock. Nothing here is tappable â€” the zip code and on/off toggle live
                 // in Settings. Clock-only until weather is enabled with a valid zip.
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1768,14 +1988,14 @@ fun PlayerScreen(
                                 val remainingMins = ((currentProg!!.endUtcMillis - nowMillis) / 60_000L).coerceAtLeast(0)
 
                                 Text(
-                                    text = "$startStr – $endStr",
+                                    text = "$startStr â€“ $endStr",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.White.copy(alpha = 0.9f),
                                     fontWeight = FontWeight.Medium,
                                 )
                                 Text(
-                                    text = if (activeCatchup != null) "  —  Catch-up  "
-                                    else "  —  $remainingMins min   ",
+                                    text = if (activeCatchup != null) "  â€”  Catch-up  "
+                                    else "  â€”  $remainingMins min   ",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.White.copy(alpha = 0.75f),
                                     fontWeight = FontWeight.Medium,
@@ -1823,7 +2043,7 @@ fun PlayerScreen(
                             val nextEnd = timeFmt.format(Date(nextProg!!.endUtcMillis))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "$nextStart – $nextEnd",
+                                    text = "$nextStart â€“ $nextEnd",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.White.copy(alpha = 0.65f),
                                     maxLines = 1,
@@ -1875,21 +2095,37 @@ fun PlayerScreen(
                         // Left: position / length. Player scale when the stream reports a window
                         // (moves with every skip); programme wall-clock as the fallback.
                         val prog = currentProg
+                        val archive = activeCatchup
                         val durationMs = when {
+                            // In an archive the stream is a recording still being written, so its
+                            // own length is just "however much has been produced" - the panel
+                            // cheerfully reported 22h 44m for a one-hour programme, and every skip
+                            // then had to be clamped against that fiction. The programme the guide
+                            // listed is the real length.
+                            archive != null && archive.endUtcMillis > archive.startUtcMillis ->
+                                archive.endUtcMillis - archive.startUtcMillis
                             playerDur > 0L -> playerDur
                             prog != null && prog.durationMillis > 0L -> prog.durationMillis
                             else -> 0L
                         }
                         val elapsedMs = when {
-                            playerDur > 0L -> controller.player.currentPosition.coerceIn(0L, playerDur)
+                            archive != null || playerDur > 0L ->
+                                controller.player.currentPosition.coerceIn(0L, durationMs)
                             prog != null && prog.durationMillis > 0L ->
                                 (nowMillis - prog.startUtcMillis).coerceIn(0L, durationMs)
                             else -> controller.player.currentPosition.coerceAtLeast(0L)
                         }
                         Text(
-                            text = "${formatDurationMs(elapsedMs)} / ${formatDurationMs(durationMs)}",
+                            text = if (showSeekTarget) {
+                                // While a skip lands, name the destination rather than the old
+                                // position â€” on a re-buffering archive stream the playhead is
+                                // stale by definition, so showing it misreports where you are.
+                                "â†’ ${formatDurationMs(seekTargetMillis)} / ${formatDurationMs(durationMs)}"
+                            } else {
+                                "${formatDurationMs(elapsedMs)} / ${formatDurationMs(durationMs)}"
+                            },
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.5.sp),
-                            color = Color.White.copy(alpha = 0.85f),
+                            color = if (showSeekTarget) AppTheme.primary else Color.White.copy(alpha = 0.85f),
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
@@ -1902,7 +2138,7 @@ fun PlayerScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            // Skip Previous (|◀) - Jump to start
+                            // Skip Previous (|â—€) - Jump to start
                             TransportButton(
                                 icon = Icons.Filled.SkipPrevious,
                                 contentDescription = stringResource(R.string.player_rewind),
@@ -1911,13 +2147,17 @@ fun PlayerScreen(
                                 focusRequester = transportFocus[0],
                                 onFocusChanged = { if (it) transportIndex = 0 },
                                 onClick = {
-                                    controller.player.seekTo(0L)
+                                    // Through seekToPosition so the jump is recorded as the new
+                                    // origin â€” otherwise the first skip afterwards counts from a
+                                    // playhead still catching up to the start and appears to
+                                    // do nothing.
+                                    seekToPosition(0L)
                                     signalInteraction()
                                     scope.launch { delay(16); focusTransport() }
                                 },
                             )
 
-                            // Fast Rewind (◀◀) - catch-up skip step
+                            // Fast Rewind (â—€â—€) - catch-up skip step
                             TransportButton(
                                 icon = Icons.Filled.FastRewind,
                                 contentDescription = stringResource(R.string.player_rewind),
@@ -1926,17 +2166,17 @@ fun PlayerScreen(
                                 focusRequester = transportFocus[1],
                                 onFocusChanged = { if (it) transportIndex = 1 },
                                 onClick = {
-                                    // stepBack, not a blind seek: on a live stream there is often
-                                    // nothing behind the playhead to seek into, and stepBack is what
+                                    // stepSeek, not a blind seek: on a live stream there is often
+                                    // nothing behind the playhead to seek into, and stepSeek is what
                                     // reaches into the provider's archive in that case. See it for
                                     // the two-stage rule.
-                                    stepBack(catchupSkipSetting * 1000L)
+                                    stepSeek(-catchupSkipSetting * 1000L)
                                     signalInteraction()
                                     scope.launch { delay(16); focusTransport() }
                                 },
                             )
 
-                            // Play / Pause (|| / ▶) - the centre button, and the default cursor target
+                            // Play / Pause (|| / â–¶) - the centre button, and the default cursor target
                             // when the controls tier is first entered.
                             TransportButton(
                                 icon = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
@@ -1955,7 +2195,7 @@ fun PlayerScreen(
                                 },
                             )
 
-                            // Fast Forward (▶▶) - catch-up skip step
+                            // Fast Forward (â–¶â–¶) - catch-up skip step
                             TransportButton(
                                 icon = Icons.Filled.FastForward,
                                 contentDescription = stringResource(R.string.player_forward),
@@ -1964,20 +2204,26 @@ fun PlayerScreen(
                                 focusRequester = transportFocus[3],
                                 onFocusChanged = { if (it) transportIndex = 3 },
                                 onClick = {
-                                    val cur = controller.player.currentPosition
-                                    val step = if (activeCatchup != null) catchupSkipSetting * 1000L else 10_000L
-                                    val dur = controller.player.duration
-                                    if (dur > 0) {
-                                        controller.player.seekTo((cur + step).coerceAtMost(dur))
-                                    } else {
-                                        controller.player.seekTo(cur + step)
-                                    }
+                                    // seekBy, not a bare seekTo off currentPosition: a catch-up
+                                    // seek re-buffers, so a bare seek made every press in a burst
+                                    // land on the same place instead of adding up â€” and it showed
+                                    // no target readout, so a button skip looked like nothing at
+                                    // all. Step matches the key routing: the catch-up step in an
+                                    // archive, 10s on live, where a longer step overshoots a
+                                    // stream that barely has any window behind it.
+                                    val step =
+                                        if (activeCatchup != null || playingArchive()) {
+                                            catchupSkipSetting * 1000L
+                                        } else {
+                                            10_000L
+                                        }
+                                    stepSeek(step)
                                     signalInteraction()
                                     scope.launch { delay(16); focusTransport() }
                                 },
                             )
 
-                            // Skip Next (▶|) - Jump to live edge
+                            // Skip Next (â–¶|) - Jump to live edge
                             TransportButton(
                                 icon = Icons.Filled.SkipNext,
                                 contentDescription = stringResource(R.string.player_forward),
@@ -1995,13 +2241,13 @@ fun PlayerScreen(
                             )
                         }
 
-                        // Right: ↺ Watch from start + [LIVE] + ● Record
+                        // Right: â†º Watch from start + [LIVE] + â— Record
                         Row(
                             modifier = Modifier.align(Alignment.CenterEnd),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            // Watch from start button (↺) — in archive it restarts the recording
+                            // Watch from start button (â†º) â€” in archive it restarts the recording
                             // (seek to 0); on live it opens the archive at the programme start.
                             TransportButton(
                                 icon = Icons.Filled.Replay,
@@ -2010,7 +2256,7 @@ fun PlayerScreen(
                                 iconSize = 20.dp,
                                 onClick = {
                                     if (activeCatchup != null) {
-                                        controller.player.seekTo(0L)
+                                        seekToPosition(0L)
                                     } else {
                                         watchFromStart()
                                     }
@@ -2208,7 +2454,7 @@ fun PlayerScreen(
                                             )
                                         }
                                         AppSettings.SubMenuButton.QUALITY -> {
-                                            val qualLabel = if (videoSizeText.isNotEmpty()) videoSizeText.replace("x", " × ") else "Quality"
+                                            val qualLabel = if (videoSizeText.isNotEmpty()) videoSizeText.replace("x", " Ã— ") else "Quality"
                                             SubMenuButtonCard(
                                                 icon = Icons.Filled.Videocam,
                                                 label = qualLabel,
@@ -2349,7 +2595,7 @@ fun PlayerScreen(
             }
         }
 
-        // Left-side transparent channel list — d-pad Left opens it, pick a channel to switch.
+        // Left-side transparent channel list â€” d-pad Left opens it, pick a channel to switch.
         AnimatedVisibility(
             visible = channelListVisible && !inPip,
             enter = fadeIn(animationSpec = tween(140)) + slideInHorizontally(animationSpec = tween(180)) { -it },
@@ -2464,7 +2710,7 @@ fun PlayerScreen(
 
 /**
  * Maps a National Weather Service condition bucket to a Material icon plus a tint
- * for the header chip. Tints are brightened for the dark gradient header — the
+ * for the header chip. Tints are brightened for the dark gradient header â€” the
  * temp/clock text stays white and only the icon carries color.
  */
 private data class WeatherLook(val icon: ImageVector, val tint: Color)
@@ -2480,7 +2726,7 @@ private fun weatherLook(kind: WeatherKind): WeatherLook = when (kind) {
 
 /**
  * First-run weather opt-in: asks whether to turn the header weather on, with a zip-code
- * field. TV-friendly (D-pad-safe text field, focus lands on Turn On). No API key involved —
+ * field. TV-friendly (D-pad-safe text field, focus lands on Turn On). No API key involved â€”
  * the header resolves the zip through keyless Zippopotam + National Weather Service endpoints.
  */
 @Composable
@@ -2560,7 +2806,7 @@ private fun ChannelListRow(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // A "Last" tag, or the channel number if the provider gives one — a fixed-width slot so
+        // A "Last" tag, or the channel number if the provider gives one â€” a fixed-width slot so
         // the logos and names line up down the list.
         Text(
             leadingLabel ?: item.number?.toString().orEmpty(),
@@ -2932,7 +3178,7 @@ private fun LiveTimelineBar(
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             // Key handling lives in PlayerScreen's root onPreviewKeyEvent (TIMELINE tier): the
             // root preview always consumes Left/Right/Enter here first, so a handler on the bar
-            // itself would be dead code. Always focusable — the tier effect focuses it on entry,
+            // itself would be dead code. Always focusable â€” the tier effect focuses it on entry,
             // and a bar that is only focusable-when-focused could never take focus at all.
             .focusable()
             .onSizeChanged { widthPx = it.width },
@@ -2971,6 +3217,74 @@ private fun LiveTimelineBar(
         }
     }
 }
+
+/** How long a skip target stays on screen after the press that set it. */
+private const val SEEK_TARGET_HOLD_MILLIS = 2_500L
+
+/**
+ * The wall-clock instant an archive skip should ask the provider for.
+ *
+ * A catch-up stream can only be asked for by time, never by offset, so the press has to be
+ * translated back into "when". In an archive that means the programme's own start plus where the
+ * playhead sits inside it - [positionMillis], which deliberately comes from the accumulating base
+ * rather than the raw playhead, so three quick presses ask for three different minutes instead of
+ * asking for the same one three times. On live there is no programme to be relative to, so the
+ * playhead *is* now.
+ *
+ * Split out of the composable so that translation can be tested without a player or a provider.
+ */
+/**
+ * How a wanted instant is turned into the stream to request for it.
+ *
+ * A timeshift stamp only carries minutes, so the position cannot be expressed precisely in the URL
+ * and has to be split in two: the stream is asked for from the minute the target falls in, and the
+ * leftover seconds become an opening offset within it. The split matters because the offset is the
+ * part that can be silently dropped - it relies on the player honouring a seek into a recording
+ * whose length it does not know yet - so the smaller that part is, the better. Everything under a
+ * minute is the most a minute-resolution stamp can leave behind.
+ */
+internal data class ArchiveRequest(
+    val streamStartMillis: Long,
+    val offsetInStreamMillis: Long,
+)
+
+internal fun archiveRequestFor(targetMillis: Long): ArchiveRequest {
+    val floored = targetMillis - (targetMillis % 60_000L)
+    return ArchiveRequest(streamStartMillis = floored, offsetInStreamMillis = targetMillis - floored)
+}
+
+internal fun archiveSkipTarget(
+    archiveStartMillis: Long,
+    positionMillis: Long,
+    deltaMillis: Long,
+    nowMillis: Long,
+): Long {
+    val playhead = if (archiveStartMillis > 0L) archiveStartMillis + positionMillis else nowMillis
+    return playhead + deltaMillis
+}
+
+/**
+ * How long a pending seek target stays authoritative as the origin for the next skip press.
+ *
+ * Long enough to cover a held or double-tapped skip (remote key repeat is ~500ms to first repeat,
+ * then tens of milliseconds), short enough that a press the viewer means deliberately â€” seconds
+ * later, with the re-buffer long since done â€” counts from the real playhead. See
+ * `seekBaseMillis`.
+ */
+private const val SEEK_ACCUMULATE_MILLIS = 1_200L
+
+/**
+ * Which position a skip press counts from, split out of the composable so the accumulation rule
+ * can be tested without a player.
+ *
+ * A pending [pendingTarget] that is younger than [SEEK_ACCUMULATE_MILLIS] is the better answer
+ * than [playhead], because a catch-up seek re-buffers and the playhead keeps reporting where we
+ * were until it lands. Older than that, or never set, and the playhead is truth again: a press the
+ * viewer means deliberately must not inherit a seek from a second ago.
+ */
+internal fun seekBaseFor(pendingTarget: Long, pendingAgeMillis: Long, playhead: Long): Long =
+    if (pendingTarget >= 0L && pendingAgeMillis in 0 until SEEK_ACCUMULATE_MILLIS) pendingTarget
+    else playhead
 
 internal fun isPlayerUpKey(key: Key, nativeKeyCode: Int): Boolean =
     key == Key.DirectionUp ||
@@ -3131,7 +3445,7 @@ private fun SubMenuButtonCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     // Focus is carried by the Column below, so the circle is painted from that state rather than
-    // from a focus modifier on this non-focusable child — which never observed it, leaving the
+    // from a focus modifier on this non-focusable child â€” which never observed it, leaving the
     // shortcut row with no visible cursor. Focused fills the circle with the theme accent and
     // inverts the glyph; an active (selected) shortcut keeps an accent ring on the plain surface.
     val circleColor = if (focused) AppTheme.primary else AppTheme.palette.chrome
