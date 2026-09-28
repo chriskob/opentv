@@ -122,6 +122,7 @@ import app.opentv.core.ServiceLocator
 import app.opentv.core.SleepTimer
 import app.opentv.core.findActivity
 import app.opentv.data.model.Episode
+import app.opentv.data.repo.CatalogRepository
 import app.opentv.player.PlayerController
 import app.opentv.player.StreamInfo
 import app.opentv.player.declaredQuality
@@ -134,12 +135,14 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Plays a movie or episode: a single non-live stream, with resume and a proper transport bar.
@@ -202,6 +205,16 @@ fun VodPlayerScreen(
     var durationMs by remember { mutableLongStateOf(0L) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubValue by remember { mutableFloatStateOf(0f) }
+
+    // Which Plex item this is, or null for everything else. Plex plays carry
+    // `plex:<sourceId>:<ratingKey>` as their media key; parsing is pure string surgery with no
+    // I/O, so it runs on every composition without cost and every Plex-only behaviour below keys
+    // off it while the rest of the screen ignores keys it does not recognise.
+    val plexRef = remember(item.mediaKey) { CatalogRepository.parsePlexMediaKey(item.mediaKey) }
+    // Whether Plex counts the playing item watched. Null until looked up, and null again for
+    // non-Plex plays - an unknown state shows "Mark watched" rather than a wrong tick.
+    var plexWatched by remember { mutableStateOf<Boolean?>(null) }
+    val plexWatchFocus = remember { FocusRequester() }
 
     // Which buttons this screen shows, and a focus target per button so the bar can hand focus to
     // whatever is actually composed — the set is user-configurable, so it is not knowable here.
@@ -515,6 +528,54 @@ fun VodPlayerScreen(
                 else controller.player.duration.takeIf { it > 0 } ?: 0
             }
             delay(500)
+        }
+    }
+
+    // Plex watched state for the playing item. Looked up once per item so the toggle below shows
+    // its true state; a lookup that fails leaves null, which renders as "Mark watched".
+    LaunchedEffect(item.mediaKey) {
+        val ref = CatalogRepository.parsePlexMediaKey(item.mediaKey)
+        plexWatched = if (ref == null) null
+        else graph.catalogRepository.plexWatched(ref.sourceId, ref.ratingKey)
+    }
+
+    // Reports playback to Plex so the play registers there: progress while watching, and a stopped
+    // ping on the way out that closes the session. Plex has no persistent session for a direct
+    // stream - it only knows what clients report - so without this nothing is ever marked watched
+    // no matter how much is played. Non-Plex items return before the loop; the effect still
+    // restarts per item so a next-episode handover re-resolves cleanly.
+    LaunchedEffect(item.mediaKey) {
+        val ref = CatalogRepository.parsePlexMediaKey(item.mediaKey) ?: return@LaunchedEffect
+        try {
+            while (isActive) {
+                val p = controller.player
+                if (p.playbackState == Player.STATE_ENDED) return@LaunchedEffect
+                val playingNow = !paused && p.playWhenReady && p.playbackState == Player.STATE_READY
+                graph.catalogRepository.plexTimeline(
+                    ref.sourceId,
+                    ref.ratingKey,
+                    if (playingNow) "playing" else "paused",
+                    p.currentPosition.coerceAtLeast(0),
+                    p.duration.takeIf { it > 0 } ?: 0,
+                )
+                delay(PLEX_TIMELINE_MILLIS)
+            }
+        } finally {
+            // The stopped ping is what closes the session in Plex; without it progress hangs at
+            // the last ping. NonCancellable because this runs during teardown, when the
+            // surrounding scope is already going away - a cancelled ping is a lost one.
+            withContext(NonCancellable) {
+                runCatching {
+                    val p = controller.player
+                    graph.catalogRepository.plexTimeline(
+                        ref.sourceId,
+                        ref.ratingKey,
+                        "stopped",
+                        p.currentPosition.coerceAtLeast(0),
+                        p.duration.takeIf { it > 0 } ?: 0,
+                    )
+                }
+            }
         }
     }
 
@@ -1066,6 +1127,36 @@ fun VodPlayerScreen(
                                 onClick = { playNext() },
                             )
                         }
+                    }
+                }
+                // Plex watched toggle. Deliberately OUTSIDE the configurable bar above: that set is
+                // the viewer's transport choice, and a server-side watched flag is not transport.
+                // Renders only for Plex plays, on its own centred row under the bar, so it is one
+                // d-pad Down away and cannot be confused with a playback control.
+                if (plexRef != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        VodButtonCard(
+                            icon = Icons.Filled.Check,
+                            label = if (plexWatched == true) stringResource(R.string.plex_watched)
+                            else stringResource(R.string.plex_mark_watched),
+                            isSelected = plexWatched == true,
+                            focusRequester = plexWatchFocus,
+                            onClick = {
+                                val ref = plexRef ?: return@VodButtonCard
+                                scope.launch {
+                                    val target = !(plexWatched == true)
+                                    if (graph.catalogRepository.plexSetWatched(ref.sourceId, ref.ratingKey, target)) {
+                                        plexWatched = target
+                                    }
+                                    signalInteraction()
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -1765,6 +1856,13 @@ private const val UP_NEXT_SECONDS = 10
 /** Episode row keys are `ep:<id>`, film row keys `movie:<id>` — see SeriesDetailScreen. */
 private const val EPISODE_KEY_PREFIX = "ep:"
 private const val MOVIE_KEY_PREFIX = "movie:"
+
+/**
+ * How often playback is reported to Plex while a Plex item plays. Plex derives progress and
+ * eventual watched status from the stream of these, and fifteen seconds is what its own clients
+ * use: frequent enough that progress never jumps, sparse enough to be four requests a minute.
+ */
+private const val PLEX_TIMELINE_MILLIS = 15_000L
 
 private const val META_SEPARATOR = " · "
 

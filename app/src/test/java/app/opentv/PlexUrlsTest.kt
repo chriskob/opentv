@@ -161,4 +161,45 @@ class PlexUrlsTest {
         val url = PlexUrls.pinApprovalUrl(clientId, strong, "OpenTV", "OpenTV on AFTR")
         assertThat(url).contains("code=$strong")
     }
+
+    @Test
+    fun `a timeline url carries the item, the state and the position`() {
+        val url = PlexUrls.timeline(
+            serverBase = server,
+            ratingKey = "12345",
+            token = token,
+            state = "playing",
+            timeMs = 90_000L,
+            durationMs = 3_600_000L,
+        )
+        assertThat(url).isEqualTo(
+            "https://plex.buickgn.us/:/timeline" +
+                "?ratingKey=12345" +
+                "&key=/library/metadata/12345" +
+                "&identifier=com.plexapp.plugins.library" +
+                "&state=playing" +
+                "&time=90000" +
+                "&duration=3600000" +
+                "&X-Plex-Token=$token",
+        )
+    }
+
+    @Test
+    fun `a timeline url tolerates a trailing slash on the server address`() {
+        val url = PlexUrls.timeline("$server/", "7", token, "stopped", 0L, 0L)
+        assertThat(url).startsWith("https://plex.buickgn.us/:/timeline?")
+        assertThat(url).doesNotContain(".us//")
+    }
+
+    @Test
+    fun `scrobble and unscrobble are the same call with the watched flag flipped`() {
+        assertThat(PlexUrls.scrobble(server, "12345", token, watched = true)).isEqualTo(
+            "https://plex.buickgn.us/:/scrobble" +
+                "?key=12345&identifier=com.plexapp.plugins.library&X-Plex-Token=$token",
+        )
+        assertThat(PlexUrls.scrobble(server, "12345", token, watched = false)).isEqualTo(
+            "https://plex.buickgn.us/:/unscrobble" +
+                "?key=12345&identifier=com.plexapp.plugins.library&X-Plex-Token=$token",
+        )
+    }
 }

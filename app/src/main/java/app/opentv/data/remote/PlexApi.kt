@@ -241,6 +241,61 @@ class PlexApi(private val http: OkHttpClient) {
             PlexParser.episodes(body.byteInputStream()).sortedByDescending { it.index }
         }
 
+    /**
+     * Tells Plex where playback of one item stands.
+     *
+     * Fire-and-forget from the caller's point of view: a failed ping must never disturb playback,
+     * so failures throw and the caller decides how loudly to care (the player screen swallows them
+     * after the first log line - a dead ping every 15 seconds is not worth waking anyone for).
+     * `state` is playing, paused, buffering or stopped; the server derives progress and eventual
+     * watched status from the stream of these.
+     */
+    suspend fun reportTimeline(
+        serverBase: String,
+        token: String,
+        clientIdentifier: String,
+        ratingKey: String,
+        state: String,
+        timeMs: Long,
+        durationMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        val url = PlexUrls.timeline(serverBase, ratingKey, token, state, timeMs, durationMs)
+        val request = Request.Builder()
+            .url(url)
+            .header("X-Plex-Client-Identifier", clientIdentifier)
+            .get()
+            .build()
+        execute(request, "Plex would not take the playback report.").close()
+    }
+
+    /**
+     * Marks one item watched or unwatched, explicitly.
+     *
+     * Timeline pings move progress, but near the end of a film nobody wants to depend on exactly
+     * which ping landed last. This is the button: immediate, unconditional, and reflected in Plex
+     * straight away.
+     */
+    suspend fun setWatched(serverBase: String, token: String, ratingKey: String, watched: Boolean) =
+        withContext(Dispatchers.IO) {
+            val url = PlexUrls.scrobble(serverBase, ratingKey, token, watched)
+            execute(Request.Builder().url(url).get().build(), "Plex would not change the watched mark.").close()
+        }
+
+    /**
+     * Whether Plex already counts this item as watched, or null when it cannot be told.
+     *
+     * Read from the item's own metadata (`viewCount`), so the watched button can show its true
+     * state instead of guessing. Null on any failure - an unknown state shows "Mark watched"
+     * rather than a wrong tick.
+     */
+    suspend fun watchedState(serverBase: String, token: String, ratingKey: String): Boolean? =
+        withContext(Dispatchers.IO) {
+            val url = endpoint(serverBase, "library/metadata/$ratingKey", token)
+                ?: return@withContext null
+            val body = execute(url, "Plex would not describe that item.").use { it.body?.string().orEmpty() }
+            PlexParser.videoViewCount(body.byteInputStream())?.let { it > 0 }
+        }
+
     // ---- plumbing ---------------------------------------------------------------------------
 
     private fun endpoint(

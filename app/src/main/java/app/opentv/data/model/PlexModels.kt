@@ -7,6 +7,15 @@
 package app.opentv.data.model
 
 /**
+ * A Plex item currently playing: which server owns it and which item on that server.
+ *
+ * Lives at file scope rather than nested in a companion because Kotlin does not promote classes
+ * nested in a companion to `Outer.Nested` the way it does functions - they stay
+ * `Outer.Companion.Nested`, which is noise every consumer pays. See [CatalogRepository].
+ */
+data class PlexRef(val sourceId: Long, val ratingKey: String)
+
+/**
  * One library section on a Plex server, as reported by `/library/sections`.
  *
  * Plex splits a server into sections and there is no single "movies" collection: a server can have

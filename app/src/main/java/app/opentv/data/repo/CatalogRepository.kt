@@ -30,6 +30,7 @@ import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.parser.M3uParser
 import app.opentv.data.parser.VodTitleCleaner
 import app.opentv.data.model.PlexRecentItem
+import app.opentv.data.model.PlexRef
 import app.opentv.data.remote.PlexApi
 import app.opentv.data.remote.PlexUrls
 import app.opentv.data.remote.StalkerApi
@@ -1156,6 +1157,65 @@ class CatalogRepository(
     fun plexRatingKey(streamUrl: String): String? =
         streamUrl.takeIf { it.startsWith(PLEX_SCHEME) }?.removePrefix(PLEX_SCHEME)?.takeIf { it.isNotBlank() }
 
+
+    /** The Plex source behind a playing item, or null when it is gone. */
+    suspend fun plexSource(sourceId: Long): Source? = withContext(Dispatchers.IO) {
+        runCatching { sourceDao.byId(sourceId) }.getOrNull()
+    }
+
+    /**
+     * Reports playback position to Plex so it registers the play.
+     *
+     * Self-dispatching to IO because the player screen calls it straight off a composition effect.
+     * Failures are swallowed after one log line: a dead ping must never surface anywhere near
+     * playback, and a ping every 15 seconds that each logged would bury the log. Returns whether
+     * the report landed, so the caller can stand down quietly rather than retrying something the
+     * viewer will never feel.
+     */
+    suspend fun plexTimeline(sourceId: Long, ratingKey: String, state: String, timeMs: Long, durationMs: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            val source = runCatching { sourceDao.byId(sourceId) }.getOrNull() ?: return@withContext false
+            val token = source.password?.takeIf { it.isNotBlank() } ?: return@withContext false
+            runCatching {
+                plexApi.reportTimeline(
+                    source.url.trimEnd('/'),
+                    token,
+                    settings.plexClientIdentifier,
+                    ratingKey,
+                    state,
+                    timeMs.coerceAtLeast(0L),
+                    durationMs.coerceAtLeast(0L),
+                )
+            }.onFailure {
+                Log.i(TAG, "Plex: timeline ping failed, will not retry loudly")
+            }.isSuccess
+        }
+
+    /** Whether Plex already counts this item watched; null when it cannot be told. */
+    suspend fun plexWatched(sourceId: Long, ratingKey: String): Boolean? = withContext(Dispatchers.IO) {
+        val source = runCatching { sourceDao.byId(sourceId) }.getOrNull() ?: return@withContext null
+        val token = source.password?.takeIf { it.isNotBlank() } ?: return@withContext null
+        runCatching { plexApi.watchedState(source.url.trimEnd('/'), token, ratingKey) }
+            .onFailure { Log.i(TAG, "Plex: watched lookup failed and will show the default") }
+            .getOrNull()
+    }
+
+    /**
+     * Flips the watched mark on one item. True when Plex accepted it.
+     *
+     * The viewer-facing "I have seen this" action: immediate and unconditional, unlike the
+     * progress-derived watched state that depends on which timeline pings happened to land.
+     */
+    suspend fun plexSetWatched(sourceId: Long, ratingKey: String, watched: Boolean): Boolean =
+        withContext(Dispatchers.IO) {
+            val source = runCatching { sourceDao.byId(sourceId) }.getOrNull() ?: return@withContext false
+            val token = source.password?.takeIf { it.isNotBlank() } ?: return@withContext false
+            runCatching { plexApi.setWatched(source.url.trimEnd('/'), token, ratingKey, watched) }
+                .onSuccess { Log.i(TAG, "Plex: mark-watched accepted") }
+                .onFailure { Log.w(TAG, "Plex: mark-watched refused and the button stays as it was") }
+                .isSuccess
+        }
+
     private fun PlexRecentItem.toMovie(
         sourceId: Long,
         serverBase: String,
@@ -1658,6 +1718,38 @@ class CatalogRepository(
          * play that fails with no way back. Resolving at play time costs one request and cannot rot.
          */
         const val PLEX_SCHEME = "plex://"
+
+        /** Prefix for a Plex item playing in the VOD player: `plex:<sourceId>:<ratingKey>`.
+         *
+         * The player screen keys everything off `mediaKey`, and a bare rating key is ambiguous -
+         * Plex rating keys are numeric strings that could collide with local row ids, and nothing
+         * would tell a Plex play from an ordinary one. Namespaced like the existing `ep:`,
+         * `movie:` and `catchup:` keys, so Plex-only behaviour (timeline pings, mark-watched) keys
+         * off the prefix and every other path ignores it the way it already ignores keys it does
+         * not recognise.
+         */
+        const val PLEX_PLAY_PREFIX = "plex:"
+
+        /** Builds the media key a Plex play is launched with. See [PLEX_PLAY_PREFIX]. */
+        fun plexMediaKey(sourceId: Long, ratingKey: String): String =
+            "$PLEX_PLAY_PREFIX$sourceId:$ratingKey"
+
+        /**
+         * Splits a player media key back into a Plex reference, or null when it is not one.
+         *
+         * Pure string surgery with no I/O, so the player screen can call it on every composition
+         * without cost. The rating key is everything after the second colon, so keys containing
+         * colons still survive.
+         */
+        fun parsePlexMediaKey(mediaKey: String): PlexRef? {
+            if (!mediaKey.startsWith(PLEX_PLAY_PREFIX)) return null
+            val rest = mediaKey.removePrefix(PLEX_PLAY_PREFIX)
+            val split = rest.indexOf(':')
+            if (split <= 0) return null
+            val sourceId = rest.substring(0, split).toLongOrNull() ?: return null
+            val ratingKey = rest.substring(split + 1).takeIf { it.isNotBlank() } ?: return null
+            return PlexRef(sourceId, ratingKey)
+        }
 
             /**
          * The libraries this shelf reads, by name.

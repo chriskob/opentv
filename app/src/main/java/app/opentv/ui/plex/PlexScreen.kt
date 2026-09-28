@@ -161,26 +161,7 @@ private fun PlexShelves(
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        if (movies.isNotEmpty()) {
-            item(key = "plex-movies") {
-                Column {
-                    SectionHeader(stringResource(R.string.plex_recent_movies))
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        items(movies, key = { "m:${it.id}" }) { movie ->
-                            PosterCard(
-                                title = movie.name,
-                                posterUrl = movie.posterUrl,
-                                subtitle = movie.year?.toString(),
-                                onClick = { viewModel.playMovie(movie, onPlay) },
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        // Shows first: serials are what gets checked nightly, films are browsed at weekends.
         if (shows.isNotEmpty()) {
             item(key = "plex-shows") {
                 Column {
@@ -195,6 +176,26 @@ private fun PlexShelves(
                                 posterUrl = series.posterUrl,
                                 subtitle = series.year?.toString(),
                                 onClick = { viewModel.playSeries(series, onPlay) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (movies.isNotEmpty()) {
+            item(key = "plex-movies") {
+                Column {
+                    SectionHeader(stringResource(R.string.plex_recent_movies))
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(movies, key = { "m:${it.id}" }) { movie ->
+                            PosterCard(
+                                title = movie.name,
+                                posterUrl = movie.posterUrl,
+                                subtitle = movie.year?.toString(),
+                                onClick = { viewModel.playMovie(movie, onPlay) },
                             )
                         }
                     }

@@ -709,4 +709,6 @@
     <string name="plex_connect_waiting">Waiting for Plex…</string>
     <string name="plex_libraries">Libraries on this server</string>
     <string name="plex_refresh">Refresh</string>
+    <string name="plex_mark_watched">Mark watched</string>
+    <string name="plex_watched">Watched</string>
 </resources>

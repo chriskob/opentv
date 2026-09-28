@@ -159,6 +159,49 @@ object PlexUrls {
     }
 
     /**
+     * The playback-reporting URL: how a client tells Plex "this is playing here".
+     *
+     * Plex has no persistent playback session for a direct stream - it only knows what clients
+     * report. Without these pings Plex never learns an item was started, so progress stays at
+     * zero and nothing is ever marked watched no matter how much is played. The `key` parameter
+     * is the item's canonical library path; `state` is one of playing, paused, stopped or
+     * buffering; `time` and `duration` are milliseconds of playback position and media length.
+     */
+    fun timeline(
+        serverBase: String,
+        ratingKey: String,
+        token: String,
+        state: String,
+        timeMs: Long,
+        durationMs: Long,
+    ): String {
+        val base = serverBase.trimEnd('/')
+        val params = listOf(
+            "ratingKey=$ratingKey",
+            "key=/library/metadata/$ratingKey",
+            "identifier=com.plexapp.plugins.library",
+            "state=$state",
+            "time=$timeMs",
+            "duration=$durationMs",
+            "$TOKEN_PARAM=$token",
+        ).joinToString("&")
+        return "$base/:/timeline?$params"
+    }
+
+    /**
+     * The mark-watched / mark-unwatched URL.
+     *
+     * Timeline pings update progress, but an explicit scrobble is what flips an item to watched
+     * regardless of how much was played - the "I have seen this, stop showing it as new" action.
+     * `unscrobble` is the same call with the watched flag removed.
+     */
+    fun scrobble(serverBase: String, ratingKey: String, token: String, watched: Boolean): String {
+        val base = serverBase.trimEnd('/')
+        val action = if (watched) "scrobble" else "unscrobble"
+        return "$base/:/$action?key=$ratingKey&identifier=com.plexapp.plugins.library&$TOKEN_PARAM=$token"
+    }
+
+    /**
      * Replaces the token in [url] with a placeholder, for anything about to be logged.
      *
      * Two passes, because either alone leaks. When [token] is known it is scrubbed as a literal

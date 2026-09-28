@@ -202,7 +202,7 @@ class PlexViewModel(app: Application) : AndroidViewModel(app) {
             // An episode plays by its own key. This is the common case and costs one request.
             val direct = withContext(Dispatchers.IO) { repo.plexPlayUrl(source, series.seriesId) }
             if (direct != null) {
-                onReady(series.seriesId, direct, series.name)
+                onReady(CatalogRepository.plexMediaKey(series.sourceId, series.seriesId), direct, series.name)
                 return@launch
             }
             // A true series key: list its episodes and open the newest.
@@ -218,7 +218,7 @@ class PlexViewModel(app: Application) : AndroidViewModel(app) {
                 _lastError.value = "Plex would not give a playable file for \"${series.name}\"."
                 return@launch
             }
-            onReady(episode.ratingKey, url, "${series.name} — ${episode.title}")
+            onReady(CatalogRepository.plexMediaKey(series.sourceId, episode.ratingKey), url, "${series.name} — ${episode.title}")
         }
     }
 
@@ -242,7 +242,7 @@ class PlexViewModel(app: Application) : AndroidViewModel(app) {
                 _lastError.value = "Plex would not give a playable file for \"$title\"."
                 return@launch
             }
-            onReady(ratingKey, url, title)
+            onReady(CatalogRepository.plexMediaKey(sourceId, ratingKey), url, title)
         }
     }
 }

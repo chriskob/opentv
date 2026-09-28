@@ -128,6 +128,18 @@ object PlexParser {
     /** `/api/v2/pins` - the four-character code shown to the viewer, and the id to poll. */
     data class Pin(val id: Long, val code: String)
 
+    /**
+     * How many times this item has been played right through, from its own metadata.
+     *
+     * The first `Video` element is the item itself - nested `Media`/`Part` elements carry no
+     * viewCount, so the first one found is the answer. Null when the metadata has no Video or no
+     * viewCount, which is "unknown" rather than "unwatched": a missing attribute must not render
+     * as a confident unticked box.
+     */
+    fun videoViewCount(input: InputStream): Int? =
+        firstElement(input, "Video")?.get("viewCount")?.toIntOrNull()
+
+
     fun pin(input: InputStream): Pin? {
         val attrs = firstElement(input, "pin") ?: return null
         val id = attrs["id"]?.toLongOrNull()

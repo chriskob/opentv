@@ -264,4 +264,36 @@ class PlexParserTest {
         assertThat(PlexParser.pin(emptyStream())).isNull()
         assertThat(PlexParser.authToken(emptyStream())).isNull()
     }
+
+    @Test
+    fun `a played-through item reports its view count`() {
+        val xml = """
+            <MediaContainer size="1">
+              <Video ratingKey="54321" type="movie" title="The Movie" viewCount="2" viewOffset="0" />
+            </MediaContainer>
+        """
+        assertThat(PlexParser.videoViewCount(stream(xml))).isEqualTo(2)
+    }
+
+    @Test
+    fun `an unwatched item reports zero rather than unknown`() {
+        val xml = """
+            <MediaContainer size="1">
+              <Video ratingKey="54321" type="movie" title="The Movie" viewCount="0" />
+            </MediaContainer>
+        """
+        assertThat(PlexParser.videoViewCount(stream(xml))).isEqualTo(0)
+    }
+
+    @Test
+    fun `a response with no viewable item reports unknown, not unwatched`() {
+        // Unknown must not render as a confident unticked box: a missing attribute is not a no.
+        val xml = """
+            <MediaContainer size="1">
+              <Video ratingKey="54321" type="movie" title="The Movie" />
+            </MediaContainer>
+        """
+        assertThat(PlexParser.videoViewCount(stream(xml))).isNull()
+        assertThat(PlexParser.videoViewCount(emptyStream())).isNull()
+    }
 }

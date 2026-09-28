@@ -2,6 +2,12 @@
 
 ## 0.16.16
 
+- **Plex now registers what you watch.** Playing a film or show reports progress to Plex every few
+  seconds, so it shows up in Continue Watching and On Deck over there too - and a new
+  Mark watched button under the transport bar flips an item to watched (or back) immediately,
+  without depending on how much was played.
+- **Shows sit above films on the Plex shelf.** Serials are what gets checked nightly; films are
+  browsed at weekends.
 - **New: a Plex shelf.** A "Plex" button on the playback shortcut row opens a screen showing the ten
   most recently added films and shows from your Plex server, with the same poster cards, focus
   behaviour and playback controls as everywhere else in the app. Connect it from the same screen:
