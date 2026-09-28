@@ -1124,7 +1124,15 @@ class CatalogRepository(
      */
     suspend fun plexLatestEpisodeKey(source: Source, seriesKey: String): app.opentv.ui.plex.PlexViewModel.PlexEpisodeRef? {
         val token = source.password?.takeIf { it.isNotBlank() } ?: return null
-        val episode = plexApi.episodes(source.url.trimEnd('/'), token, seriesKey).firstOrNull() ?: return null
+        // Logged either way: a show press that finds nothing leaves no trace otherwise, and "the
+        // show does not play" with an empty log is indistinguishable from "the press never fired".
+        val episodes = runCatching {
+            plexApi.episodes(source.url.trimEnd('/'), token, seriesKey)
+        }.onFailure {
+            Log.w(TAG, "Plex: episode list failed for series $seriesKey: ${it.message}")
+        }.getOrDefault(emptyList())
+        Log.i(TAG, "Plex: series $seriesKey has ${episodes.size} episode(s)")
+        val episode = episodes.firstOrNull() ?: return null
         return app.opentv.ui.plex.PlexViewModel.PlexEpisodeRef(
             ratingKey = episode.ratingKey,
             title = episode.title,
@@ -1160,8 +1168,8 @@ class CatalogRepository(
         streamId = ratingKey,
         name = title,
         categoryId = plexCategoryId(sectionKey),
-        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH),
-        backdropUrl = PlexUrls.image(serverBase, artPath ?: thumbPath, token, width = PLEX_BACKDROP_WIDTH),
+        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH, height = PLEX_POSTER_HEIGHT),
+        backdropUrl = PlexUrls.image(serverBase, artPath ?: thumbPath, token, width = PLEX_BACKDROP_WIDTH, height = PLEX_BACKDROP_HEIGHT),
         rating = null,
         year = year,
         plot = summary,
@@ -1182,9 +1190,11 @@ class CatalogRepository(
     ) = Series(
         sourceId = sourceId,
         seriesId = ratingKey,
-        name = title,
+        // A show section's feed returns episodes, not shows, so the row is named for the series -
+        // "Episode 12" as a shelf title was the item's own name leaking through.
+        name = displayTitle,
         categoryId = plexCategoryId(sectionKey),
-        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH),
+        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH, height = PLEX_POSTER_HEIGHT),
         rating = null,
         year = year,
         plot = summary,
@@ -1709,9 +1719,14 @@ class CatalogRepository(
         /** How many items are taken from each Plex library. See [syncPlex] for why this is small. */
         const val PLEX_RECENT_LIMIT = 10
 
-        /** Artwork widths asked of Plex, sized for a television rather than a phone. */
+        /**
+         * Artwork sizes asked of Plex, sized for a television rather than a phone. Posters are 2:3
+         * and backdrops 16:9, so both dimensions are given - Plex scales to fit.
+         */
         const val PLEX_POSTER_WIDTH = 300
+        const val PLEX_POSTER_HEIGHT = 450
         const val PLEX_BACKDROP_WIDTH = 1280
+        const val PLEX_BACKDROP_HEIGHT = 720
 
         /** Import cost reporting — `adb logcat -s VodPerf` (see [syncXtreamVodLocked]). */
         private const val VOD_PERF_TAG = "VodPerf"

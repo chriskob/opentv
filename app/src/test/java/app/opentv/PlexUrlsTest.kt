@@ -61,19 +61,21 @@ class PlexUrlsTest {
     }
 
     @Test
-    fun `an image url can request a width, which is how tv-sized art is fetched cheaply`() {
-        val url = PlexUrls.image(server, "/library/metadata/54321/thumb/999", token, width = 300)
+    fun `an image url requests its size as query parameters, never as path segments`() {
+        // Plex sizes artwork with `?width=&height=`. Appending `/300` to the path produced
+        // `/library/metadata/10565/thumb/1788682593/300`, which is no route at all - Coil reported
+        // every one of those as HTTP 404 while a query-form probe fetched the same thumbnails with
+        // 200. That mismatch was the entire poster outage.
+        val url = PlexUrls.image(server, "/library/metadata/54321/thumb/999", token, width = 300, height = 450)
         assertThat(url).isEqualTo(
-            "https://plex.buickgn.us/library/metadata/54321/thumb/999/300?X-Plex-Token=$token",
+            "https://plex.buickgn.us/library/metadata/54321/thumb/999?width=300&height=450&X-Plex-Token=$token",
         )
     }
 
     @Test
-    fun `a width is never appended after an existing query string`() {
-        // That produced ".../thumb/2?X-Plex-Token=leaked/300" - the width landed in the query, so
-        // the URL was not an image at all and looked exactly like Plex not serving artwork.
+    fun `a stale query on the path is replaced, not appended to`() {
         val url = PlexUrls.image(server, "/library/metadata/1/thumb/2?X-Plex-Token=leaked", token, width = 300)
-        assertThat(url).isEqualTo("https://plex.buickgn.us/library/metadata/1/thumb/2/300?X-Plex-Token=$token")
+        assertThat(url).isEqualTo("https://plex.buickgn.us/library/metadata/1/thumb/2?width=300&X-Plex-Token=$token")
         assertThat(url).doesNotContain("leaked")
     }
 

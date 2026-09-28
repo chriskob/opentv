@@ -864,14 +864,19 @@ internal fun PosterImage(
                 onSuccess = { loaded = true },
                 onError = { state ->
                     failed = true
-                    // Coil failures are otherwise invisible; the URL + state is what
-                    // distinguishes a dead host from a client-side decode/timeout problem.
+                    // Coil failures are otherwise invisible, and the state object alone does not
+                    // say why: it prints as an opaque id. The throwable is the diagnosis - an
+                    // HttpException names the status, a SocketTimeout names the wait, a decode
+                    // failure names the bytes. Log all three, or the next broken poster is another
+                    // round of guessing from a bare object id.
                     // The URL is redacted before it is logged. Poster URLs can carry a credential -
                 // a Plex token travels in the query string, and this line printed it in full,
                 // token and all, the first time a Plex image failed to load.
+                val cause = state.result.throwable
                 android.util.Log.w(
                     "OpenTV",
-                    "Poster failed for '$title' <${PlexUrls.redact(posterUrl)}>: $state",
+                    "Poster failed for '$title' <${PlexUrls.redact(posterUrl)}>: " +
+                        "${cause?.javaClass?.simpleName}: ${cause?.message}",
                 )
                     onLoadError()
                 },

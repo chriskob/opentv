@@ -182,13 +182,15 @@ class PlexViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Plays a show by opening its most recent episode.
+     * Plays a show row.
      *
-     * A series has no playable part of its own - `/library/metadata/{seriesKey}` describes a show,
-     * not a file, and asking it for parts returned nothing, so pressing a show said "Plex would not
-     * give a playable file" for every show. The episodes are a level down: `/children` on the
-     * series. The newest is played, which is what a card on a "recently added" shelf should open -
-     * someone seeing a show appear there means the latest of it.
+     * Two shapes arrive here, and the shelf cannot tell them apart by looking - it has to try.
+     * Most rows ARE episodes already: a show section's recentlyAdded feed returns episodes, so the
+     * row's own key plays directly. A true series key (from a library that lists shows) has no
+     * playable part, and its episodes are one level down on `/children` - asking that of an
+     * episode answers 400, which is how the two are told apart. Trying direct play first is not
+     * just an optimisation: it is the only order that works for both shapes without knowing which
+     * one a row is.
      */
     fun playSeries(series: Series, onReady: (mediaKey: String, url: String, title: String) -> Unit) {
         viewModelScope.launch {
@@ -197,11 +199,18 @@ class PlexViewModel(app: Application) : AndroidViewModel(app) {
                 _lastError.value = "That Plex server is no longer set up."
                 return@launch
             }
+            // An episode plays by its own key. This is the common case and costs one request.
+            val direct = withContext(Dispatchers.IO) { repo.plexPlayUrl(source, series.seriesId) }
+            if (direct != null) {
+                onReady(series.seriesId, direct, series.name)
+                return@launch
+            }
+            // A true series key: list its episodes and open the newest.
             val episode = withContext(Dispatchers.IO) {
                 runCatching { repo.plexLatestEpisodeKey(source, series.seriesId) }.getOrNull()
             }
             if (episode == null) {
-                _lastError.value = "Plex has no episodes for \"${series.name}\"."
+                _lastError.value = "Plex has no playable episode for \"${series.name}\"."
                 return@launch
             }
             val url = withContext(Dispatchers.IO) { repo.plexPlayUrl(source, episode.ratingKey) }

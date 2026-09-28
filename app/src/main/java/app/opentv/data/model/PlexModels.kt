@@ -49,11 +49,20 @@ data class PlexRecentItem(
     val artPath: String? = null,
     /** For shows, so a show can be matched to its episodes later. */
     val parentRatingKey: String? = null,
+    /** The series an episode belongs to. Null for everything that is not an episode. */
+    val grandparentTitle: String? = null,
     val viewOffsetMillis: Long? = null,
     val viewCount: Int? = null,
 ) {
     val isMovie: Boolean get() = type.equals("movie", ignoreCase = true)
     val isShow: Boolean get() = type.equals("show", ignoreCase = true)
+    /**
+     * True when this item IS an episode, which is what a show section's recentlyAdded feed
+     * returns. An episode plays directly by its own key; it has no children to list.
+     */
+    val isEpisode: Boolean get() = type.equals("episode", ignoreCase = true)
+    /** What the shelf should call this: the series for an episode, the title otherwise. */
+    val displayTitle: String get() = if (isEpisode) grandparentTitle?.takeIf { it.isNotBlank() } ?: title else title
 }
 
 /** One episode of a show, from `/library/metadata/{seriesKey}/children`. */

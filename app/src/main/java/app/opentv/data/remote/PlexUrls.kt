@@ -126,7 +126,16 @@ object PlexUrls {
      * every poster, so it is back - with redaction in the logs, which is where a leaked token
      * actually mattered.
      */
-    fun image(serverBase: String, path: String?, token: String, width: Int? = null): String? {
+    /**
+     * Builds an artwork URL with the size in the QUERY, never the path.
+     *
+     * Plex sizes artwork with `?width=&height=`. The previous version appended `/300` as a path
+     * segment, producing `/library/metadata/10565/thumb/1788682593/300` - which is no route at
+     * all. Coil reported every one of those as HTTP 404 while the probe, which used the query
+     * form, fetched the same thumbnails with 200. That mismatch was the entire poster outage, and
+     * two wrong theories (a Cloudflare rule, a missing auth header) were chased before reading it.
+     */
+    fun image(serverBase: String, path: String?, token: String, width: Int? = null, height: Int? = null): String? {
         if (path.isNullOrBlank()) return null
         if (path.startsWith("http://") || path.startsWith("https://")) {
             // Already absolute, from Plex's photo proxy or a remote-art library. Its query is part
@@ -136,14 +145,17 @@ object PlexUrls {
             val sep = if ('?' in path) "&" else "?"
             return "$path$sep$TOKEN_PARAM=$token"
         }
-        // Relative. Any query is dropped first, because the width belongs in the path and appending
-        // it after a query produces a URL that is not an image at all.
+        // Relative. Any query is dropped first, then the size is added back as query parameters.
         val clean = path.substringBefore('?')
         if (clean.isBlank()) return null
         val base = serverBase.trimEnd('/')
         val withSlash = if (clean.startsWith("/")) clean else "/$clean"
-        val suffix = if (width != null) "/$width" else ""
-        return base + withSlash + suffix + "?" + TOKEN_PARAM + "=" + token
+        val params = buildList {
+            if (width != null) add("width=$width")
+            if (height != null) add("height=$height")
+            add(TOKEN_PARAM + "=" + token)
+        }.joinToString("&")
+        return base + withSlash + "?" + params
     }
 
     /**

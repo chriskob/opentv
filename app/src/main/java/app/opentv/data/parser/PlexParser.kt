@@ -66,7 +66,8 @@ object PlexParser {
                         ratingKey = ratingKey,
                         title = parser.attr("title") ?: parser.attr("titleSort") ?: "Untitled",
                         type = parser.attr("type") ?: if (parser.name == "Video") "movie" else "show",
-                        year = parser.attr("year")?.toIntOrNull(),
+                        year = parser.attr("year")?.toIntOrNull()
+                            ?: parser.attr("parentYear")?.toIntOrNull(),
                         summary = parser.attr("summary"),
                         durationMillis = parser.attr("duration")?.toLongOrNull()?.times(1000L),
                         librarySectionId = parser.attr("librarySectionID"),
@@ -74,6 +75,7 @@ object PlexParser {
                         thumbPath = parser.attr("thumb"),
                         artPath = parser.attr("art"),
                         parentRatingKey = parser.attr("parentRatingKey"),
+                        grandparentTitle = parser.attr("grandparentTitle"),
                         viewOffsetMillis = parser.attr("viewOffset")?.toLongOrNull()?.times(1000L),
                         viewCount = parser.attr("viewCount")?.toIntOrNull(),
                     )
