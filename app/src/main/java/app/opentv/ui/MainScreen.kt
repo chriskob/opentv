@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -452,6 +453,17 @@ private fun NavRail(
         Spacer(Modifier.weight(1f))
 
         RailItem(Icons.Filled.Search, stringResource(R.string.nav_search), expanded, false, onOpenSearch)
+        // Plex sits with the other actions rather than with the tabs, because it is a screen and
+        // not a content type: it has no tab to stay selected and nothing to come back to in this
+        // rail. Video Library rather than Movie or Tv, both of which already label a tab above -
+        // three different-looking icons for three different things.
+        RailItem(
+            Icons.Filled.VideoLibrary,
+            stringResource(R.string.nav_plex),
+            expanded,
+            false,
+            onOpenPlex,
+        )
         RailItem(Icons.Filled.Person, activeProfileName, expanded, false, onOpenProfiles)
         RailItem(Icons.Filled.Settings, stringResource(R.string.nav_settings), expanded, false, onOpenSettings)
     }

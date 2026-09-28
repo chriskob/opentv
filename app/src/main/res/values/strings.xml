@@ -29,6 +29,7 @@
     <string name="nav_recordings">Recordings</string>
     <string name="nav_search">Search</string>
     <string name="nav_settings">Settings</string>
+    <string name="nav_plex">Plex</string>
 
     <!-- ============================ Live TV guide / home ============================ -->
     <string name="guide_search_channels">🔍  Search channels</string>
