@@ -197,20 +197,31 @@ fun PlexConnectScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(20.dp))
-                Box(
+                // A strong PIN is a long opaque string that the approval link carries for the
+                // browser. Showing it in 52pt as though someone should read it aloud and type it
+                // somewhere was the original mistake: it is not an instruction for a human, and
+                // displaying it that way invited exactly the confusion it caused. What the viewer
+                // needs to know is that something is being waited on, so that is what is shown.
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .background(AppTheme.palette.favourite.copy(alpha = 0.16f))
-                        .padding(vertical = 24.dp),
-                    contentAlignment = Alignment.Center,
+                        .padding(vertical = 22.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        pin?.code.orEmpty(),
-                        fontSize = 52.sp,
-                        fontWeight = FontWeight.Bold,
+                    CircularProgressIndicator(
+                        modifier = Modifier.width(22.dp).height(22.dp),
+                        strokeWidth = 2.dp,
                         color = AppTheme.palette.favourite,
-                        letterSpacing = 10.sp,
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        stringResource(R.string.plex_connect_waiting),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = AppTheme.palette.favourite,
                     )
                 }
                 Spacer(Modifier.height(20.dp))

@@ -38,20 +38,29 @@ class PlexApi(private val http: OkHttpClient) {
     // ---- sign-in ----------------------------------------------------------------------------
 
     /**
-     * Asks plex.tv for a fresh sign-in code.
+     * Asks plex.tv for a sign-in PIN.
      *
-     * Note what is NOT here: `strong=true`. Plex offers two kinds of PIN. A *strong* pin is a long
-     opaque string meant for a server-to-server redirect and is never typed by a person; a plain
-     pin is the four-character code a human enters on a television. Asking for the strong one
-     * produced a 29-character code that nobody could enter anywhere, which is exactly what the
-     * first attempt on a real device showed.
+     * `strong=true` is required, and the reason is worth recording because it has been got wrong
+     * twice here. Plex offers two kinds: a PLAIN pin is a four-character code a person types into
+     * a web form, and a STRONG pin is a long opaque string that the browser approval link carries
+     * for you.
+     *
+     * `app.plex.tv/auth#?clientID=..&code=..` is the second kind's flow. Handing it a plain
+     * four-character code produces "We were unable to complete this request" - after the viewer
+     * has already signed in, which is the worst possible moment to fail. That is exactly what a
+     * real attempt did.
+     *
+     * The strong pin was dropped once already, on the grounds that a 29-character string is absurd
+     * to display on a television. It is - but the display was the bug, not the pin. With a QR code
+     * on screen nothing is ever typed, which makes the strong pin the right choice again. The code
+     * is an identifier for the browser to carry, not an instruction for a human.
      *
      * The PIN lives for a limited time and this is the first half of the handshake only - the
-     * account's token does not exist yet, and is collected later by [awaitAuthToken].
+     * account's token does not exist yet, and is collected by [awaitAuthToken].
      */
     suspend fun createPin(headers: Map<String, String>): PlexParser.Pin = withContext(Dispatchers.IO) {
         val request = Request.Builder()
-            .url("${PlexUrls.PLEX_TV}/api/v2/pins")
+            .url("${PlexUrls.PLEX_TV}/api/v2/pins?strong=true")
             .post("".toRequestBody(null))
             .apply { headers.forEach { (k, v) -> header(k, v) } }
             .build()
@@ -62,13 +71,11 @@ class PlexApi(private val http: OkHttpClient) {
         // A code nobody could type is a failure, not something to put on a television screen. The
         // first attempt displayed a 29-character string because a strong pin had been requested;
         // refusing it here means that class of mistake is loud instead of merely unusable.
-        if (pin.code.length !in 4..8 || !pin.code.all { it.isLetterOrDigit() }) {
-            val length = pin.code.length
-            throw PlexException(
-                "Plex returned a $length character sign-in code, which nobody can type. " +
-                    "This is not the four-character code a TV is meant to use.",
-            )
+        if (pin.code.isBlank()) {
+            throw PlexException("Plex returned an empty sign-in code.")
         }
+        // Length only, never the value: this is a credential-adjacent string.
+        Log.d(TAG, "sign-in requested: pin id=${pin.id}, code length=${pin.code.length}")
         // Last expression, not `return`: withContext's block is not an inline lambda, so a
         // non-local return out of it is a compile error rather than a style choice.
         pin

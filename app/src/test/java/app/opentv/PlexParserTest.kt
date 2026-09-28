@@ -158,20 +158,21 @@ class PlexParserTest {
     }
 
     @Test
-    fun `a code is not silently accepted just because it parsed`() {
-        // Plex also issues *strong* pins: long opaque strings meant for a server redirect, never
-        // typed by a person. One got requested by mistake and a 29-character "code" was displayed
-        // on a television as though a person could enter it. The parser must not launder that - the
-        // shape is wrong, and a wrong shape is a failure rather than a usable value.
+    fun `a strong pin's long code is carried through untouched`() {
+        // Plex issues two kinds of PIN. The STRONG one - which is what the browser approval link
+        // needs - has a long opaque code, and it is not a typo or a mis-parse: the link carries it
+        // on the viewer's behalf, so nothing is ever typed. A previous version of this test
+        // asserted the opposite, treating any long code as a failure. That was the wrong lesson
+        // drawn from the right observation, and it pushed the app into requesting the plain pin,
+        // which the auth link then rejected outright.
         val strong = PlexParser.pin(stream("""<pin id="99" code="obf51911w2nycssh2ob8q8q4" />"""))
         assertThat(strong).isNotNull()
-        // PlexApi.createPin rejects this before it can reach a screen; asserted here so the
-        // property that matters is written down next to the parser that produces the value.
-        val unusable = strong!!.code.length !in 4..8 || !strong.code.all { it.isLetterOrDigit() }
-        assertThat(unusable).isTrue()
+        assertThat(strong!!.id).isEqualTo(99L)
+        assertThat(strong.code).isEqualTo("obf51911w2nycssh2ob8q8q4")
 
-        val normal = PlexParser.pin(stream("""<pin id="1" code="WXYZ" />"""))!!
-        assertThat(normal.code.length in 4..8).isTrue()
+        // A plain pin still parses, for the record of what the two look like.
+        val plain = PlexParser.pin(stream("""<pin id="1" code="WXYZ" />"""))!!
+        assertThat(plain.code).isEqualTo("WXYZ")
     }
 
     @Test

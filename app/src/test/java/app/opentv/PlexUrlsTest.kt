@@ -121,10 +121,28 @@ class PlexUrlsTest {
         assertThat(url).startsWith("https://app.plex.tv/auth#?")
         assertThat(url).contains("clientID=$clientId")
         assertThat(url).contains("code=ABCD")
-        // Bracketed context keys are percent-encoded, and a space in the device name too.
+        // Bracketed context keys are percent-encoded.
         assertThat(url).contains("context%5Bdevice%5D%5Bproduct%5D=OpenTV")
-        assertThat(url).contains("Living+Room")
         // Nothing before the '#' carries the code.
         assertThat(url.substringBefore('#')).doesNotContain("ABCD")
+    }
+
+    @Test
+    fun `a space in a fragment value is percent-encoded, never a plus`() {
+        // URLEncoder is a FORM encoder: it writes a space as '+', which is right in a query string
+        // and wrong in a fragment, where '+' is a literal plus. A device name reached Plex as
+        // "OpenTV+on+AFTR" because of it. Percent-encoding is correct in both positions.
+        val url = PlexUrls.pinApprovalUrl(clientId, "abc", "OpenTV", "OpenTV on AFTR")
+        assertThat(url).contains("deviceName%5D=OpenTV%20on%20AFTR")
+        assertThat(url).doesNotContain("+")
+    }
+
+    @Test
+    fun `a strong pin's long code survives the url intact`() {
+        // The code is an opaque token, and the auth link has to carry it byte for byte. Anything
+        // that mangles it produces "unable to complete this request" after the viewer signs in.
+        val strong = "obf51911w2nycssh2ob8q8q4"
+        val url = PlexUrls.pinApprovalUrl(clientId, strong, "OpenTV", "OpenTV on AFTR")
+        assertThat(url).contains("code=$strong")
     }
 }

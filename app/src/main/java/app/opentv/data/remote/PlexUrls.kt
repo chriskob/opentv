@@ -54,9 +54,24 @@ object PlexUrls {
      * Plex web server as part of the request and are not left in browser history as query
      * parameters. That is Plex's required format, not a preference, and getting it wrong produces
      * a page that loads and never links the account.
+     *
+     * Encoding is done by hand rather than with [java.net.URLEncoder], because `URLEncoder` is a
+     * *form* encoder: it writes a space as `+`, which is correct in a query string and wrong in a
+     * fragment, where `+` is a literal plus. A device name of "OpenTV on AFTR" would have gone
+     * across as "OpenTV+on+AFTR". Percent-encoding is correct in both places, so that is what is
+     * used here.
      */
     fun pinApprovalUrl(clientIdentifier: String, code: String, product: String, device: String): String {
-        fun enc(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
+        fun enc(value: String): String = buildString {
+            for (byte in value.toByteArray(Charsets.UTF_8)) {
+                val ch = byte.toInt().toChar()
+                if (ch.isLetterOrDigit() && ch.code < 128 || ch in "-_.~") {
+                    append(ch)
+                } else {
+                    append('%').append("%02X".format(byte.toInt() and 0xFF))
+                }
+            }
+        }
         return "https://app.plex.tv/auth#?clientID=${enc(clientIdentifier)}&code=${enc(code)}" +
             "&context%5Bdevice%5D%5Bproduct%5D=${enc(product)}" +
             "&context%5Bdevice%5D%5BdeviceName%5D=${enc(device)}"
