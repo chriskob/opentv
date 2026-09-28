@@ -697,8 +697,9 @@
     <string name="plex_connect_title">Connect Plex</string>
     <string name="plex_connect_step1">First, the address of your Plex server.</string>
     <string name="plex_connect_step1_help">This is your own server, not plex.tv. You can find it in Plex under Settings, then Network, as a Secure or LAN address.</string>
-    <string name="plex_connect_step2">Now approve this code on your phone.</string>
-    <string name="plex_connect_step2_help">Open Plex on a phone or computer, go to Settings, then Link Account with your TV, and enter the code above. This screen will continue on its own.</string>
+    <string name="plex_connect_step2">Approve this code to finish.</string>
+    <string name="plex_connect_step2_help">On your phone or computer, open the link below in a web browser and sign in to Plex. This screen continues on its own.</string>
+    <string name="plex_connect_step2_alt">No link to hand? Sign in at app.plex.tv/auth and type the code instead.</string>
     <string name="plex_connect_next">Next</string>
     <string name="plex_connect_connecting">Connected. Finishing…</string>
     <string name="plex_cancel">Cancel</string>

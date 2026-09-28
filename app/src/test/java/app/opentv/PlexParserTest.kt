@@ -158,6 +158,23 @@ class PlexParserTest {
     }
 
     @Test
+    fun `a code is not silently accepted just because it parsed`() {
+        // Plex also issues *strong* pins: long opaque strings meant for a server redirect, never
+        // typed by a person. One got requested by mistake and a 29-character "code" was displayed
+        // on a television as though a person could enter it. The parser must not launder that - the
+        // shape is wrong, and a wrong shape is a failure rather than a usable value.
+        val strong = PlexParser.pin(stream("""<pin id="99" code="obf51911w2nycssh2ob8q8q4" />"""))
+        assertThat(strong).isNotNull()
+        // PlexApi.createPin rejects this before it can reach a screen; asserted here so the
+        // property that matters is written down next to the parser that produces the value.
+        val unusable = strong!!.code.length !in 4..8 || !strong.code.all { it.isLetterOrDigit() }
+        assertThat(unusable).isTrue()
+
+        val normal = PlexParser.pin(stream("""<pin id="1" code="WXYZ" />"""))!!
+        assertThat(normal.code.length in 4..8).isTrue()
+    }
+
+    @Test
     fun `an approved pin yields the token and a pending one yields null`() {
         val approved = """<user email="a@b.c" id="1" title="buick" username="buick" authToken="tok-abc-123" />"""
         val pending = """<user id="1" title="buick" username="buick" />"""

@@ -217,6 +217,18 @@ fun PlexConnectScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
+                // The fallback is stated, not hidden behind a help menu. Reading a code off a
+                // television and typing it into a website is a perfectly normal way to do this,
+                // and the previous version of this screen only offered the one route - which is
+                // how someone ended up hunting the Plex app for a menu item that does not exist.
+                Text(
+                    stringResource(R.string.plex_connect_step2_alt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
                 val approval = remember(pin?.code, product, device) {
                     pin?.let {
                         PlexUrls.pinApprovalUrl(
