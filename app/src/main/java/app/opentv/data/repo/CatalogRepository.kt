@@ -1646,11 +1646,16 @@ class CatalogRepository(
          * is a row in a grid, and reading all of them produced a shelf that was neither "my
          * libraries" nor reliably "the last ten added".
          *
-         * Matched case-insensitively on the library title. The cost of there being no picker is
-         * that renaming a library in Plex stops OpenTV finding it - so the sync names any that are
-         * missing rather than quietly showing an empty shelf.
+         * These are the library titles, not the server's name. HOME-SERVER is the *server*; its
+         * film library is called "Movies". Getting that wrong was a whole wasted build: the sync
+         * matched one library, reported the other as missing, and pulled ten shows and no films -
+         * which the log stated plainly and the screen could not.
+         *
+         * Matched case-insensitively. The cost of there being no picker is that renaming a library
+         * in Plex stops OpenTV finding it, so the sync names any expected library that is missing
+         * rather than quietly showing an empty shelf.
          */
-        val PLEX_LIBRARY_NAMES = listOf("HOME-SERVER", "TV Shows")
+        val PLEX_LIBRARY_NAMES = listOf("Movies", "TV Shows")
 
         /**
          * Category for a Plex row, carrying the library it came from.

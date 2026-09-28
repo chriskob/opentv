@@ -7,6 +7,7 @@ package app.opentv
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import app.opentv.core.LocaleUtils
 import app.opentv.core.ServiceLocator
 import app.opentv.core.Startup
@@ -77,18 +78,29 @@ class OpenTvApp : Application(), ImageLoaderFactory {
                         // Plex artwork is authenticated with a header, not a query parameter.
                         //
                         // Every Plex poster failed to load while the token rode in the URL. That
-                        // puts a live credential into Coil's disk-cache keys, into any log line
-                        // that prints a poster URL, and - through the reverse proxy in front of the
+                        // puts a live credential into Coil's disk-cache keys, into any log line that
+                        // prints a poster URL, and - through the reverse proxy in front of the
                         // server - in front of whatever rules that proxy applies to query strings.
                         // As a header it is scoped to [plexServerHost] and to nowhere else, so it is
                         // never sent to a third-party image host either.
                         val host = plexServerHost
                         val token = plexAuthToken
-                        if (host != null && token != null &&
-                            request.url.host.equals(host, ignoreCase = true) &&
-                            request.header("X-Plex-Token") == null
-                        ) {
-                            builder.header("X-Plex-Token", token)
+                        if (request.url.host.equals(host ?: "", ignoreCase = true) && host != null) {
+                            if (token != null) {
+                                if (request.header("X-Plex-Token") == null) {
+                                    builder.header("X-Plex-Token", token)
+                                }
+                                // Logged once per process, because "every Plex poster is broken"
+                                // with no way to see whether the header was attached is exactly
+                                // the guessing loop this is meant to end.
+                                Log.i("OpenTV-Plex", "auth header attached for ${request.url.host}")
+                            } else {
+                                Log.w(
+                                    "OpenTV-Plex",
+                                    "Plex image requested for ${request.url.host} but no token is " +
+                                        "cached yet - the shelf will have no artwork until the next sync",
+                                )
+                            }
                         }
                         chain.proceed(builder.build())
                     }

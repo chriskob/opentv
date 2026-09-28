@@ -642,7 +642,8 @@ interface MovieDao {
     @Query(
         """
         SELECT * FROM movies
-        WHERE (:categoryId IS NULL OR categoryId = :categoryId)
+        WHERE sourceId NOT IN (SELECT id FROM sources WHERE kind = 'PLEX')
+          AND (:categoryId IS NULL OR categoryId = :categoryId)
         ORDER BY addedMillis DESC, name
         """
     )
@@ -651,7 +652,7 @@ interface MovieDao {
     @Query("SELECT * FROM movies WHERE favourite = 1 ORDER BY name")
     fun observeFavourites(): Flow<List<Movie>>
 
-    @Query("SELECT * FROM movies WHERE name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
+    @Query("SELECT * FROM movies WHERE sourceId NOT IN (SELECT id FROM sources WHERE kind = 'PLEX') AND name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
     fun search(query: String, limit: Int = 200): Flow<List<Movie>>
 
     /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
@@ -717,6 +718,7 @@ interface MovieDao {
         """
         SELECT sourceId, categoryId, COUNT(*) AS count FROM movies
         WHERE categoryId IS NOT NULL
+          AND sourceId NOT IN (SELECT id FROM sources WHERE kind = 'PLEX')
         GROUP BY sourceId, categoryId
         """
     )
@@ -797,13 +799,14 @@ interface SeriesDao {
     @Query(
         """
         SELECT * FROM series
-        WHERE (:categoryId IS NULL OR categoryId = :categoryId)
+        WHERE sourceId NOT IN (SELECT id FROM sources WHERE kind = 'PLEX')
+          AND (:categoryId IS NULL OR categoryId = :categoryId)
         ORDER BY addedMillis DESC, name
         """
     )
     fun observe(categoryId: String?): Flow<List<Series>>
 
-    @Query("SELECT * FROM series WHERE name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
+    @Query("SELECT * FROM series WHERE sourceId NOT IN (SELECT id FROM sources WHERE kind = 'PLEX') AND name LIKE '%' || :query || '%' ORDER BY name LIMIT :limit")
     fun search(query: String, limit: Int = 200): Flow<List<Series>>
 
     /** Newest-first, for the "Recently Added" home row. Reactive so it fills in as VOD sync lands. */
@@ -840,6 +843,7 @@ interface SeriesDao {
         """
         SELECT sourceId, categoryId, COUNT(*) AS count FROM series
         WHERE categoryId IS NOT NULL
+          AND sourceId NOT IN (SELECT id FROM sources WHERE kind = 'PLEX')
         GROUP BY sourceId, categoryId
         """
     )
