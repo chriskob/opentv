@@ -1054,12 +1054,12 @@ class CatalogRepository(
             if (items.isEmpty()) continue
             if (section.isMovies) {
                 movieDao.upsertAll(
-                    items.map { it.toMovie(source.id, serverBase, section.key, nowUtcMillis) },
+                    items.map { it.toMovie(source.id, serverBase, section.key, token, nowUtcMillis) },
                 )
                 movies += items.size
             } else if (section.isShows) {
                 seriesDao.upsertAll(
-                    items.map { it.toSeries(source.id, serverBase, section.key, nowUtcMillis) },
+                    items.map { it.toSeries(source.id, serverBase, section.key, token, nowUtcMillis) },
                 )
                 shows += items.size
             }
@@ -1152,6 +1152,7 @@ class CatalogRepository(
         sourceId: Long,
         serverBase: String,
         sectionKey: String,
+        token: String,
         fallbackAddedMillis: Long,
     ) = Movie(
         sourceId = sourceId,
@@ -1159,8 +1160,8 @@ class CatalogRepository(
         streamId = ratingKey,
         name = title,
         categoryId = plexCategoryId(sectionKey),
-        posterUrl = PlexUrls.image(serverBase, thumbPath, width = PLEX_POSTER_WIDTH),
-        backdropUrl = PlexUrls.image(serverBase, artPath ?: thumbPath, width = PLEX_BACKDROP_WIDTH),
+        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH),
+        backdropUrl = PlexUrls.image(serverBase, artPath ?: thumbPath, token, width = PLEX_BACKDROP_WIDTH),
         rating = null,
         year = year,
         plot = summary,
@@ -1176,13 +1177,14 @@ class CatalogRepository(
         sourceId: Long,
         serverBase: String,
         sectionKey: String,
+        token: String,
         fallbackAddedMillis: Long,
     ) = Series(
         sourceId = sourceId,
         seriesId = ratingKey,
         name = title,
         categoryId = plexCategoryId(sectionKey),
-        posterUrl = PlexUrls.image(serverBase, thumbPath, width = PLEX_POSTER_WIDTH),
+        posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH),
         rating = null,
         year = year,
         plot = summary,

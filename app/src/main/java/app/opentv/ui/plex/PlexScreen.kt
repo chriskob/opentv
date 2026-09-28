@@ -26,6 +26,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,7 +73,7 @@ fun PlexScreen(
     LaunchedEffect(Unit) { viewModel.sync() }
 
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        PlexHeader(isRefreshing = state is PlexShelfState.Syncing)
+        PlexHeader(isRefreshing = state is PlexShelfState.Syncing, onRefresh = { viewModel.sync() })
 
         when (val s = state) {
             is PlexShelfState.NotConnected -> PlexNotConnected(onConnect)
@@ -109,7 +110,7 @@ fun PlexScreen(
 }
 
 @Composable
-private fun PlexHeader(isRefreshing: Boolean) {
+private fun PlexHeader(isRefreshing: Boolean, onRefresh: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -127,12 +128,23 @@ private fun PlexHeader(isRefreshing: Boolean) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        // A shelf of "recently added" is only useful if it can be brought up to date, and the sync
+        // that fills it runs in the background. A button here means the viewer is never stuck with
+        // yesterday's titles wondering whether Plex has anything new.
         if (isRefreshing) {
             CircularProgressIndicator(
                 modifier = Modifier.width(22.dp).height(22.dp),
                 strokeWidth = 2.dp,
                 color = AppTheme.palette.favourite,
             )
+        } else {
+            TextButton(onClick = onRefresh) {
+                Text(
+                    stringResource(R.string.plex_refresh),
+                    color = AppTheme.palette.favourite,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
         }
     }
 }

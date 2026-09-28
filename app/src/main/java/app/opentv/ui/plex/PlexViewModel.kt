@@ -24,7 +24,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 
@@ -115,11 +117,27 @@ class PlexViewModel(app: Application) : AndroidViewModel(app) {
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlexShelfState.NotConnected)
 
-    /** Fetches each configured Plex server. Safe to call again; a second run just refreshes. */
+    /**
+     * Fetches each configured Plex server.
+     *
+     * Awaits the source list rather than reading it. It used to take `sources.value` and return
+     * early when that was empty - which, on a cold start, it always was: the StateFlow carries
+     * `emptyList()` until the database has actually answered, and the screen asks for a refresh the
+     * moment it appears. So opening Plex on a freshly launched app synced nothing at all, and the
+     * shelf silently showed whatever the last successful sync had left. That is the whole of "the
+     * same shows as before": the sync never ran.
+     */
     fun sync() {
         viewModelScope.launch {
-            val plex = sources.value
-            if (plex.isEmpty()) return@launch
+            // Bounded, so a Plex source that cannot be read does not spin here forever; the
+            // timeout is reported on screen rather than swallowed.
+            val plex = withTimeoutOrNull(10_000L) {
+                sources.first { it.isNotEmpty() }
+            }
+            if (plex == null) {
+                _lastError.value = "No Plex server is connected yet. Add one from the Plex screen."
+                return@launch
+            }
             _progress.value = 0 to 0
             var movies = 0
             var shows = 0

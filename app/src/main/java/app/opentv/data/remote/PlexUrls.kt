@@ -115,21 +115,35 @@ object PlexUrls {
      * `X-Plex-Token` header by the image loader instead (see `OpenTvApp.newImageLoader`), so this
      * returns a clean URL that is safe to store, cache, log and compare.
      */
-    fun image(serverBase: String, path: String?, width: Int? = null): String? {
+    /**
+     * An absolute URL for a library image.
+     *
+     * The token goes in the query string, and that is measured rather than assumed. Plex's photo
+     * endpoint served this exact thumbnail with `200 image/jpeg` when the token was in the query,
+     * and served nothing when the same request carried it only as an `X-Plex-Token` header: Plex
+     * honours that header inconsistently across endpoints and its artwork endpoints want the query
+     * form. Taking the credential out of URLs was a reasonable-sounding security change that broke
+     * every poster, so it is back - with redaction in the logs, which is where a leaked token
+     * actually mattered.
+     */
+    fun image(serverBase: String, path: String?, token: String, width: Int? = null): String? {
         if (path.isNullOrBlank()) return null
-        // Any query is dropped, whether the path was relative or already absolute. A width appended
-        // after a query string lands in the query rather than the path and yields a URL that is not
-        // an image at all, which looks exactly like "Plex does not serve this artwork".
+        if (path.startsWith("http://") || path.startsWith("https://")) {
+            // Already absolute, from Plex's photo proxy or a remote-art library. Its query is part
+            // of the URL and may be signed, so it is kept - only the token is ensured. Dropping it
+            // would turn a working image link into a 403 for reasons that look like "no artwork".
+            if (path.contains(TOKEN_PARAM)) return path
+            val sep = if ('?' in path) "&" else "?"
+            return "$path$sep$TOKEN_PARAM=$token"
+        }
+        // Relative. Any query is dropped first, because the width belongs in the path and appending
+        // it after a query produces a URL that is not an image at all.
         val clean = path.substringBefore('?')
         if (clean.isBlank()) return null
-        if (clean.startsWith("http://") || clean.startsWith("https://")) {
-            // Already absolute - some libraries hand back full URLs for remote artwork.
-            return clean
-        }
         val base = serverBase.trimEnd('/')
+        val withSlash = if (clean.startsWith("/")) clean else "/$clean"
         val suffix = if (width != null) "/$width" else ""
-        val p = if (clean.startsWith("/")) clean else "/$clean"
-        return "$base$p$suffix"
+        return base + withSlash + suffix + "?" + TOKEN_PARAM + "=" + token
     }
 
     /**

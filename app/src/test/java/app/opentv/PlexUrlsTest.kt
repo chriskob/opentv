@@ -51,41 +51,44 @@ class PlexUrlsTest {
     }
 
     @Test
-    fun `an image url resolves plex's relative thumb path and carries no token`() {
-        val url = PlexUrls.image(server, "/library/metadata/54321/thumb/999")
-        assertThat(url).isEqualTo("https://plex.buickgn.us/library/metadata/54321/thumb/999")
+    fun `an image url resolves plex's relative thumb path and carries the token in the query`() {
+        // Measured, not assumed: the same thumbnail answered 200 image/jpeg with the token in the
+        // query and served nothing with it only in a header. Plex's photo endpoints want the query.
+        val url = PlexUrls.image(server, "/library/metadata/54321/thumb/999", token)
+        assertThat(url).isEqualTo(
+            "https://plex.buickgn.us/library/metadata/54321/thumb/999?X-Plex-Token=$token",
+        )
     }
 
     @Test
     fun `an image url can request a width, which is how tv-sized art is fetched cheaply`() {
-        val url = PlexUrls.image(server, "/library/metadata/54321/thumb/999", width = 300)
-        assertThat(url).isEqualTo("https://plex.buickgn.us/library/metadata/54321/thumb/999/300")
+        val url = PlexUrls.image(server, "/library/metadata/54321/thumb/999", token, width = 300)
+        assertThat(url).isEqualTo(
+            "https://plex.buickgn.us/library/metadata/54321/thumb/999/300?X-Plex-Token=$token",
+        )
     }
 
     @Test
-    fun `no image url ever contains the token`() {
-        // The token moved to an `X-Plex-Token` header. A credential in a query string ends up in
-        // Coil's disk-cache keys, in any log that prints a poster URL, and behind a reverse proxy
-        // in front of whatever rules it applies - and every Plex poster failed while it was there.
-        val paths = listOf(
-            "/library/metadata/54321/thumb/999",
-            "/library/art/12",
-            "https://images.plex.tv/photo?key=abc&X-Plex-Token=leaked",
-            "/library/metadata/1/thumb/2?X-Plex-Token=leaked",
-        )
-        for (path in paths) {
-            val url = PlexUrls.image(server, path, width = 300)
-            assertThat(url).doesNotContain(token)
-            assertThat(url).doesNotContain("X-Plex-Token")
-            assertThat(url).doesNotContain("leaked")
-        }
+    fun `a width is never appended after an existing query string`() {
+        // That produced ".../thumb/2?X-Plex-Token=leaked/300" - the width landed in the query, so
+        // the URL was not an image at all and looked exactly like Plex not serving artwork.
+        val url = PlexUrls.image(server, "/library/metadata/1/thumb/2?X-Plex-Token=leaked", token, width = 300)
+        assertThat(url).isEqualTo("https://plex.buickgn.us/library/metadata/1/thumb/2/300?X-Plex-Token=$token")
+        assertThat(url).doesNotContain("leaked")
+    }
+
+    @Test
+    fun `an already-absolute art url is not given two tokens`() {
+        val once = "https://images.plex.tv/photo?key=abc"
+        assertThat(PlexUrls.image(server, once, token))
+            .isEqualTo("https://images.plex.tv/photo?key=abc&X-Plex-Token=$token")
     }
 
     @Test
     fun `a missing thumb yields no url rather than a broken one`() {
-        assertThat(PlexUrls.image(server, null)).isNull()
-        assertThat(PlexUrls.image(server, "")).isNull()
-        assertThat(PlexUrls.image(server, "   ")).isNull()
+        assertThat(PlexUrls.image(server, null, token)).isNull()
+        assertThat(PlexUrls.image(server, "", token)).isNull()
+        assertThat(PlexUrls.image(server, "   ", token)).isNull()
     }
 
     @Test
