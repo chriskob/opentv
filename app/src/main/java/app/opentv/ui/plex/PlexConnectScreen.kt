@@ -6,6 +6,7 @@
  */
 package app.opentv.ui.plex
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -33,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -44,6 +48,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
 import app.opentv.core.AppSettings
 import app.opentv.core.ServiceLocator
+import app.opentv.pairing.QrCodes
 import app.opentv.data.remote.PlexApi
 import app.opentv.data.remote.PlexUrls
 import app.opentv.ui.components.TvOutlinedTextField
@@ -239,6 +244,29 @@ fun PlexConnectScreen(
                         )
                     }.orEmpty()
                 }
+                // A QR code, the same way the phone, remote and web pairing screens do it.
+                //
+                // Asking a viewer to read a two-line URL off a television and retype it into a
+                // phone is a bad way to start a sign-in, and it is the step most likely to be
+                // abandoned. Pointing a camera at the screen removes the transcription entirely:
+                // the phone opens the link, signs in, and this screen carries on by itself.
+                //
+                // The text underneath is kept, not replaced. A code that will not scan - bad
+                // light, a glare across the panel, the TV at an awkward angle - must still leave
+                // a way through.
+                val qr = remember(approval) { QrCodes.render(approval, QR_SIZE_PX) }
+                if (approval.isNotEmpty() && qr != null) {
+                    Image(
+                        bitmap = qr.asImageBitmap(),
+                        contentDescription = stringResource(R.string.plex_qr_desc),
+                        modifier = Modifier
+                            .size(300.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White)
+                            .padding(12.dp),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
                 if (approval.isNotEmpty()) {
                     Text(
                         approval,
@@ -284,6 +312,9 @@ private enum class PlexConnectStage { ADDRESS, CODE }
 
 /** A sign-in code and the id it is polled under. */
 private data class PlexParserPin(val id: Long, val code: String)
+
+/** Enough pixels that the code still scans from a couch at an angle. Matches the pairing screens. */
+private const val QR_SIZE_PX = 600
 
 /** The app's version string, which Plex records against the session. */
 private fun appVersion(context: android.content.Context): String = runCatching {

@@ -704,4 +704,5 @@
     <string name="plex_connect_connecting">Connected. Finishing…</string>
     <string name="plex_cancel">Cancel</string>
     <string name="submenu_btn_plex">Plex</string>
+    <string name="plex_qr_desc">Sign-in QR code. Point a phone camera at it to approve.</string>
 </resources>
