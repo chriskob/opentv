@@ -29,6 +29,7 @@ import app.opentv.data.model.StreamKind
 import app.opentv.data.parser.ChannelNameNormalizer
 import app.opentv.data.parser.M3uParser
 import app.opentv.data.parser.VodTitleCleaner
+import app.opentv.data.model.PlexLibraryOption
 import app.opentv.data.model.PlexRecentItem
 import app.opentv.data.remote.PlexApi
 import app.opentv.data.remote.PlexUrls
@@ -997,7 +998,18 @@ class CatalogRepository(
         var movies = 0
         var shows = 0
 
-        for (section in sections) {
+        // Only the libraries the viewer has left switched on. Reading all of them and merging was
+        // the reason the shelf was neither "my libraries" nor reliably "the last ten added": ten
+        // from each of five libraries is fifty rows, and the shelf then showed whichever ten
+        // happened to sort first rather than the ten newest overall.
+        val wanted = sections.filter { settings.isPlexLibraryEnabled(source.id, it.key) }
+        if (wanted.size != sections.size) {
+            Log.i(
+                TAG,
+                "Plex: skipping ${sections.size - wanted.size} librar(y/ies) the viewer has switched off",
+            )
+        }
+        for (section in wanted) {
             val items = plexApi.recentlyAdded(serverBase, token, section.key, PLEX_RECENT_LIMIT)
             if (items.isEmpty()) continue
             if (section.isMovies) {
@@ -1012,8 +1024,34 @@ class CatalogRepository(
                 shows += items.size
             }
         }
-        Log.i(TAG, "Plex sync: $movies movie(s), $shows show(s) from ${sections.size} librar(y/ies)")
+        Log.i(
+            TAG,
+            "Plex sync: $movies movie(s), $shows show(s) from ${wanted.size} of " +
+                "${sections.size} librar(y/ies)",
+        )
         return VodSyncResult(movies, shows)
+    }
+
+    /**
+     * The libraries on a server, paired with whether the viewer has them switched on.
+     *
+     * Surfaced so the shelf can offer a choice rather than reading whatever the server happens to
+     * expose. `isEnabled` is resolved at read time from the settings, not stored here, so a change
+     * takes effect the moment it is made.
+     */
+    suspend fun plexLibraries(source: Source): List<PlexLibraryOption> {
+        val token = source.password?.takeIf { it.isNotBlank() } ?: return emptyList()
+        return runCatching {
+            plexApi.sections(source.url.trimEnd('/'), token)
+        }.getOrDefault(emptyList()).map { section ->
+            PlexLibraryOption(
+                sourceId = source.id,
+                key = section.key,
+                title = section.title,
+                isMovies = section.isMovies,
+                isEnabled = settings.isPlexLibraryEnabled(source.id, section.key),
+            )
+        }
     }
 
     /**

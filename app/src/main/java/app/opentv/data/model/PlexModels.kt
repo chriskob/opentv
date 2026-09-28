@@ -56,6 +56,15 @@ data class PlexRecentItem(
     val isShow: Boolean get() = type.equals("show", ignoreCase = true)
 }
 
+/** One library on a Plex server, as offered to the viewer on the Plex shelf. */
+data class PlexLibraryOption(
+    val sourceId: Long,
+    val key: String,
+    val title: String,
+    val isMovies: Boolean,
+    val isEnabled: Boolean,
+)
+
 /** The playable file behind a Plex item, from `/library/metadata/{ratingKey}`. */
 data class PlexMediaPart(
     /** Server-relative path to the file, e.g. `/library/parts/1234/5678/file.mkv`. */

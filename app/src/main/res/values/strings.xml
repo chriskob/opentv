@@ -706,4 +706,5 @@
     <string name="submenu_btn_plex">Plex</string>
     <string name="plex_qr_desc">Sign-in QR code. Point a phone camera at it to approve.</string>
     <string name="plex_connect_waiting">Waiting for Plex…</string>
+    <string name="plex_libraries">Libraries on this server</string>
 </resources>

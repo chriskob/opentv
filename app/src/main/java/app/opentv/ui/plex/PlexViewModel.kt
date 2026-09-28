@@ -13,6 +13,7 @@ import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Series
 import app.opentv.data.model.Source
+import app.opentv.data.model.PlexLibraryOption
 import app.opentv.data.model.SourceKind
 import app.opentv.data.repo.CatalogRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,6 +23,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -167,6 +171,40 @@ class PlexViewModel(app: Application) : AndroidViewModel(app) {
      *  series to a "newly added" shelf almost always means. */
     fun playSeries(series: Series, onReady: (mediaKey: String, url: String, title: String) -> Unit) {
         play(series.sourceId, series.seriesId, series.name, onReady)
+    }
+
+    /**
+     * The libraries on the connected servers, with the ones switched off marked as such.
+     *
+     * The shelf reads every movie and show library a server exposes, which on a real account is
+     * more than the two the viewer cares about - including Discover and Recommended content that
+     * is indistinguishable from their own once it arrives. So the choice is offered rather than
+     * assumed, and switching a library off re-syncs so the shelf stops carrying its rows.
+     */
+    private val _libraryTick = MutableStateFlow(0)
+
+    val libraries: StateFlow<List<PlexLibraryOption>> =
+        combine(sources, _libraryTick) { plex, _ -> plex }
+            .flatMapLatest { plexSources ->
+                if (plexSources.isEmpty()) {
+                    flowOf(emptyList())
+                } else {
+                    flow {
+                        for (source in plexSources) {
+                            emitAll(flowOf(repo.plexLibraries(source)))
+                        }
+                    }
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun setLibraryEnabled(option: PlexLibraryOption, enabled: Boolean) {
+        settings.setPlexLibraryEnabled(option.sourceId, option.key, enabled)
+        // Re-read the list so the chip flips at once, then re-sync: the rows for a library the
+        // viewer has just switched off are already on disk and would otherwise stay on the shelf
+        // until the next scheduled sync.
+        _libraryTick.value = _libraryTick.value + 1
+        sync()
     }
 
     private fun play(sourceId: Long, ratingKey: String, title: String, onReady: (String, String, String) -> Unit) {

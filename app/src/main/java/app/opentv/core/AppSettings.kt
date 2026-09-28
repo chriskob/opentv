@@ -575,6 +575,36 @@ class AppSettings private constructor(context: Context) {
         get() = prefs.getString(KEY_PLEX_CLIENT_ID, null) ?: java.util.UUID.randomUUID().toString()
             .also { prefs.edit().putString(KEY_PLEX_CLIENT_ID, it).apply() }
 
+    /**
+     * Plex libraries the viewer has switched OFF, as `sourceId:sectionKey`.
+     *
+     * Everything is on by default, and that default is wrong often enough to be worth fixing: a
+     * Plex server can carry several movie and show libraries, plus Discover and Recommended
+     * content that arrives looking exactly like the viewer's own. Merging every one of them gave a
+     * shelf that was neither "my libraries" nor reliably "the last ten added" - ten from each of
+     * five libraries is fifty rows, ordered by a timestamp nobody had checked.
+     *
+     * Stored as exclusions rather than inclusions so a library added to the server later is picked
+     * up without revisiting this, and so an unrecognised key is never treated as permission.
+     */
+    private val _plexExcludedLibraries =
+        MutableStateFlow(prefs.getStringSet(KEY_PLEX_EXCLUDED_LIBRARIES, emptySet()).orEmpty())
+    val plexExcludedLibraries: StateFlow<Set<String>> = _plexExcludedLibraries.asStateFlow()
+
+    fun isPlexLibraryEnabled(sourceId: Long, sectionKey: String): Boolean =
+        plexLibraryTag(sourceId, sectionKey) !in _plexExcludedLibraries.value
+
+    fun setPlexLibraryEnabled(sourceId: Long, sectionKey: String, enabled: Boolean) {
+        val tag = plexLibraryTag(sourceId, sectionKey)
+        val next = _plexExcludedLibraries.value.toMutableSet()
+        if (enabled) next.remove(tag) else next.add(tag)
+        prefs.edit().putStringSet(KEY_PLEX_EXCLUDED_LIBRARIES, next).apply()
+        _plexExcludedLibraries.value = next
+    }
+
+    /** Stable identity for one library on one server. */
+    fun plexLibraryTag(sourceId: Long, sectionKey: String): String = "$sourceId:$sectionKey"
+
     /** Whether to run a NAS sync automatically each time the app is opened. Off by default. */
     private val _nasAutoSync = MutableStateFlow(prefs.getBoolean(KEY_NAS_AUTO_SYNC, false))
     val nasAutoSync: StateFlow<Boolean> = _nasAutoSync.asStateFlow()
@@ -1050,6 +1080,7 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_USB_TREE = "usb_tree_uri"
         private const val KEY_USB_LABEL = "usb_folder_label"
         const val KEY_PLEX_CLIENT_ID = "plex_client_id"
+    private const val KEY_PLEX_EXCLUDED_LIBRARIES = "plex_excluded_libraries"
         private const val KEY_SYNC_DEVICE_ID = "sync_device_id"
         private const val KEY_NAS_AUTO_SYNC = "nas_auto_sync"
         private const val KEY_VOD_SYNCED_AT = "vod_synced_at"
