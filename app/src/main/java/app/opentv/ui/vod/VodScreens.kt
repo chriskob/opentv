@@ -72,6 +72,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.R
@@ -746,9 +747,14 @@ internal fun PosterCard(
     onArtworkFailed: () -> Unit = {},
     /**
      * False in fixed-column grids: the card stretches to its column (via the incoming [modifier])
-     * instead of holding the 140dp shelf width.
+     * instead of holding the shelf width.
      */
     fixedWidth: Boolean = true,
+    /**
+     * Shelf card width. The 140dp default suits the Movies/Shows shelves; denser shelves (Plex,
+     * with two rows that should read top to bottom on one screen) pass something smaller.
+     */
+    cardWidth: Dp = POSTER_WIDTH,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "posterScale")
@@ -758,7 +764,7 @@ internal fun PosterCard(
     }
     Column(
         modifier
-            .then(if (fixedWidth) Modifier.width(POSTER_WIDTH) else Modifier)
+            .then(if (fixedWidth) Modifier.width(cardWidth) else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .focusRequester(returnFocus)
             .onFocusChanged {

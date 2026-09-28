@@ -30,6 +30,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -156,6 +159,13 @@ private fun PlexShelves(
     onPlay: (String, String, String) -> Unit,
     viewModel: PlexViewModel,
 ) {
+    // Entry focus belongs on the first card of the top shelf. Without this, focus lands wherever
+    // the system finds something first - usually the movies row, since both rows compose before
+    // data settles - and the column scrolls the shows half off the top. Cleared once granted, so
+    // later recompositions (a background refresh landing new rows) never yank focus back.
+    var entryFocusTaken by remember { mutableStateOf(false) }
+    val topKey = shows.firstOrNull()?.let { "s:${it.id}" }
+        ?: movies.firstOrNull()?.let { "m:${it.id}" }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
@@ -176,6 +186,9 @@ private fun PlexShelves(
                                 posterUrl = series.posterUrl,
                                 subtitle = series.year?.toString(),
                                 onClick = { viewModel.playSeries(series, onPlay) },
+                                requestFocus = !entryFocusTaken && "s:${series.id}" == topKey,
+                                onFocusGranted = { entryFocusTaken = true },
+                                cardWidth = PLEX_POSTER_WIDTH,
                             )
                         }
                     }
@@ -196,6 +209,9 @@ private fun PlexShelves(
                                 posterUrl = movie.posterUrl,
                                 subtitle = movie.year?.toString(),
                                 onClick = { viewModel.playMovie(movie, onPlay) },
+                                requestFocus = !entryFocusTaken && "m:${movie.id}" == topKey,
+                                onFocusGranted = { entryFocusTaken = true },
+                                cardWidth = PLEX_POSTER_WIDTH,
                             )
                         }
                     }
@@ -204,6 +220,13 @@ private fun PlexShelves(
         }
     }
 }
+
+/**
+ * Plex shelf card width. Smaller than the 140dp Movies/Shows cards so both shelves - headers,
+ * posters, titles - read top to bottom on one screen instead of the second row starting
+ * half-visible.
+ */
+private val PLEX_POSTER_WIDTH = 112.dp
 
 @Composable
 private fun PlexNotConnected(onConnect: () -> Unit) {
