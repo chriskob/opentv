@@ -185,6 +185,43 @@ class PlexParserTest {
     }
 
     @Test
+    fun `the token is found even though the response is still a pin, not a user`() {
+        // This is the real shape, taken from a live poll: the document is a <pin>, and it GREW by
+        // 18 bytes on the poll where the approval landed. A parser that only looked inside <user>
+        // reported "no token" from here on and the TV waited forever after the browser had already
+        // said the sign-in succeeded.
+        val approvedPin = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <pin id="704044148" code="9e157o4vua47wz4oijxpqu54u" product="OpenTV" trusted="1"
+                 authToken="tok-from-a-pin-element" qr="https://plex.tv/api/v2/pins/qr/xyz">
+              <server name="x" />
+            </pin>
+        """
+        assertThat(PlexParser.authToken(stream(approvedPin))).isEqualTo("tok-from-a-pin-element")
+    }
+
+    @Test
+    fun `a token nested deeper in the document is still found`() {
+        val nested = """
+            <MediaContainer>
+              <Pin id="1" code="abc" />
+              <user id="1" authToken="tok-nested" />
+            </MediaContainer>
+        """
+        assertThat(PlexParser.authToken(stream(nested))).isEqualTo("tok-nested")
+    }
+
+    @Test
+    fun `a pending pin with no token anywhere still yields null`() {
+        val pendingPin = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <pin id="704044148" code="9e157o4vua47wz4oijxpqu54u" product="OpenTV" trusted="0"
+                 qr="https://plex.tv/api/v2/pins/qr/9e15" />
+        """
+        assertThat(PlexParser.authToken(stream(pendingPin))).isNull()
+    }
+
+    @Test
     fun `an empty document yields nothing rather than throwing`() {
         assertThat(PlexParser.sections(emptyStream())).isEmpty()
         assertThat(PlexParser.recentlyAdded(emptyStream())).isEmpty()

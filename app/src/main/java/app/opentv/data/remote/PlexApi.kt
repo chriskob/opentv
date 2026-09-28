@@ -74,8 +74,9 @@ class PlexApi(private val http: OkHttpClient) {
         if (pin.code.isBlank()) {
             throw PlexException("Plex returned an empty sign-in code.")
         }
-        // Length only, never the value: this is a credential-adjacent string.
-        Log.d(TAG, "sign-in requested: pin id=${pin.id}, code length=${pin.code.length}")
+        // INFO, not DEBUG: this box is visibly not emitting debug-level lines from the app, so a
+        // DEBUG diagnostic is a diagnostic that does not exist. Length only, never the value.
+        Log.i(TAG, "sign-in requested: pin id=${pin.id}, code length=${pin.code.length}")
         // Last expression, not `return`: withContext's block is not an inline lambda, so a
         // non-local return out of it is a compile error rather than a style choice.
         pin
@@ -94,8 +95,27 @@ class PlexApi(private val http: OkHttpClient) {
             .get()
             .apply { headers.forEach { (k, v) -> header(k, v) } }
             .build()
-        val body = execute(request, "Plex would not confirm the sign-in.").use { it.body?.string().orEmpty() }
-        PlexParser.authToken(body.byteInputStream())
+        // What came back, before it is interpreted. A poll that silently returns null for a
+        // hundred and fifty attempts is indistinguishable from one that is working and waiting,
+        // and the difference is the whole question when a viewer says "the browser said yes but
+        // the television is still waiting".
+        val response = http.newCall(request).execute()
+        val code = response.code
+        val body = response.use { it.body?.string().orEmpty() }
+        val token = PlexParser.authToken(body.byteInputStream())
+        Log.i(
+            TAG,
+            "poll pin=$pinId -> http=$code, bodyLen=${body.length}, " +
+                (if (token != null) "TOKEN RECEIVED" else "no token") +
+                ", looksLike=${body.take(300).replace(Regex("\\s+"), " ")}",
+        )
+        // A 404 is not a pending PIN - Plex says the code is gone (redeemed or expired). Returning
+        // null here made the caller log "still pending" for a hard failure, which is how a dead
+        // sign-in sat on screen looking like progress. Said plainly instead.
+        if (code == 404) {
+            throw PlexException("Plex no longer recognises that sign-in code (it was used, or expired).")
+        }
+        token
     }
 
     /** Confirms a token works and reports the account behind it. */

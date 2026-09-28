@@ -104,16 +104,43 @@ fun PlexConnectScreen(
         )
         // 15 minutes is the window Plex allows; past that the code is dead and asking again is the
         // only way forward, so stop rather than poll a code that can never be approved.
+        //
+        // Every attempt is reported. The previous version did `runCatching { ... }.getOrNull()`
+        // three hundred times over, which cannot distinguish "still waiting" from "the request is
+        // failing" - so a poll that could never succeed sat on "Waiting for Plex" indefinitely and
+        // said nothing, on a screen whose entire job is to tell the viewer what is happening. That
+        // is why a signed-in browser could leave the television waiting with no clue why.
+        //
+        // A token is null while the PIN is unapproved, which is normal. An exception is not: a few
+        // in a row means the poll itself is broken, and saying so beats waiting forever.
+        var consecutiveErrors = 0
         repeat(300) {
             delay(3_000L)
-            val token = runCatching { graph.plexApi.awaitAuthToken(pending.id, headers) }.getOrNull()
+            val attempt = runCatching { graph.plexApi.awaitAuthToken(pending.id, headers) }
+            val token = attempt.getOrNull()
             if (token != null) {
+                android.util.Log.i(PlexApi.TAG, "sign-in approved; saving source for ${serverUrl.take(24)}")
                 saving = true
                 viewModel.addPlexSource("Plex", serverUrl.trim(), token) { ok ->
                     saving = false
                     if (ok) onConnected() else failure = "That Plex server could not be saved."
                 }
                 return@LaunchedEffect
+            }
+            val error = attempt.exceptionOrNull()
+            if (error == null) {
+                consecutiveErrors = 0
+                android.util.Log.i(PlexApi.TAG, "sign-in still pending (attempt $it)")
+            } else {
+                consecutiveErrors++
+                // Logged at INFO, not DEBUG: this box is visibly not emitting debug-level lines
+                // from the app, and INFO is the level the rest of OpenTV's diagnostics use.
+                android.util.Log.i(PlexApi.TAG, "sign-in poll FAILED: ${error.message}")
+                if (consecutiveErrors >= 3) {
+                    failure = "Could not check the sign-in with Plex (${error.message}). " +
+                        "Check that this box can reach plex.tv, then start again."
+                    return@LaunchedEffect
+                }
             }
         }
         failure = "That code was not approved in time. Start again to get a new one."

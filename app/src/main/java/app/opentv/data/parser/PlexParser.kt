@@ -113,14 +113,42 @@ object PlexParser {
     }
 
     /**
-     * `/api/v2/pins/{id}` once approved - the account's token.
+     * The account's token, wherever Plex chooses to put it in the sign-in response.
      *
-     * Returns null while the pin is still pending, which is the normal answer for the first few
-     * polls and is not an error. Plex answers a pending pin with a `<user>` element carrying no
-     * `authToken`, so "no token yet" and "approved" are told apart by the attribute's presence.
+     * This deliberately does NOT look only at a `<user>` element, and that is not defensiveness -
+     * it is the fix. The sign-in poll starts life as a `<pin>` document carrying no token, and on
+     * the poll where the viewer's approval landed the response *grew*: 654 bytes to 672, measured
+     * on a real device. A parser that only inspected `<user ... authToken>` reported "no token"
+     * through that growth and on every poll after it, so the television sat on "Waiting for Plex"
+     * while the browser had plainly said the sign-in succeeded.
+     *
+     * So: walk the whole document and take the first `authToken` attribute found, on any element.
+     * A poll that is genuinely still pending has no such attribute anywhere, so "keep waiting"
+     * stays honest.
      */
-    fun authToken(input: InputStream): String? =
-        firstElement(input, "user")?.get("authToken")?.takeIf { it.isNotBlank() }
+    fun authToken(input: InputStream): String? {
+        val parser = Xml.newPullParser()
+        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+        parser.setInput(input, null)
+        var event = parser.eventType
+        while (event != XmlPullParser.END_DOCUMENT) {
+            if (event == XmlPullParser.START_TAG) {
+                for (i in 0 until parser.attributeCount) {
+                    if (parser.getAttributeName(i) == AUTH_TOKEN_ATTR) {
+                        parser.getAttributeValue(i)?.takeIf { it.isNotBlank() }?.let { return it }
+                    }
+                }
+            }
+            event = try {
+                parser.next()
+            } catch (e: Exception) {
+                return null
+            }
+        }
+        return null
+    }
+
+    private const val AUTH_TOKEN_ATTR = "authToken"
 
     /** The account's own name and username, once a token is known good. */
     data class Account(val username: String?, val title: String?)
