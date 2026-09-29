@@ -66,6 +66,11 @@ data class PlexRecentItem(
      * still as the card made every show row look like a blurry frame grab instead of the series.
      */
     val grandparentThumb: String? = null,
+    /**
+     * The series' fanart (16:9). Episodes carry the show's wide art here; it feeds the shelf hero
+     * backdrop. Falls back to the episode still downstream, never to blank.
+     */
+    val grandparentArt: String? = null,
     val viewOffsetMillis: Long? = null,
     val viewCount: Int? = null,
 ) {

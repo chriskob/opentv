@@ -1264,6 +1264,16 @@ class CatalogRepository(
             width = PLEX_POSTER_WIDTH,
             height = PLEX_POSTER_HEIGHT,
         ),
+        // Series fanart for the shelf hero. Episodes carry the show's wide art as grandparentArt;
+        // without it the hero would fall back to a 16:9 crop of a poster, which reads as a blurry
+        // accident rather than a backdrop.
+        backdropUrl = PlexUrls.image(
+            serverBase,
+            grandparentArt ?: artPath,
+            token,
+            width = PLEX_BACKDROP_WIDTH,
+            height = PLEX_BACKDROP_HEIGHT,
+        ),
         rating = null,
         year = year,
         plot = summary,

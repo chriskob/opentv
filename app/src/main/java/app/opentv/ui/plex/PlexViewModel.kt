@@ -35,8 +35,17 @@ sealed interface PlexShelfState {
     /** No Plex server has been connected yet. Offers the sign-in, not a blank grid. */
     data object NotConnected : PlexShelfState
 
-    /** A refresh is running. The counts are what it has written so far. */
-    data class Syncing(val movies: Int, val shows: Int) : PlexShelfState
+    /**
+     * A refresh is running. The counts are what it has written so far; the lists are what is
+     * already on screen, carried through so a refresh never blanks the shelf it is updating -
+     * without them the screen would flash to a spinner and back on every pull.
+     */
+    data class Syncing(
+        val movies: Int,
+        val shows: Int,
+        val currentMovies: List<Movie> = emptyList(),
+        val currentShows: List<Series> = emptyList(),
+    ) : PlexShelfState
 
     /** Connected and populated. [movies]/[shows] are what is on screen. */
     data class Ready(val movies: List<Movie>, val shows: List<Series>) : PlexShelfState
@@ -112,7 +121,7 @@ class PlexViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<PlexShelfState> = combine(sources, stored, _progress) { plex, (movies, shows), syncing ->
         when {
             plex.isEmpty() -> PlexShelfState.NotConnected
-            syncing != null -> PlexShelfState.Syncing(syncing.first, syncing.second)
+            syncing != null -> PlexShelfState.Syncing(syncing.first, syncing.second, movies, shows)
             else -> PlexShelfState.Ready(movies, shows)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlexShelfState.NotConnected)

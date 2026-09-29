@@ -711,4 +711,7 @@
     <string name="plex_refresh">Refresh</string>
     <string name="plex_mark_watched">Mark watched</string>
     <string name="plex_watched">Watched</string>
+    <string name="plex_new_on">New on Plex</string>
+    <string name="plex_play">Play</string>
+    <string name="plex_new">New</string>
 </resources>

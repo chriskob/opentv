@@ -52,7 +52,6 @@ import app.opentv.pairing.QrCodes
 import app.opentv.data.remote.PlexApi
 import app.opentv.data.remote.PlexUrls
 import app.opentv.ui.components.TvOutlinedTextField
-import app.opentv.ui.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -150,6 +149,14 @@ fun PlexConnectScreen(
         modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(32.dp),
     ) {
         Text(
+            stringResource(R.string.plex_new_on),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 3.sp,
+            color = PlexGold,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
             stringResource(R.string.plex_connect_title),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
@@ -233,7 +240,7 @@ fun PlexConnectScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .background(AppTheme.palette.favourite.copy(alpha = 0.16f))
+                        .background(PlexGold.copy(alpha = 0.16f))
                         .padding(vertical = 22.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
@@ -241,14 +248,14 @@ fun PlexConnectScreen(
                     CircularProgressIndicator(
                         modifier = Modifier.width(22.dp).height(22.dp),
                         strokeWidth = 2.dp,
-                        color = AppTheme.palette.favourite,
+                        color = PlexGold,
                     )
                     Spacer(Modifier.width(14.dp))
                     Text(
                         stringResource(R.string.plex_connect_waiting),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
-                        color = AppTheme.palette.favourite,
+                        color = PlexGold,
                     )
                 }
                 Spacer(Modifier.height(20.dp))
@@ -320,7 +327,7 @@ fun PlexConnectScreen(
                         CircularProgressIndicator(
                             modifier = Modifier.width(20.dp).height(20.dp),
                             strokeWidth = 2.dp,
-                            color = AppTheme.palette.favourite,
+                            color = PlexGold,
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(

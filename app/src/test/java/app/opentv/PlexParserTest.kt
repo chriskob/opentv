@@ -257,6 +257,22 @@ class PlexParserTest {
     }
 
     @Test
+    fun `an episode carries the series fanart for the hero backdrop`() {
+        // Same shape as above, plus the show's wide art. The hero must never fall back to a
+        // 16:9 crop of a poster when the server hands it real fanart.
+        val xml = """
+            <MediaContainer>
+              <Video ratingKey="501" type="episode" title="Pilot" index="1"
+                     grandparentTitle="The Series" thumb="/library/metadata/501/thumb/11"
+                     grandparentThumb="/library/metadata/500/thumb/22"
+                     grandparentArt="/library/metadata/500/art/33" />
+            </MediaContainer>
+        """
+        val item = PlexParser.recentlyAdded(stream(xml)).single()
+        assertThat(item.grandparentArt).isEqualTo("/library/metadata/500/art/33")
+    }
+
+    @Test
     fun `an empty document yields nothing rather than throwing`() {
         assertThat(PlexParser.sections(emptyStream())).isEmpty()
         assertThat(PlexParser.recentlyAdded(emptyStream())).isEmpty()
