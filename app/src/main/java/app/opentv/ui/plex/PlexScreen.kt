@@ -464,10 +464,13 @@ internal val PlexGold = Color(0xFFE5A00D)
 
 /**
  * Where the hero backdrop sits: -1 shows the image's top edge, +1 its bottom, 0 centres.
- * Negative settles fanart lower on screen, which is where its subjects usually are. One number
- * rather than a TopCenter pin so it stays a nudge, not a slam.
+ * Negative settles fanart lower on screen, which is where its subjects usually are. -0.45 proved
+ * nowhere near enough on real art - a head in the top quarter of frame stayed cropped clean off -
+ * so this sits nearly pinned. The cost is the bottom of frame (deck, water, billing text), which
+ * is expendable; if a library's art ever clips something that matters down there, back this off
+ * rather than living with it.
  */
-private const val PLEX_HERO_ART_BIAS = -0.45f
+private const val PLEX_HERO_ART_BIAS = -0.85f
 
 @Composable
 private fun PlexNotConnected(onConnect: () -> Unit) {
