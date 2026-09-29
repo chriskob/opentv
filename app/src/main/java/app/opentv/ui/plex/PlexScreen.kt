@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -95,8 +96,9 @@ fun PlexScreen(
     LaunchedEffect(Unit) { viewModel.sync() }
 
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        PlexHeader(isRefreshing = state is PlexShelfState.Syncing, onRefresh = { viewModel.sync() })
-
+        // No top header: the hero below already says what this screen is ("NEW ON PLEX" plus the
+        // title) and carries its own Refresh. A second title row above it was chrome for its own
+        // sake, and the freed ~80dp helps both shelves read on one screen.
         when (val s = state) {
             is PlexShelfState.NotConnected -> PlexNotConnected(onConnect)
             // A refresh keeps whatever is on screen and spins the hero's refresh mark instead of
@@ -127,46 +129,6 @@ fun PlexScreen(
                 isError = true,
                 onDismiss = { viewModel.clearError() },
             )
-        }
-    }
-}
-
-@Composable
-private fun PlexHeader(isRefreshing: Boolean, onRefresh: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                stringResource(R.string.plex_title),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                stringResource(R.string.plex_subtitle),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        // A shelf of "recently added" is only useful if it can be brought up to date, and the sync
-        // that fills it runs in the background. A button here means the viewer is never stuck with
-        // yesterday's titles wondering whether Plex has anything new.
-        if (isRefreshing) {
-            CircularProgressIndicator(
-                modifier = Modifier.width(22.dp).height(22.dp),
-                strokeWidth = 2.dp,
-                color = AppTheme.palette.favourite,
-            )
-        } else {
-            TextButton(onClick = onRefresh) {
-                Text(
-                    stringResource(R.string.plex_refresh),
-                    color = AppTheme.palette.favourite,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
         }
     }
 }
@@ -355,6 +317,10 @@ private fun PlexHero(
                     model = art,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    // Fanart subjects sit high in frame; a centred crop beheads them against the
+                    // hero's short box. Biasing toward the top of the image settles the picture
+                    // lower on screen. See PLEX_HERO_ART_BIAS.
+                    alignment = BiasAlignment(0f, PLEX_HERO_ART_BIAS),
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -578,6 +544,13 @@ private val PLEX_POSTER_WIDTH = 112.dp
  * theme the rest of the app wears.
  */
 internal val PlexGold = Color(0xFFE5A00D)
+
+/**
+ * Where the hero backdrop sits: -1 shows the image's top edge, +1 its bottom, 0 centres.
+ * Negative settles fanart lower on screen, which is where its subjects usually are. One number
+ * rather than a TopCenter pin so it stays a nudge, not a slam.
+ */
+private const val PLEX_HERO_ART_BIAS = -0.45f
 
 @Composable
 private fun PlexNotConnected(onConnect: () -> Unit) {
