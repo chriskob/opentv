@@ -37,9 +37,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -159,7 +159,7 @@ private fun PlexShelves(
         val d = result.drawable
         android.util.Log.i(
             "OpenTV-Plex",
-            "hero art ${hero?.key} intrinsic=${d.intrinsicWidth}x${d.intrinsicHeight} bias=$PLEX_HERO_ART_BIAS",
+            "hero art ${hero?.key} intrinsic=${d.intrinsicWidth}x${d.intrinsicHeight} top-anchored",
         )
     }
     LazyColumn(
@@ -303,19 +303,22 @@ private fun PlexHero(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(380.dp),
+            .height(380.dp)
+            .clipToBounds(),
     ) {
         Crossfade(targetState = hero.artUrl, label = "plexHeroArt") { art ->
             if (art != null) {
+                // FillWidth, top-anchored by LAYOUT, not by painter alignment: the image is drawn
+                // at full width from the box's top edge and the box clips the overflow below, so
+                // the visible window is always the top of the frame. This replaced a Crop +
+                // BiasAlignment approach that three values (-0.45, -0.85, -1.0) proved moves
+                // nothing on this box - same photo three times - so the framing no longer depends
+                // on an alignment parameter whose effect could not be observed.
                 AsyncImage(
                     model = art,
                     contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    // Fanart subjects sit high in frame; a centred crop beheads them against the
-                    // hero's short box. Biasing toward the top of the image settles the picture
-                    // lower on screen. See PLEX_HERO_ART_BIAS.
-                    alignment = BiasAlignment(0f, PLEX_HERO_ART_BIAS),
-                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillWidth,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             } else {
                 Box(
@@ -481,16 +484,6 @@ private val PLEX_POSTER_WIDTH = 112.dp
  * theme the rest of the app wears.
  */
 internal val PlexGold = Color(0xFFE5A00D)
-
-/**
- * Where the hero backdrop sits: -1 shows the image's top edge, +1 its bottom, 0 centres.
- * Negative settles fanart lower on screen, which is where its subjects usually are. -0.45 left a
- * head cropped clean off; -0.85 still clipped it at the top edge on real art - so this is the
- * full pin. The cost is the bottom of frame (deck, water, billing text), which is expendable; if
- * a library's art ever clips something that matters down there, the answer is a taller hero, not
- * a smaller number here.
- */
-private const val PLEX_HERO_ART_BIAS = -1f
 
 @Composable
 private fun PlexNotConnected(onConnect: () -> Unit) {
