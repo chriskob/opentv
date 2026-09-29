@@ -1229,7 +1229,9 @@ class CatalogRepository(
         name = title,
         categoryId = plexCategoryId(sectionKey),
         posterUrl = PlexUrls.image(serverBase, thumbPath, token, width = PLEX_POSTER_WIDTH, height = PLEX_POSTER_HEIGHT),
-        backdropUrl = PlexUrls.image(serverBase, artPath ?: thumbPath, token, width = PLEX_BACKDROP_WIDTH, height = PLEX_BACKDROP_HEIGHT),
+        // Width only, no height: see the series mapper above. A server-side crop to the exact
+        // box would centre-crop the fanart before the hero bias ever sees it.
+        backdropUrl = PlexUrls.image(serverBase, artPath ?: thumbPath, token, width = PLEX_BACKDROP_WIDTH, height = null),
         rating = null,
         year = year,
         plot = summary,
@@ -1267,12 +1269,17 @@ class CatalogRepository(
         // Series fanart for the shelf hero. Episodes carry the show's wide art as grandparentArt;
         // without it the hero would fall back to a 16:9 crop of a poster, which reads as a blurry
         // accident rather than a backdrop.
+        //
+        // Width only, deliberately no height: handing Plex both dimensions invites it to crop
+        // server-side to fill the exact box, and a server crop is always centred - which beheads
+        // exactly the subjects the hero bias is trying to keep. A proportional 16:9 frame leaves
+        // the crop to the hero, where the bias controls it.
         backdropUrl = PlexUrls.image(
             serverBase,
             grandparentArt ?: artPath,
             token,
             width = PLEX_BACKDROP_WIDTH,
-            height = PLEX_BACKDROP_HEIGHT,
+            height = null,
         ),
         rating = null,
         year = year,

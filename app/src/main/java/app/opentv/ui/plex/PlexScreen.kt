@@ -45,12 +45,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import kotlinx.coroutines.delay
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -142,6 +146,22 @@ private fun PlexShelves(
     // newest show, and only hands over once someone actually browses.
     var spotlightKey by remember { mutableStateOf<String?>(null) }
     val hero = heroFor(spotlightKey, shows, movies)
+    // Proves what Plex actually served: intrinsic size settles whether the crop happens
+    // server-side (already wide/short - nothing for the hero bias to move) or client-side
+    // (full frame - the bias owns the framing). Added after three bias values produced zero
+    // visible change, which no client-side theory explains.
+    val context = LocalContext.current
+    LaunchedEffect(hero?.artUrl) {
+        val url = hero?.artUrl ?: return@LaunchedEffect
+        val result = runCatching {
+            context.imageLoader.execute(ImageRequest.Builder(context).data(url).build())
+        }.getOrNull() as? SuccessResult ?: return@LaunchedEffect
+        val d = result.drawable
+        android.util.Log.i(
+            "OpenTV-Plex",
+            "hero art ${hero?.key} intrinsic=${d.intrinsicWidth}x${d.intrinsicHeight} bias=$PLEX_HERO_ART_BIAS",
+        )
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
     ) {
