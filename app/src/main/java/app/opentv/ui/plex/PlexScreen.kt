@@ -318,6 +318,11 @@ private fun PlexHero(
                     model = art,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    // Top-anchored: poster art keeps its subject's head at the top by design
+                    // convention, so the top slice is the one that always contains it. Dropping
+                    // this once (leaving the default centre) is what kept beheading posters
+                    // through an entire round of otherwise-correct fixes.
+                    alignment = Alignment.TopCenter,
                     modifier = Modifier
                         .fillMaxSize()
                         .blur(28.dp),
