@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -79,7 +78,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -110,6 +112,21 @@ enum class Tab(val labelRes: Int, val icon: ImageVector) {
 private val RAIL_EXPANDED = 190.dp
 /** Icon-only width, so the menu can stay on screen without stealing the guide's space. */
 private val RAIL_COLLAPSED = 80.dp
+
+/**
+ * The Plex mark as a rail glyph: the brand's play-chevron, drawn as a single path. Material has
+ * no Plex icon and a generic stand-in (Video Library, Tv, Movie) collides with the tabs sitting
+ * directly above it - three similar rectangles for three different things is how people mistap.
+ * Built once; RailItem's tint paints it like every other glyph.
+ */
+private val PlexGlyph: ImageVector by lazy {
+    ImageVector.Builder("Plex", 24.dp, 24.dp, 24f, 24f)
+        .addPath(
+            PathParser().parsePathString("M5,3 L19,12 L5,21 L5,15.5 L12.5,12 L5,8.5 Z").toNodes(),
+            fill = SolidColor(Color.Black),
+        )
+        .build()
+}
 
 @Composable
 fun MainScreen(
@@ -449,21 +466,21 @@ private fun NavRail(
             )
         }
 
-        Spacer(Modifier.height(1.dp).fillMaxWidth())
-        Spacer(Modifier.weight(1f))
-
-        RailItem(Icons.Filled.Search, stringResource(R.string.nav_search), expanded, false, onOpenSearch)
-        // Plex sits with the other actions rather than with the tabs, because it is a screen and
-        // not a content type: it has no tab to stay selected and nothing to come back to in this
-        // rail. Video Library rather than Movie or Tv, both of which already label a tab above -
-        // three different-looking icons for three different things.
+        // Plex sits directly under the tabs (Recordings last) rather than with the bottom
+        // actions: it is the screen people open nightly to see what is new, so it lives where the
+        // thumb already is instead of at the far end of the rail.
         RailItem(
-            Icons.Filled.VideoLibrary,
+            PlexGlyph,
             stringResource(R.string.nav_plex),
             expanded,
             false,
             onOpenPlex,
         )
+
+        Spacer(Modifier.height(1.dp).fillMaxWidth())
+        Spacer(Modifier.weight(1f))
+
+        RailItem(Icons.Filled.Search, stringResource(R.string.nav_search), expanded, false, onOpenSearch)
         RailItem(Icons.Filled.Person, activeProfileName, expanded, false, onOpenProfiles)
         RailItem(Icons.Filled.Settings, stringResource(R.string.nav_settings), expanded, false, onOpenSettings)
     }
