@@ -10,8 +10,6 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,11 +26,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,8 +41,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -142,20 +135,16 @@ private fun PlexShelves(
     onRefresh: () -> Unit,
     viewModel: PlexViewModel,
 ) {
-    // Entry focus belongs on the hero Play button: the screen opens at the top, one press plays
-    // the newest thing, and browsing the rows below swings the spotlight to whatever has focus.
-    var heroFocusTaken by remember { mutableStateOf(false) }
-    val heroFocus = remember { FocusRequester() }
+    // Entry focus belongs on the first card of the top shelf. Without this, focus lands
+    // wherever the system finds something first and the column scrolls the shows half off the
+    // top. Cleared once granted, so later recompositions never yank focus back.
+    var entryFocusTaken by remember { mutableStateOf(false) }
+    val topKey = shows.firstOrNull()?.let { "s:${it.id}" }
+        ?: movies.firstOrNull()?.let { "m:${it.id}" }
     // Which card the spotlight is following. Null until the viewer moves - the hero opens on the
     // newest show, and only hands over once someone actually browses.
     var spotlightKey by remember { mutableStateOf<String?>(null) }
     val hero = heroFor(spotlightKey, shows, movies)
-    LaunchedEffect(hero?.key) {
-        if (!heroFocusTaken && hero != null) {
-            runCatching { heroFocus.requestFocus() }
-            heroFocusTaken = true
-        }
-    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -164,13 +153,6 @@ private fun PlexShelves(
                 PlexHero(
                     hero = hero,
                     isRefreshing = isRefreshing,
-                    focusRequester = heroFocus,
-                    onPlay = {
-                        when (hero) {
-                            is HeroItem.Show -> viewModel.playSeries(hero.series, onPlay)
-                            is HeroItem.Film -> viewModel.playMovie(hero.movie, onPlay)
-                        }
-                    },
                     onRefresh = onRefresh,
                 )
             }
@@ -195,6 +177,8 @@ private fun PlexShelves(
                                             posterUrl = series.posterUrl,
                                             subtitle = series.year?.toString(),
                                             onClick = { viewModel.playSeries(series, onPlay) },
+                                            requestFocus = !entryFocusTaken && "s:${series.id}" == topKey,
+                                            onFocusGranted = { entryFocusTaken = true },
                                             cardWidth = PLEX_POSTER_WIDTH,
                                         )
                                     }
@@ -224,6 +208,8 @@ private fun PlexShelves(
                                             posterUrl = movie.posterUrl,
                                             subtitle = movie.year?.toString(),
                                             onClick = { viewModel.playMovie(movie, onPlay) },
+                                            requestFocus = !entryFocusTaken && "m:${movie.id}" == topKey,
+                                            onFocusGranted = { entryFocusTaken = true },
                                             cardWidth = PLEX_POSTER_WIDTH,
                                         )
                                     }
@@ -240,8 +226,7 @@ private fun PlexShelves(
 
 /**
  * Whatever the spotlight is showing: the focused card if the viewer is browsing, else the newest
- * show, else the newest film. The hero Play button plays exactly what the hero shows, so browsing
- * and playing never disagree about what "this" is.
+ * show, else the newest film. Display only - the posters below are what plays.
  */
 private sealed interface HeroItem {
     val key: String
@@ -293,16 +278,14 @@ private fun isFresh(addedMillis: Long): Boolean {
 }
 
 /**
- * The spotlight: full-bleed fanart with cinematic scrims, the title set large, and a gold Play
- * button that plays exactly what is shown. The backdrop crossfades as the viewer browses the rows
- * below, so the whole screen breathes with them.
+ * The spotlight: full-bleed fanart with cinematic scrims and the title set large. The backdrop
+ * crossfades as the viewer browses the rows below, so the whole screen breathes with them.
+ * Display only - playback starts from the posters.
  */
 @Composable
 private fun PlexHero(
     hero: HeroItem,
     isRefreshing: Boolean,
-    focusRequester: FocusRequester,
-    onPlay: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     val bg = MaterialTheme.colorScheme.background
@@ -394,66 +377,25 @@ private fun PlexHero(
                 )
             }
             Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PlexGoldButton(
-                    label = stringResource(R.string.plex_play),
-                    onClick = onPlay,
-                    focusRequester = focusRequester,
+            // The posters below are the play buttons - a hero Play duplicated them and stole entry
+            // focus with it. Refresh stays: it is the one hero action that has no equivalent on
+            // the rows.
+            if (isRefreshing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.width(22.dp).height(22.dp),
+                    strokeWidth = 2.dp,
+                    color = PlexGold,
                 )
-                Spacer(Modifier.width(12.dp))
-                if (isRefreshing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.width(22.dp).height(22.dp),
-                        strokeWidth = 2.dp,
+            } else {
+                TextButton(onClick = onRefresh) {
+                    Text(
+                        stringResource(R.string.plex_refresh),
                         color = PlexGold,
+                        fontWeight = FontWeight.SemiBold,
                     )
-                } else {
-                    TextButton(onClick = onRefresh) {
-                        Text(
-                            stringResource(R.string.plex_refresh),
-                            color = PlexGold,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
                 }
             }
         }
-    }
-}
-
-/**
- * The gold Play button. Same focus language as the poster cards (lift + light border) so it reads
- * as part of the same screen, but filled gold on near-black ink: from the couch there must never
- * be any doubt which control plays the thing.
- */
-@Composable
-private fun PlexGoldButton(
-    label: String,
-    onClick: () -> Unit,
-    focusRequester: FocusRequester,
-) {
-    var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "plexPlayScale")
-    Row(
-        modifier = Modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .focusRequester(focusRequester)
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(12.dp))
-            .background(PlexGold)
-            .then(if (focused) Modifier.border(3.dp, Color.White, RoundedCornerShape(12.dp)) else Modifier)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 28.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.Black)
-        Spacer(Modifier.width(8.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black,
-        )
     }
 }
 
