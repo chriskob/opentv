@@ -124,6 +124,7 @@ import app.opentv.core.findActivity
 import app.opentv.data.model.Episode
 import app.opentv.data.repo.CatalogRepository
 import app.opentv.player.PlayerController
+import app.opentv.ui.plex.PlexGold
 import app.opentv.player.StreamInfo
 import app.opentv.player.declaredQuality
 import app.opentv.player.streamInfoOf
@@ -211,6 +212,9 @@ fun VodPlayerScreen(
     // I/O, so it runs on every composition without cost and every Plex-only behaviour below keys
     // off it while the rest of the screen ignores keys it does not recognise.
     val plexRef = remember(item.mediaKey) { CatalogRepository.parsePlexMediaKey(item.mediaKey) }
+    // Plex identity for the chrome below: gold instead of theme primary, everywhere the player
+    // paints itself "active". Null keeps every other VOD source pixel-identical to before.
+    val plexAccent = if (plexRef != null) PlexGold else null
     // Whether Plex counts the playing item watched. Null until looked up, and null again for
     // non-Plex plays - an unknown state shows "Mark watched" rather than a wrong tick.
     var plexWatched by remember { mutableStateOf<Boolean?>(null) }
@@ -899,9 +903,14 @@ fun VodPlayerScreen(
                             val badgeText = when {
                                 growingRec -> stringResource(R.string.rec_watching_live_badge)
                                 isCatchup -> "CATCH-UP"
+                                plexRef != null -> "PLEX"
                                 else -> "VOD"
                             }
-                            val badgeColor = if (growingRec) AppTheme.palette.recording else AppTheme.primary
+                            val badgeColor = when {
+                                growingRec -> AppTheme.palette.recording
+                                plexRef != null -> PlexGold
+                                else -> AppTheme.primary
+                            }
                             Box(
                                 Modifier
                                     .clip(RoundedCornerShape(4.dp))
@@ -968,6 +977,7 @@ fun VodPlayerScreen(
                         signalInteraction()
                     },
                     modifier = Modifier.fillMaxWidth(),
+                    accent = plexAccent,
                 )
 
                 // Timestamp labels: Elapsed / Total (-Remaining)
@@ -1002,7 +1012,13 @@ fun VodPlayerScreen(
                 // format button's label *is* the stream's resolution tier, so what is playing is
                 // readable without opening anything. Which buttons appear is the user's choice —
                 // see AppSettings.VodPlayerButton.
-                val barButtons = AppSettings.VodPlayerButton.entries.filter { it in enabledButtons }
+                // Next walks the provider's own series chain, which is always empty for a Plex
+                // key — showing it would be a focus stop that promises something and does nothing.
+                val barButtons = AppSettings.VodPlayerButton.entries.filter {
+                    it in enabledButtons &&
+                        (plexRef == null || it != AppSettings.VodPlayerButton.NEXT_EPISODE)
+                }
+
                 val optionsStart = barButtons.indexOfFirst { it.ordinal >= AppSettings.VodPlayerButton.SPEED.ordinal }
                 Row(
                     modifier = Modifier
@@ -1036,6 +1052,7 @@ fun VodPlayerScreen(
                                 icon = Icons.Filled.FastRewind,
                                 label = stringResource(R.string.player_skip_back),
                                 focusRequester = buttonFocus[button],
+                                accent = plexAccent,
                                 onClick = {
                                     seekRelative(-SKIP_MILLIS)
                                     positionMs = controller.player.currentPosition
@@ -1047,6 +1064,7 @@ fun VodPlayerScreen(
                                 label = if (paused) stringResource(R.string.common_play) else stringResource(R.string.player_pause),
                                 isPrimary = true,
                                 focusRequester = buttonFocus[button],
+                                accent = plexAccent,
                                 onClick = {
                                     paused = !paused
                                     controller.player.playWhenReady = !paused
@@ -1057,6 +1075,7 @@ fun VodPlayerScreen(
                                 icon = Icons.Filled.FastForward,
                                 label = stringResource(R.string.player_skip_forward),
                                 focusRequester = buttonFocus[button],
+                                accent = plexAccent,
                                 onClick = {
                                     seekRelative(SKIP_MILLIS)
                                     positionMs = controller.player.currentPosition
@@ -1068,6 +1087,7 @@ fun VodPlayerScreen(
                                 label = speedLabel(playbackSpeed),
                                 isSelected = playbackSpeed != 1f,
                                 focusRequester = buttonFocus[button],
+                                accent = plexAccent,
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.SPEED) VodPanel.NONE else VodPanel.SPEED
                                     signalInteraction()
@@ -1078,6 +1098,7 @@ fun VodPlayerScreen(
                                 label = subtitleLabel.ifEmpty { stringResource(R.string.player_subtitles_off) },
                                 isSelected = vodPanel == VodPanel.SUBTITLES,
                                 focusRequester = buttonFocus[button],
+                                accent = plexAccent,
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.SUBTITLES) VodPanel.NONE else VodPanel.SUBTITLES
                                     signalInteraction()
@@ -1089,6 +1110,7 @@ fun VodPlayerScreen(
                                 label = audioButtonLabel(streamInfo, stringResource(R.string.player_audio)),
                                 isSelected = vodPanel == VodPanel.AUDIO,
                                 focusRequester = buttonFocus[button],
+                                accent = plexAccent,
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.AUDIO) VodPanel.NONE else VodPanel.AUDIO
                                     signalInteraction()
@@ -1099,6 +1121,7 @@ fun VodPlayerScreen(
                                 label = streamInfo.tierLabel.ifEmpty { stringResource(R.string.player_format) },
                                 isSelected = vodPanel == VodPanel.FORMAT,
                                 focusRequester = buttonFocus[button],
+                                accent = plexAccent,
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.FORMAT) VodPanel.NONE else VodPanel.FORMAT
                                     signalInteraction()
@@ -1115,6 +1138,7 @@ fun VodPlayerScreen(
                                 ),
                                 isSelected = aspectMode != AspectRatioFrameLayout.RESIZE_MODE_FIT,
                                 focusRequester = buttonFocus[button],
+                                accent = plexAccent,
                                 onClick = {
                                     vodPanel = if (vodPanel == VodPanel.ASPECT) VodPanel.NONE else VodPanel.ASPECT
                                     signalInteraction()
@@ -1124,6 +1148,7 @@ fun VodPlayerScreen(
                                 icon = Icons.Filled.SkipNext,
                                 label = stringResource(R.string.player_next_short),
                                 focusRequester = buttonFocus[button],
+                                accent = plexAccent,
                                 onClick = { playNext() },
                             )
                         }
@@ -1146,6 +1171,7 @@ fun VodPlayerScreen(
                             else stringResource(R.string.plex_mark_watched),
                             isSelected = plexWatched == true,
                             focusRequester = plexWatchFocus,
+                            accent = PlexGold,
                             onClick = {
                                 val ref = plexRef ?: return@VodButtonCard
                                 scope.launch {
@@ -1237,7 +1263,10 @@ private fun InteractiveVodTimeline(
     onNavigateDown: () -> Unit,
     onTogglePlayPause: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Section identity for the played track, bubble and glow. Null keeps the theme primary. */
+    accent: Color? = null,
 ) {
+    val active = accent ?: AppTheme.primary
     var isFocused by remember { mutableStateOf(false) }
     var widthPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
@@ -1303,7 +1332,7 @@ private fun InteractiveVodTimeline(
                             .padding(start = bubbleOffset)
                             .width(bubbleWidth)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(AppTheme.primary)
+                            .background(active)
                             .padding(horizontal = 8.dp, vertical = 4.dp),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1353,11 +1382,11 @@ private fun InteractiveVodTimeline(
                     .fillMaxWidth(progress)
                     .height(trackHeight)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(AppTheme.primary)
+                    .background(active)
                     .then(
                         if (isFocused) Modifier.border(
                             1.dp,
-                            AppTheme.primary.copy(alpha = 0.45f),
+                            active.copy(alpha = 0.45f),
                             RoundedCornerShape(4.dp),
                         )
                         else Modifier
@@ -1406,6 +1435,12 @@ private fun VodButtonCard(
     isPrimary: Boolean = false,
     focusRequester: FocusRequester? = null,
     onClick: () -> Unit,
+    /**
+     * Section identity color, replacing the theme primary wherever the button paints itself
+     * "active". Null keeps the default theme look. The Plex section passes its gold so the
+     * transport reads as Plex without forking the shared player chrome.
+     */
+    accent: Color? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     val focusScale by animateFloatAsState(
@@ -1416,26 +1451,34 @@ private fun VodButtonCard(
         ),
         label = "vodButtonFocus",
     )
+    val active = accent ?: AppTheme.primary
+    // Gold needs near-black ink; the theme's onFocusSurface is tuned for its own primary.
+    val accentInk = if (accent != null) Color.Black else AppTheme.palette.onFocusSurface
     // Hero sizing for play/pause; option buttons stay compact so the row fits small panels.
     val circle = if (isPrimary) 56.dp else 42.dp
     val glyph = if (isPrimary) 28.dp else 19.dp
     val bg = when {
+        // An accented hero keeps its color under focus — the scale, white ring and black ink
+        // already say "focused", and dropping to the cursor wash would erase the identity.
+        accent != null && isPrimary -> accent
         focused -> AppTheme.palette.cursorFill
-        isSelected -> AppTheme.primary.copy(alpha = 0.22f)
+        isSelected -> active.copy(alpha = 0.22f)
         isPrimary -> AppTheme.primary
         else -> AppTheme.palette.chipSurface.copy(alpha = 0.72f)
     }
     val fg = when {
+        accent != null && isPrimary -> accentInk
         focused && isPrimary -> AppTheme.palette.onFocusSurface
-        isSelected -> AppTheme.primary
+        isSelected -> active
         isPrimary -> AppTheme.palette.onFocusSurface
         focused -> AppTheme.palette.onSurface
         else -> AppTheme.palette.onSurface
     }
     val outline = when {
+        accent != null && isPrimary && focused -> Modifier.border(2.5.dp, Color.White, CircleShape)
         focused && isPrimary -> Modifier.border(2.5.dp, AppTheme.palette.onFocusSurface, CircleShape)
         focused -> Modifier.border(2.5.dp, AppTheme.palette.cursorBorder, CircleShape)
-        isSelected -> Modifier.border(1.5.dp, AppTheme.primary.copy(alpha = 0.8f), CircleShape)
+        isSelected -> Modifier.border(1.5.dp, active.copy(alpha = 0.8f), CircleShape)
         isPrimary -> Modifier.border(1.dp, AppTheme.palette.cursorBorder, CircleShape)
         else -> Modifier.border(1.dp, AppTheme.palette.outlineVariant, CircleShape)
     }
