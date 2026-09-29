@@ -30,7 +30,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -99,18 +98,18 @@ fun PlexScreen(
             is PlexShelfState.Syncing -> if (s.currentMovies.isEmpty() && s.currentShows.isEmpty()) {
                 PlexBusy()
             } else {
-                PlexShelves(s.currentMovies, s.currentShows, isRefreshing = true, onPlay, { viewModel.sync() }, viewModel)
+                PlexShelves(s.currentMovies, s.currentShows, onPlay, viewModel)
             }
             is PlexShelfState.Ready -> if (s.movies.isEmpty() && s.shows.isEmpty()) {
                 PlexEmptyState(onConnect)
             } else {
-                PlexShelves(s.movies, s.shows, isRefreshing = false, onPlay, { viewModel.sync() }, viewModel)
+                PlexShelves(s.movies, s.shows, onPlay, viewModel)
             }
             // Keep whatever is already on screen; the message underneath says what went wrong.
             is PlexShelfState.Failed -> if (s.movies.isEmpty() && s.shows.isEmpty()) {
                 PlexEmptyState(onConnect)
             } else {
-                PlexShelves(s.movies, s.shows, isRefreshing = false, onPlay, { viewModel.sync() }, viewModel)
+                PlexShelves(s.movies, s.shows, onPlay, viewModel)
             }
         }
 
@@ -130,9 +129,7 @@ fun PlexScreen(
 private fun PlexShelves(
     movies: List<Movie>,
     shows: List<Series>,
-    isRefreshing: Boolean,
     onPlay: (String, String, String) -> Unit,
-    onRefresh: () -> Unit,
     viewModel: PlexViewModel,
 ) {
     // Entry focus belongs on the first card of the top shelf. Without this, focus lands
@@ -150,11 +147,7 @@ private fun PlexShelves(
     ) {
         if (hero != null) {
             item(key = "plex-hero") {
-                PlexHero(
-                    hero = hero,
-                    isRefreshing = isRefreshing,
-                    onRefresh = onRefresh,
-                )
+                PlexHero(hero = hero)
             }
         }
         // Shows first: serials are what gets checked nightly, films are browsed at weekends.
@@ -285,8 +278,6 @@ private fun isFresh(addedMillis: Long): Boolean {
 @Composable
 private fun PlexHero(
     hero: HeroItem,
-    isRefreshing: Boolean,
-    onRefresh: () -> Unit,
 ) {
     val bg = MaterialTheme.colorScheme.background
     Box(
@@ -376,25 +367,9 @@ private fun PlexHero(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(14.dp))
-            // The posters below are the play buttons - a hero Play duplicated them and stole entry
-            // focus with it. Refresh stays: it is the one hero action that has no equivalent on
-            // the rows.
-            if (isRefreshing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.width(22.dp).height(22.dp),
-                    strokeWidth = 2.dp,
-                    color = PlexGold,
-                )
-            } else {
-                TextButton(onClick = onRefresh) {
-                    Text(
-                        stringResource(R.string.plex_refresh),
-                        color = PlexGold,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
+            // No actions here at all. The posters below are the play buttons, and the screen
+            // refreshes itself on every open - a manual Refresh would only ever re-ask a question
+            // that was just answered.
         }
     }
 }
