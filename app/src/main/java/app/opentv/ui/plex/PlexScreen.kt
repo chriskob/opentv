@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.onFocusChanged
@@ -251,7 +252,7 @@ private sealed interface HeroItem {
     data class Show(val series: Series) : HeroItem {
         override val key = "s:${series.id}"
         override val title = series.name
-        override val artUrl = series.backdropUrl ?: series.posterUrl
+        override val artUrl = series.posterUrl
         override val meta = series.year?.toString()
         override val plot = series.plot
     }
@@ -259,7 +260,7 @@ private sealed interface HeroItem {
     data class Film(val movie: Movie) : HeroItem {
         override val key = "m:${movie.id}"
         override val title = movie.name
-        override val artUrl = movie.backdropUrl ?: movie.posterUrl
+        override val artUrl = movie.posterUrl
         override val meta = listOfNotNull(
             movie.year?.toString(),
             movie.durationSeconds?.let { formatPlexRuntime(it) },
@@ -308,17 +309,24 @@ private fun PlexHero(
     ) {
         Crossfade(targetState = hero.artUrl, label = "plexHeroArt") { art ->
             if (art != null) {
-                // FillWidth, top-anchored by LAYOUT, not by painter alignment: the image is drawn
-                // at full width from the box's top edge and the box clips the overflow below, so
-                // the visible window is always the top of the frame. This replaced a Crop +
-                // BiasAlignment approach that three values (-0.45, -0.85, -1.0) proved moves
-                // nothing on this box - same photo three times - so the framing no longer depends
-                // on an alignment parameter whose effect could not be observed.
+                // Blurred poster, full-bleed. Posters always contain their subject whole, so no
+                // crop can ever decapitate anyone - and blur makes the crop irrelevant anyway. This
+                // replaced fanart after device screenshots proved the served fanart itself can
+                // arrive without the head in frame at all, which no alignment, bias or anchor can
+                // recover. Deterministic good looks beat a composition lottery.
                 AsyncImage(
                     model = art,
                     contentDescription = null,
-                    contentScale = ContentScale.FillWidth,
-                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(28.dp),
+                )
+                // Heavy dim so the blur reads as ambiance, not content, and the title always wins.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.52f)),
                 )
             } else {
                 Box(
