@@ -46,18 +46,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import coil.imageLoader
-import coil.request.ImageRequest
-import coil.request.SuccessResult
 import kotlinx.coroutines.delay
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -149,14 +143,18 @@ private fun PlexShelves(
     // newest show, and only hands over once someone actually browses.
     var spotlightKey by remember { mutableStateOf<String?>(null) }
     val hero = heroFor(spotlightKey, shows, movies)
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-    ) {
+    // The hero is a header, not a list row. It used to be the LazyColumn's first item, and taking
+    // entry focus on the first card made the column scroll to bring that card fully into view -
+    // which pushed 478px of a 760px hero straight off the top of the screen. Four rounds of
+    // "the art is cropped" were really this one scroll, seen through a 282px window. Fixed
+    // outside the scrollable area it cannot be scrolled away at all, whatever grabs focus.
+    Column(modifier = Modifier.fillMaxSize()) {
         if (hero != null) {
-            item(key = "plex-hero") {
-                PlexHero(hero = hero)
-            }
+            PlexHero(hero = hero)
         }
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+        ) {
         // Shows first: serials are what gets checked nightly, films are browsed at weekends.
         if (shows.isNotEmpty()) {
             item(key = "plex-shows") {
@@ -221,6 +219,7 @@ private fun PlexShelves(
             }
         }
         item(key = "plex-bottom-pad") { Spacer(Modifier.height(24.dp)) }
+        }
     }
 }
 
@@ -278,26 +277,26 @@ private fun isFresh(addedMillis: Long): Boolean {
 }
 
 /**
- * The spotlight: full-bleed fanart with cinematic scrims and the title set large. The backdrop
- * crossfades as the viewer browses the rows below, so the whole screen breathes with them.
- * Display only - playback starts from the posters.
+ * The spotlight: the artwork shown whole as key art, over its own blurred self as full-bleed
+ * ambience, with cinematic scrims and the title set large. The backdrop crossfades as the viewer
+ * browses the rows below, so the whole screen breathes with them. Display only - playback starts
+ * from the posters.
+ *
+ * Sized against the screen, not by eye: at 380dp it was 760px of a 1080px display, which left the
+ * shelf below the fold and let the entry-focus scroll push most of the hero off the top. 300dp
+ * keeps the hero, the first shelf header and the first row of posters on screen at rest, with
+ * room to spare.
  */
 @Composable
 private fun PlexHero(
     hero: HeroItem,
 ) {
     val bg = MaterialTheme.colorScheme.background
-    // Measured, not assumed. Four rounds of crop tuning failed because the visible window was a
-    // guess; this records what the hero box and the served art actually are, in pixels, so the
-    // next complaint is answered with numbers instead of another photo.
-    val context = LocalContext.current
-    var heroBox by remember { mutableStateOf(IntSize.Zero) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(380.dp)
-            .clipToBounds()
-            .onGloballyPositioned { heroBox = it.size },
+            .height(300.dp)
+            .clipToBounds(),
     ) {
         // Ambient only. Blurred past recognition on purpose, so its crop is cosmetic by
         // construction. This is what the eye reads as "the show", while the artwork that has to
@@ -344,36 +343,46 @@ private fun PlexHero(
             Modifier.fillMaxSize().background(
                 Brush.horizontalGradient(
                     0f to bg.copy(alpha = 0.72f),
-                    0.62f to Color.Transparent,
+                    0.58f to Color.Transparent,
                 ),
             ),
         )
-        // Key art, shown whole. ContentScale.Fit is the entire fix: whatever Plex serves - 2:3,
+        // Key art, shown whole. ContentScale.Fit is the entire point: whatever Plex serves - 2:3,
         // 3:4, anything - the whole poster is on screen, head included, because nothing is ever
         // cut off. Cropping a portrait poster into a landscape hero can only ever show about a
-        // quarter of it, and where the subject lands inside that window is a coin toss no
-        // alignment value can win. Ambient above does the filling; this is the picture.
-        Crossfade(targetState = hero.artUrl, label = "plexHeroKeyArt") { art ->
-            if (art != null) {
-                AsyncImage(
-                    model = art,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 30.dp)
-                        .width(226.dp)
-                        .height(340.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color.Black.copy(alpha = 0.45f)),
-                )
+        // third of it, and where the subject lands inside that window is a coin toss no alignment
+        // value can win. Ambient above does the filling; this is the picture.
+        //
+        // The alignment lives on this Box, a direct child of the hero, rather than on the image
+        // inside the Crossfade: alignment is parent data read by the nearest Box layout, and
+        // Crossfade puts its own layout node between the two. With it on the image, the Bottom
+        // half was honoured and the End half silently dropped - the art landed in the top-left
+        // corner instead of the bottom-right.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 24.dp)
+                .width(172.dp)
+                .height(256.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color.Black.copy(alpha = 0.45f)),
+        ) {
+            Crossfade(targetState = hero.artUrl, label = "plexHeroKeyArt") { art ->
+                if (art != null) {
+                    AsyncImage(
+                        model = art,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth(0.6f)
-                .padding(start = 28.dp, end = 16.dp, bottom = 20.dp),
+                .padding(start = 28.dp, end = 16.dp, bottom = 18.dp),
         ) {
             Text(
                 stringResource(R.string.plex_new_on),
@@ -413,21 +422,6 @@ private fun PlexHero(
             // refreshes itself on every open - a manual Refresh would only ever re-ask a question
             // that was just answered.
         }
-    }
-    // The measurement that was missing while four crop values were being tuned blind: the hero
-    // box in real pixels, next to the size Plex actually served. It fires once the box has been
-    // measured and whenever the spotlight moves.
-    LaunchedEffect(hero.artUrl, heroBox) {
-        if (heroBox == IntSize.Zero) return@LaunchedEffect
-        val art = runCatching {
-            context.imageLoader.execute(ImageRequest.Builder(context).data(hero.artUrl).build())
-        }.getOrNull() as? SuccessResult
-        val d = art?.drawable
-        android.util.Log.i(
-            "OpenTV-Plex",
-            "hero ${hero.key} box=${heroBox.width}x${heroBox.height}px " +
-                "art=${d?.intrinsicWidth}x${d?.intrinsicHeight}px density=${context.resources.displayMetrics.density}",
-        )
     }
 }
 
