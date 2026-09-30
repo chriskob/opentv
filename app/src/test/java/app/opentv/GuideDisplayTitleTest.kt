@@ -165,6 +165,26 @@ class GuideDisplayTitleTest {
     }
 
     @Test
+    fun `a status on the first line of a two-line title is peeled`() {
+        // The real shape, verbatim from the ONN: this provider puts the episode on line two and
+        // hangs the status off the end of the show name, so peeling only the end of the whole
+        // string - which is the episode - matched nothing.
+        assertThat(prog("Wheel of Fortune ᴺᵉʷ\nCanyon Spirit", isNew = true).guideDisplayTitle())
+            .isEqualTo("Wheel of Fortune\nCanyon Spirit")
+        assertThat(prog("Survivor ᴺᵉʷ\nWeaponized Honesty", isNew = true).guideDisplayTitle())
+            .isEqualTo("Survivor\nWeaponized Honesty")
+        assertThat(prog("MLB Baseball ᴸᶦᵛᵉ\nWild Card Series", isLive = true).guideDisplayTitle())
+            .isEqualTo("MLB Baseball\nWild Card Series")
+    }
+
+    @Test
+    fun `the episode line is left alone`() {
+        val shown = prog("Wheel of Fortune ᴺᵉʷ\nCanyon Spirit", isNew = true).guideDisplayTitle()
+        assertThat(shown).contains("Canyon Spirit")
+        assertThat(shown.endsWith("Canyon Spirit")).isTrue()
+    }
+
+    @Test
     fun `an ordinary title comes back unchanged`() {
         assertThat(prog("Below Deck Mediterranean", isNew = true).guideDisplayTitle())
             .isEqualTo("Below Deck Mediterranean")

@@ -372,15 +372,18 @@ data class Programme(
     }
 
     /**
-     * [resolvedTitle] with a *trailing* status token peeled off, for surfaces that also draw a
+     * [resolvedTitle] with a redundant NEW/LIVE token peeled off, for surfaces that also draw a
      * NEW or LIVE chip.
      *
-     * Providers append the status to the end of a title as often as they prefix it - CBS News
-     * Chicago 5:00pm New, WGN Evening News Live - so the chip ends up saying the word twice,
-     * once in colour and once as the last thing in the title. Only a token the cell is already
-     * showing a chip for is removed, so a title that merely ends in "Live" without the
-     * programme being live keeps its word; and the title is never emptied, so a programme
-     * actually called New keeps its name.
+     * Providers append the status to the end of the show name as often as they prefix it - and
+     * spell it in superscript characters (`Wheel of Fortune ᴺᵉʷ`, `Hannity ᴸᶦᵛᵉ`) - so the chip
+     * says the word twice, once in colour and once in the title. Only a token the cell is already
+     * showing a chip for is removed, so a title that merely ends in "Live" without the programme
+     * being live keeps its word; and the title is never emptied, so a programme actually called
+     * New keeps its name.
+     *
+     * Titles here carry the episode on a second line (`Wheel of Fortune ᴺᵉʷ\nCanyon Spirit`), so
+     * each line is peeled on its own rather than only the end of the whole string.
      */
     fun guideDisplayTitle(): String {
         val clean = resolvedTitle()
@@ -389,13 +392,36 @@ data class Programme(
             if (isLive) add("live")
         }
         if (redundant.isEmpty()) return clean
-        var out = clean
-        while (true) {
-            val trimmed = out.trimEnd()
-            // Scan back over *any* whitespace to find where the last token starts. These titles
-            // separate the status with a newline as often as with a space - XMLTV keeps interior
-            // newlines and a trim() only removes them from the ends - and a space-only search
-            // then finds no boundary at all, leaving the duplicate exactly as it was.
+        // Each line is peeled independently. These titles carry the episode on a second line -
+        // "Wheel of Fortune ᴺᵉʷ\nCanyon Spirit" - so the status belongs to the end of the show
+        // name, not to the end of the string. Peeling only the string's tail therefore matched
+        // nothing on every two-line title, which is most of this provider's schedule.
+        val lines = clean.split(LINE_BREAK)
+        val kept = lines
+            .filterIndexed { index, line ->
+                // A line that is *nothing but* the status is dropped outright, which is the other
+                // shape these feeds use ("NBC 5 News at 5PM\nNew"). Guarded on there being another
+                // line, so a programme genuinely titled `New` keeps its name.
+                !(lines.size > 1 && isStatusOnly(line, redundant))
+            }
+            .map { peelStatus(it, redundant) }
+        return kept.joinToString("\n")
+    }
+}
+
+/** True when a whole line is just the status and nothing else. */
+private fun isStatusOnly(line: String, redundant: Set<String>): Boolean {
+    val bare = line.trim().withoutDecoration().filter { it.isLetterOrDigit() }.lowercase()
+    return bare.isNotEmpty() && bare in redundant
+}
+
+/** Strips redundant NEW/LIVE tokens from the end of one line. */
+private fun peelStatus(line: String, redundant: Set<String>): String {
+    var out = line
+    while (true) {
+        val trimmed = out.trimEnd()
+        // Scan back over *any* whitespace to find where the last token starts, so a line that is
+        // nothing but the status has no token before it and is left for isStatusOnly to handle.
             var start = trimmed.length - 1
             while (start >= 0 && trimmed[start].isWhitespace()) start--
             var cut = start
@@ -422,9 +448,15 @@ data class Programme(
             out = head
         }
         return out
-    }
 }
 
+
+/**
+ * Any line ending these feeds send, matched so a title is split the same way whatever the feed
+ * used. Splitting on a bare `\n` left a `\r` welded to the end of the first line, which then
+ * survived into the rendered title as trailing whitespace.
+ */
+private val LINE_BREAK = Regex("\\r\\n|\\n|\\r")
 
 /**
  * Characters that can wrap a status token inside a title: `Show (New)`, `Show - Live.`,
