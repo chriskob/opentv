@@ -96,6 +96,16 @@ class GuideDisplayTitleTest {
     }
 
     @Test
+    fun `a newline before the status counts as a boundary`() {
+        // XMLTV keeps interior newlines and trim() only takes them off the ends, so this is the
+        // shape that actually ships. A space-only boundary search misses it entirely.
+        assertThat(prog("NBC 5 News at 5PM\nNew", isNew = true).guideDisplayTitle())
+            .isEqualTo("NBC 5 News at 5PM")
+        assertThat(prog("WGN Evening News\r\n Live ", isLive = true).guideDisplayTitle())
+            .isEqualTo("WGN Evening News")
+    }
+
+    @Test
     fun `an ordinary title comes back unchanged`() {
         assertThat(prog("Below Deck Mediterranean", isNew = true).guideDisplayTitle())
             .isEqualTo("Below Deck Mediterranean")

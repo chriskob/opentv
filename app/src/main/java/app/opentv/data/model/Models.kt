@@ -392,9 +392,16 @@ data class Programme(
         var out = clean
         while (true) {
             val trimmed = out.trimEnd()
-            val cut = trimmed.lastIndexOfAny(SPACE_LIKE)
+            // Scan back over *any* whitespace to find where the last token starts. These titles
+            // separate the status with a newline as often as with a space - XMLTV keeps interior
+            // newlines and a trim() only removes them from the ends - and a space-only search
+            // then finds no boundary at all, leaving the duplicate exactly as it was.
+            var start = trimmed.length - 1
+            while (start >= 0 && trimmed[start].isWhitespace()) start--
+            var cut = start
+            while (cut >= 0 && !trimmed[cut].isWhitespace()) cut--
             if (cut <= 0) break
-            val tail = trimmed.substring(cut + 1).trim(*STATUS_TRIM)
+            val tail = trimmed.substring(cut + 1, start + 1).trim(*STATUS_TRIM)
             if (tail.lowercase() !in redundant) break
             // Whitespace and punctuation alternate as the token unwraps (`Show - Live.` leaves
             // `Show - ` behind), so both ends are shaved in turn rather than once.
@@ -406,8 +413,6 @@ data class Programme(
     }
 }
 
-/** Separators treated as whitespace when finding the last token of a title. */
-private val SPACE_LIKE = charArrayOf(' ', '\t', '\u00A0', '\u2009')
 
 /** Punctuation that can wrap a status token: Show (New), Show - Live. */
 private val STATUS_TRIM = charArrayOf('(', ')', '[', ']', '-', '\u2013', '\u2014', ':', '.', ',', '!', '?', '*')
