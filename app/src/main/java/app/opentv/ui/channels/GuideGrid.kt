@@ -1622,20 +1622,21 @@ private fun GuideRow(
                 // guideDisplayTitle, not resolvedTitle: the cell draws a NEW/LIVE chip, and a title
                 // that already ends in that word says it twice - once in colour, once in white.
                 val programmeTitles = remember(programmes) {
-                    programmes.map { p ->
-                        val shown = p.guideDisplayTitle()
-                        // Two attempts to guess the shape of these titles failed while the word
-                        // stayed on screen, so the raw and rendered strings are logged here for
-                        // as long as that is in doubt. Drop once the duplicates are gone.
-                        if (shown != p.title) {
+                    val out = programmes.map { it.guideDisplayTitle() }
+                    // Unconditional, capped: every title in the window, raw and rendered, with
+                    // the two flags that gate the peel. Three attempts to infer the shape of
+                    // these strings from a screenshot failed; this is the data itself, so the
+                    // next fix is written from fact. Drop once the duplicates are gone.
+                    programmes.forEachIndexed { i, p ->
+                        if (i < 60) {
                             android.util.Log.i(
                                 "OpenTV-Guide",
-                                "peeled raw=[${p.title}] shown=[$shown] " +
-                                    "new=${p.isNewEpisode()} live=${p.isLive}",
+                                "t$i raw=[${p.title}] shown=[${out[i]}] " +
+                                    "new=${p.isNewEpisode()} live=${p.isLive} cat=[${p.category}]",
                             )
                         }
-                        shown
                     }
+                    out
                 }
                 val programmeIsNew = remember(programmes) { programmes.map { it.isNewEpisode() } }
                 val blockLayouts = remember(programmes, windowStartMillis) {
