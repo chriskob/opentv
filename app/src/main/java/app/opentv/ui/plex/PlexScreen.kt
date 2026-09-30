@@ -46,8 +46,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -147,22 +149,6 @@ private fun PlexShelves(
     // newest show, and only hands over once someone actually browses.
     var spotlightKey by remember { mutableStateOf<String?>(null) }
     val hero = heroFor(spotlightKey, shows, movies)
-    // Proves what Plex actually served: intrinsic size settles whether the crop happens
-    // server-side (already wide/short - nothing for the hero bias to move) or client-side
-    // (full frame - the bias owns the framing). Added after three bias values produced zero
-    // visible change, which no client-side theory explains.
-    val context = LocalContext.current
-    LaunchedEffect(hero?.artUrl) {
-        val url = hero?.artUrl ?: return@LaunchedEffect
-        val result = runCatching {
-            context.imageLoader.execute(ImageRequest.Builder(context).data(url).build())
-        }.getOrNull() as? SuccessResult ?: return@LaunchedEffect
-        val d = result.drawable
-        android.util.Log.i(
-            "OpenTV-Plex",
-            "hero art ${hero?.key} intrinsic=${d.intrinsicWidth}x${d.intrinsicHeight} top-anchored",
-        )
-    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -301,37 +287,36 @@ private fun PlexHero(
     hero: HeroItem,
 ) {
     val bg = MaterialTheme.colorScheme.background
+    // Measured, not assumed. Four rounds of crop tuning failed because the visible window was a
+    // guess; this records what the hero box and the served art actually are, in pixels, so the
+    // next complaint is answered with numbers instead of another photo.
+    val context = LocalContext.current
+    var heroBox by remember { mutableStateOf(IntSize.Zero) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(380.dp)
-            .clipToBounds(),
+            .clipToBounds()
+            .onGloballyPositioned { heroBox = it.size },
     ) {
-        Crossfade(targetState = hero.artUrl, label = "plexHeroArt") { art ->
+        // Ambient only. Blurred past recognition on purpose, so its crop is cosmetic by
+        // construction. This is what the eye reads as "the show", while the artwork that has to
+        // survive a crop is drawn whole further down.
+        Crossfade(targetState = hero.artUrl, label = "plexHeroAmbience") { art ->
             if (art != null) {
-                // Blurred poster, full-bleed. Posters always contain their subject whole, so no
-                // crop can ever decapitate anyone - and blur makes the crop irrelevant anyway. This
-                // replaced fanart after device screenshots proved the served fanart itself can
-                // arrive without the head in frame at all, which no alignment, bias or anchor can
-                // recover. Deterministic good looks beat a composition lottery.
                 AsyncImage(
                     model = art,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    // Top-anchored: poster art keeps its subject's head at the top by design
-                    // convention, so the top slice is the one that always contains it. Dropping
-                    // this once (leaving the default centre) is what kept beheading posters
-                    // through an entire round of otherwise-correct fixes.
-                    alignment = Alignment.TopCenter,
                     modifier = Modifier
                         .fillMaxSize()
-                        .blur(28.dp),
+                        .blur(30.dp),
                 )
                 // Heavy dim so the blur reads as ambiance, not content, and the title always wins.
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.52f)),
+                        .background(Color.Black.copy(alpha = 0.55f)),
                 )
             } else {
                 Box(
@@ -359,14 +344,35 @@ private fun PlexHero(
             Modifier.fillMaxSize().background(
                 Brush.horizontalGradient(
                     0f to bg.copy(alpha = 0.72f),
-                    0.55f to Color.Transparent,
+                    0.62f to Color.Transparent,
                 ),
             ),
         )
+        // Key art, shown whole. ContentScale.Fit is the entire fix: whatever Plex serves - 2:3,
+        // 3:4, anything - the whole poster is on screen, head included, because nothing is ever
+        // cut off. Cropping a portrait poster into a landscape hero can only ever show about a
+        // quarter of it, and where the subject lands inside that window is a coin toss no
+        // alignment value can win. Ambient above does the filling; this is the picture.
+        Crossfade(targetState = hero.artUrl, label = "plexHeroKeyArt") { art ->
+            if (art != null) {
+                AsyncImage(
+                    model = art,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 30.dp)
+                        .width(226.dp)
+                        .height(340.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.Black.copy(alpha = 0.45f)),
+                )
+            }
+        }
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .fillMaxWidth(0.66f)
+                .fillMaxWidth(0.6f)
                 .padding(start = 28.dp, end = 16.dp, bottom = 20.dp),
         ) {
             Text(
@@ -407,6 +413,21 @@ private fun PlexHero(
             // refreshes itself on every open - a manual Refresh would only ever re-ask a question
             // that was just answered.
         }
+    }
+    // The measurement that was missing while four crop values were being tuned blind: the hero
+    // box in real pixels, next to the size Plex actually served. It fires once the box has been
+    // measured and whenever the spotlight moves.
+    LaunchedEffect(hero.artUrl, heroBox) {
+        if (heroBox == IntSize.Zero) return@LaunchedEffect
+        val art = runCatching {
+            context.imageLoader.execute(ImageRequest.Builder(context).data(hero.artUrl).build())
+        }.getOrNull() as? SuccessResult
+        val d = art?.drawable
+        android.util.Log.i(
+            "OpenTV-Plex",
+            "hero ${hero.key} box=${heroBox.width}x${heroBox.height}px " +
+                "art=${d?.intrinsicWidth}x${d?.intrinsicHeight}px density=${context.resources.displayMetrics.density}",
+        )
     }
 }
 
