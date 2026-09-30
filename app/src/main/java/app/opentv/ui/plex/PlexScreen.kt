@@ -301,12 +301,19 @@ private fun PlexHero(
         // Ambient only. Blurred past recognition on purpose, so its crop is cosmetic by
         // construction. This is what the eye reads as "the show", while the artwork that has to
         // survive a crop is drawn whole further down.
+        //
+        // Bottom-anchored: a poster letterboxed into this 3.2:1 box can only show about a fifth
+        // of itself, and centred that window lands on the subject's middle - the artwork reads
+        // as sitting high in the frame, with the title underneath it rather than over it.
+        // Anchoring to the bottom settles the picture down under the text, where a backdrop
+        // belongs, and takes the busiest part of a poster out of the top of the screen.
         Crossfade(targetState = hero.artUrl, label = "plexHeroAmbience") { art ->
             if (art != null) {
                 AsyncImage(
                     model = art,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    alignment = Alignment.BottomCenter,
                     modifier = Modifier
                         .fillMaxSize()
                         .blur(30.dp),
