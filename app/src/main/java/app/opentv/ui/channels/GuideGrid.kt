@@ -1621,7 +1621,22 @@ private fun GuideRow(
             } else {
                 // guideDisplayTitle, not resolvedTitle: the cell draws a NEW/LIVE chip, and a title
                 // that already ends in that word says it twice - once in colour, once in white.
-                val programmeTitles = remember(programmes) { programmes.map { it.guideDisplayTitle() } }
+                val programmeTitles = remember(programmes) {
+                    programmes.map { p ->
+                        val shown = p.guideDisplayTitle()
+                        // Two attempts to guess the shape of these titles failed while the word
+                        // stayed on screen, so the raw and rendered strings are logged here for
+                        // as long as that is in doubt. Drop once the duplicates are gone.
+                        if (shown != p.title) {
+                            android.util.Log.i(
+                                "OpenTV-Guide",
+                                "peeled raw=[${p.title}] shown=[$shown] " +
+                                    "new=${p.isNewEpisode()} live=${p.isLive}",
+                            )
+                        }
+                        shown
+                    }
+                }
                 val programmeIsNew = remember(programmes) { programmes.map { it.isNewEpisode() } }
                 val blockLayouts = remember(programmes, windowStartMillis) {
                     val layouts = mutableListOf<BlockLayout>()

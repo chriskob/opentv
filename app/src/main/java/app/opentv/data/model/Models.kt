@@ -401,10 +401,15 @@ data class Programme(
             var cut = start
             while (cut >= 0 && !trimmed[cut].isWhitespace()) cut--
             if (cut <= 0) break
-            val tail = trimmed.substring(cut + 1, start + 1).trim(*STATUS_TRIM)
-            if (tail.lowercase() !in redundant) break
-            // Whitespace and punctuation alternate as the token unwraps (`Show - Live.` leaves
-            // `Show - ` behind), so both ends are shaved in turn rather than once.
+            val tail = trimmed.substring(cut + 1, start + 1)
+            // Compare the token on its letters alone rather than enumerating the punctuation a
+            // provider might wrap it in. Two passes at guessing the decoration - a fixed
+            // punctuation set, then any whitespace - both missed the shape these feeds actually
+            // ship, and a miss costs a visible duplicate on every row. Brackets, quotes, dashes,
+            // colons and trailing dots all reduce to the same bare word here.
+            if (tail.filter { it.isLetterOrDigit() }.lowercase() !in redundant) break
+            // Shave the separator the token left behind (`Show - Live.` leaves `Show - `), then
+            // repeat in case punctuation and whitespace alternate.
             val head = trimmed.substring(0, cut).trimEnd().trimEnd(*STATUS_TRIM).trimEnd()
             if (head.isBlank()) break
             out = head

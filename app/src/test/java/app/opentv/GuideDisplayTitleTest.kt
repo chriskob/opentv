@@ -106,6 +106,26 @@ class GuideDisplayTitleTest {
     }
 
     @Test
+    fun `the token is matched on its letters so decoration does not matter`() {
+        // Every wrapper a provider might use reduces to the same bare word.
+        assertThat(prog("Show (New)", isNew = true).guideDisplayTitle()).isEqualTo("Show")
+        assertThat(prog("Show - Live.", isLive = true).guideDisplayTitle()).isEqualTo("Show")
+        assertThat(prog("Show: Live", isLive = true).guideDisplayTitle()).isEqualTo("Show")
+        assertThat(prog("Show \"New\"", isNew = true).guideDisplayTitle()).isEqualTo("Show")
+        assertThat(prog("Show [LIVE]", isLive = true).guideDisplayTitle()).isEqualTo("Show")
+        assertThat(prog("Show *New*", isNew = true).guideDisplayTitle()).isEqualTo("Show")
+        assertThat(prog("Show …Live…", isLive = true).guideDisplayTitle()).isEqualTo("Show")
+    }
+
+    @Test
+    fun `a token that only looks like a status is left alone`() {
+        // "Newcastle" and "Lives" are not statuses: stripping them would rename real programmes.
+        assertThat(prog("Newcastle United Report", isNew = true).guideDisplayTitle())
+            .isEqualTo("Newcastle United Report")
+        assertThat(prog("Two Lives", isLive = true).guideDisplayTitle()).isEqualTo("Two Lives")
+    }
+
+    @Test
     fun `an ordinary title comes back unchanged`() {
         assertThat(prog("Below Deck Mediterranean", isNew = true).guideDisplayTitle())
             .isEqualTo("Below Deck Mediterranean")
