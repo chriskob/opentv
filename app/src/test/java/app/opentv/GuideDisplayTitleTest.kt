@@ -126,6 +126,45 @@ class GuideDisplayTitleTest {
     }
 
     @Test
+    fun `superscript status words are peeled`() {
+        // Verbatim from the ONN guide, codepoints included: providers spell these statuses in
+        // Latin modifier letters, not ASCII. ᴺᵉʷ is U+1D3A U+1D49 U+02B7 and ᴸᶦᵛᵉ is
+        // U+1D38 U+1DA6 U+1D5B U+1D49 - three earlier fixes passed on ASCII and failed here.
+        assertThat(prog("CBS News Chicago 4:00pm ᴺᵉʷ", isNew = true).guideDisplayTitle())
+            .isEqualTo("CBS News Chicago 4:00pm")
+        assertThat(prog("Hannity ᴸᶦᵛᵉ", isLive = true).guideDisplayTitle())
+            .isEqualTo("Hannity")
+        assertThat(prog("Gutfeld! ᴺᵉʷ", isNew = true).guideDisplayTitle())
+            .isEqualTo("Gutfeld!")
+        assertThat(prog("WGN Evening News ᴸᶦᵛᵉ", isLive = true).guideDisplayTitle())
+            .isEqualTo("WGN Evening News")
+    }
+
+    @Test
+    fun `superscript status words are kept when no matching chip shows`() {
+        assertThat(prog("Hannity ᴸᶦᵛᵉ").guideDisplayTitle()).isEqualTo("Hannity ᴸᶦᵛᵉ")
+    }
+
+    @Test
+    fun `punctuation that belongs to the title survives`() {
+        // Regression: shaving the separator too eagerly turned "Gutfeld!" into "Gutfeld".
+        assertThat(prog("Gutfeld! ᴺᵉʷ", isNew = true).guideDisplayTitle()).isEqualTo("Gutfeld!")
+        assertThat(prog("The Late Show. ᴸᶦᵛᵉ", isLive = true).guideDisplayTitle())
+            .isEqualTo("The Late Show.")
+        assertThat(prog("Who Do You Think You Are? ᴺᵉʷ", isNew = true).guideDisplayTitle())
+            .isEqualTo("Who Do You Think You Are?")
+    }
+
+    @Test
+    fun `real accents in a title are left intact`() {
+        // Folding is for comparing the status token, not for rewriting the title.
+        assertThat(prog("Café Society ᴺᵉʷ", isNew = true).guideDisplayTitle())
+            .isEqualTo("Café Society")
+        assertThat(prog("Ångström ᴸᶦᵛᵉ", isLive = true).guideDisplayTitle())
+            .isEqualTo("Ångström")
+    }
+
+    @Test
     fun `an ordinary title comes back unchanged`() {
         assertThat(prog("Below Deck Mediterranean", isNew = true).guideDisplayTitle())
             .isEqualTo("Below Deck Mediterranean")

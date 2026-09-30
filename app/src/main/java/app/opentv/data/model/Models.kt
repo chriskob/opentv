@@ -402,15 +402,22 @@ data class Programme(
             while (cut >= 0 && !trimmed[cut].isWhitespace()) cut--
             if (cut <= 0) break
             val tail = trimmed.substring(cut + 1, start + 1)
-            // Compare the token on its letters alone rather than enumerating the punctuation a
-            // provider might wrap it in. Two passes at guessing the decoration - a fixed
-            // punctuation set, then any whitespace - both missed the shape these feeds actually
-            // ship, and a miss costs a visible duplicate on every row. Brackets, quotes, dashes,
-            // colons and trailing dots all reduce to the same bare word here.
-            if (tail.filter { it.isLetterOrDigit() }.lowercase() !in redundant) break
-            // Shave the separator the token left behind (`Show - Live.` leaves `Show - `), then
-            // repeat in case punctuation and whitespace alternate.
-            val head = trimmed.substring(0, cut).trimEnd().trimEnd(*STATUS_TRIM).trimEnd()
+            // Compare on ASCII letters only. Providers spell the status in modifier/superscript
+            // characters - "4:00pm ᴺᵉʷ", "Hannity ᴸᶦᵛᵉ" - which are Latin modifier letters, not
+            // ordinary ones, so lowercasing them never produces "new" or "live". Three earlier
+            // attempts failed on real data for exactly this reason while passing their own
+            // ASCII-only tests. Folding is for comparison only; the title keeps its own
+            // characters so genuine accents elsewhere in a title are left alone.
+            if (tail.withoutDecoration().filter { it.isLetterOrDigit() }.lowercase() !in redundant) {
+                break
+            }
+            // Shave only what could have *introduced* the token - a dash, colon or bracket, plus
+            // whitespace. Sentence punctuation is deliberately left alone: trimming it here ate
+            // the exclamation mark off "Gutfeld!", which is part of the show's name.
+            val head = trimmed.substring(0, cut)
+                .trimEnd()
+                .trimEnd(*SEPARATOR_TRIM)
+                .trimEnd()
             if (head.isBlank()) break
             out = head
         }
@@ -419,8 +426,41 @@ data class Programme(
 }
 
 
-/** Punctuation that can wrap a status token: Show (New), Show - Live. */
+/**
+ * Characters that can wrap a status token inside a title: `Show (New)`, `Show - Live.`,
+ * `Show: Live`. Used when the *token* itself carries decoration, so it is compared on letters
+ * alone and these are trimmed away before that comparison.
+ */
 private val STATUS_TRIM = charArrayOf('(', ')', '[', ']', '-', '\u2013', '\u2014', ':', '.', ',', '!', '?', '*')
+
+/**
+ * The narrower set shaved off the *head* after a status token is removed: only what could have
+ * introduced it. Deliberately excludes `.`, `,`, `!`, `?` and `*`, which are far more often part
+ * of a show's actual name than a separator - `Gutfeld!`, `The Late Show.` - and trimming them
+ * silently edits titles that were never wrong.
+ */
+private val SEPARATOR_TRIM = charArrayOf('(', '[', '-', '\u2013', '\u2014', ':')
+
+/**
+ * Compatibility-folds a status token to ASCII so it can be compared against "new"/"live".
+ *
+ * The modifier letters these feeds ship are not ordinary Latin: ᴺᵉʷ is U+1D3A U+1D49 U+02B7 and
+ * ᴸᶦᵛᵉ is U+1D38 U+1DA6 U+1D5B U+1D49, so [Char.lowercaseChar] leaves them untouched and no
+ * amount of ASCII-aware trimming finds them. NFKD maps five of the six to ASCII directly; i-with-
+ * stroke has no decomposition, hence the one manual entry.
+ *
+ * Used for comparison only. Applying this to a title would flatten genuine accents in programme
+ * names, which is why the rendered title keeps its original characters.
+ */
+private fun String.withoutDecoration(): String {
+    val folded = java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFKD)
+    // Escaped, not written as a glyph: these code points are visually confusable (i-with-
+    // stroke vs l-with-tilde differ by one) and a literal here is exactly how the first
+    // attempt at this fix silently failed to match.
+    val iWithStroke = 'ɪ'
+    if (folded.none { it == iWithStroke }) return folded
+    return folded.replace(iWithStroke, 'i')
+}
 
 /** American English alias for [Programme]. */
 typealias Program = Programme
