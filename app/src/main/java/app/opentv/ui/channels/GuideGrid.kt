@@ -1811,23 +1811,30 @@ private fun GuideRow(
     }
 }
 
-/** A tiny state chip on a programme cell â€” "NEW" (amber) or "LIVE" (red). */
+/**
+ * A tiny state chip on a programme cell â€” "NEW" (amber) or "LIVE" (red).
+ *
+ * Sized as an annotation, not as a second title: 8sp against the cell's 12sp programme name and
+ * 12dp row icons, with the padding pulled in to match. At 10sp in a 4dp-padded box the chip was
+ * reading as louder than the programme it was labelling, which is backwards - it exists to be
+ * scannable in peripheral vision, not to be read.
+ */
 @Composable
 private fun GuideBadge(text: String, background: Color) {
     Box(
         modifier = Modifier
-            .padding(end = 5.dp)
-            .clip(RoundedCornerShape(3.dp))
+            .padding(end = 4.dp)
+            .clip(RoundedCornerShape(2.dp))
             .background(background)
-            .padding(horizontal = 4.dp, vertical = 1.dp),
+            .padding(horizontal = 3.dp, vertical = 0.5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             color = AppTheme.palette.onPrimary,
-            fontSize = 10.sp,
+            fontSize = 8.sp,
             fontWeight = FontWeight.Bold,
-            lineHeight = 11.sp,
+            lineHeight = 9.sp,
         )
     }
 }
