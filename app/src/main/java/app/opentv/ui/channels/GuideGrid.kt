@@ -1619,7 +1619,9 @@ private fun GuideRow(
                     )
                 }
             } else {
-                val programmeTitles = remember(programmes) { programmes.map { it.resolvedTitle() } }
+                // guideDisplayTitle, not resolvedTitle: the cell draws a NEW/LIVE chip, and a title
+                // that already ends in that word says it twice - once in colour, once in white.
+                val programmeTitles = remember(programmes) { programmes.map { it.guideDisplayTitle() } }
                 val programmeIsNew = remember(programmes) { programmes.map { it.isNewEpisode() } }
                 val blockLayouts = remember(programmes, windowStartMillis) {
                     val layouts = mutableListOf<BlockLayout>()

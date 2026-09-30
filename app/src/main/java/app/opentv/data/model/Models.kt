@@ -370,7 +370,47 @@ data class Programme(
         }
         return clean
     }
+
+    /**
+     * [resolvedTitle] with a *trailing* status token peeled off, for surfaces that also draw a
+     * NEW or LIVE chip.
+     *
+     * Providers append the status to the end of a title as often as they prefix it - CBS News
+     * Chicago 5:00pm New, WGN Evening News Live - so the chip ends up saying the word twice,
+     * once in colour and once as the last thing in the title. Only a token the cell is already
+     * showing a chip for is removed, so a title that merely ends in "Live" without the
+     * programme being live keeps its word; and the title is never emptied, so a programme
+     * actually called New keeps its name.
+     */
+    fun guideDisplayTitle(): String {
+        val clean = resolvedTitle()
+        val redundant = buildSet {
+            if (isNewEpisode()) add("new")
+            if (isLive) add("live")
+        }
+        if (redundant.isEmpty()) return clean
+        var out = clean
+        while (true) {
+            val trimmed = out.trimEnd()
+            val cut = trimmed.lastIndexOfAny(SPACE_LIKE)
+            if (cut <= 0) break
+            val tail = trimmed.substring(cut + 1).trim(*STATUS_TRIM)
+            if (tail.lowercase() !in redundant) break
+            // Whitespace and punctuation alternate as the token unwraps (`Show - Live.` leaves
+            // `Show - ` behind), so both ends are shaved in turn rather than once.
+            val head = trimmed.substring(0, cut).trimEnd().trimEnd(*STATUS_TRIM).trimEnd()
+            if (head.isBlank()) break
+            out = head
+        }
+        return out
+    }
 }
+
+/** Separators treated as whitespace when finding the last token of a title. */
+private val SPACE_LIKE = charArrayOf(' ', '\t', '\u00A0', '\u2009')
+
+/** Punctuation that can wrap a status token: Show (New), Show - Live. */
+private val STATUS_TRIM = charArrayOf('(', ')', '[', ']', '-', '\u2013', '\u2014', ':', '.', ',', '!', '?', '*')
 
 /** American English alias for [Programme]. */
 typealias Program = Programme
