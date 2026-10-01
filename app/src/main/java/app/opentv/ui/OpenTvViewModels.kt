@@ -1784,6 +1784,9 @@ class EpgViewModel(app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
+    /** Whether [refresh] is in flight. Local to the instance; see the note there. */
+    private var refreshing = false
+
     init {
         viewModelScope.launch { graph.epgRepository.ensureFeeds() }
         viewModelScope.launch {
@@ -1834,15 +1837,31 @@ class EpgViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refresh() {
-        if (_ui.value.syncing) return
+        // Guarded on a local flag, not on the published state. `ui.syncing` is rebuilt from
+        // `observeFeeds()` and the initial load, so a stale or mid-update copy silently swallowed
+        // the click: the early return below fired and nothing ran, with no log line to show why.
+        if (refreshing) return
+        refreshing = true
         viewModelScope.launch {
             _ui.value = _ui.value.copy(syncing = true, statusLine = "Downloading guides…")
-            val summary = graph.epgRepository.syncAll(System.currentTimeMillis(), force = true)
+            // Always clear `syncing`. An exception escaping this coroutine left it stuck true
+            // forever, which disabled the button for the rest of the process's life - the symptom
+            // being "the Update Guide button does nothing".
+            val summary = runCatching {
+                graph.epgRepository.syncAll(System.currentTimeMillis(), force = true)
+            }
+            refreshing = false
             _ui.value = _ui.value.copy(
                 syncing = false,
-                statusLine = "Guide matched ${summary.channelsMatched} of " +
-                    "${summary.channelsTotal} channels" +
-                    if (summary.feedsFailed > 0) " · ${summary.feedsFailed} feed(s) failed" else "",
+                statusLine = summary.fold(
+                    onSuccess = {
+                        "Guide matched ${it.channelsMatched} of ${it.channelsTotal} channels" +
+                            if (it.feedsFailed > 0) " · ${it.feedsFailed} feed(s) failed" else ""
+                    },
+                    // A guide download over a bad connection fails here. Saying so beats leaving
+                    // the old line up as if the refresh had worked.
+                    onFailure = { "Guide update failed: ${it.message ?: it::class.simpleName}" },
+                ),
             )
         }
     }

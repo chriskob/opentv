@@ -413,14 +413,15 @@ class EpgRepository(
                 )
             }
 
-            if (processed > 0) {
-                programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
-                programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
-                // Shrink rows written before the caps existed, then VACUUM: rewriting in place
-                // leaves the freed pages on the freelist, and only a VACUUM returns them.
-                pruneOversizedText()
-                reclaimDiskSpace()
-            }
+            // Housekeeping runs whether or not any feed succeeded. It was gated on `processed > 0`, which
+            // meant a run where every feed failed skipped it entirely — and a failing feed is
+            // exactly when the database most needs shrinking, because nothing new arrives to
+            // replace the old rows. Retention cuts alone also never shrink the file: SQLite keeps
+            // the freed pages, so only the VACUUM below returns them.
+            programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
+            programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
+            pruneOversizedText()
+            reclaimDiskSpace()
 
             val (matched, total) = if (processed > 0) {
                 onProgress?.invoke(
