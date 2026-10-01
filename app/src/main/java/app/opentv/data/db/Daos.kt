@@ -574,6 +574,52 @@ interface ProgrammeDao {
     @Upsert
     suspend fun upsertAll(programmes: List<Programme>)
 
+    /**
+     * Housekeeping: trim rows written before the field caps existed, in batches.
+     *
+     * Runs after the retention prunes, and needs the following VACUUM to actually return the space
+     * — SQLite keeps the freed pages on its freelist. Without this a database that already grew
+     * stays grown, however tightly new rows are written.
+     *
+     * [limit] bounds each transaction so a first run over a large backlog does not hold the write
+     * lock; the caller repeats until it returns fewer rows than asked for.
+     */
+    @Query(
+        """
+        UPDATE programmes
+        SET title = substr(title, 1, :titleLimit),
+            description = CASE
+                WHEN description IS NULL THEN NULL
+                ELSE substr(description, 1, :descriptionLimit)
+            END,
+            category = CASE
+                WHEN category IS NULL THEN NULL
+                ELSE substr(category, 1, :categoryLimit)
+            END
+        WHERE id IN (
+            SELECT id FROM programmes
+            WHERE length(title) > :titleLimit
+               OR length(IFNULL(description, '')) > :descriptionLimit
+               OR length(IFNULL(category, '')) > :categoryLimit
+            LIMIT :limit
+        )
+        """
+    )
+    suspend fun trimOversizedTextBatch(
+        titleLimit: Int,
+        descriptionLimit: Int,
+        categoryLimit: Int,
+        limit: Int,
+    ): Int
+
+    suspend fun trimOversizedText(titleLimit: Int, descriptionLimit: Int, categoryLimit: Int) {
+        while (true) {
+            val count = trimOversizedTextBatch(titleLimit, descriptionLimit, categoryLimit, 2000)
+            if (count < 2000) break
+            kotlinx.coroutines.delay(25)
+        }
+    }
+
     /** Housekeeping: drop anything that finished before the retention cut-off in batches to avoid locking SQLite. */
     @Query(
         """

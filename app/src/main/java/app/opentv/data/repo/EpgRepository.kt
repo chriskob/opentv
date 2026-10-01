@@ -416,6 +416,9 @@ class EpgRepository(
             if (processed > 0) {
                 programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
                 programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
+                // Shrink rows written before the caps existed, then VACUUM: rewriting in place
+                // leaves the freed pages on the freelist, and only a VACUUM returns them.
+                pruneOversizedText()
                 reclaimDiskSpace()
             }
 
@@ -506,6 +509,38 @@ class EpgRepository(
         data class Failed(val reason: String) : FeedResult
     }
 
+    /**
+     * Trims the fat off a programme before it is stored.
+     *
+     * Feed descriptions are unbounded — a paragraph of plot synopsis, sometimes with cast credits
+     * and a contacts block — and a provider publishing ~20,000 channels over the 10-day retention
+     * window multiplies that into gigabytes. The database measured 1.5 GB for exactly this reason,
+     * against a 13 MB APK.
+     *
+     * Nothing needs the full text. The guide preview shows a couple of lines, and a recording's
+     * description is a label, not a synopsis. So long text is truncated to [DESCRIPTION_LIMIT] and
+     * the title is capped too — a title is already the widest field a cell renders.
+     *
+     * Applied on write rather than at read: a row is mostly its description, so shrinking at
+     * display time saves nothing on disk. Existing rows are brought down by [pruneOversizedText]
+     * on the next sync.
+     */
+    private fun Programme.compact(): Programme = copy(
+        title = title.take(TITLE_LIMIT),
+        description = description?.take(DESCRIPTION_LIMIT),
+        category = category?.take(CATEGORY_LIMIT),
+    )
+
+    /**
+     * Brings rows already on disk under the same caps, so a database that already grew does not
+     * stay grown after this ships. Batched like the other housekeeping so SQLite is never locked
+     * for long.
+     */
+    private suspend fun pruneOversizedText() {
+        programmeDao.trimOversizedText(TITLE_LIMIT, DESCRIPTION_LIMIT, CATEGORY_LIMIT)
+        Log.i(TAG, "Programme text trimmed to title=$TITLE_LIMIT description=$DESCRIPTION_LIMIT")
+    }
+
     private suspend fun syncFeed(feed: EpgFeed, nowUtcMillis: Long): FeedResult {
         val batch = ArrayList<Programme>(BATCH_SIZE)
         val aliases = ArrayList<EpgChannelAlias>(BATCH_SIZE)
@@ -537,7 +572,7 @@ class EpgRepository(
                         if (programme.endUtcMillis >= nowUtcMillis - RETENTION_PAST_MILLIS &&
                             programme.startUtcMillis <= nowUtcMillis + RETENTION_FUTURE_MILLIS
                         ) {
-                            batch += programme
+                            batch += programme.compact()
                             if (batch.size >= BATCH_SIZE) {
                                 programmeDao.upsertAll(batch)
                                 written += batch.size
@@ -716,6 +751,18 @@ class EpgRepository(
 
         /** Vacuum only when the freelist holds at least this much — a full rewrite is not cheap. */
         const val VACUUM_THRESHOLD_BYTES: Long = 32L * 1024 * 1024
+
+        /**
+         * Field caps applied to every programme before it is stored. At ~20,000 channels these are
+         * the difference between a database that fits on a box and one that does not: an unbounded
+         * description is the bulk of each row, and the retention window keeps 10 days of them.
+         *
+         * Generous enough that nothing visible is lost — the guide preview shows a few lines and a
+         * title is bounded by what a cell can render anyway.
+         */
+        const val TITLE_LIMIT = 160
+        const val DESCRIPTION_LIMIT = 400
+        const val CATEGORY_LIMIT = 64
 
         /** Feeds publish rolling windows; refreshing more often than this is rude. */
         val REFRESH_INTERVAL_MILLIS: Long = TimeUnit.HOURS.toMillis(6)
