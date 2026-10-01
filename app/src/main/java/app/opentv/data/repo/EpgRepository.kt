@@ -743,11 +743,20 @@ class EpgRepository(
         val RETENTION_PAST_MILLIS: Long = TimeUnit.DAYS.toMillis(3)
 
         /**
-         * Cap on how far ahead programmes are stored. Feeds publish 7-14 day schedules, but the
-         * guide renders 48h and the recording scheduler only needs ~7 days — capping this is
-         * what keeps the database a fraction of the size of an uncapped store.
+         * Cap on how far ahead programmes are stored.
+         *
+         * Five days. Feeds publish 7-14 day schedules, but nothing here needs most of that: the
+         * guide renders 48h, so most of the stored future is already off-screen, and the series
+         * scheduler books from the same rows. At ~20,000 channels every extra day forward is
+         * another day of programmes for all of them, which is what turned a 13 MB app into 1.5 GB
+         * of database. Five days keeps a week of scheduling ahead while cutting the future
+         * window by nearly a third against the original seven.
+         *
+         * The cost, stated plainly: a series rule books about five days ahead rather than seven.
+         * Recordings stay in the Recordings list once made, so nothing is lost — a rule just
+         * materialises its next few days' episodes a little later than it used to.
          */
-        val RETENTION_FUTURE_MILLIS: Long = TimeUnit.DAYS.toMillis(7)
+        val RETENTION_FUTURE_MILLIS: Long = TimeUnit.DAYS.toMillis(5)
 
         /** Vacuum only when the freelist holds at least this much — a full rewrite is not cheap. */
         const val VACUUM_THRESHOLD_BYTES: Long = 32L * 1024 * 1024
