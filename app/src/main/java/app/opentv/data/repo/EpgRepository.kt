@@ -152,6 +152,18 @@ class EpgRepository(
      * time and quietly reduced it to a no-op).
      */
     private val _dataGeneration = MutableStateFlow(0L)
+
+    /**
+     * Whether a guide sync is in flight, and a short line describing the current step.
+     *
+     * Exists because the only progress signal used to be a callback into whichever screen started
+     * the sync. Triggering one from Settings and then switching to the Guide left the viewer with
+     * nothing at all to look at, so "is it working?" was unanswerable — and the header's stamp
+     * was a prefs read sampled once per composition, so it still showed the *previous* sync. Both
+     * read as a hung app. This is observable from anywhere, so the Guide can say so itself.
+     */
+    private val _syncActivity = MutableStateFlow<String?>(null)
+    val syncActivity: StateFlow<String?> = _syncActivity.asStateFlow()
     val dataGenerationFlow: StateFlow<Long> = _dataGeneration.asStateFlow()
 
     @Volatile
@@ -368,8 +380,11 @@ class EpgRepository(
         force: Boolean,
         refreshIntervalMillis: Long,
         onProgress: ((SyncProgress) -> Unit)?,
-    ): SyncSummary =
-        withContext(Dispatchers.IO) {
+    ): SyncSummary = withContext(Dispatchers.IO) {
+        // try/finally: a failure part-way through must still take the banner down, or the Guide
+        // claims a sync is running forever. Same class of bug as the stuck syncing flag on
+        // the settings button.
+        try {
             ensureFeeds()
             maybeAutoEnableRegionalFeed()
 
@@ -379,6 +394,15 @@ class EpgRepository(
             var processed = 0
             var written = 0
 
+            // Published alongside the callback, so a sync started from one screen is visible from
+            // every other. Cleared in a finally: an exception here used to leave the Guide
+            // claiming a sync was running forever.
+            fun publish(progress: SyncProgress) {
+                _syncActivity.value = progress.activityLine()
+                onProgress?.invoke(progress)
+            }
+
+            _syncActivity.value = "Starting guide update…"
             onProgress?.invoke(SyncProgress(feedsDone = 0, feedsTotal = feeds.size, programmesWritten = 0))
 
             feeds.forEachIndexed { index, feed ->
@@ -408,9 +432,7 @@ class EpgRepository(
                         Log.w(TAG, "Feed '${feed.name}' failed: ${result.reason}")
                     }
                 }
-                onProgress?.invoke(
-                    SyncProgress(index + 1, feeds.size, written, feed.name),
-                )
+                publish(SyncProgress(index + 1, feeds.size, written, feed.name))
             }
 
             // Housekeeping runs whether or not any feed succeeded. It was gated on `processed > 0`, which
@@ -418,17 +440,21 @@ class EpgRepository(
             // exactly when the database most needs shrinking, because nothing new arrives to
             // replace the old rows. Retention cuts alone also never shrink the file: SQLite keeps
             // the freed pages, so only the VACUUM below returns them.
+            //
+            // Announced, because on a large database this is the longest silent stretch of the
+            // whole sync — a delete pass, then a rewrite of every row, then a VACUUM that copies
+            // the entire file.
+            _syncActivity.value = "Cleaning up old guide data…"
             programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
             programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
             pruneOversizedText()
+            _syncActivity.value = "Reclaiming disk space…"
             reclaimDiskSpace()
 
             val (matched, total) = if (processed > 0) {
-                onProgress?.invoke(
-                    SyncProgress(feeds.size, feeds.size, written, "Matching channels…", matching = true),
-                )
+                publish(SyncProgress(feeds.size, feeds.size, written, "Matching channels…", matching = true))
                 runMatcher { scanned, toScan ->
-                    onProgress?.invoke(
+                    publish(
                         SyncProgress(
                             feedsDone = feeds.size,
                             feedsTotal = feeds.size,
@@ -455,7 +481,10 @@ class EpgRepository(
                 }
             }
             SyncSummary(succeeded, failed, written, matched, total)
+        } finally {
+            _syncActivity.value = null
         }
+    }
 
     /**
      * Reclaims disk space after the prune passes. SQLite moves deleted rows to a freelist but
@@ -504,6 +533,26 @@ class EpgRepository(
             }.onFailure { Log.w(TAG, "Disk reclaim skipped: ${it.message}") }
         }
     }
+
+    /**
+     * A one-line, human description of what a sync is doing right now.
+     *
+     * Deliberately coarse. The guide is the screen a viewer is actually looking at, so the useful
+     * question is "is this working?" — answered by naming the step, not by a percentage that
+     * cannot be computed across mixed feed sizes.
+     */
+    private fun SyncProgress.activityLine(): String = when {
+        matching -> if (channelsToScan > 0) {
+            "Matching channels… ${channelsScanned}/$channelsToScan"
+        } else {
+            currentFeed.ifBlank { "Matching channels…" }
+        }
+        feedsTotal > 0 && feedsDone < feedsTotal ->
+            "Updating guide… feed ${feedsDone + 1} of $feedsTotal${currentFeed.asSuffix()}"
+        else -> "Updating guide…"
+    }
+
+    private fun String.asSuffix(): String = if (isBlank()) "" else " · $this"
 
     private sealed interface FeedResult {
         data class Success(val programmes: Int, val channels: Int) : FeedResult

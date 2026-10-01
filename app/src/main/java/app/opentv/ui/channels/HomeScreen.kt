@@ -80,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalContext
@@ -1616,9 +1617,18 @@ fun HomeScreen(
                 )
 
                 // TiviMate-style guide header stamp: when the guide last synced + channel count.
-                val epgInfoLine = if (settings.lastGuideUpdatedMillis > 0L) {
-                    "EPG updated ${formatTime(settings.lastGuideUpdatedMillis)} Â· ${settings.lastGuideChannelCount} channels"
+                // Collected, not read straight off prefs: a sync started from Settings must show up
+                // here when it lands, and a plain prefs read is only sampled at composition time.
+                val (lastGuideMillis, lastGuideChannels) = settings.lastGuideSync.collectAsStateWithLifecycle().value
+                val epgInfoLine = if (lastGuideMillis > 0L) {
+                    "EPG updated ${formatTime(lastGuideMillis)} · $lastGuideChannels channels"
                 } else null
+                // The live step of a running sync, shown here rather than only in Settings. A sync
+                // started from another screen used to be invisible until it finished, and the stamp
+                // above still showed the *previous* run meanwhile - so "is it working?" and "did it
+                // work?" both read as a hung app. Takes over the stamp line while active, because
+                // a stale timestamp beside a live sync is the most misleading combination.
+                val epgSyncLine = graph.epgRepository.syncActivity.collectAsStateWithLifecycle().value
                 // Shared by both layouts: focus follows the highlight and collapses the rail; LEFT
                 // from the leftmost element reopens the rail (consumed only when it was hidden).
                 // Deliberately does NOT dismiss the main menu. The menu is only on screen when the
@@ -1684,7 +1694,7 @@ fun HomeScreen(
                         dayOffset = guideHourOffset / 24,
                         catchUpChannelIds = catchUpChannelIds,
                         reminderKeys = reminderKeys,
-                        epgInfoLine = epgInfoLine,
+                        epgInfoLine = epgSyncLine ?: epgInfoLine,
                         restoreTick = guideRestoreTick,
                         onTimeShifted = { timeShifted = it },
                         scrollTopTick = guideScrollTopTick,

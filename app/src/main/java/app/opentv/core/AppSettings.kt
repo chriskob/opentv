@@ -434,13 +434,34 @@ class AppSettings private constructor(context: Context) {
         get() = prefs.getLong(KEY_LAST_CHANNEL, 0L)
         set(value) { prefs.edit().putLong(KEY_LAST_CHANNEL, value).apply() }
 
-    /** Stamp + channel count written after each guide (EPG) sync, shown in the guide header. */
+    /**
+     * Stamp + channel count written after each guide (EPG) sync, shown in the guide header.
+     *
+     * Observable, unlike [lastChannelId] beside it: the header renders this on the Guide, and a
+     * plain prefs read is sampled once per composition. A sync triggered from Settings therefore
+     * left the Guide showing the previous stamp - which reads as "my update did nothing" even when
+     * it worked. The flow is seeded from prefs and written through on set.
+     */
+    private val _lastGuideUpdated = MutableStateFlow(
+        prefs.getLong(KEY_LAST_GUIDE_UPDATED, 0L) to prefs.getInt(KEY_LAST_GUIDE_CHANNELS, 0),
+    )
+
+    /** Emits `(lastSyncMillis, channelCount)`; re-emits on every completed sync. */
+    val lastGuideSync: StateFlow<Pair<Long, Int>> = _lastGuideUpdated.asStateFlow()
+
     var lastGuideUpdatedMillis: Long
-        get() = prefs.getLong(KEY_LAST_GUIDE_UPDATED, 0L)
-        set(value) { prefs.edit().putLong(KEY_LAST_GUIDE_UPDATED, value).apply() }
+        get() = _lastGuideUpdated.value.first
+        set(value) {
+            prefs.edit().putLong(KEY_LAST_GUIDE_UPDATED, value).apply()
+            _lastGuideUpdated.value = value to _lastGuideUpdated.value.second
+        }
+
     var lastGuideChannelCount: Int
-        get() = prefs.getInt(KEY_LAST_GUIDE_CHANNELS, 0)
-        set(value) { prefs.edit().putInt(KEY_LAST_GUIDE_CHANNELS, value).apply() }
+        get() = _lastGuideUpdated.value.second
+        set(value) {
+            prefs.edit().putInt(KEY_LAST_GUIDE_CHANNELS, value).apply()
+            _lastGuideUpdated.value = _lastGuideUpdated.value.first to value
+        }
 
     /**
      * Video scaling in the player, as an [androidx.media3.ui.AspectRatioFrameLayout] RESIZE_MODE_*
