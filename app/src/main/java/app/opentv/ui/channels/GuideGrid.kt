@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -1821,10 +1822,22 @@ private fun GuideRow(
  * reading as louder than the programme it was labelling, which is backwards - it exists to be
  * scannable in peripheral vision, not to be read.
  */
+/**
+ * Aligns a status mark to the first line of the cell's title instead of the vertical middle.
+ *
+ * Two-line titles are the norm here, and centring against both lines puts the chip level with
+ * the break between a programme's name and its episode - it reads as belonging to neither. The
+ * nudge is half the difference between a 15sp line box and a 10sp chip, which centres the chip on
+ * the first line without the title's own position moving.
+ */
 @Composable
-private fun GuideBadge(text: String, background: Color) {
+private fun RowScope.gutterTop(): Modifier =
+    Modifier.align(Alignment.Top).offset(y = 2.dp)
+
+@Composable
+private fun GuideBadge(text: String, background: Color, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .padding(end = 4.dp)
             .clip(RoundedCornerShape(2.dp))
             .background(background)
@@ -1961,14 +1974,19 @@ private fun ProgrammeBlock(
                 .padding(horizontal = 7.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (isLive) GuideBadge("LIVE", AppTheme.palette.recording)
-            if (isNew) GuideBadge("NEW", AppTheme.palette.live)
+            // The status gutter aligns to the first line of the title rather than the middle of
+            // the cell. Most titles here wrap to two lines, and a chip centred against both of
+            // them floats beside the break rather than beside the name it belongs to. The
+            // offset centres each chip on that first line instead, since the chip is shorter
+            // than the line box. All four marks share the gutter so they read as one column.
+            if (isLive) GuideBadge("LIVE", AppTheme.palette.recording, gutterTop())
+            if (isNew) GuideBadge("NEW", AppTheme.palette.live, gutterTop())
             if (canReplay) {
                 Icon(
                     imageVector = Icons.Filled.History,
                     contentDescription = "Replay",
                     tint = if (highlighted) AppTheme.palette.onCellFocus else AppTheme.palette.textMuted,
-                    modifier = Modifier.padding(end = 4.dp).size(12.dp),
+                    modifier = gutterTop().padding(end = 4.dp).size(12.dp),
                 )
             }
             if (hasReminder) {
@@ -1976,7 +1994,7 @@ private fun ProgrammeBlock(
                     imageVector = Icons.Filled.Notifications,
                     contentDescription = stringResource(R.string.guide_reminder_badge),
                     tint = if (highlighted) AppTheme.palette.onCellFocus else AppTheme.palette.favourite,
-                    modifier = Modifier.padding(end = 4.dp).size(12.dp),
+                    modifier = gutterTop().padding(end = 4.dp).size(12.dp),
                 )
             }
             Text(
