@@ -78,7 +78,7 @@ class Converters {
         SeriesRule::class,
         Reminder::class,
     ],
-    version = 20,
+    version = 21,
     exportSchema = true,
 )
 @ColumnTypeConverters(Converters::class)
@@ -377,6 +377,26 @@ abstract class OpenTvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Index the guide's future-retention prune.
+         *
+         * `DELETE FROM programmes WHERE startUtcMillis > ?` had no index to match — the existing
+         * ones all lead with another column — so it scanned the whole table, and the batched loop
+         * around it repeated that scan per 2,000 rows. Adding the index turns the prune into an
+         * index range delete, which is the difference between it finishing and appearing hung.
+         *
+         * Written as `CREATE INDEX IF NOT EXISTS` because the schema export for this version
+         * declares the index too; the migration is what existing installs need.
+         */
+        private val MIGRATION_20_21 = object : Migration(20, 21) {
+            override suspend fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_programmes_startUtcMillis` " +
+                        "ON `programmes` (`startUtcMillis`)",
+                )
+            }
+        }
+
 
         fun build(context: Context): OpenTvDatabase =
             Room.databaseBuilder(context, OpenTvDatabase::class.java, "opentv.db")
@@ -391,6 +411,7 @@ abstract class OpenTvDatabase : RoomDatabase() {
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                     MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                     MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 /*
                  * NO destructive fallback, and never again.

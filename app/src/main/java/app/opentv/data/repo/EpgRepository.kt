@@ -587,8 +587,8 @@ class EpgRepository(
      * for long.
      */
     private suspend fun pruneOversizedText() {
-        programmeDao.trimOversizedText(TITLE_LIMIT, DESCRIPTION_LIMIT, CATEGORY_LIMIT)
-        Log.i(TAG, "Programme text trimmed to title=$TITLE_LIMIT description=$DESCRIPTION_LIMIT")
+        val trimmed = programmeDao.trimOversizedText(TITLE_LIMIT, DESCRIPTION_LIMIT, CATEGORY_LIMIT)
+        Log.i(TAG, "Trimmed $trimmed programme row(s) to fit the text caps")
     }
 
     private suspend fun syncFeed(feed: EpgFeed, nowUtcMillis: Long): FeedResult {

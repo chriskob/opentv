@@ -288,6 +288,12 @@ data class EpgChannelAlias(
         Index(value = ["endUtcMillis"]),
         Index(value = ["epgChannelId"]),
         Index(value = ["endUtcMillis", "startUtcMillis"]),
+        // The future-retention prune deletes on startUtcMillis alone, and there was no index to
+        // match it: every batch fell back to a full table scan, so deleting a couple of days out
+        // of a multi-million-row guide cost hundreds of complete scans. Retention was 7 days
+        // before, so the first run at 5 had real work to do and it showed as minutes of
+        // "Cleaning up old guide data" with the guide locked out.
+        Index(value = ["startUtcMillis"]),
         Index(value = ["epgChannelId", "endUtcMillis", "startUtcMillis"]),
     ],
 )
