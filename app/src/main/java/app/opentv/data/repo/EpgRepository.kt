@@ -435,21 +435,25 @@ class EpgRepository(
                 publish(SyncProgress(index + 1, feeds.size, written, feed.name))
             }
 
-            // Housekeeping runs whether or not any feed succeeded. It was gated on `processed > 0`, which
-            // meant a run where every feed failed skipped it entirely — and a failing feed is
-            // exactly when the database most needs shrinking, because nothing new arrives to
-            // replace the old rows. Retention cuts alone also never shrink the file: SQLite keeps
-            // the freed pages, so only the VACUUM below returns them.
-            //
-            // Announced, because on a large database this is the longest silent stretch of the
-            // whole sync — a delete pass, then a rewrite of every row, then a VACUUM that copies
-            // the entire file.
+            // Retention pruning runs every sync: it is an indexed range delete over the rows that have
+            // aged out since the last one, which is small and quick in steady state.
             _syncActivity.value = "Cleaning up old guide data…"
             programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
             programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
-            pruneOversizedText()
-            _syncActivity.value = "Reclaiming disk space…"
-            reclaimDiskSpace()
+
+            // The text rewrite and the VACUUM are a ONE-TIME migration of a database that grew
+            // before the field caps existed - not per-sync housekeeping. Running them every time
+            // is what made this sync never appear to finish: a whole-table UPDATE plus a VACUUM
+            // that copies the entire file, holding the database's write lock while the viewer
+            // watches television. It is guarded by a persisted flag so it happens at most once
+            // per install, and it is skipped outright if it already ran.
+            if (settings?.oneTimeGuideCleanupDone != true) {
+                _syncActivity.value = "One-time guide cleanup…"
+                pruneOversizedText()
+                _syncActivity.value = "Reclaiming disk space…"
+                reclaimDiskSpace()
+                settings?.oneTimeGuideCleanupDone = true
+            }
 
             val (matched, total) = if (processed > 0) {
                 publish(SyncProgress(feeds.size, feeds.size, written, "Matching channels…", matching = true))
@@ -519,6 +523,12 @@ class EpgRepository(
                     )
                     if (freeBytes > VACUUM_THRESHOLD_BYTES) {
                         Log.i(TAG, "Reclaiming %.1f MB via VACUUM...".format(freeBytes / 1048576.0))
+                        // Switch to incremental auto-vacuum *before* compacting. Changing
+                        // auto_vacuum on an existing database only takes effect as part of a
+                        // VACUUM, so the one expensive rewrite already being paid for also
+                        // converts the file. Every later reclaim is then a bounded slice rather
+                        // than another whole-file rewrite under a write lock.
+                        transactor.executeSQL("PRAGMA auto_vacuum=INCREMENTAL;")
                         transactor.executeSQL("VACUUM")
                         val afterBytes = pageSize * pragmaLong("page_count")
                         Log.i(
@@ -528,6 +538,11 @@ class EpgRepository(
                                 afterBytes / 1048576.0,
                             ),
                         )
+                    } else {
+                        // The cheap path, and the only one an ordinary sync takes once the
+                        // one-time cleanup has run. A page count bounds the work, so this cannot
+                        // grow into the long write lock an unbounded VACUUM did.
+                        transactor.executeSQL("PRAGMA incremental_vacuum($INCREMENTAL_VACUUM_PAGES);")
                     }
                 }
             }.onFailure { Log.w(TAG, "Disk reclaim skipped: ${it.message}") }
@@ -810,6 +825,16 @@ class EpgRepository(
 
         /** Vacuum only when the freelist holds at least this much — a full rewrite is not cheap. */
         const val VACUUM_THRESHOLD_BYTES: Long = 32L * 1024 * 1024
+
+        /**
+         * Pages freed per routine sync once the database is in incremental-auto-vacuum mode.
+         *
+         * Bounded on purpose. An unbounded VACUUM is what made this screen look permanently stuck
+         * and the app feel heavy, because it copies the whole file while holding the write lock
+         * against someone watching television. ~8 MB a sync is enough to keep the file from
+         * creeping back up, and small enough to be imperceptible.
+         */
+        const val INCREMENTAL_VACUUM_PAGES = 2000
 
         /**
          * Field caps applied to every programme before it is stored. At ~20,000 channels these are

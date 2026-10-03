@@ -435,7 +435,22 @@ class AppSettings private constructor(context: Context) {
         set(value) { prefs.edit().putLong(KEY_LAST_CHANNEL, value).apply() }
 
     /**
-     * Stamp + channel count written after each guide (EPG) sync, shown in the guide header.
+     * Whether the one-time guide cleanup has already run on this install.
+     *
+     * The text trim and the VACUUM that reclaims the space it frees are a migration of a database
+     * that grew before the field caps existed. They are expensive - the VACUUM copies the whole
+     * file - and doing them on every sync made a routine background update look like a permanent
+     * one, while holding the write lock against a viewer watching television.
+     *
+     * Persisted rather than derived from the data: "are there any oversized rows left" would go
+     * false the moment the trim succeeded, and re-vacuuming on that signal would run the
+     * expensive path again on the next sync.
+     */
+    var oneTimeGuideCleanupDone: Boolean
+        get() = prefs.getBoolean(KEY_ONE_TIME_GUIDE_CLEANUP, false)
+        set(value) { prefs.edit().putBoolean(KEY_ONE_TIME_GUIDE_CLEANUP, value).apply() }
+
+    /** Stamp + channel count written after each guide (EPG) sync, shown in the guide header.
      *
      * Observable, unlike [lastChannelId] beside it: the header renders this on the Guide, and a
      * plain prefs read is sampled once per composition. A sync triggered from Settings therefore
@@ -1129,6 +1144,7 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_EPG_REFRESH_HOURS = "epg_refresh_hours"
         private const val KEY_LAST_GUIDE_UPDATED = "last_guide_updated_millis"
         private const val KEY_LAST_GUIDE_CHANNELS = "last_guide_channels"
+        private const val KEY_ONE_TIME_GUIDE_CLEANUP = "one_time_guide_cleanup_done"
         private const val KEY_EPG_SYNC_WITH_PLAYLIST = "epg_sync_with_playlist"
         private const val KEY_DELETED_FEED_URLS = "deleted_feed_urls"
         private const val KEY_REMOTE_PAIRING_URL = "remote_pairing_server_url"
