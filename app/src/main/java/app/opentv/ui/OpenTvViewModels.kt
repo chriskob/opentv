@@ -190,6 +190,7 @@ data class RemoteProvisioningProgress(
 
 class SourcesViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = ServiceLocator.get(app)
+    private val settings = graph.settings
 
     data class UiState(
         val sources: List<Source> = emptyList(),
@@ -319,7 +320,13 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 val summary = StatusBus.during("Building the TV guide…") {
                     // Reports per feed, so the status bar shows a real bar and a climbing count
                     // instead of an indeterminate spinner for the whole guide download.
-                    graph.epgRepository.syncAll(now) { p ->
+                    graph.epgRepository.syncAll(
+                        // The configured interval, not the 6-hour default. Leaving it out made
+                        // the setting inert: a viewer who chose 24 hours still got a refresh
+                        // check six times a day, and the Guide showed itself updating on open.
+                        now,
+                        refreshIntervalMillis = settings.epgRefreshHours.value * 3600_000L,
+                    ) { p ->
                         if (p.feedsTotal > 0) {
                             StatusBus.set(
                                 "TV guide — %,d of %,d feeds done, %,d programs added".format(
@@ -658,7 +665,12 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
                 // Feed-by-feed progress, so the guide card counts up instead of sitting at zero for
                 // however long the feeds take. The matcher's pass reports through the same state,
                 // which is how the status line switches to "Matching channels…" on its own.
-                val summary = graph.epgRepository.syncAll(now, force = false) { p ->
+                val summary = graph.epgRepository.syncAll(
+                    now,
+                    force = false,
+                    // As above: honour the configured interval instead of the 6-hour default.
+                    refreshIntervalMillis = settings.epgRefreshHours.value * 3600_000L,
+                ) { p ->
                     _provisioningProgress.value = _provisioningProgress.value?.copy(
                         epgFeedsDone = p.feedsDone,
                         epgFeedsTotal = p.feedsTotal,

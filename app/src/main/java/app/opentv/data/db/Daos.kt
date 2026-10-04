@@ -5,6 +5,7 @@
  */
 package app.opentv.data.db
 
+
 import androidx.room3.Dao
 import androidx.room3.Insert
 import androidx.room3.OnConflictStrategy
@@ -29,6 +30,16 @@ import app.opentv.data.model.SeriesRule
 import app.opentv.data.model.Source
 import app.opentv.data.model.StreamKind
 import kotlinx.coroutines.flow.Flow
+/**
+ * Rows per housekeeping delete transaction.
+ *
+ * Sized for an indexed range delete rather than for politeness. At 2,000 rows the guide's
+ * retention prune across ~20,000 channels took hundreds of transactions, each taking the write
+ * lock and each followed by a sleep - so merely opening the Guide stalled it for minutes. A large
+ * batch does in a handful of transactions what the small one did in hundreds.
+ */
+private const val HOUSEKEEPING_BATCH = 20_000
+
 
 /** Rows per upsert statement. Keeps a 40,000-channel playlist from building one huge query. */
 private const val UPSERT_CHUNK = 500
@@ -624,9 +635,9 @@ interface ProgrammeDao {
 
     suspend fun deleteEndedBefore(beforeUtcMillis: Long) {
         while (true) {
-            val count = deleteEndedBeforeBatch(beforeUtcMillis, 2000)
-            if (count < 2000) break
-            kotlinx.coroutines.delay(25)
+            val count = deleteEndedBeforeBatch(beforeUtcMillis, HOUSEKEEPING_BATCH)
+            if (count < HOUSEKEEPING_BATCH) break
+            kotlinx.coroutines.delay(5)
         }
     }
 
@@ -665,9 +676,9 @@ interface ProgrammeDao {
 
     suspend fun deleteStartsAfter(afterUtcMillis: Long) {
         while (true) {
-            val count = deleteStartsAfterBatch(afterUtcMillis, 2000)
-            if (count < 2000) break
-            kotlinx.coroutines.delay(25)
+            val count = deleteStartsAfterBatch(afterUtcMillis, HOUSEKEEPING_BATCH)
+            if (count < HOUSEKEEPING_BATCH) break
+            kotlinx.coroutines.delay(5)
         }
     }
 }

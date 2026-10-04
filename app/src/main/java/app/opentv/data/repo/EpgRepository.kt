@@ -402,6 +402,19 @@ class EpgRepository(
                 onProgress?.invoke(progress)
             }
 
+            // Only announce work that will happen. When every feed is inside its refresh interval
+            // this whole pass does nothing, and saying "Starting guide update…" for it is what made
+            // the Guide claim to be updating every time it was merely opened.
+            val dueCount = if (force) {
+                feeds.size
+            } else {
+                feeds.count { nowUtcMillis - it.lastSyncMillis >= refreshIntervalMillis }
+            }
+            if (dueCount == 0) {
+                _syncActivity.value = null
+                onProgress?.invoke(SyncProgress(feedsDone = feeds.size, feedsTotal = feeds.size, programmesWritten = 0))
+                return@withContext SyncSummary(feeds.size, 0, 0, 0, 0)
+            }
             _syncActivity.value = "Starting guide update…"
             onProgress?.invoke(SyncProgress(feedsDone = 0, feedsTotal = feeds.size, programmesWritten = 0))
 
@@ -435,11 +448,16 @@ class EpgRepository(
                 publish(SyncProgress(index + 1, feeds.size, written, feed.name))
             }
 
-            // Retention pruning runs every sync: it is an indexed range delete over the rows that have
-            // aged out since the last one, which is small and quick in steady state.
-            _syncActivity.value = "Cleaning up old guide data…"
-            programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
-            programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
+            // Pruning happens only when a feed actually delivered rows. It used to run on every
+            // pass, including ones where every feed was skipped or had failed - so simply opening
+            // the Guide performed a full retention delete across ~20,000 channels while the viewer
+            // waited for it. Nothing ages out faster than the clock, and a failed run adds no rows,
+            // so there is nothing to gain when `processed` is zero.
+            if (processed > 0) {
+                _syncActivity.value = "Cleaning up old guide data…"
+                programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
+                programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
+            }
 
             // The text rewrite and the VACUUM are a ONE-TIME migration of a database that grew
             // before the field caps existed - not per-sync housekeeping. Running them every time
