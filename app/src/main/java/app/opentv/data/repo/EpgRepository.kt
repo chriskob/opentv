@@ -439,9 +439,19 @@ class EpgRepository(
                     }
                     is FeedResult.Failed -> {
                         failed++
-                        // The stamp is NOT advanced on failure, so the next sync retries
-                        // rather than waiting out the interval on a feed that never landed.
-                        feedDao.markSynced(feed.id, feed.lastSyncMillis, result.reason)
+                        // Retry a failed feed sooner than the full interval, but not on every
+                        // single launch. Leaving the stamp untouched meant a feed that fails
+                        // permanently - this box's VOD provider guide answers HTTP 404 and always
+                        // will - was due forever, so every single app start began a real sync
+                        // and the Guide announced "Starting guide update..." before the viewer
+                        // had looked at anything.
+                        //
+                        // Rewinding the stamp by (interval - retry) leaves the feed due again one
+                        // retry window from now, which keeps the retry-on-failure behaviour the
+                        // untouched stamp was there for.
+                        val retryAt = nowUtcMillis - (refreshIntervalMillis - FAILED_FEED_RETRY_MILLIS)
+                            .coerceAtLeast(0L)
+                        feedDao.markSynced(feed.id, maxOf(retryAt, 0L), result.reason)
                         Log.w(TAG, "Feed '${feed.name}' failed: ${result.reason}")
                     }
                 }
@@ -852,6 +862,16 @@ class EpgRepository(
          * against someone watching television. ~8 MB a sync is enough to keep the file from
          * creeping back up, and small enough to be imperceptible.
          */
+        /**
+         * How soon a feed that just failed is tried again.
+         *
+         * Shorter than the normal refresh interval so a genuine outage is picked up quickly, but
+         * long enough that a permanently broken feed - a URL that 404s and always will - is not
+         * retried on every single launch. Without it such a feed is due forever, and the Guide
+         * announces an update on every open regardless of the viewer's refresh setting.
+         */
+        val FAILED_FEED_RETRY_MILLIS: Long = TimeUnit.HOURS.toMillis(6)
+
         const val INCREMENTAL_VACUUM_PAGES = 2000
 
         /**
