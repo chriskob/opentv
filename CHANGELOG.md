@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.16.17
+
+- **The guide syncing in the background no longer gets in your way.** A guide refresh that ran while
+  you were watching could reopen a full sync and discard the work already done - and it ignored the
+  refresh interval you had set, so it happened far more often than asked. A sync now only runs when
+  it should, announces itself once, and leaves your screen alone.
+- **Guide syncs no longer grind the whole database.** Each refresh ran a full vacuum of the database
+  and trimmed the future listings with a quadratic loop, which is what made the box feel heavy and
+  the guide slow to open while a sync was happening. The trim is now indexed, space is reclaimed only
+  when it is actually needed, and a feed that is permanently broken is not retried on every launch.
+- **The guide shows what it is doing.** The header carries a live stamp and a sync that is genuinely
+  running reports its progress, so a slow provider looks like work in progress instead of a frozen
+  screen.
+- **Plex gets a premiere-night redesign.** The shelf and sign-in screen were rebuilt around the
+  poster artwork: the hero image is shown whole and anchored so heads survive the crop, the rail
+  button moved under Recordings with a Plex glyph, and the player now wears Plex gold. The clips'
+  own Refresh and Play buttons are gone - the shelf and the card do that.
+- **Fewer stored listings, and no runaway programme text.** Future guide retention drops from seven
+  days to five, and stored programme text is capped - existing oversized rows are trimmed on disk on
+  the next sync, which reclaims a meaningful slice of the database.
+- **The guide's status chips are quieter.** NEW and LIVE are no longer said twice on a cell, the
+  chips are smaller, and the odd titles feeds send - superscript status words, trailing tokens split
+  across whitespace - are folded into one clean label.
+
 ## 0.16.16
 
 - **Plex now registers what you watch.** Playing a film or show reports progress to Plex every few
