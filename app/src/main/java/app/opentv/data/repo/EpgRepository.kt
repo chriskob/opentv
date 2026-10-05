@@ -397,8 +397,17 @@ class EpgRepository(
             // Published alongside the callback, so a sync started from one screen is visible from
             // every other. Cleared in a finally: an exception here used to leave the Guide
             // claiming a sync was running forever.
+            // Only an explicit request gets a banner. A scheduled or launch-triggered refresh is
+            // background maintenance: the viewer did not ask for it, does not need to be told,
+            // and a guide that shouts "Updating guide..." every time it is opened reads as a
+            // fault rather than as housekeeping. Only the Settings button is a orce sync.
+            val announce = force
+            fun say(line: String) {
+                if (announce) _syncActivity.value = line
+            }
+
             fun publish(progress: SyncProgress) {
-                _syncActivity.value = progress.activityLine()
+                say(progress.activityLine())
                 onProgress?.invoke(progress)
             }
 
@@ -415,7 +424,7 @@ class EpgRepository(
                 onProgress?.invoke(SyncProgress(feedsDone = feeds.size, feedsTotal = feeds.size, programmesWritten = 0))
                 return@withContext SyncSummary(feeds.size, 0, 0, 0, 0)
             }
-            _syncActivity.value = "Starting guide update…"
+            say("Starting guide update…")
             onProgress?.invoke(SyncProgress(feedsDone = 0, feedsTotal = feeds.size, programmesWritten = 0))
 
             feeds.forEachIndexed { index, feed ->
@@ -464,7 +473,7 @@ class EpgRepository(
             // waited for it. Nothing ages out faster than the clock, and a failed run adds no rows,
             // so there is nothing to gain when `processed` is zero.
             if (processed > 0) {
-                _syncActivity.value = "Cleaning up old guide data…"
+            say("Cleaning up old guide data…")
                 programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
                 programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
             }
@@ -476,9 +485,9 @@ class EpgRepository(
             // watches television. It is guarded by a persisted flag so it happens at most once
             // per install, and it is skipped outright if it already ran.
             if (settings?.oneTimeGuideCleanupDone != true) {
-                _syncActivity.value = "One-time guide cleanup…"
+            say("One-time guide cleanup…")
                 pruneOversizedText()
-                _syncActivity.value = "Reclaiming disk space…"
+            say("Reclaiming disk space…")
                 reclaimDiskSpace()
                 settings?.oneTimeGuideCleanupDone = true
             }
