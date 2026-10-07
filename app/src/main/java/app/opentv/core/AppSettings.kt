@@ -945,6 +945,42 @@ class AppSettings private constructor(context: Context) {
     }
 
     /**
+     * Catch-up discovery asks the panel for its ENTIRE live-stream list — ~19 MB on the
+     * provider [app.opentv.data.remote.XtreamPanelDiscovery] was written against — and the
+     * trigger (any channel still missing an archive flag) stays permanently true on panels
+     * that simply have no archive. The answer barely changes per panel, so one source
+     * re-asks at most weekly. Kept as "sourceId=millis;..." in a single pref rather than
+     * claiming a schema column it does not deserve.
+     */
+    fun catchupDiscoveryDue(sourceId: Long, nowUtcMillis: Long): Boolean {
+        val last = catchupDiscoveryRunsMillis[sourceId] ?: 0L
+        return nowUtcMillis - last >= CATCHUP_DISCOVERY_INTERVAL_MILLIS
+    }
+
+    fun markCatchupDiscoveryRun(sourceId: Long, nowUtcMillis: Long) {
+        val runs = catchupDiscoveryRunsMillis.toMutableMap()
+        runs[sourceId] = nowUtcMillis
+        prefs.edit()
+            .putString(
+                KEY_CATCHUP_DISCOVERY_RUNS,
+                runs.entries.joinToString(";") { "${it.key}=${it.value}" },
+            )
+            .apply()
+    }
+
+    private val catchupDiscoveryRunsMillis: Map<Long, Long>
+        get() = prefs.getString(KEY_CATCHUP_DISCOVERY_RUNS, "").orEmpty()
+            .splitToSequence(";")
+            .filter { it.isNotBlank() }
+            .mapNotNull { entry ->
+                val parts = entry.split("=", limit = 2)
+                val id = parts.getOrNull(0)?.toLongOrNull()
+                val at = parts.getOrNull(1)?.toLongOrNull()
+                if (id != null && at != null) id to at else null
+            }
+            .toMap()
+
+    /**
      * Master switch for catch-up (TiviMate: Settings > Catch-up > Enable catch-up).
      * Off hides badges' effect: past programmes fall back to the record/reminder menu and
      * rewind stays on the local DVR window instead of reaching for the archive.
@@ -1137,6 +1173,10 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_REC_AUTOSWITCH = "rec_auto_switch"
         private const val KEY_LIVE_PAUSE = "live_pause_enabled"
         private const val KEY_RECENT_CHANNEL_REFS = "recent_watched_channel_refs"
+        private const val KEY_CATCHUP_DISCOVERY_RUNS = "catchup_discovery_runs"
+
+        /** How often one source may re-download its panel's stream list for archive flags. */
+        private const val CATCHUP_DISCOVERY_INTERVAL_MILLIS = 7L * 24 * 60 * 60 * 1000
 
         /** The id list written by versions that stored row ids. Read once to upgrade, then removed. */
         private const val KEY_RECENT_CHANNELS_LEGACY = "recent_watched_channels"

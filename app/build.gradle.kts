@@ -49,8 +49,8 @@ android {
         applicationId = "app.opentv"
         minSdk = project.findProperty("devMinSdk")?.toString()?.toIntOrNull() ?: 23
         targetSdk = 35
-        versionCode = 145
-        versionName = "0.16.17"
+        versionCode = 146
+        versionName = "0.16.18"
 
         /*
          * Only the languages OpenTV itself ships: English (the default resources) and Polish.
@@ -135,6 +135,11 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // BouncyCastle's post-quantum picnic tables (three lowmcL*.bin.properties,
+            // ~1.2 MB) and its cert-reviewer message bundles ride in as plain Java
+            // resources. SMB authentication uses none of them, and R8 cannot prove a
+            // classloader resource unread — the only way to lose them is to exclude them.
+            excludes += "org/bouncycastle/**/*.properties"
         }
     }
 
@@ -178,10 +183,13 @@ dependencies {
 
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
-    implementation(libs.media3.exoplayer.dash)
-    implementation(libs.media3.exoplayer.rtsp)
+    // DASH and RTSP modules and media3-session were declared but never referenced (grep-
+    // verified): the app plays HLS and progressive TS/MP4 only. DefaultMediaSourceFactory
+    // discovers optional modules reflectively and simply omits missing ones, so a .mpd or
+    // rtsp URL now falls back like any unsupported scheme instead of shipping ~1 MB of dex
+    // nobody calls. media3-session also fed the manifest an abstract MediaSessionService
+    // nothing extended; the entry is removed alongside it.
     implementation(libs.media3.ui)
-    implementation(libs.media3.session)
     implementation(libs.media3.datasource.okhttp)
 
     // Room 3: coroutines support is built into room3-runtime (no -ktx artifact).
@@ -190,11 +198,12 @@ dependencies {
     ksp(libs.room3.compiler)
 
     implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.work.runtime)
-    implementation(libs.androidx.datastore.preferences)
+    // No DataStore anywhere in the app (grep-verified): AppSettings stays SharedPreferences
+    // on purpose, and work-runtime still brings the datastore-core it needs itself. The
+    // preferences artifact was pure weight.
     // Storage Access Framework helpers - write recordings to a plugged-in USB / external
     // drive via a user-granted tree URI, with no storage permission.
     implementation(libs.androidx.documentfile)

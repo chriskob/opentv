@@ -116,9 +116,9 @@ val SettingsDanger: Color
 
 /** Page rhythm, shared so every screen breathes the same way. */
 object SettingsSpacing {
-    val PageHorizontal = 40.dp
-    val PageVertical = 28.dp
-    val SectionGap = 22.dp
+    val PageHorizontal = 48.dp
+    val PageVertical = 32.dp
+    val SectionGap = 28.dp
 }
 
 /**
@@ -209,7 +209,7 @@ fun SettingsChoiceRow(
             )
             .focusable()
             .selectable(selected = selected, onClick = onSelect)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -259,7 +259,13 @@ fun SettingsCard(
     Column(
         modifier
             .fillMaxWidth()
-            .padding(contentPadding),
+            .clip(SettingsShape.Card)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.4f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), SettingsShape.Card)
+            .padding(
+                if (contentPadding != PaddingValues(0.dp)) contentPadding
+                else PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+            ),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         content = content,
     )
@@ -277,6 +283,7 @@ fun SettingsSection(
     title: String,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    summary: String? = null,
     collapsible: Boolean = true,
     initiallyExpanded: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
@@ -284,31 +291,37 @@ fun SettingsSection(
     Column(modifier.fillMaxWidth()) {
         if (collapsible) {
             var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
-            SettingsSectionHeader(title = title, icon = icon, expanded = expanded, onToggle = { expanded = !expanded })
+            SettingsSectionHeader(title = title, summary = summary, icon = icon, expanded = expanded, onToggle = { expanded = !expanded })
             AnimatedVisibility(visible = expanded) {
                 SettingsCard(content = content)
             }
         } else {
-            SettingsSectionHeader(title = title, icon = icon, expanded = true, onToggle = null)
+            SettingsSectionHeader(title = title, summary = summary, icon = icon, expanded = true, onToggle = null)
             SettingsCard(content = content)
         }
     }
 }
 
+/**
+ * Section title plus, optionally, a one-line summary of the values inside — so a collapsed section
+ * still says what it holds (e.g. "Playlist every 6h · Guide every 4h") and the viewer only has to
+ * open the sections they actually want to change.
+ */
 @Composable
 private fun SettingsSectionHeader(
     title: String,
     @Suppress("UNUSED_PARAMETER") icon: ImageVector?,
+    summary: String?,
     expanded: Boolean,
     onToggle: (() -> Unit)?,
 ) {
     val label: @Composable (Boolean) -> Unit = { onAccent ->
         Text(
             text = title,
-            style = MaterialTheme.typography.titleSmall.copy(fontSize = 12.sp),
-            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
+            fontWeight = FontWeight.SemiBold,
             color = if (onAccent) MaterialTheme.colorScheme.onSurface
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            else MaterialTheme.colorScheme.onSurface,
         )
     }
 
@@ -334,16 +347,30 @@ private fun SettingsSectionHeader(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { label(focused) }
+            if (summary != null) {
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .padding(end = 8.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                )
+            }
             Icon(
                 imageVector = Icons.Filled.ExpandMore,
                 contentDescription = if (expanded) "Collapse" else "Expand",
                 tint = if (focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = rotation },
+                modifier = Modifier.size(22.dp).graphicsLayer { rotationZ = rotation },
             )
         }
         Spacer(Modifier.height(4.dp))
     }
 }
+
 
 /** A title/subtitle row with a switch; the whole row toggles. */
 @Composable
@@ -371,7 +398,7 @@ fun SettingsToggleRow(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { onToggle(!checked) }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingsRowText(
@@ -406,32 +433,35 @@ fun SettingsNavRow(
     selected: Boolean = false,
     expanded: Boolean = true,
     tint: Color = AppTheme.primary,
-    titleSize: TextUnit = 14.sp,
+    titleSize: TextUnit = 16.sp,
     titleWeight: FontWeight = FontWeight.Medium,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    Row(
-        modifier
-            .fillMaxWidth()
-            .settingsFocus(
-                shape = SettingsShape.Row,
-                selected = selected,
-                onFocusChange = { focused = it },
-            )
-            .focusable()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = if (expanded) 12.dp else 8.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    // The wrapper lets a selected row draw an accent bar pinned to its left edge — the "you are
+    // here" mark, distinct from the focus ring that moves with the cursor.
+    Box(modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .settingsFocus(
+                    shape = SettingsShape.Row,
+                    selected = selected,
+                    onFocusChange = { focused = it },
+                )
+                .focusable()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onClick,
+                )
+                .padding(horizontal = if (expanded) 16.dp else 8.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         if (icon != null) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(40.dp)
                     .clip(SettingsShape.Tile)
                     .background(tint.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center,
@@ -440,7 +470,7 @@ fun SettingsNavRow(
                     icon,
                     contentDescription = null,
                     tint = tint,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(22.dp),
                 )
             }
             if (expanded) Spacer(Modifier.width(12.dp))
@@ -467,6 +497,18 @@ fun SettingsNavRow(
                 )
             }
         }
+        }
+        if (selected) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 3.dp)
+                    .clip(SettingsShape.Pill)
+                    .background(if (focused) MaterialTheme.colorScheme.onSurface else AppTheme.primary)
+                    .width(4.dp)
+                    .height(26.dp),
+            )
+        }
     }
 }
 
@@ -474,7 +516,7 @@ fun SettingsNavRow(
 private fun RowScope.SettingsRowText(
     title: String,
     subtitle: String?,
-    titleSize: TextUnit = 14.sp,
+    titleSize: TextUnit = 16.sp,
     titleWeight: FontWeight = FontWeight.Medium,
 ) {
     Column(Modifier.weight(1f)) {
@@ -487,10 +529,11 @@ private fun RowScope.SettingsRowText(
             overflow = TextOverflow.Ellipsis,
         )
         if (subtitle != null) {
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(3.dp))
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                lineHeight = 17.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -551,7 +594,7 @@ fun SettingsButton(
             .onFocusChanged { focused = it.isFocused }
             .focusable(enabled)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 10.dp),
+            .padding(horizontal = 22.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -627,7 +670,7 @@ fun SettingsChip(
         }
         Text(
             text = label,
-            style = MaterialTheme.typography.titleSmall.copy(fontSize = 12.sp),
+            style = MaterialTheme.typography.titleSmall.copy(fontSize = 13.sp),
             fontWeight = FontWeight.Medium,
             color = when {
                 focused -> MaterialTheme.colorScheme.onSurface
@@ -851,21 +894,32 @@ fun SettingsStepperRow(
                     else -> false
                 }
             }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingsRowText(title = title, subtitle = subtitle)
         Spacer(Modifier.width(16.dp))
-        StepperGlyph("−", enabled = canDecrement, muted = !canDecrement)
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.widthIn(min = 64.dp).padding(horizontal = 8.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
-        StepperGlyph("+", enabled = canIncrement, muted = !canIncrement)
+        // The stepper draws as one visible control — a bordered segment like the dropdown value
+        // chips — instead of bare glyphs that nearly vanished into the page background.
+        Row(
+            Modifier
+                .clip(SettingsShape.Control)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, SettingsShape.Control)
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            StepperGlyph("−", enabled = canDecrement, muted = !canDecrement)
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.widthIn(min = 88.dp).padding(horizontal = 4.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            StepperGlyph("+", enabled = canIncrement, muted = !canIncrement)
+        }
     }
 }
 
@@ -876,12 +930,12 @@ fun SettingsStepperRow(
 @Composable
 private fun StepperGlyph(glyph: String, enabled: Boolean, muted: Boolean) {
     Box(
-        Modifier.size(44.dp),
+        Modifier.size(40.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = glyph,
-            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 18.sp),
+            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp),
             fontWeight = FontWeight.Medium,
             color = if (muted) {
                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -956,7 +1010,7 @@ fun SettingsPage(
             Column(Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = 21.sp),
+                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp),
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )

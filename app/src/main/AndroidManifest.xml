@@ -92,12 +92,13 @@
             </intent-filter>
         </activity>
 
-        <service
-            android:name="androidx.media3.session.MediaSessionService"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
-
         <!--
+          No media3 MediaSessionService here. One was declared against the ABSTRACT
+          androidx.media3.session.MediaSessionService with no subclass, nothing bound to it
+          (exported=false, no code touches media3-session), and any system media controller
+          that did bind would have crashed the process on instantiation. If real media-session
+          support lands later it needs a concrete service subclass.
+
           Keeps a recording running when the user leaves the player or the screen sleeps.
           Typed mediaPlayback (not dataSync) so long captures aren't cut off by Android 14's
           six-hour daily dataSync cap — recording live TV is a media task.

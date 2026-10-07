@@ -376,15 +376,21 @@ fun PlayerScreen(
 
     LaunchedEffect(Unit) {
         while (true) {
+            // 60 s, not 30: nowMillis is read in this screen's composition scope, so every
+            // write recomposes the whole (very large) PlayerScreen body. The header clock
+            // and the EPG strip are minute-accurate displays; the old 30 s cadence paid a
+            // second full-body recomposition for nothing visible.
             nowMillis = System.currentTimeMillis()
-            kotlinx.coroutines.delay(30_000L)
+            kotlinx.coroutines.delay(60_000L)
         }
     }
 
     // Keyless header weather (zip -> National Weather Service, no API key). Display-only: the header
     // never opens anything. Null = hidden and the clock always shows. Fetches only while
     // the user has opted in; refreshes every 30 minutes and whenever zip/toggle changes.
-    val weatherClient = remember(graph.httpClient) { WeatherClient(graph.httpClient) }
+    // From the shared graph: the client caches station ids, and a per-composition instance
+    // lost them on every navigation, repaying four round trips per player entry.
+    val weatherClient = graph.weatherClient
     val weatherZip by settings.weatherZip.collectAsState()
     val weatherEnabled by settings.weatherEnabled.collectAsState()
     // Manual "Update now" from Settings restarts this loop, so the fetch below

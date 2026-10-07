@@ -1146,16 +1146,16 @@ fun HomeScreen(
         previewController.player.volume = if (isFullScreen || previewSound) 1f else 0f
     }
 
-    var previewBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    val previewBoundsState = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     // Where this screen's own root sits inside the Compose root. The live player is positioned from
     // the preview card's bounds, which are measured in ROOT space (boundsInRoot). The player itself
     // lives inside the guide's root, so when the main nav rail pushes the guide across, the rail's
     // width was counted twice and the video landed over the programme info. Subtracting this origin
     // converts the card bounds back into the guide's own space.
-    var homeOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val homeOriginState = remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     // The root's own size, so the video surface can ease from the preview card out to the full
     // screen (see PersistentVideoSurface below).
-    var homeSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val homeSizeState = remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
 
     val lastInteractionState = remember { mutableStateOf(System.currentTimeMillis()) }
     var lastInteractionTime by lastInteractionState
@@ -1180,8 +1180,8 @@ fun HomeScreen(
             .fillMaxSize()
             .background(AppTheme.palette.background)
             .onGloballyPositioned {
-                homeOrigin = it.boundsInRoot().topLeft
-                homeSize = it.size
+                homeOriginState.value = it.boundsInRoot().topLeft
+                homeSizeState.value = it.size
             }
             .onPreviewKeyEvent { e ->
                 lastInteractionTime = System.currentTimeMillis()
@@ -1226,12 +1226,17 @@ fun HomeScreen(
         val guideVisible = !isFullScreen || shrinkingFromFullScreen
         val showPlayerOsd = isFullScreen && !shrinkingFromFullScreen
         if (previewEnabled || isFullScreen || shrinkingFromFullScreen || catchup != null) {
-            PersistentVideoSurface(
+            // The docking measurements are State inputs read INSIDE the wrapper, not values
+            // read here in the body: the rail animations write them on every frame, and with
+            // the body reading them directly, this entire screen recomposed per animation
+            // frame during exactly that transition. Scoping the read means the only thing
+            // recomposing while the rails slide is the video surface being docked.
+            DockedVideoSurface(
                 player = previewController.player,
                 isFullScreen = surfaceFullScreen,
-                cardBounds = previewBounds,
-                rootOrigin = homeOrigin,
-                rootSize = homeSize,
+                cardBounds = previewBoundsState,
+                rootOrigin = homeOriginState,
+                rootSize = homeSizeState,
                 resizeMode = if (surfaceFullScreen) {
                     playerResizeMode
                 } else {
@@ -1609,8 +1614,8 @@ fun HomeScreen(
                     onPrevDay = { viewModel.nudgeGuideDay(-1) },
                     onNextDay = { viewModel.nudgeGuideDay(1) },
                     onPreviewBoundsChanged = { rect ->
-                        if (rect.width > 0 && rect.height > 0 && previewBounds != rect) {
-                            previewBounds = rect
+                        if (rect.width > 0 && rect.height > 0 && previewBoundsState.value != rect) {
+                            previewBoundsState.value = rect
                         }
                     },
                     catchUpChannelIds = catchUpChannelIds,
@@ -1688,6 +1693,8 @@ fun HomeScreen(
                         rows = rows,
                         epgRows = viewModel.epgRows,
                         epgHydrationComplete = viewModel.epgHydrationComplete,
+                        epgQueriedKeys = viewModel.epgQueriedKeys,
+                        onViewportChanged = viewModel::onGuideViewportChanged,
                         horizontalScrollState = guideScrollState,
                         providedListState = guideListState,
                         windowStartMillis = windowStart,
@@ -2569,6 +2576,31 @@ private fun formatTime(utcMillis: Long): String = timeFormat.format(Date(utcMill
  * moves the card, and the video has to sit exactly on it rather than trail a beat behind. Only
  * [isFullScreen] drives the animation.
  */
+/**
+ * Thin scoping wrapper for [PersistentVideoSurface]: it takes the docking measurements as
+ * [androidx.compose.runtime.State] and reads them here, so the writes a rail animation
+ * fires on every frame invalidate only this narrow composition, not the HomeScreen body
+ * that hosts the guide, the rails and the OSD.
+ */
+@Composable
+private fun DockedVideoSurface(
+    player: androidx.media3.exoplayer.ExoPlayer,
+    isFullScreen: Boolean,
+    cardBounds: androidx.compose.runtime.State<androidx.compose.ui.geometry.Rect>,
+    rootOrigin: androidx.compose.runtime.State<androidx.compose.ui.geometry.Offset>,
+    rootSize: androidx.compose.runtime.State<androidx.compose.ui.unit.IntSize>,
+    resizeMode: Int,
+) {
+    PersistentVideoSurface(
+        player = player,
+        isFullScreen = isFullScreen,
+        cardBounds = cardBounds.value,
+        rootOrigin = rootOrigin.value,
+        rootSize = rootSize.value,
+        resizeMode = resizeMode,
+    )
+}
+
 @Composable
 private fun PersistentVideoSurface(
     player: androidx.media3.exoplayer.ExoPlayer,

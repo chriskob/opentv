@@ -150,7 +150,20 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(SettingsSpacing.SectionGap))
 
-        SettingsSection(title = stringResource(R.string.settings_section_content), icon = Icons.Filled.VideoLibrary, initiallyExpanded = false) {
+        // Header summaries: collapsed sections still name their current values, so the viewer
+        // opens only what they want to change.
+        val contentSummary = buildList {
+            if (liveEnabled) add(stringResource(R.string.nav_live_tv))
+            if (moviesEnabled) add(stringResource(R.string.nav_movies))
+            if (seriesEnabled) add(stringResource(R.string.nav_shows))
+        }.joinToString(" · ").ifEmpty { stringResource(R.string.settings_summary_none) }
+
+        SettingsSection(
+            title = stringResource(R.string.settings_section_content),
+            icon = Icons.Filled.VideoLibrary,
+            summary = contentSummary,
+            initiallyExpanded = false,
+        ) {
             Text(
                 stringResource(R.string.settings_content_note),
                 style = MaterialTheme.typography.bodyMedium,
@@ -182,23 +195,30 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(SettingsSpacing.SectionGap))
 
-        SettingsSection(title = stringResource(R.string.settings_section_data_refresh), icon = Icons.Filled.Sync, initiallyExpanded = false) {
+        val refreshOptions = listOf(
+            stringResource(R.string.settings_refresh_2h) to 2,
+            stringResource(R.string.settings_refresh_4h) to 4,
+            stringResource(R.string.settings_refresh_6h) to 6,
+            stringResource(R.string.settings_refresh_8h) to 8,
+            stringResource(R.string.settings_refresh_12h) to 12,
+            stringResource(R.string.settings_refresh_24h) to 24,
+            stringResource(R.string.settings_refresh_manual) to 0,
+        )
+        val playlistLabel = refreshOptions.firstOrNull { it.second == playlistRefreshHours }?.first ?: ""
+        val guideLabel = refreshOptions.firstOrNull { it.second == epgRefreshHours }?.first ?: ""
+
+        SettingsSection(
+            title = stringResource(R.string.settings_section_data_refresh),
+            icon = Icons.Filled.Sync,
+            summary = stringResource(R.string.settings_summary_refresh, playlistLabel, guideLabel),
+            initiallyExpanded = false,
+        ) {
             Text(
                 stringResource(R.string.settings_data_refresh_note),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-
-            val refreshOptions = listOf(
-                stringResource(R.string.settings_refresh_2h) to 2,
-                stringResource(R.string.settings_refresh_4h) to 4,
-                stringResource(R.string.settings_refresh_6h) to 6,
-                stringResource(R.string.settings_refresh_8h) to 8,
-                stringResource(R.string.settings_refresh_12h) to 12,
-                stringResource(R.string.settings_refresh_24h) to 24,
-                stringResource(R.string.settings_refresh_manual) to 0,
-            )
 
             val guideHint = stringResource(R.string.settings_guide_refresh_hint)
             val lastGuide = settings.lastGuideUpdatedMillis
@@ -253,7 +273,16 @@ fun AppSettingsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(SettingsSpacing.SectionGap))
 
-        SettingsSection(title = stringResource(R.string.settings_section_language), icon = Icons.Filled.Language, initiallyExpanded = false) {
+        val languageSummary = if (language.isNullOrEmpty()) stringResource(R.string.settings_language_system)
+        else OpenTvLanguages.entries.firstOrNull { it.first == language }?.second
+            ?: stringResource(R.string.settings_language_system)
+
+        SettingsSection(
+            title = stringResource(R.string.settings_section_language),
+            icon = Icons.Filled.Language,
+            summary = languageSummary,
+            initiallyExpanded = false,
+        ) {
             val languageOptions = buildList {
                 add(stringResource(R.string.settings_language_system) to "")
                 OpenTvLanguages.entries.forEach { (tag, name) -> add(name to tag) }

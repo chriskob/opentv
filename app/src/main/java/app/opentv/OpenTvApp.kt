@@ -165,17 +165,23 @@ class OpenTvApp : Application(), ImageLoaderFactory {
         appScope.launch {
             withTimeoutOrNull(FIRST_FRAME_WAIT_MILLIS) { Startup.firstFrameDrawn.first { it } }
 
+            // Resolve the graph AFTER the wait, not the captured one: when the Activity
+            // finished while this coroutine parked, ServiceLocator.clear() already released
+            // that Graph's player and DB. Running on a resurrected-by-reference old graph
+            // would rebuild the whole object set it was supposed to free.
+            val liveGraph = ServiceLocator.get(this@OpenTvApp)
+
             // A force-stop or app update drops exact alarms, and only a reboot is covered by the
             // boot receiver. Re-setting the same alarm is idempotent, so this keeps bookings alive.
-            launch(Dispatchers.IO) { runCatching { graph.recordingEngine.rearmScheduled() } }
+            launch(Dispatchers.IO) { runCatching { liveGraph.recordingEngine.rearmScheduled() } }
 
             // Program reminders, for the same reason: setting an exact alarm for the same reminder
             // twice is harmless.
             launch(Dispatchers.IO) {
                 runCatching {
                     val now = System.currentTimeMillis()
-                    graph.reminderRepository.deleteEndedBefore(now)
-                    graph.reminderRepository.upcoming(now).forEach {
+                    liveGraph.reminderRepository.deleteEndedBefore(now)
+                    liveGraph.reminderRepository.upcoming(now).forEach {
                         app.opentv.reminders.ReminderScheduler.set(this@OpenTvApp, it.id, it.startUtcMillis)
                     }
                 }
@@ -186,17 +192,22 @@ class OpenTvApp : Application(), ImageLoaderFactory {
             // Defer startup background maintenance so the live UI and DB render immediately
             // on cold start with zero I/O contention or CPU throttling.
             kotlinx.coroutines.delay(STARTUP_MAINTENANCE_DELAY_MILLIS)
+            // Resolve the graph AFTER the delay, as with the first-frame block above: if the
+            // Activity finished and clear() ran while this parked, the captured old Graph
+            // (DB + HTTP clients) would be pinned alive for the whole sync it is about to
+            // start, on a graph that is no longer the app's.
+            val liveGraph = ServiceLocator.get(this@OpenTvApp)
             val prefs = getSharedPreferences("opentv", MODE_PRIVATE)
             val seen = prefs.getInt("normalizer_version", 0)
             if (seen < CatalogRepository.NORMALIZER_VERSION) {
-                graph.catalogRepository.renormalizeAll()
+                liveGraph.catalogRepository.renormalizeAll()
                 prefs.edit().putInt("normalizer_version", CatalogRepository.NORMALIZER_VERSION).apply()
             }
             // Sweep rows belonging to playlists that no longer exist. A delete that overlapped an
             // import still writing leaves the tail of that import behind, owned by nobody — and since
             // the guide lists channels without joining the sources table, those rows never leave the
             // screen on their own. Cheap (five indexed deletes) and it runs on every process start.
-            runCatching { graph.catalogRepository.purgeOrphans() }
+            runCatching { liveGraph.catalogRepository.purgeOrphans() }
             // Runs on every launch. It is cheap when nothing is stale (feeds within their
             // refresh window are skipped), but it is what makes the free regional guide turn
             // itself on and download the first time — without waiting for the user to find
@@ -211,7 +222,7 @@ class OpenTvApp : Application(), ImageLoaderFactory {
             val epgIntervalMillis = java.util.concurrent.TimeUnit.HOURS.toMillis(
                 settings.epgRefreshHours.value.toLong().coerceAtLeast(1)
             )
-            graph.epgRepository.syncAllIfIdle(
+            liveGraph.epgRepository.syncAllIfIdle(
                 System.currentTimeMillis(),
                 force = false,
                 refreshIntervalMillis = epgIntervalMillis,

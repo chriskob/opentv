@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -184,7 +185,10 @@ private fun VodResultRow(name: String, posterUrl: String?, subtitle: String?, on
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
-            model = posterUrl,
+            // posterRequest: shared cache key + bounded decode (see ImagePrefetch). The raw
+            // URL makes Coil key by url+viewSize, so a searched title already shown on a
+            // shelf decoded a SECOND copy inside the 8% bitmap budget.
+            model = app.opentv.ui.components.posterRequest(LocalContext.current, posterUrl),
             contentDescription = null,
             modifier = Modifier.size(width = 34.dp, height = 48.dp).clip(RoundedCornerShape(6.dp)),
         )

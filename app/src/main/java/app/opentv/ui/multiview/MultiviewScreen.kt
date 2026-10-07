@@ -99,11 +99,17 @@ fun MultiviewScreen(
         onDispose { PipState.eligible = prevEligible }
     }
 
+    // handleAudioFocus = false on both panes: this screen mutes the unfocused pane itself
+    // (see the volume LaunchedEffect below). With framework focus handling on, pane B's
+    // AUDIOFOCUS_GAIN request ducked/paused pane A and the app fought the system over who
+    // was audible. TV SoCs also only expose one or two hardware decoders — the live player
+    // is STOPPED (not paused) before entering, so these two panes fit.
     val controllerA = remember {
         PlayerController(
             context = context.applicationContext,
             scope = scope,
             httpClient = graph.streamingHttpClient,
+            handleAudioFocus = false,
         )
     }
     val controllerB = remember {
@@ -111,6 +117,7 @@ fun MultiviewScreen(
             context = context.applicationContext,
             scope = scope,
             httpClient = graph.streamingHttpClient,
+            handleAudioFocus = false,
         )
     }
 

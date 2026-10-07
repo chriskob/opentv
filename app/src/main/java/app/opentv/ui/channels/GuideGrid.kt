@@ -181,6 +181,10 @@ fun GuideGrid(
     modifier: Modifier = Modifier,
     epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
     epgHydrationComplete: StateFlow<Boolean>? = null,
+    /** Rows whose guide query has landed (answered, even if empty) — honest empty-cell label. */
+    epgQueriedKeys: StateFlow<Set<Any>>? = null,
+    /** Visible row range, reported upward so hydration is walked from the viewer outward. */
+    onViewportChanged: (first: Int, lastExclusive: Int) -> Unit = { _, _ -> },
     playingKey: Any? = null,
     focusRequester: FocusRequester? = null,
     horizontalScrollState: androidx.compose.foundation.ScrollState? = null,
@@ -269,6 +273,19 @@ fun GuideGrid(
         initialFirstVisibleItemScrollOffset = 0,
     )
 
+    // Report the visible row window upward: the ViewModel spends its 48h hydration budget
+    // around these rows (and re-centres when the viewer outruns it), so the guide fills the
+    // screen the viewer actually has instead of a walk climbing toward them from row 0.
+    LaunchedEffect(listState, rows.size) {
+        snapshotFlow {
+            val first = listState.firstVisibleItemIndex
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: first
+            first to last
+        }
+            .distinctUntilChanged()
+            .collect { (first, last) -> onViewportChanged(first, last + 1) }
+    }
+
     // Width of the horizontally-scrollable timeline (guide area minus the fixed channel column).
     // Exposed as state and read lazily (inside the compose window below and in the keep-visible
     // callback), so an outer layout change â€” e.g. the main menu sliding in and widening the guide
@@ -307,6 +324,22 @@ fun GuideGrid(
                 // step rather than continuously, while the buffer keeps it safely conservative.
                 val q = COMPOSE_QUANTUM_MILLIS
                 (startMillis / q * q) to ((endMillis / q + 1) * q)
+            }
+        }
+    }
+
+    // The minute the horizontal viewport starts at. Derived from scroll.value but quantised
+    // to whole minutes, and handed to the rows as THIS rather than letting them read
+    // scroll.value themselves: a raw read inside the item lambda subscribed every visible
+    // row to per-pixel scroll changes, so an animated scroll recomposed ten rows of blocks
+    // on nearly every frame. Same pattern (and same reason) as composeWindow above.
+    val viewportStartMillis by remember(effectiveStartMillis) {
+        derivedStateOf {
+            val pxPerMinute = MINUTE_DP * density.density
+            if (pxPerMinute <= 0f) {
+                effectiveStartMillis
+            } else {
+                effectiveStartMillis + (scroll.value / pxPerMinute).toLong() * 60_000L
             }
         }
     }
@@ -906,6 +939,7 @@ fun GuideGrid(
                             baseRow = row,
                             epgRows = epgRows,
                             epgHydrationComplete = epgHydrationComplete,
+                            epgQueriedKeys = epgQueriedKeys,
                             rowIndex = index,
 
                             totalRows = rows.size,
@@ -918,8 +952,7 @@ fun GuideGrid(
                             targetProgKeyState = targetProgKeyState,
                             anchorState = temporalAnchorState,
                             scroll = scroll,
-                            visibleStartMillis = effectiveStartMillis +
-                                (scroll.value / (MINUTE_DP * density.density)).toLong() * 60_000L,
+                            visibleStartMillis = viewportStartMillis,
                             catchUpChannelIds = catchUpChannelIds,
                             reminderKeys = reminderKeys,
                             isSelected = isPlaying,
@@ -1387,6 +1420,8 @@ private fun GuideRow(
     baseRow: ChannelsViewModel.Row,
     epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
     epgHydrationComplete: StateFlow<Boolean>? = null,
+    /** Rows whose guide query has landed; decides "loading" vs honest "no guide" vs pending. */
+    epgQueriedKeys: StateFlow<Set<Any>>? = null,
     rowIndex: Int = 0,
     totalRows: Int = 1,
     windowStartMillis: Long,
@@ -1565,7 +1600,14 @@ private fun GuideRow(
             // keying off that alone left those rows reading "Loading guide…" forever. Hydration
             // being finished is what tells the two cases apart.
             val guideSettled = epgHydrationComplete?.collectAsState(initial = false)?.value ?: true
-            val awaitingGuide = programmes.isEmpty() && !guideSettled
+            // Per-row truth beats the global flag: a row whose own query landed and answered
+            // with nothing says so immediately (no waiting for the walk to finish), and a row
+            // the budget never reached stays honestly pending — the re-centred walk covers it
+            // the moment the viewer scrolls there, so a channel is never reported as having
+            // no guide when nobody actually asked about it.
+            val rowAnswered = epgQueriedKeys?.collectAsState(initial = emptySet())?.value
+                ?.contains(row.key) ?: guideSettled
+            val awaitingGuide = programmes.isEmpty() && !rowAnswered
             val emptyRowLabel = stringResource(
                 if (awaitingGuide) R.string.guide_loading_info else R.string.guide_no_info,
             )

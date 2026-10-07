@@ -103,8 +103,10 @@ class MainActivity : ComponentActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_PIP_CLOSE) {
                 runCatching {
+                    // Guarded: PiP can only exist if playback happened, but reaching for
+                    // graph.livePlayer here would otherwise construct it on any stray intent.
                     val graph = ServiceLocator.get(this@MainActivity)
-                    graph.livePlayer.stop()
+                    graph.stopLivePlayer()
                     finish()
                 }
             }
@@ -266,9 +268,11 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         app.opentv.core.PipState.setInPip(false)
+        // Guarded stop: livePlayer is lazy, and touching it here would CONSTRUCT a full
+        // ExoPlayer on every Home press of a session that never played anything.
         runCatching {
             val graph = ServiceLocator.get(this)
-            graph.livePlayer.stop()
+            graph.stopLivePlayer()
         }
     }
 
@@ -291,12 +295,12 @@ class MainActivity : ComponentActivity() {
         if (isFinishing) {
             // Activity is being intentionally destroyed — full release so nothing survives.
             runCatching {
-                // Use the already-cached graph — do NOT call ServiceLocator.get() again,
-                // because `clear()` below may have already nulled it on Fire OS (where
-                // onDestroy can sometimes run twice and out-of-order).
+                // Guarded stop + guarded release: neither may construct the lazy player in
+                // a session that never played anything. releaseLivePlayer() exists precisely
+                // for this and used to have no callers.
                 val graph = ServiceLocator.get(this)
-                graph.livePlayer.stop()
-                graph.livePlayer.release()
+                graph.stopLivePlayer()
+                graph.releaseLivePlayer()
             }
             // Also clear the service locator singleton so a fresh process start builds a
             // clean graph. This matters on Fire OS which can restart the app process without
@@ -306,7 +310,7 @@ class MainActivity : ComponentActivity() {
             // Config change or other non-final destroy — just stop, don't release.
             runCatching {
                 val graph = ServiceLocator.get(this)
-                graph.livePlayer.stop()
+                graph.stopLivePlayer()
             }
         }
     }
@@ -492,6 +496,22 @@ private fun OpenTvApp(isTelevision: Boolean) {
                 popUpTo(0) { inclusive = true }
             }
         }
+    }
+
+    // The guide hands the player the browsed channel list through PlaybackQueue (far too
+    // big for a nav argument) and nothing ever released it — the snapshot, potentially
+    // every channel in the catalogue, outlived the session it was built for. Returning to
+    // the guide is the safe drop point: the guide repopulates it on every open, and the
+    // player already falls back to the source's own list when the queue is empty.
+    androidx.compose.runtime.DisposableEffect(navController) {
+        val queueRelease =
+            androidx.navigation.NavController.OnDestinationChangedListener { _, destination, _ ->
+                if (destination.route == Routes.HOME) {
+                    app.opentv.player.PlaybackQueue.items = emptyList()
+                }
+            }
+        navController.addOnDestinationChangedListener(queueRelease)
+        onDispose { navController.removeOnDestinationChangedListener(queueRelease) }
     }
 
     val resumePlayerTick by app.opentv.core.PlayRequests.resumePlayerRequest.collectAsState()
@@ -777,15 +797,16 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS_HUB) },
                     onOpenMultiview = { id ->
-                        // Standalone player owns the shared livePlayer; silence it so multiview's
+                        // Standalone player owns the shared livePlayer; stop it so multiview's
                         // two panes don't become a third concurrent stream. Returning pops back
-                        // to this player, whose ON_RESUME retunes/resumes.
-                        runCatching {
-                            bootGraph.livePlayer.player.apply {
-                                volume = 0f
-                                pause()
-                            }
-                        }
+                        // to this player, whose ON_RESUME retunes.
+                        //
+                        // stop(), not pause(): a PAUSED ExoPlayer still holds its MediaCodec,
+                        // and TV SoCs expose one or two hardware decoders — a live codec held
+                        // across multiview overran the pool and silently dropped a pane to
+                        // software decode. Guarded: opening multiview must never construct the
+                        // player it is about to silence.
+                        runCatching { bootGraph.stopLivePlayer() }
                         val second = bootSettings.lastChannelId.takeIf { it > 0L && it != id } ?: 0L
                         navController.navigate(Routes.multiview(id, second))
                     },

@@ -467,29 +467,45 @@ class EpgRepository(
                 publish(SyncProgress(index + 1, feeds.size, written, feed.name))
             }
 
-            // Pruning happens only when a feed actually delivered rows. It used to run on every
-            // pass, including ones where every feed was skipped or had failed - so simply opening
-            // the Guide performed a full retention delete across ~20,000 channels while the viewer
-            // waited for it. Nothing ages out faster than the clock, and a failed run adds no rows,
-            // so there is nothing to gain when `processed` is zero.
-            if (processed > 0) {
+            // Retention pruning runs on every pass that got past the due check, even when all
+            // feeds failed. Rows age out by the clock, not by new arrivals, and the prunes are
+            // indexed range deletes so the steady-state cost is small.
             say("Cleaning up old guide data…")
-                programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
-                programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
-            }
+            programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
+            programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
+            logDiskUsage("after prune")
 
             // The text rewrite and the VACUUM are a ONE-TIME migration of a database that grew
             // before the field caps existed - not per-sync housekeeping. Running them every time
             // is what made this sync never appear to finish: a whole-table UPDATE plus a VACUUM
             // that copies the entire file, holding the database's write lock while the viewer
-            // watches television. It is guarded by a persisted flag so it happens at most once
-            // per install, and it is skipped outright if it already ran.
+            // watches television. The flag is set only when the work actually completes, so an
+            // interrupted run (kill, power cycle, 10-minute worker limit, cancellation) retries
+            // on the next sync instead of never running again.
             if (settings?.oneTimeGuideCleanupDone != true) {
-            say("One-time guide cleanup…")
-                pruneOversizedText()
-            say("Reclaiming disk space…")
-                reclaimDiskSpace()
-                settings?.oneTimeGuideCleanupDone = true
+                say("One-time guide cleanup…")
+                try {
+                    pruneOversizedText()
+                    say("Reclaiming disk space…")
+                    if (reclaimDiskSpace(fullVacuumAllowed = true)) {
+                        settings?.oneTimeGuideCleanupDone = true
+                    } else {
+                        Log.w(TAG, "One-time guide cleanup incomplete, will retry next sync")
+                    }
+                } catch (e: CancellationException) {
+                    Log.w(TAG, "One-time guide cleanup cancelled, will retry next sync")
+                    throw e
+                }
+            } else {
+                // Steady-state reclaim: checkpoint the WAL and free a bounded slice. Keeps the
+                // file from creeping back up without another whole-file rewrite.
+                try {
+                    reclaimDiskSpace(fullVacuumAllowed = false)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Disk reclaim skipped: ${e.message}")
+                }
             }
 
             val (matched, total) = if (processed > 0) {
@@ -532,16 +548,22 @@ class EpgRepository(
      * never returns the pages to the OS, so a database that once held a large guide stays at
      * its high-water mark forever unless it is vacuumed. The WAL is checkpoint-truncated
      * unconditionally (cheap); a full VACUUM runs only when the freelist holds meaningful
-     * space, since it rewrites the whole file. All sizes are logged for on-device diagnostics.
+     * space and [fullVacuumAllowed] is true, since it rewrites the whole file. All sizes are
+     * logged for on-device diagnostics.
+     *
+     * Returns true when the requested work completed. Cancellation is never swallowed: the
+     * caller decides whether the one-time flag may be set, so an interrupted VACUUM retries
+     * on the next sync instead of marking itself done while the file is still grown.
      *
      * Room 3 (no SupportSQLite): runs on a writer connection from the SQLite driver instead
-     * of the old openHelper.writableDatabase cursor API.
+     * of the old openHelper.writableDatabase cursor API. isReadOnly=false selects the writer.
      */
     @Suppress("RestrictedApi")
-    private suspend fun reclaimDiskSpace() {
-        val database = db ?: return
-        withContext(Dispatchers.IO) {
-            runCatching {
+    private suspend fun reclaimDiskSpace(fullVacuumAllowed: Boolean = true): Boolean {
+        val database = db ?: return false
+        return withContext(Dispatchers.IO) {
+            try {
+                var ok = false
                 database.useConnection(false) { transactor ->
                     transactor.executeSQL("PRAGMA wal_checkpoint(TRUNCATE);")
                     suspend fun pragmaLong(name: String): Long =
@@ -558,7 +580,7 @@ class EpgRepository(
                             freeBytes / 1048576.0,
                         ),
                     )
-                    if (freeBytes > VACUUM_THRESHOLD_BYTES) {
+                    if (fullVacuumAllowed && freeBytes > VACUUM_THRESHOLD_BYTES) {
                         Log.i(TAG, "Reclaiming %.1f MB via VACUUM...".format(freeBytes / 1048576.0))
                         // Switch to incremental auto-vacuum *before* compacting. Changing
                         // auto_vacuum on an existing database only takes effect as part of a
@@ -576,13 +598,66 @@ class EpgRepository(
                             ),
                         )
                     } else {
-                        // The cheap path, and the only one an ordinary sync takes once the
-                        // one-time cleanup has run. A page count bounds the work, so this cannot
+                        // The cheap path. A page count bounds the work, so this cannot
                         // grow into the long write lock an unbounded VACUUM did.
                         transactor.executeSQL("PRAGMA incremental_vacuum($INCREMENTAL_VACUUM_PAGES);")
                     }
+                    ok = true
                 }
-            }.onFailure { Log.w(TAG, "Disk reclaim skipped: ${it.message}") }
+                ok
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Disk reclaim skipped: ${e.message}")
+                false
+            }
+        }
+    }
+
+    /**
+     * Always-on disk diagnostics: page count vs freelist on a reader connection, plus the
+     * per-table row counts that say whether the bulk is guide rows or catalogue rows. Cheap
+     * enough to run on every sync; this is what diagnoses a 1 GB box without pulling the file.
+     */
+    @Suppress("RestrictedApi")
+    private suspend fun logDiskUsage(prefix: String) {
+        val database = db ?: return
+        withContext(Dispatchers.IO) {
+            try {
+                database.useConnection(true) { transactor ->
+                    suspend fun pragmaLong(name: String): Long =
+                        transactor.usePrepared("PRAGMA $name;") { stmt ->
+                            if (stmt.step()) stmt.getLong(0) else 0L
+                        }
+                    suspend fun count(table: String): Long =
+                        transactor.usePrepared("SELECT COUNT(*) FROM $table;") { stmt ->
+                            if (stmt.step()) stmt.getLong(0) else 0L
+                        }
+                    val pageSize = pragmaLong("page_size")
+                    val pages = pragmaLong("page_count")
+                    val free = pragmaLong("freelist_count")
+                    val programmes = runCatching { count("programmes") }.getOrDefault(-1L)
+                    val movies = runCatching { count("movies") }.getOrDefault(-1L)
+                    val series = runCatching { count("series") }.getOrDefault(-1L)
+                    val episodes = runCatching { count("episodes") }.getOrDefault(-1L)
+                    Log.i(
+                        TAG,
+                        "EPG disk [$prefix]: %.1f MB on disk, %.1f MB freelist; " +
+                            "rows programmes=%d movies=%d series=%d episodes=%d".format(
+                                pages * pageSize / 1048576.0,
+                                free * pageSize / 1048576.0,
+                                programmes,
+                                movies,
+                                series,
+                                episodes,
+                            ),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Disk usage check skipped: ${e.message}")
+            }
         }
     }
 

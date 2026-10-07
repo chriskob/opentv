@@ -63,6 +63,17 @@ object ServiceLocator {
 
         val httpClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
+                // 50 MB HTTP cache: feeds and playlists whose hosts send ETag/Last-Modified
+                // validators revalidate with a 304 instead of re-downloading in full every
+                // refresh. Responses the server did not allow caching are never stored, so
+                // this only ever saves bytes. (The streaming client deliberately has no
+                // cache — live streams are infinite bodies.)
+                .cache(
+                    okhttp3.Cache(
+                        java.io.File(appContext.cacheDir, "http_cache"),
+                        50L * 1024 * 1024,
+                    ),
+                )
                 .connectTimeout(15, TimeUnit.SECONDS)
                 // Generous: catalogue endpoints on a busy panel can take a long time to
                 // produce 40,000 rows, and timing out mid-list is worse than waiting.
@@ -84,6 +95,9 @@ object ServiceLocator {
          */
         val streamingHttpClient: OkHttpClient by lazy {
             httpClient.newBuilder()
+                // Inherits the catalog cache unless disabled: a live stream is an effectively
+                // infinite body and must never be spooled toward the disk cache.
+                .cache(null)
                 .callTimeout(0, TimeUnit.MILLISECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .followRedirects(true)
@@ -105,6 +119,15 @@ object ServiceLocator {
 
         /** Neutral Stremio add-on protocol client. Talks only to user-added manifest URLs. */
         val stremioClient: StremioClient by lazy { StremioClient(httpClient) }
+
+        /**
+         * Shared keyless-weather client for the player header. Its station-id cache must
+         * outlive a single player visit — a per-composition instance repaid the
+         * zip→coords→points→stations→observation round trips on every entry.
+         */
+        val weatherClient: app.opentv.data.remote.WeatherClient by lazy {
+            app.opentv.data.remote.WeatherClient(httpClient)
+        }
 
         val sourceRepository: SourceRepository by lazy {
             SourceRepository(database.sources(), xtreamApi, stalkerApi, plexApi)
@@ -192,6 +215,19 @@ object ServiceLocator {
          * Keeps the stream playing uninterrupted with zero buffering when backing out to the guide.
          */
         val livePlayer: PlayerController by livePlayerDelegate
+
+        /**
+         * Stops the shared Live TV player only if it was ever created.
+         *
+         * Lifecycle teardown and multiview must use this instead of touching [livePlayer]:
+         * it is lazy, so a session that only browsed menus would CONSTRUCT a full ExoPlayer
+         * — renderers, track selector, allocator, handler threads — purely to stop it again.
+         */
+        fun stopLivePlayer() {
+            if (livePlayerDelegate.isInitialized()) {
+                runCatching { livePlayer.stop() }
+            }
+        }
 
         /**
          * Releases the shared Live TV player if it was ever created.

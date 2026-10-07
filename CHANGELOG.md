@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.16.18
+
+- **The box gets its gigabyte back.** The one-time guide cleanup marked itself done even when it
+  was interrupted - a killed app, a power cycle, the 10-minute background limit - so a database
+  that never finished its first vacuum stayed at full size forever with no retry. It now only
+  counts when it truly finishes, every sync reclaims a small bounded slice so the file stops
+  creeping back up, old listings are pruned even when every feed fails, and each sync logs the
+  database size and row counts so a heavy box can be diagnosed from its logs.
+- **The guide scrolls smooth.** Moving through the guide rebuilt the programme blocks of every
+  visible row on nearly every animation frame - invisible work that is exactly what stole scrubbing
+  and channel-jump fluidity on weak boxes. Rows now update only when the viewport crosses a real
+  time boundary, and opening/closing the side rails no longer redraws the whole screen per frame.
+- **The guide keeps its own promises.** A one-line bug threw away the 48-hour programme hydration
+  after paying for it: rows beyond the first window showed "no guide information" until the next
+  launch, and every half-hour window move recomputed work nobody saw. Both the empty rows and the
+  wasted CPU are gone.
+- **Cold start got lighter.** Launching no longer scans the entire Movies and Shows library on the
+  way in - that work happens when you actually open one - and the first-run GitHub update check
+  waits for the first frame instead of competing with it. Pressing Home in a session that never
+  played anything no longer builds a full video player just to stop it.
+- **Recording stopped stuttering the player.** A recording reported its size often enough to redraw
+  the whole player screen every couple of seconds while decoding; watching a programme you are
+  recording now stays smooth. Pause-and-rewind also keeps its buffer bounded, so the feature stops
+  eating the heap on low-RAM boxes.
+- **Multiview fits the box.** Entering multiview now releases the live player's hardware decoder
+  (a paused player still holds it, and TV chips only have one or two) and the two panes stop
+  fighting the audio-focus system, so both keep hardware decode.
+- **The guide loads where you are looking.** Opening a category used to fill only the first
+  screen's worth of rows 8 hours deep and then walk the rest from row 0 down — so scrolling
+  down answered "No guide information" about channels nobody had asked yet, and scrolling right
+  past the first hours showed blank. Now the exact rows on screen get their full 48 hours in
+  one small query the moment the guide opens, and the background walk spends its memory-safe
+  budget around the viewer instead of from the top of the list.
+- **Provider traffic shrank.** Catalogue requests that don't depend on each other run in
+  concurrently, refreshed feeds revalidate with the server where it supports it instead of
+  re-downloading in full, and a panel's (~19 MB) archive-flag list is re-asked at most weekly per
+  source rather than on every playlist refresh.
+- **The download got leaner.** Removed dependencies nothing used - the BouncyCastle post-quantum
+  tables it shipped (~1.2 MB), Media3's DASH/RTSP/session modules, the OkHttp logging interceptor
+  and DataStore - and dropped a manifest entry for an abstract media-session service that could
+  only ever crash if anything bound to it.
+
 ## 0.16.17
 
 - **The guide syncing in the background no longer gets in your way.** A guide refresh that ran while

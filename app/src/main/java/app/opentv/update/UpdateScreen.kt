@@ -30,9 +30,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.opentv.BuildConfig
 import app.opentv.core.ServiceLocator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The one-line entry point: drop [UpdateGate] into the top-level layout and a sideloaded
@@ -174,13 +177,21 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun checkThrottled() {
         viewModelScope.launch {
-            val prefs = getApplication<Application>()
-                .getSharedPreferences("opentv", Context.MODE_PRIVATE)
-            val now = System.currentTimeMillis()
-            if (now - prefs.getLong(KEY_LAST_CHECK, 0L) < CHECK_INTERVAL_MS) return@launch
-
-            val update = checker.check()
-            prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
+            // Wait for the first frame, like every other deferred startup job: this used to
+            // fire during launch, and on the first run after an install (throttle key unset)
+            // it did a synchronous load of a SECOND prefs file on the main thread plus a
+            // GitHub round trip right in the cold-start window.
+            app.opentv.core.Startup.firstFrameDrawn.first { it }
+            val update = withContext(Dispatchers.IO) {
+                val prefs = getApplication<Application>()
+                    .getSharedPreferences("opentv", Context.MODE_PRIVATE)
+                val stamp = System.currentTimeMillis()
+                if (stamp - prefs.getLong(KEY_LAST_CHECK, 0L) >= CHECK_INTERVAL_MS) {
+                    val found = checker.check()
+                    prefs.edit().putLong(KEY_LAST_CHECK, stamp).apply()
+                    found
+                } else null
+            }
             if (update != null) _state.value = UpdateUiState.Available(update)
         }
     }

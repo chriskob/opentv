@@ -62,6 +62,13 @@ class PlayerController(
     httpClient: OkHttpClient,
     subtitlesEnabled: Boolean = true,
     /**
+     * Whether this player asks the system for audio focus. The live/VOD players keep it on.
+     * Multiview's panes turn it off: the screen already mutes the unfocused pane itself, and
+     * a second player grabbing AUDIOFOCUS_GAIN ducked (or paused) the first through the
+     * framework — the two panes fought the system over who was audible.
+     */
+    private val handleAudioFocus: Boolean = true,
+    /**
      * Tunes the player for the guide's muted preview pane: a shallow start buffer so a highlighted
      * channel shows a frame quickly, and a longer switch debounce so scrolling the channel list
      * does not tune to every channel passed over. The full-screen players leave this false and keep
@@ -327,8 +334,11 @@ class PlayerController(
                         else -> BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MILLIS
                     },
                 )
-                // Retain the last few minutes so pause/rewind of live TV has something to seek into.
-                .apply { if (dvr) setBackBuffer(DVR_BACK_BUFFER_MILLIS, true) }
+                // Retain the last few minutes so pause/rewind of live TV has something to seek
+                // into — bounded to exactly that window. retainAllSegments=true also kept every
+                // older segment: minutes of live TS at full bitrate pinned in the heap, which is
+                // how the pause feature OOM/GC-thrashed the low-RAM boxes it targets.
+                .apply { if (dvr) setBackBuffer(DVR_BACK_BUFFER_MILLIS, false) }
                 .build(),
         )
         .build()
@@ -406,6 +416,16 @@ class PlayerController(
                 }
             })
         }
+
+    init {
+        player.setAudioAttributes(
+            androidx.media3.common.AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                .build(),
+            handleAudioFocus,
+        )
+    }
 
     /**
      * Switches playback.
@@ -551,6 +571,10 @@ class PlayerController(
         stopped = true
         switchJob?.cancel()
         player.release()
+        // Cancel any error-retry still waiting out its backoff. Without this, the delayed
+        // job — and the controller it holds — stays reachable on the Main dispatcher past
+        // release() and ServiceLocator.clear(), until the delay elapses on its own.
+        scope.coroutineContext[Job]?.cancel()
     }
 
     private companion object {

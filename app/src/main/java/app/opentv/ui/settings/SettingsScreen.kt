@@ -48,10 +48,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.opentv.R
 import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.channels.ChannelManagerScreen
@@ -220,8 +218,6 @@ private fun SettingsDrawer(
                         icon = section.icon,
                         selected = selected == section,
                         expanded = expanded,
-                        titleSize = 16.sp,
-                        titleWeight = FontWeight.Normal,
                         onClick = { onSelect(section) },
                         modifier = if (selected == section) Modifier.focusRequester(menuFocus) else Modifier,
                     )
@@ -230,8 +226,6 @@ private fun SettingsDrawer(
                 title = stringResource(R.string.settings_remote_title),
                 icon = Icons.Filled.PhoneAndroid,
                 expanded = expanded,
-                titleSize = 16.sp,
-                titleWeight = FontWeight.Normal,
                 onClick = onOpenRemotePairing,
             )
             SettingsNavRow(
@@ -239,8 +233,6 @@ private fun SettingsDrawer(
                 icon = SettingsSection.ABOUT.icon,
                 selected = selected == SettingsSection.ABOUT,
                 expanded = expanded,
-                titleSize = 16.sp,
-                titleWeight = FontWeight.Normal,
                 onClick = { onSelect(SettingsSection.ABOUT) },
                 modifier = if (selected == SettingsSection.ABOUT) Modifier.focusRequester(menuFocus) else Modifier,
             )
@@ -248,8 +240,6 @@ private fun SettingsDrawer(
                 title = stringResource(R.string.common_done),
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 expanded = expanded,
-                titleSize = 16.sp,
-                titleWeight = FontWeight.Normal,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 onClick = onDone,
             )

@@ -39,6 +39,8 @@ import app.opentv.data.remote.XtreamApi
 import app.opentv.data.remote.XtreamPanelDiscovery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -1298,9 +1300,16 @@ class CatalogRepository(
         // four separate confusing failures further down.
         api.authenticate(source)
 
-        val liveCategories = api.liveCategories(source)
+        // Categories and streams are independent player_api calls, and a busy panel takes
+        // seconds to generate each — run them concurrently instead of paying both round
+        // trips chained. Authentication still runs alone first, so a wrong password
+        // produces one clear message rather than two confusing failures.
         onProgress?.invoke(0, 0)
-        val channels = api.liveStreams(source)
+        val (liveCategories, channels) = coroutineScope {
+            val categories = async { api.liveCategories(source) }
+            val streams = async { api.liveStreams(source) }
+            categories.await() to streams.await()
+        }
         if (channels.isEmpty()) {
             return SyncResult.Failed(
                 "The server returned no channels. The account may have no package assigned.",
@@ -1396,23 +1405,35 @@ class CatalogRepository(
         // the heap on TV boxes. Each list here is tens of thousands of rows, so each one is handed
         // to [importBatches] and dropped when that call returns, before the next is fetched.
         if (moviesOn) {
-            runCatching { api.movieCategories(source) }.getOrDefault(emptyList())
-                .takeIf { it.isNotEmpty() }?.let { categoryDao.upsertAll(it) }
-            moviesTotal = importBatches(
-                fetch = { api.movies(source) },
-                upsert = { movieDao.upsertAll(it) },
-                onProgress = { written, total -> onProgress?.invoke(written, total, seriesWritten, seriesTotal) },
-            )
+            // Categories ride along with the (slow) movie-list fetch instead of costing their
+            // own chained round trip first — a busy panel spends seconds generating each
+            // player_api response. They are upserted when the list finishes: movie rows
+            // carry their category id regardless, so the ordering is invisible.
+            coroutineScope {
+                val categories = async {
+                    runCatching { api.movieCategories(source) }.getOrDefault(emptyList())
+                }
+                moviesTotal = importBatches(
+                    fetch = { api.movies(source) },
+                    upsert = { movieDao.upsertAll(it) },
+                    onProgress = { written, total -> onProgress?.invoke(written, total, seriesWritten, seriesTotal) },
+                )
+                categories.await().takeIf { it.isNotEmpty() }?.let { categoryDao.upsertAll(it) }
+            }
             moviesWritten = moviesTotal
         }
         if (seriesOn) {
-            runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
-                .takeIf { it.isNotEmpty() }?.let { categoryDao.upsertAll(it) }
-            seriesTotal = importBatches(
-                fetch = { api.series(source) },
-                upsert = { seriesDao.upsertAll(it) },
-                onProgress = { written, total -> onProgress?.invoke(moviesWritten, moviesTotal, written, total) },
-            )
+            coroutineScope {
+                val categories = async {
+                    runCatching { api.seriesCategories(source) }.getOrDefault(emptyList())
+                }
+                seriesTotal = importBatches(
+                    fetch = { api.series(source) },
+                    upsert = { seriesDao.upsertAll(it) },
+                    onProgress = { written, total -> onProgress?.invoke(moviesWritten, moviesTotal, written, total) },
+                )
+                categories.await().takeIf { it.isNotEmpty() }?.let { categoryDao.upsertAll(it) }
+            }
             seriesWritten = seriesTotal
         }
         sourceDao.markCatalogSynced(source.id, nowUtcMillis)
@@ -1499,7 +1520,12 @@ class CatalogRepository(
         // whole source); channels that already declared catch-up keep their template and only
         // gain a larger archive window. Entirely best-effort: any failure leaves the
         // playlist's flags exactly as they were.
+        // Gated beyond the setting: the panel's archive answers are effectively static, but
+        // the "any channel still unflagged" trigger is permanently true on panels with no
+        // archive at all — which used to mean re-downloading the panel's entire (~19 MB)
+        // live-stream list on every refresh of every playlist, forever. Weekly per source.
         val channels = if (settings.catchupDiscovery.value &&
+            settings.catchupDiscoveryDue(source.id, nowUtcMillis) &&
             parsed.channels.any { !it.tvArchive && it.cmd.isNullOrBlank() }
         ) {
             runCatching {
@@ -1508,6 +1534,7 @@ class CatalogRepository(
                 .onFailure { Log.w(TAG, "Catch-up discovery failed for source ${source.id}", it) }
                 .getOrNull()
                 ?.also { (enriched, added) ->
+                    settings.markCatchupDiscoveryRun(source.id, nowUtcMillis)
                     Log.i(
                         TAG,
                         "Catch-up discovery: $added of ${enriched.size} channels report archive",

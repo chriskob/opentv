@@ -52,12 +52,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -1185,6 +1189,31 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private val _epgHydrationComplete = MutableStateFlow(false)
     val epgHydrationComplete: StateFlow<Boolean> = _epgHydrationComplete.asStateFlow()
 
+    /**
+     * Row range currently visible in the guide, reported by the grid as the viewer scrolls.
+     * The 48h walk reads it on every chunk to order hydration by distance from the viewer,
+     * and [onGuideViewportChanged] re-centres the walk when the viewer outruns its budget.
+     */
+    private val _guideViewport = MutableStateFlow(0 until 20)
+
+    /**
+     * Rows whose guide query has landed — including those that answered with nothing.
+     *
+     * A single global "hydration finished" flag could only be honest for the whole list at
+     * once, and the walk has a row budget: every row past it looked exactly like a row the
+     * provider answered with nothing, so deep categories showed "No guide information" for
+     * channels they were never asked about. Per-row answers let an empty cell tell the truth
+     * the moment ITS query lands, whatever the rest of the list is doing — and an unasked
+     * row simply stays pending until the viewport-centred walk reaches it.
+     */
+    private val _epgQueriedKeys = MutableStateFlow<Set<Any>>(emptySet())
+    val epgQueriedKeys: StateFlow<Set<Any>> = _epgQueriedKeys.asStateFlow()
+
+    /** Reported by the guide grid whenever its visible row range changes. */
+    fun onGuideViewportChanged(first: Int, lastExclusive: Int) {
+        if (lastExclusive > first) _guideViewport.value = first until lastExclusive
+    }
+
     private fun publishEpgRows(rows: Iterable<Row>) {
         val updates = rows.asSequence()
             .filter { it.programmes.isNotEmpty() }
@@ -1276,10 +1305,13 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                 .distinctUntilChanged()
                 // TiviMate Optimization: Query programmes ONLY for the active channels in this view.
                 // Never query or group 500,000 programmes for the entire universe, which exhausts 2GB RAM.
-                // Three-phase emission: (1) ALL rows built in ONE pass with no EPG — the guide
-                // paints the channel column immediately; (2) quick 8h EPG for the first rows
-                // (what's on screen); (3) the full 48h window fills in row-chunks behind,
-                // patching ONLY the chunk's rows per emission — never re-scanning the list.
+                // Four-phase emission: (1) ALL rows built in ONE pass with no EPG — the guide
+                // paints the channel column immediately; (2) the full 48h window for exactly
+                // the rows on screen, in one small read — the first painted screen is complete;
+                // (3) the quick 8h window over the first rows; (4) the rest of the category in
+                // 48h chunks ordered by distance from the viewer, patching ONLY the chunk's
+                // rows per emission — never re-scanning the list.
+                //
                 combine(channelFlow, windowStartMillis) { rawChannels, windowStart ->
                     val now = System.currentTimeMillis()
                     val t0 = SystemClock.elapsedRealtime()
@@ -1301,6 +1333,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                         val windowMoved = prepareRowCache(windowStart)
                         if (windowMoved) {
                             _epgRows.value = emptyMap()
+                            _epgQueriedKeys.value = emptySet()
                             // A new window invalidates every row's hydration, so the guide goes
                             // back to "loading" until this pass has been through the rows.
                             _epgHydrationComplete.value = false
@@ -1310,6 +1343,24 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                             builtRows.map { r -> hydratedRowCache[r.key]?.let { attachProgrammes(r, it, now) } ?: r }
                         } else {
                             builtRows
+                        }
+                        if (!windowMoved && _epgRows.value.isNotEmpty()) {
+                            // A re-centre (the viewer outran the last walk's budget) or a plain
+                            // restart: drop hydrated rows far from the new viewport, so walking
+                            // through a 25k-row category cannot accumulate every programme list
+                            // it passed. The viewer's neighbourhood always stays; distant rows
+                            // re-attach from the cache in milliseconds on the way back.
+                            val vp = _guideViewport.value
+                            val keepLo = (vp.first - EPG_MAX_ROWS).coerceAtLeast(0)
+                            val keepHi = (vp.last + 1 + EPG_MAX_ROWS).coerceAtMost(allRows.size)
+                            val keep = HashSet<Any>(keepHi - keepLo)
+                            for (i in keepLo until keepHi) keep += allRows[i].key
+                            _epgRows.update { m ->
+                                if (m.size > keep.size + 64) m.filterKeys { it in keep } else m
+                            }
+                            _epgQueriedKeys.update { q ->
+                                if (q.size > keep.size + 64) q.intersect(keep) else q
+                            }
                         }
                         publishEpgRows(allRows)
                         emit(allRows)
@@ -1323,70 +1374,213 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                             android.util.Log.i("GuidePerf", "pipeline complete: ${SystemClock.elapsedRealtime() - t0}ms total")
                             return@flow
                         }
-                        // Phase 2: quick 8h window for the first rows only — the rows on screen
-                        // right now. Bounded work regardless of category size.
+                        // Phase 2: the visible rows' FULL 48h window, in one small query,
+                        // BEFORE anything else. This is the TiviMate behaviour the old shape
+                        // never had: it filled the first 60 rows 8 hours deep and then walked
+                        // 48h from row 0, so anything the viewer could already see past hour
+                        // ~8 — or past row 60 — answered "no information" until a chunk that
+                        // might never come reached it. The screen is small; querying it
+                        // completely costs milliseconds and makes the first painted frame the
+                        // finished product, whatever category size or scroll position.
+                        val rows = allRows.toMutableList()
+                        run {
+                            val vp = _guideViewport.value
+                            val from = vp.first.coerceIn(0, allRows.size)
+                            val to = (vp.last + 1 + SCREEN_PAGE_MARGIN).coerceIn(0, allRows.size)
+                            val queried = _epgQueriedKeys.value
+                            val screenIdx = (from until to).filter { i ->
+                                val r = rows[i]
+                                r.key !in queried && hydratedRowCache[r.key] == null &&
+                                    r.variants.any { v -> v.epgCandidates.any { c -> c.isNotBlank() } }
+                            }
+                            if (screenIdx.isNotEmpty()) {
+                                val tScreen = SystemClock.elapsedRealtime()
+                                val screenIds = screenIdx.flatMap { rows[it].variants }
+                                    .flatMap { it.epgCandidates }.filter { it.isNotBlank() }.distinct()
+                                val window = graph.epgRepository.windowForChannelsCached(
+                                    screenIds, windowStart, windowStart + TOTAL_WINDOW_MILLIS,
+                                )
+                                val answeredScreen = ArrayList<Row>(screenIdx.size)
+                                for (i in screenIdx) {
+                                    val hydrated = hydrateRow(rows[i], window, now)
+                                    if (hydrated.programmes.isNotEmpty()) {
+                                        hydratedRowCache[rows[i].key] = hydrated.programmes
+                                    }
+                                    rows[i] = hydrated
+                                    answeredScreen += hydrated
+                                }
+                                publishEpgRows(answeredScreen)
+                                _epgQueriedKeys.update { s -> s + answeredScreen.map { it.key } }
+                                android.util.Log.i("GuidePerf", "screen window: ${SystemClock.elapsedRealtime() - tScreen}ms (queried=${screenIdx.size})")
+                            }
+                        }
+                        // Phase 2b: quick 8h window for the first rows — still worth running
+                        // (it covers page-down browsing), but it is no longer the only path to
+                        // the first visible screen.
                         val firstRows = allRows.take(QUICK_FIRST_ROWS)
-                        // Only rows the window cache has never covered need the quick query.
+                        // Only rows neither pass has ever covered need the quick query.
                         val quickIds = firstRows.filter { hydratedRowCache[it.key] == null }
                             .flatMap { it.variants }
                             .flatMap { it.epgCandidates }.filter { it.isNotBlank() }.distinct()
-                        val rows = allRows.toMutableList()
                         if (quickIds.isNotEmpty()) {
                             val tQuick = SystemClock.elapsedRealtime()
                             val quick = graph.epgRepository.quickWindowForChannels(
                                 quickIds, now - QUICK_PAST_MILLIS, now + QUICK_FUTURE_MILLIS,
                             )
                             android.util.Log.i("GuidePerf", "quick window: ${SystemClock.elapsedRealtime() - tQuick}ms (rows=${firstRows.size} ids=${quickIds.size})")
-                            firstRows.forEachIndexed { i, r -> rows[i] = hydrateWithCache(r, quick, now) }
+                            // Rows the screen pass just answered keep their FULL 48h window —
+                            // re-hydrating them from the quick map here would downgrade them.
+                            val queriedHere = _epgQueriedKeys.value
+                            firstRows.forEachIndexed { i, r ->
+                                if (r.key !in queriedHere) rows[i] = hydrateWithCache(r, quick, now)
+                            }
                             publishEpgRows(firstRows.mapIndexed { i, _ -> rows[i] })
                         }
-                        // Phase 3: full 48h window in row-chunks, BOUNDED to the rows a viewer can
-                        // actually reach (EPG_MAX_ROWS). Hydrating every channel of a 25k-channel
-                        // category retained ~1.5M Programme objects inside [rows] and OOM'd the
-                        // 384MB heap on the ONN box (MediaCodec + Room invalidation both died).
-                        // Each chunk's map is released once its rows are patched; rows keep only
-                        // the lists they display.
+                        // Phase 4: the rest of the category in 48h chunks, ordered by distance
+                        // from the VIEWER. The row budget (EPG_MAX_ROWS) bounds memory exactly
+                        // as before — a 25k-channel walk retained ~1.5M Programme objects and
+                        // OOM'd the 384MB heap on the ONN box (MediaCodec + Room invalidation
+                        // both died) — but it used to be spent strictly from row 0 down, so a
+                        // viewer halfway through a big category watched the walk climb toward
+                        // them, and everything past row 400 was never asked at all. Now the
+                        // budget is centred where the eye is, and every step re-reads the
+                        // viewport, so scrolling during the walk pulls the walk along.
                         val tFull = SystemClock.elapsedRealtime()
-                        val hydrateLimit = minOf(allRows.size, EPG_MAX_ROWS)
-                        var base = 0
-                        while (base < hydrateLimit) {
-                            val end = minOf(base + FULL_WINDOW_ROW_CHUNK, hydrateLimit)
-                            val chunk = allRows.subList(base, end)
+                        val chunkCount = (allRows.size + FULL_WINDOW_ROW_CHUNK - 1) / FULL_WINDOW_ROW_CHUNK
+                        val settledChunks = BooleanArray(chunkCount)
+                        // Rows with no candidate ids can never be asked — mark them answered
+                        // up front, so a parked walk never waits on them and they honestly
+                        // show "no guide" from the first frame instead of spinning.
+                        val neverAskable = allRows.filter {
+                            it.variants.flatMap { v -> v.epgCandidates }.none { c -> c.isNotBlank() }
+                        }.map { it.key }.toSet()
+                        if (neverAskable.isNotEmpty()) {
+                            _epgQueriedKeys.update { s -> s + neverAskable }
+                        }
+                        // A row the walk can still be asked about: unseen AND it has at least
+                        // one EPG candidate. This is what the park predicate waits on.
+                        fun askableUnseen(i: Int): Boolean {
+                            val r = allRows[i]
+                            return r.key !in _epgQueriedKeys.value &&
+                                r.variants.any { v -> v.epgCandidates.any { c -> c.isNotBlank() } }
+                        }
+                        fun viewportHasWork(range: IntRange): Boolean =
+                            (range.first until minOf(range.last + 1, allRows.size)).any { askableUnseen(it) }
+                        var budgetLeft = EPG_MAX_ROWS
+                        var parks = 0
+                        while (true) {
+                            val vp = _guideViewport.value
+                            val center = (vp.first / FULL_WINDOW_ROW_CHUNK)
+                                .coerceIn(0, (chunkCount - 1).coerceAtLeast(0))
+                            var pick = -1
+                            var spread = 0
+                            while (pick < 0 && center - spread < chunkCount) {
+                                if (center - spread >= 0 && !settledChunks[center - spread]) {
+                                    pick = center - spread
+                                } else if (center + spread < chunkCount && !settledChunks[center + spread]) {
+                                    pick = center + spread
+                                } else if (center - spread < 0 && center + spread >= chunkCount) {
+                                    break // every chunk answered — the walk is genuinely done
+                                }
+                                spread++
+                            }
+                            if (pick < 0) break
+                            val from = pick * FULL_WINDOW_ROW_CHUNK
+                            val to = minOf(from + FULL_WINDOW_ROW_CHUNK, allRows.size)
+                            // A chunk with no askable-unseen rows — a neverAskable fill, or a
+                            // cache re-attach after a re-centre — is free: it republishes data
+                            // the walk already holds, so it neither burns budget nor parks on it.
+                            if (budgetLeft <= 0 && (from until to).any { askableUnseen(it) }) {
+                                // PARK. Not a restart — rebuilding every row of a 20k-channel
+                                // category on each viewport jump was the storm this design
+                                // must not reintroduce. The walk simply waits, costless, until
+                                // the viewer looks at a row nobody has asked about, then drops
+                                // the neighbourhood behind them and walks on from where they
+                                // went. Programme lists given up re-attach from the row cache
+                                // without a read if the viewer doubles back.
+                                parks++
+                                android.util.Log.i(
+                                    "GuidePerf",
+                                    "48h walk parked at budget (${_epgRows.value.size} live rows) — waiting for viewer",
+                                )
+                                if (!viewportHasWork(vp)) _guideViewport.first { viewportHasWork(it) }
+                                val nvp = _guideViewport.value
+                                val keepLo = (nvp.first - RECENTRE_KEEP_ROWS).coerceAtLeast(0)
+                                val keepHi = (nvp.last + 1 + RECENTRE_KEEP_ROWS).coerceAtMost(allRows.size)
+                                val keep = HashSet<Any>(keepHi - keepLo)
+                                var live = 0
+                                for (i in allRows.indices) {
+                                    if (i in keepLo until keepHi) {
+                                        keep += allRows[i].key
+                                        if (rows[i].programmes.isNotEmpty()) live++
+                                        continue
+                                    }
+                                    if (rows[i].programmes.isNotEmpty()) rows[i] = allRows[i]
+                                }
+                                _epgRows.update { m -> m.filterKeys { it in keep } }
+                                _epgQueriedKeys.update { q -> q.intersect(keep) + neverAskable }
+                                for (c in 0 until chunkCount) {
+                                    val f = c * FULL_WINDOW_ROW_CHUNK
+                                    if (f < keepLo || f >= keepHi) settledChunks[c] = false
+                                }
+                                budgetLeft = (EPG_MAX_ROWS - live).coerceAtLeast(FULL_WINDOW_ROW_CHUNK)
+                                android.util.Log.i("GuidePerf", "48h walk re-centred at row ${nvp.first}")
+                                continue
+                            }
+                            settledChunks[pick] = true
+                            // A chunk with no askable-unseen rows (cache re-attach after a
+                            // re-centre, a neverAskable fill) is free: republishing data the
+                            // walk already holds must not burn budget and must not park.
+                            if ((from until to).any { askableUnseen(it) }) budgetLeft -= to - from
                             // Only rows this window has never hydrated cost a database read; the
                             // rest re-attach from the cache. This is what turns a pipeline restart
                             // from an 11.7s / 2.1M-object rebuild into a few milliseconds.
-                            val unseen = chunk.filter { hydratedRowCache[it.key] == null }
+                            val unseen = (from until to).filter { hydratedRowCache[rows[it].key] == null }
                             if (unseen.isNotEmpty()) {
-                                val ids = unseen.flatMap { it.variants }
+                                val ids = unseen.flatMap { rows[it].variants }
                                     .flatMap { it.epgCandidates }.filter { it.isNotBlank() }.distinct()
                                 if (ids.isNotEmpty()) {
                                     val window = graph.epgRepository.windowForChannelsCached(
                                         ids, windowStart, windowStart + TOTAL_WINDOW_MILLIS,
                                     )
-                                    for (r in unseen) {
-                                        val hydrated = hydrateRow(r, window, now)
+                                    for (i in unseen) {
+                                        val hydrated = hydrateRow(rows[i], window, now)
                                         if (hydrated.programmes.isNotEmpty()) {
-                                            hydratedRowCache[r.key] = hydrated.programmes
+                                            hydratedRowCache[rows[i].key] = hydrated.programmes
                                         }
+                                        rows[i] = hydrated
                                     }
                                 }
                             }
-                            for (i in chunk.indices) {
-                                val r = chunk[i]
-                                val cached = hydratedRowCache[r.key]
-                                rows[base + i] = if (cached == null) r else attachProgrammes(r, cached, now)
+                            for (i in from until to) {
+                                val cached = hydratedRowCache[rows[i].key]
+                                if (cached != null && rows[i].programmes.isEmpty()) {
+                                    rows[i] = attachProgrammes(rows[i], cached, now)
+                                }
                             }
-                            base = end
-                            publishEpgRows((base until end).map { rows[it] })
+                            val chunkOut = (from until to).map { rows[it] }
+                            publishEpgRows(chunkOut)
+                            _epgQueriedKeys.update { s -> s + chunkOut.map { it.key } }
                         }
-                        android.util.Log.i("GuidePerf", "full 48h window (chunked ${hydrateLimit}/${allRows.size} rows, cached=${hydratedRowCache.size}): ${SystemClock.elapsedRealtime() - tFull}ms")
-                        // Every row this pass intended to reach has now been offered the guide, so a
-                        // row still empty has been answered: it genuinely has no guide data.
+                        android.util.Log.i(
+                            "GuidePerf",
+                            "48h walk: ${settledChunks.count { it }}/$chunkCount chunks settled, " +
+                                "parks=$parks, cached=${hydratedRowCache.size}, " +
+                                "${SystemClock.elapsedRealtime() - tFull}ms",
+                        )
+                        // Only reached when every chunk was answered — the walk otherwise lives
+                        // on parked at the viewport. The per-row [epgQueriedKeys] set is what
+                        // tells "asked and empty" from "not yet" on the grid, so this global
+                        // flag can never claim a completion the walk has not earned.
                         _epgHydrationComplete.value = true
-                        // Name the rows that came out empty, and whether they were ever asked.
-                        // A row with no EPG candidates is never queried at all, which is a
-                        // different problem from one the provider answered with nothing.
-                        val starved = rows.take(hydrateLimit).filter { it.programmes.isEmpty() }
+                        // Name the rows that came out empty although they WERE asked — those
+                        // are the provider's honest answer, and they render "no guide". Rows
+                        // the budget never reached are simply still pending (not in the
+                        // queried set), and the re-centring walk fetches them the moment the
+                        // viewer arrives.
+                        val starved = rows.filter {
+                            it.programmes.isEmpty() && it.key in _epgQueriedKeys.value
+                        }
                         if (starved.isNotEmpty()) {
                             android.util.Log.i(
                                 "GuidePerf",
@@ -1762,6 +1956,12 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         const val FULL_WINDOW_ROW_CHUNK = 24
 
         /**
+         * Rows of vertical margin hydrated alongside the visible screen in the screen pass,
+         * so the first d-pad presses land on data instead of triggering a fresh walk.
+         */
+        const val SCREEN_PAGE_MARGIN = 12
+
+        /**
          * LRU bound on the guide's hydrated-row cache. A full fill of a [EPG_MAX_ROWS] category
          * needs 400 entries, so this covers the deepest category the guide will hydrate while
          * stopping a half-hour of category-hopping from retaining every row ever seen.
@@ -1769,13 +1969,23 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         const val ROW_CACHE_CAP = 500
 
         /**
-         * Hard ceiling on how many rows get EPG hydrated. Without it, a 25k-channel category
-         * keeps ~1.5M Programme objects alive inside the rows StateFlow and exhausts the 384MB
-         * heap on a TV box (measured: OutOfMemoryError in MediaCodec and in Room's invalidation
-         * tracker, plus GC thrash to the point of ANR). Rows past this render the channel with
-         * no programme blocks — they sit far below the viewport in a list that size.
+         * Live ceiling on how many rows hold hydrated programme data. Without it, a
+         * 25k-channel category keeps ~1.5M Programme objects alive inside the rows StateFlow
+         * and exhausts the 384MB heap on a TV box (measured: OutOfMemoryError in MediaCodec
+         * and in Room's invalidation tracker, plus GC thrash to the point of ANR). The walk
+         * spends this budget AROUND THE VIEWER and re-centres it as they scroll, so unlike
+         * the old row-0 design no row is ever left permanently unanswered — a row past the
+         * budget is simply still pending until someone looks at it.
          */
         const val EPG_MAX_ROWS = 400
+
+        /**
+         * Rows kept hydrated on each side of the viewport when a parked walk re-centres. The
+         * live set (two bands plus the viewport) stays at the [EPG_MAX_ROWS] order of rows
+         * wherever the viewer goes: the budget moves with them, instead of piling up every
+         * programme list the walk ever touched.
+         */
+        const val RECENTRE_KEEP_ROWS = EPG_MAX_ROWS / 2 - FULL_WINDOW_ROW_CHUNK / 2
         const val HOURS_IN_WINDOW = PAST_HOURS + FUTURE_HOURS
         const val PAST_MILLIS = PAST_HOURS * 3600_000L
         const val TOTAL_WINDOW_MILLIS = HOURS_IN_WINDOW * 3600_000L
@@ -2200,9 +2410,16 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
         if (addons.isEmpty()) return emptyList()
         val imdb = graph.catalogRepository.imdbIdFor(movie) ?: return emptyList()
         return withContext(Dispatchers.IO) {
-            addons.flatMap { addon ->
-                runCatching { graph.stremioClient.streams(addon.manifestUrl, addon.name, "movie", imdb) }
-                    .getOrDefault(emptyList())
+            // Each add-on is an independent host; the old flatMap paid every add-on's round
+            // trip in series, so one slow gateway held up the whole stream sheet.
+            coroutineScope {
+                addons.map { addon ->
+                    async {
+                        runCatching {
+                            graph.stremioClient.streams(addon.manifestUrl, addon.name, "movie", imdb)
+                        }.getOrDefault(emptyList())
+                    }
+                }.awaitAll().flatten()
             }
         }
     }
@@ -2251,12 +2468,15 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         // The home feeds are per profile (Recommended) and per catalogue (the genre rows). Rebuild
-        // them when the active profile changes — and once at start. Routed through the guarded
-        // [loadHomeFeeds] so a profile switch triggers exactly one library scan, and re-opening the
-        // tab with the same profile and an unchanged catalogue triggers none. Reads an empty result
-        // until a VOD sync has populated the catalogue; [ensureVodLoaded] re-runs it once one has.
+        // them when the active profile changes. The FIRST emission is deliberately dropped: the
+        // Movies/Shows screens call [loadHomeFeeds] when they open, so collecting the initial
+        // value here ran a full-library scan on every cold start — boot-straight-to-last-channel
+        // sessions included — and kept both tables hydrated for the life of the process,
+        // defeating the on-demand design noted below. Routed through the guarded [loadHomeFeeds]
+        // so a profile switch triggers exactly one scan. Reads an empty result until a VOD sync
+        // has populated the catalogue; [ensureVodLoaded] re-runs it once one has.
         viewModelScope.launch {
-            settings.activeProfileId.collect { loadHomeFeeds() }
+            settings.activeProfileId.drop(1).collect { loadHomeFeeds() }
         }
     }
 

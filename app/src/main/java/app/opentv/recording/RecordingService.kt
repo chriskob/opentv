@@ -291,7 +291,12 @@ class RecordingService : Service() {
         private const val CHANNEL_ID = "recordings"
         private const val NOTIFICATION_ID = 4210
         private const val BUFFER_BYTES = 64 * 1024
-        private const val SIZE_REPORT_BYTES = 4L * 1024 * 1024
+        // 32 MB, not 4: every report is a write to the recordings table, which invalidates
+        // the Flow the player screen observes — recomposing the entire player each time. At
+        // a 25 Mbps stream 4 MB meant one full-screen recomposition every ~1.3 s while a
+        // recording ran, on top of decoding. The on-screen size lagging a few seconds is
+        // the right trade; nobody watches it second by second.
+        private const val SIZE_REPORT_BYTES = 32L * 1024 * 1024
         private const val MAX_WAKE_MILLIS = 6L * 60 * 60 * 1000 // 6h safety cap
         // Providers close a live .ts socket every ~30s; reconnect and keep appending. Give up only
         // after this many consecutive reconnects deliver nothing (the stream is genuinely gone).

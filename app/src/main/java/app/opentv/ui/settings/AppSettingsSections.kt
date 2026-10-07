@@ -314,8 +314,8 @@ internal fun ThemePalettePill(
     ) {
         Row(
             Modifier
-                .width(30.dp)
-                .height(20.dp)
+                .width(34.dp)
+                .height(22.dp)
                 .clip(swatchShape)
                 .border(
                     width = if (focused || selected) 1.5.dp else 1.dp,
@@ -334,7 +334,7 @@ internal fun ThemePalettePill(
 
         Text(
             text = palette.displayName,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp),
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
             fontWeight = FontWeight.Medium,
             color = when {
                 // The active palette is a persistent pill, so its label is onSurface white; the

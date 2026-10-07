@@ -62,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -373,33 +374,52 @@ private const val GRID_COLUMNS = 5
  * sorts in memory over the already-loaded list: no query changes, and ties always break by title
  * so the order is stable between recompositions.
  */
-private fun movieOrder(
+private fun sortedMovies(
+    groups: List<app.opentv.data.repo.MovieVariantGroup>,
     sort: AppSettings.VodSort,
     providerNames: Map<Long, String>,
-): Comparator<app.opentv.data.repo.MovieVariantGroup> = when (sort) {
-    AppSettings.VodSort.RECENT -> Comparator { _, _ -> 0 }
-    AppSettings.VodSort.AZ -> compareBy { it.primary.displayTitle.lowercase() }
-    AppSettings.VodSort.YEAR -> compareByDescending<app.opentv.data.repo.MovieVariantGroup> { it.primary.year ?: 0 }
-        .thenBy { it.primary.displayTitle.lowercase() }
-    AppSettings.VodSort.RATING -> compareByDescending<app.opentv.data.repo.MovieVariantGroup> { it.primary.rating ?: -1.0 }
-        .thenBy { it.primary.displayTitle.lowercase() }
-    AppSettings.VodSort.PROVIDER -> compareBy<app.opentv.data.repo.MovieVariantGroup> { providerNames[it.primary.sourceId].orEmpty().lowercase() }
-        .thenBy { it.primary.displayTitle.lowercase() }
+): List<app.opentv.data.repo.MovieVariantGroup> {
+    // Sort keys are precomputed once per group. The old Comparator called lowercase()
+    // inside every comparison — roughly n log n string allocations over a 3,000+ title
+    // category, on the main thread, blocking the grid's first frame.
+    if (sort == AppSettings.VodSort.RECENT) return groups
+    val titleKey = LinkedHashMap<app.opentv.data.repo.MovieVariantGroup, String>(groups.size)
+    for (g in groups) titleKey[g] = g.primary.displayTitle.lowercase()
+    val loweredProviders = providerNames.mapValues { it.value.lowercase() }
+    val comp = when (sort) {
+        AppSettings.VodSort.AZ -> compareBy<app.opentv.data.repo.MovieVariantGroup> { titleKey[it] }
+        AppSettings.VodSort.YEAR -> compareByDescending<app.opentv.data.repo.MovieVariantGroup> { it.primary.year ?: 0 }
+            .thenBy { titleKey[it] }
+        AppSettings.VodSort.RATING -> compareByDescending<app.opentv.data.repo.MovieVariantGroup> { it.primary.rating ?: -1.0 }
+            .thenBy { titleKey[it] }
+        AppSettings.VodSort.PROVIDER -> compareBy<app.opentv.data.repo.MovieVariantGroup> { loweredProviders[it.primary.sourceId].orEmpty() }
+            .thenBy { titleKey[it] }
+        AppSettings.VodSort.RECENT -> Comparator { _, _ -> 0 }
+    }
+    return groups.sortedWith(comp)
 }
 
-/** Show half of [movieOrder]. */
-private fun seriesOrder(
+/** Show half of [sortedMovies]: the same precomputed-key pass for plain Series rows. */
+private fun sortedSeries(
+    series: List<Series>,
     sort: AppSettings.VodSort,
     providerNames: Map<Long, String>,
-): Comparator<Series> = when (sort) {
-    AppSettings.VodSort.RECENT -> Comparator { _, _ -> 0 }
-    AppSettings.VodSort.AZ -> compareBy { it.displayTitle.lowercase() }
-    AppSettings.VodSort.YEAR -> compareByDescending<Series> { it.year ?: 0 }
-        .thenBy { it.displayTitle.lowercase() }
-    AppSettings.VodSort.RATING -> compareByDescending<Series> { it.rating ?: -1.0 }
-        .thenBy { it.displayTitle.lowercase() }
-    AppSettings.VodSort.PROVIDER -> compareBy<Series> { providerNames[it.sourceId].orEmpty().lowercase() }
-        .thenBy { it.displayTitle.lowercase() }
+): List<Series> {
+    if (sort == AppSettings.VodSort.RECENT) return series
+    val titleKey = LinkedHashMap<Series, String>(series.size)
+    for (s in series) titleKey[s] = s.displayTitle.lowercase()
+    val loweredProviders = providerNames.mapValues { it.value.lowercase() }
+    val comp = when (sort) {
+        AppSettings.VodSort.AZ -> compareBy<Series> { titleKey[it] }
+        AppSettings.VodSort.YEAR -> compareByDescending<Series> { it.year ?: 0 }
+            .thenBy { titleKey[it] }
+        AppSettings.VodSort.RATING -> compareByDescending<Series> { it.rating ?: -1.0 }
+            .thenBy { titleKey[it] }
+        AppSettings.VodSort.PROVIDER -> compareBy<Series> { loweredProviders[it.sourceId].orEmpty() }
+            .thenBy { titleKey[it] }
+        AppSettings.VodSort.RECENT -> Comparator { _, _ -> 0 }
+    }
+    return series.sortedWith(comp)
 }
 
 @Composable
@@ -425,7 +445,7 @@ private fun MovieCategoryGrid(
     val collapsed = remember(movieIds) { viewModel.collapseVariants(movies) }
     // Browse order is applied in memory over the collapsed groups — RECENT keeps the DAO's native
     // newest-first order, so the default view is exactly what it always was.
-    val groups = remember(collapsed, sort, providerNames) { collapsed.sortedWith(movieOrder(sort, providerNames)) }
+    val groups = remember(collapsed, sort, providerNames) { sortedMovies(collapsed, sort, providerNames) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val art = remember(groups, posterById) { groups.map { posterById[it.primary.id].orEmpty() } }
     PrefetchImagesAround(
@@ -527,7 +547,7 @@ private fun SeriesCategoryGrid(
     // the category actually changes; fresh poster URLs ride a light overlay map.
     val seriesIds = remember(series) { series.map { it.id } }
     val seriesPosterById = remember(series) { series.associate { it.id to it.posterUrl } }
-    val ordered = remember(seriesIds, sort, providerNames) { series.sortedWith(seriesOrder(sort, providerNames)) }
+    val ordered = remember(seriesIds, sort, providerNames) { sortedSeries(series, sort, providerNames) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val art = remember(ordered, seriesPosterById) { ordered.map { seriesPosterById[it.id].orEmpty() } }
     PrefetchImagesAround(
@@ -912,8 +932,11 @@ private fun PosterFallbackTile(title: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * Shimmer sweep for image frames. Cheap on a stick: one infinite transition per visible card,
- * no blur, no per-frame allocation outside the brush.
+ * Shimmer sweep for image frames. Cheap on a stick: one infinite transition per visible
+ * card whose animated value is read at DRAW time. Reading it during composition (the old
+ * shape) recomposed every loading card at 60 fps and re-allocated its brush — a sustained
+ * recomposition storm across the whole grid while a shelf fills, and forever for a card
+ * whose image never resolves.
  */
 @Composable
 private fun Modifier.shimmerPlaceholder(): Modifier {
@@ -928,13 +951,16 @@ private fun Modifier.shimmerPlaceholder(): Modifier {
         label = "shimmerSweep",
     )
     val base = MaterialTheme.colorScheme.surfaceVariant
-    return background(
-        Brush.linearGradient(
-            colors = listOf(base, base.copy(alpha = 0.55f), base),
-            start = androidx.compose.ui.geometry.Offset(-200f + 500f * sweep, 0f),
-            end = androidx.compose.ui.geometry.Offset(100f + 500f * sweep, 300f),
-        ),
-    )
+    return drawBehind {
+        val s = sweep
+        drawRect(
+            brush = Brush.linearGradient(
+                colors = listOf(base, base.copy(alpha = 0.55f), base),
+                start = androidx.compose.ui.geometry.Offset(-200f + 500f * s, 0f),
+                end = androidx.compose.ui.geometry.Offset(100f + 500f * s, 300f),
+            ),
+        )
+    }
 }
 
 /** A small rounded chip drawn over poster art — a rating or a quality label. */
