@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.22
+
+- **A finished guide sync no longer reports itself as failed.** The import wrote its rows, then a
+  log line formatted a count with the wrong number format and threw - which was recorded as a
+  feed failure, so the guide header never got its new time even though the data was in. The log
+  lines are fixed, and the full stack trace from 0.16.21 is what found it in minutes.
+
 ## 0.16.21
 
 - **A failed guide feed now logs its whole stack, not one word.** Tonight's provider import died

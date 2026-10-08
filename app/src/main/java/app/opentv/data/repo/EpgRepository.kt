@@ -709,8 +709,8 @@ class EpgRepository(
                     val episodes = runCatching { count("episodes") }.getOrDefault(-1L)
                     Log.i(
                         TAG,
-                        "EPG disk [$prefix]: %.1f MB on disk, %.1f MB freelist; " +
-                            "rows programmes=%d movies=%d series=%d episodes=%d".format(
+                        ("EPG disk [$prefix]: %.1f MB on disk, %.1f MB freelist; " +
+                            "rows programmes=%d movies=%d series=%d episodes=%d").format(
                                 pages * pageSize / 1048576.0,
                                 free * pageSize / 1048576.0,
                                 programmes,
@@ -856,8 +856,8 @@ class EpgRepository(
                 }
                 Log.i(
                     TAG,
-                    "Feed '${feed.name}': %d programme(s) stored (%d parsed, %d off-window, " +
-                        "%d unmatched-channel) from %d channel(s) in %.1fs".format(
+                    ("Feed '${feed.name}': %d programme(s) stored (%d parsed, %d off-window, " +
+                        "%d unmatched-channel) from %d channel(s) in %.1fs").format(
                             written,
                             stats.programmeCount,
                             stats.skippedProgrammes,
