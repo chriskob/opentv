@@ -39,9 +39,9 @@ class SyncWorker(
         val settings = AppSettings.get(applicationContext)
         val now = System.currentTimeMillis()
         val sources = graph.sourceRepository.enabled()
-        if (sources.isEmpty()) return Result.success()
-
         val forceCatalogSync = inputData.getBoolean(FORCE_CATALOG_SYNC, false)
+        val forceGuide = inputData.getBoolean(FORCE_GUIDE_SYNC, false)
+        if (sources.isEmpty() && !forceGuide) return Result.success()
         val catalogIntervalMillis = TimeUnit.HOURS.toMillis(
             settings.playlistRefreshHours.value.toLong().coerceAtLeast(1L),
         )
@@ -53,9 +53,10 @@ class SyncWorker(
         // nobody had asked for. The guide pass is bounded (a few minutes), so it goes ahead of
         // the catalogue refresh and the long job runs after.
         //
-        // Only sync the guide here when the user wants it bundled with the playlist refresh.
-        // Otherwise the guide refreshes on its own staleness window controlled by epgRefreshHours.
-        if (settings.epgSyncWithPlaylist.value) {
+        // Only sync the guide here when the user wants it bundled with the playlist refresh -
+        // or when this run exists *for* the guide (the EPG settings button). Otherwise the guide
+        // refreshes on its own staleness window controlled by epgRefreshHours.
+        if (settings.epgSyncWithPlaylist.value || forceGuide) {
             // Guides sync as one pass across every enabled feed — provider guides, built-in
             // free sources and user URLs merge into a single guide, then the matcher runs.
             val epgIntervalMillis = TimeUnit.HOURS.toMillis(
@@ -63,7 +64,7 @@ class SyncWorker(
             )
             val summary = graph.epgRepository.syncAll(
                 nowUtcMillis = now,
-                force = false,
+                force = forceGuide,
                 refreshIntervalMillis = epgIntervalMillis,
             )
             if (summary.feedsFailed > 0) anyFailed = true
@@ -100,7 +101,9 @@ class SyncWorker(
         private const val TAG = "SyncWorker"
         private const val WORK_NAME = "opentv-periodic-sync"
         private const val ONE_SHOT_WORK_NAME = "opentv-manual-sync"
+        private const val MANUAL_GUIDE_WORK_NAME = "opentv-manual-guide-sync"
         private const val FORCE_CATALOG_SYNC = "force_catalog_sync"
+        private const val FORCE_GUIDE_SYNC = "force_guide_sync"
 
         /**
          * Kick a single catalogue + guide refresh now, off the UI. Runs the same [doWork] as the
@@ -109,16 +112,31 @@ class SyncWorker(
          * tied to a screen's ViewModel scope). REPLACE so repeated taps coalesce into one run.
          */
         fun refreshNow(context: Context) {
+            enqueueOneShot(context, ONE_SHOT_WORK_NAME, workDataOf(FORCE_CATALOG_SYNC to true))
+        }
+
+        /**
+         * The EPG settings screen's "Update guide" button. This used to call syncAll from the
+         * screen's own viewModelScope - so leaving the screen to go and check the guide header
+         * cancelled the download mid-flight and the header reverted to the old stamp, which is
+         * exactly the "it says starting and nothing ever happens" report. A one-time worker
+         * survives navigation, the screen going away, and even the app being backgrounded.
+         */
+        fun refreshGuideOnly(context: Context) {
+            enqueueOneShot(context, MANUAL_GUIDE_WORK_NAME, workDataOf(FORCE_GUIDE_SYNC to true))
+        }
+
+        private fun enqueueOneShot(context: Context, name: String, data: androidx.work.Data) {
             val request = OneTimeWorkRequestBuilder<SyncWorker>()
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
                         .build(),
                 )
-                .setInputData(workDataOf(FORCE_CATALOG_SYNC to true))
+                .setInputData(data)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
-                ONE_SHOT_WORK_NAME,
+                name,
                 ExistingWorkPolicy.REPLACE,
                 request,
             )

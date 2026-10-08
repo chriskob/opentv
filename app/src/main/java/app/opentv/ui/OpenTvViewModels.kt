@@ -32,6 +32,7 @@ import app.opentv.data.repo.MovieVariantGroup
 import app.opentv.data.repo.PersonTitle
 import app.opentv.data.repo.SourceGates
 import app.opentv.data.repo.distinctByQuality
+import app.opentv.data.work.SyncWorker
 import app.opentv.R
 import app.opentv.pairing.ManagerServer
 import app.opentv.pairing.ProvisionedSource
@@ -2065,42 +2066,40 @@ class EpgViewModel(app: Application) : AndroidViewModel(app) {
         if (refreshing) return
         refreshing = true
         viewModelScope.launch {
-            // One job holds the HeavyWork gate at a time. If a catalogue import is inside it,
-            // this sync waits first - say so. The screen used to claim "Downloading guides…"
-            // from the moment of the click while the pass had not even started, which is
-            // exactly how a queued sync reads as a hung one.
+            // A sync may already be running (started here before, from the periodic job, or the
+            // app-launch refresh). Re-entering this screen used to hand the button back enabled,
+            // and tapping then REPLACED the running work - cancelling a download that had been
+            // running for minutes and starting from zero. If one is live, just watch it.
+            val already = graph.epgRepository.syncActivity.value != null
             _ui.value = _ui.value.copy(
                 syncing = true,
-                statusLine = HeavyWork.activeJob?.let { "Waiting: $it already running…" }
-                    ?: "Downloading guides…",
+                statusLine = if (already) {
+                    graph.epgRepository.syncActivity.value
+                } else if (HeavyWork.isBusy) {
+                    "Waiting: ${HeavyWork.activeJob ?: "another job"} already running…"
+                } else {
+                    "Starting guide update…"
+                },
             )
-            // Mirror the sync's own progress line so the screen shows which feed is arriving
-            // and which cleanup step is running, instead of one fixed phrase for the whole pass.
-            val mirror = launch {
-                graph.epgRepository.syncActivity.collect { line ->
-                    if (line != null) _ui.value = _ui.value.copy(statusLine = line)
+            // The sync runs as one-time WorkManager work, not in this scope. It used to be a
+            // viewModelScope job, which meant leaving this screen - always, to go and look at the
+            // guide header - cancelled the download mid-flight: "says Starting guide update then
+            // goes straight back to the old time". Off the UI, navigation cannot kill it and the
+            // header can be checked while the work carries on underneath.
+            if (!already) SyncWorker.refreshGuideOnly(getApplication())
+            // Mirror the worker's published progress into the status line. Ignore the null the
+            // StateFlow replays on subscription (before the worker's first word); after that,
+            // null means the sync finished and the button is live again.
+            var seen = already
+            graph.epgRepository.syncActivity.collect { line ->
+                if (line != null) {
+                    seen = true
+                    _ui.value = _ui.value.copy(syncing = true, statusLine = line)
+                } else if (seen) {
+                    _ui.value = _ui.value.copy(syncing = false, statusLine = "Guide updated.")
+                    refreshing = false
                 }
             }
-            // Always clear `syncing`. An exception escaping this coroutine left it stuck true
-            // forever, which disabled the button for the rest of the process's life - the symptom
-            // being "the Update Guide button does nothing".
-            val summary = runCatching {
-                graph.epgRepository.syncAll(System.currentTimeMillis(), force = true)
-            }
-            mirror.cancel()
-            refreshing = false
-            _ui.value = _ui.value.copy(
-                syncing = false,
-                statusLine = summary.fold(
-                    onSuccess = {
-                        "Guide matched ${it.channelsMatched} of ${it.channelsTotal} channels" +
-                            if (it.feedsFailed > 0) " · ${it.feedsFailed} feed(s) failed" else ""
-                    },
-                    // A guide download over a bad connection fails here. Saying so beats leaving
-                    // the old line up as if the refresh had worked.
-                    onFailure = { "Guide update failed: ${it.message ?: it::class.simpleName}" },
-                ),
-            )
         }
     }
 }

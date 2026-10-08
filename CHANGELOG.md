@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.20
+
+- **"Update guide" no longer kills itself.** The download ran inside the settings screen's own
+  lifetime: the moment you left the screen - which everyone does, to go and look at the guide
+  header it was supposed to fix - the sync was cancelled mid-flight and the header reverted to
+  the old stamp. It looked exactly like a hung app; it was a self-inflicted wound, and it is
+  why hours-long "downloads" never finished. The refresh now runs as background work that
+  survives leaving the screen, and the guide header follows it from wherever you are.
+
 ## 0.16.19
 
 - **The guide stores only your channels now.** A provider ships a guide for every channel it
