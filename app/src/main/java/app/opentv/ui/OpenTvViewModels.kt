@@ -2065,13 +2065,29 @@ class EpgViewModel(app: Application) : AndroidViewModel(app) {
         if (refreshing) return
         refreshing = true
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(syncing = true, statusLine = "Downloading guides…")
+            // One job holds the HeavyWork gate at a time. If a catalogue import is inside it,
+            // this sync waits first - say so. The screen used to claim "Downloading guides…"
+            // from the moment of the click while the pass had not even started, which is
+            // exactly how a queued sync reads as a hung one.
+            _ui.value = _ui.value.copy(
+                syncing = true,
+                statusLine = HeavyWork.activeJob?.let { "Waiting: $it already running…" }
+                    ?: "Downloading guides…",
+            )
+            // Mirror the sync's own progress line so the screen shows which feed is arriving
+            // and which cleanup step is running, instead of one fixed phrase for the whole pass.
+            val mirror = launch {
+                graph.epgRepository.syncActivity.collect { line ->
+                    if (line != null) _ui.value = _ui.value.copy(statusLine = line)
+                }
+            }
             // Always clear `syncing`. An exception escaping this coroutine left it stuck true
             // forever, which disabled the button for the rest of the process's life - the symptom
             // being "the Update Guide button does nothing".
             val summary = runCatching {
                 graph.epgRepository.syncAll(System.currentTimeMillis(), force = true)
             }
+            mirror.cancel()
             refreshing = false
             _ui.value = _ui.value.copy(
                 syncing = false,

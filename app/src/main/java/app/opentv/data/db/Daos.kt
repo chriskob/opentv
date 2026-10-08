@@ -681,6 +681,48 @@ interface ProgrammeDao {
             kotlinx.coroutines.delay(5)
         }
     }
+
+    /**
+     * Housekeeping: drop programmes for guide channels the playlist does not use.
+     *
+     * A provider guide publishes every channel it ships - on this kind of panel that is 11,000+
+     * channel ids - while the viewer's playlist holds a few hundred. Those programmes can never
+     * be rendered: the guide looks up a channel's programmes by its matched/override/provider ids
+     * only. The set below is exactly the ids any playlist channel could query, so everything
+     * outside it is dead weight multiplied by the whole retention window.
+     *
+     * The id list is a subquery over `channels` rather than a bound parameter list on purpose:
+     * SQLite caps bound variables, and a large playlist walks straight through the cap.
+     */
+    @Query(
+        """
+        DELETE FROM programmes
+        WHERE id IN (
+            SELECT id FROM programmes
+            WHERE epgChannelId NOT IN (
+                SELECT matchedEpgId FROM channels WHERE matchedEpgId IS NOT NULL AND matchedEpgId <> ''
+                UNION
+                SELECT epgChannelId FROM channels WHERE epgChannelId IS NOT NULL AND epgChannelId <> ''
+                UNION
+                SELECT epgOverrideId FROM channels WHERE epgOverrideId IS NOT NULL AND epgOverrideId <> ''
+            )
+            LIMIT :limit
+        )
+        """
+    )
+    suspend fun deleteOrphanBatch(limit: Int = 2000): Int
+
+    /** Returns how many unmatched rows were dropped. Batched like the other prunes. */
+    suspend fun deleteOrphans(): Long {
+        var total = 0L
+        while (true) {
+            val count = deleteOrphanBatch(HOUSEKEEPING_BATCH)
+            total += count
+            if (count < HOUSEKEEPING_BATCH) break
+            kotlinx.coroutines.delay(5)
+        }
+        return total
+    }
 }
 
 @Dao

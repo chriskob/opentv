@@ -865,7 +865,7 @@ class CatalogRepository(
         source: Source,
         nowUtcMillis: Long,
         onProgress: ((Int, Int) -> Unit)? = null,
-    ): SyncResult = HeavyWork.run { syncLiveLocked(source, nowUtcMillis, onProgress) }
+    ): SyncResult = HeavyWork.run("catalogue import") { syncLiveLocked(source, nowUtcMillis, onProgress) }
 
     /**
      * [syncLive]'s body, run with the gate held: a channel import is one of the jobs that must not
@@ -1371,7 +1371,7 @@ class CatalogRepository(
         source: Source,
         nowUtcMillis: Long,
         onProgress: ((Int, Int, Int, Int) -> Unit)? = null,
-    ): VodSyncResult = HeavyWork.run { syncXtreamVodLocked(source, nowUtcMillis, onProgress) }
+    ): VodSyncResult = HeavyWork.run("VOD import") { syncXtreamVodLocked(source, nowUtcMillis, onProgress) }
 
     /**
      * [syncXtreamVod]'s body, run with the gate held — a titles import is the single heaviest job

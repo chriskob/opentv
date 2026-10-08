@@ -450,6 +450,20 @@ class AppSettings private constructor(context: Context) {
         get() = prefs.getBoolean(KEY_ONE_TIME_GUIDE_CLEANUP, false)
         set(value) { prefs.edit().putBoolean(KEY_ONE_TIME_GUIDE_CLEANUP, value).apply() }
 
+    /**
+     * Ask the next guide import to ignore the matched-channel filter and store everything.
+     *
+     * Imports are filtered to the guide ids the playlist can actually use, which is what keeps a
+     * 11,000-channel provider feed from becoming 670,000 stored programmes. But the match for a
+     * newly added channel or newly enabled feed only exists after the matcher has run, so the
+     * pass that discovers a new match must re-fetch unfiltered once. The repository sets this
+     * flag whenever a sync changed any channel's match, and clears it when the unfiltered pass
+     * has run.
+     */
+    var guideNextImportUnfiltered: Boolean
+        get() = prefs.getBoolean(KEY_GUIDE_UNFILTERED_IMPORT, false)
+        set(value) { prefs.edit().putBoolean(KEY_GUIDE_UNFILTERED_IMPORT, value).apply() }
+
     /** Stamp + channel count written after each guide (EPG) sync, shown in the guide header.
      *
      * Observable, unlike [lastChannelId] beside it: the header renders this on the Guide, and a
@@ -1185,6 +1199,7 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_LAST_GUIDE_UPDATED = "last_guide_updated_millis"
         private const val KEY_LAST_GUIDE_CHANNELS = "last_guide_channels"
         private const val KEY_ONE_TIME_GUIDE_CLEANUP = "one_time_guide_cleanup_done"
+        private const val KEY_GUIDE_UNFILTERED_IMPORT = "guide_next_import_unfiltered"
         private const val KEY_EPG_SYNC_WITH_PLAYLIST = "epg_sync_with_playlist"
         private const val KEY_DELETED_FEED_URLS = "deleted_feed_urls"
         private const val KEY_REMOTE_PAIRING_URL = "remote_pairing_server_url"

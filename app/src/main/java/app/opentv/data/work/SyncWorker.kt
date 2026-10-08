@@ -47,21 +47,12 @@ class SyncWorker(
         )
         var anyFailed = false
 
-        for (source in sources) {
-            if (!forceCatalogSync && now - source.lastCatalogSyncMillis < catalogIntervalMillis) {
-                continue
-            }
-            when (val result = graph.catalogRepository.sync(source, now)) {
-                is CatalogRepository.SyncResult.Success ->
-                    Log.i(TAG, "Catalogue for ${source.name}: ${result.channelCount} channels")
-                is CatalogRepository.SyncResult.Failed -> {
-                    anyFailed = true
-                    Log.w(TAG, "Catalogue for ${source.name} failed: ${result.reason}")
-                }
-            }
-
-        }
-
+        // The guide runs first. The catalogue import is the longest job the app has, it holds
+        // the HeavyWork gate while it runs, and a guide behind it waits in silence - which on a
+        // big panel is how "Update Guide" ended up queued for an hour behind a VOD import that
+        // nobody had asked for. The guide pass is bounded (a few minutes), so it goes ahead of
+        // the catalogue refresh and the long job runs after.
+        //
         // Only sync the guide here when the user wants it bundled with the playlist refresh.
         // Otherwise the guide refreshes on its own staleness window controlled by epgRefreshHours.
         if (settings.epgSyncWithPlaylist.value) {
@@ -84,6 +75,21 @@ class SyncWorker(
 
             // Book any newly-revealed series-link airings from this fresh guide.
             runCatching { graph.recordingEngine.rescanSeriesRules() }
+        }
+
+        for (source in sources) {
+            if (!forceCatalogSync && now - source.lastCatalogSyncMillis < catalogIntervalMillis) {
+                continue
+            }
+            when (val result = graph.catalogRepository.sync(source, now)) {
+                is CatalogRepository.SyncResult.Success ->
+                    Log.i(TAG, "Catalogue for ${source.name}: ${result.channelCount} channels")
+                is CatalogRepository.SyncResult.Failed -> {
+                    anyFailed = true
+                    Log.w(TAG, "Catalogue for ${source.name} failed: ${result.reason}")
+                }
+            }
+
         }
 
         // A partial failure is still a retry — but the user keeps everything already on disk.

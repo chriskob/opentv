@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.16.19
+
+- **The guide stores only your channels now.** A provider ships a guide for every channel it
+  carries - 11,000+ ids on a big panel - while the viewer watches a few hundred. OpenTV was
+  storing the whole thing: the same feed became 670,000 database rows for a guide that queries a
+  few thousand. Programme imports are now filtered to the guide ids your playlist can actually
+  use, and data left behind by older builds (or channels you removed) is dropped after each
+  sync. The first pass after install still imports everything, so new matches cannot be starved;
+  one re-run after the matcher learns a new channel keeps that honest. On a big provider this
+  is a 10-40x cut in database size and sync time.
+- **"It's stuck" usually meant "it's waiting" - now it says so.** One heavy job runs at a time,
+  so a manual guide update used to sit in total silence behind a catalogue import for minutes -
+  the status line said "Downloading guides…" while nothing had even started, and the guide
+  header kept the old stamp. Waiting jobs now name what they wait for, the EPG settings screen
+  shows the sync's real progress feed-by-feed, the guide header shows it too, and every feed
+  logs its start, its row counts, and how long it took.
+- **Background sync runs the guide first.** The periodic worker refreshed the (long) catalogue
+  before the guide and, on big panels, could keep the guide waiting behind the gate until the
+  job's time slice expired - which meant an EPG refresh that never visibly ran, hour after hour.
+- **Guide writes commit 4x less often**, so an import spends its time on the flash instead of
+  on thousands of commit points.
+
 ## 0.16.18
 
 - **The box gets its gigabyte back.** The one-time guide cleanup marked itself done even when it

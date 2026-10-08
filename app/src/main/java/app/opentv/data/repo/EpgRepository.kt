@@ -5,6 +5,7 @@
  */
 package app.opentv.data.repo
 
+import android.os.SystemClock
 import android.util.Log
 import androidx.room3.executeSQL
 import app.opentv.core.AppSettings
@@ -356,8 +357,16 @@ class EpgRepository(
         force: Boolean = false,
         refreshIntervalMillis: Long = REFRESH_INTERVAL_MILLIS,
         onProgress: ((SyncProgress) -> Unit)? = null,
-    ): SyncSummary = HeavyWork.run {
-        syncAllLocked(nowUtcMillis, force, refreshIntervalMillis, onProgress)
+    ): SyncSummary {
+        // Say so while queued, not only once the gate is ours: a sync the viewer asked for can
+        // wait on a catalogue import holding HeavyWork, and a header that stays on the previous
+        // stamp during that wait is indistinguishable from a sync that never started.
+        if (force && HeavyWork.isBusy) {
+            _syncActivity.value = "Waiting: ${HeavyWork.activeJob ?: "another job"} is running…"
+        }
+        return HeavyWork.run("guide sync") {
+            syncAllLocked(nowUtcMillis, force, refreshIntervalMillis, onProgress)
+        }
     }
 
     /**
@@ -370,7 +379,7 @@ class EpgRepository(
         force: Boolean = false,
         refreshIntervalMillis: Long = REFRESH_INTERVAL_MILLIS,
         onProgress: ((SyncProgress) -> Unit)? = null,
-    ): SyncSummary? = HeavyWork.runIfIdle {
+    ): SyncSummary? = HeavyWork.runIfIdle("guide sync") {
         syncAllLocked(nowUtcMillis, force, refreshIntervalMillis, onProgress)
     }
 
@@ -393,6 +402,24 @@ class EpgRepository(
             var failed = 0
             var processed = 0
             var written = 0
+            var unmatchedSkipped = 0
+
+            // The write filter: only guide ids a playlist channel can actually query. A provider
+            // ships 11,000+ channel ids and the viewer's list holds a few hundred - storing the
+            // difference for the whole retention window is what turned a 13 MB app into a
+            // 1.3 GB database and a multi-minute sync on a cheap box. Null means "store
+            // everything": the first pass after install (before any channel has a match), and
+            // the first pass after the matcher discovers new matches, both need it.
+            val unfilteredPass = settings?.guideNextImportUnfiltered == true
+            val allowedEpgIds: Set<String>? = if (unfilteredPass) null else channelDao.allForMatching()
+                .flatMap { it.epgCandidates }
+                .toSet()
+                .takeIf { it.isNotEmpty() }
+            if (allowedEpgIds != null) {
+                Log.i(TAG, "Guide import filtered to ${allowedEpgIds.size} matched channel id(s)")
+            } else {
+                Log.i(TAG, "Guide import unfiltered: ${if (unfilteredPass) "requested after a match change" else "no matched channels yet"}")
+            }
 
             // Published alongside the callback, so a sync started from one screen is visible from
             // every other. Cleared in a finally: an exception here used to leave the Guide
@@ -425,6 +452,7 @@ class EpgRepository(
                 return@withContext SyncSummary(feeds.size, 0, 0, 0, 0)
             }
             say("Starting guide update…")
+            Log.i(TAG, "Guide sync starting: $dueCount of ${feeds.size} feed(s) due")
             onProgress?.invoke(SyncProgress(feedsDone = 0, feedsTotal = feeds.size, programmesWritten = 0))
 
             feeds.forEachIndexed { index, feed ->
@@ -435,11 +463,12 @@ class EpgRepository(
                     )
                     return@forEachIndexed
                 }
-                when (val result = syncFeed(feed, nowUtcMillis)) {
+                when (val result = syncFeed(feed, nowUtcMillis, allowedEpgIds)) {
                     is FeedResult.Success -> {
                         succeeded++
                         processed++
                         written += result.programmes
+                        unmatchedSkipped += result.unmatchedSkipped
                         feedDao.markSynced(
                             feed.id,
                             nowUtcMillis,
@@ -467,46 +496,14 @@ class EpgRepository(
                 publish(SyncProgress(index + 1, feeds.size, written, feed.name))
             }
 
+            if (unfilteredPass) settings?.guideNextImportUnfiltered = false
+
             // Retention pruning runs on every pass that got past the due check, even when all
             // feeds failed. Rows age out by the clock, not by new arrivals, and the prunes are
             // indexed range deletes so the steady-state cost is small.
             say("Cleaning up old guide data…")
             programmeDao.deleteEndedBefore(nowUtcMillis - RETENTION_PAST_MILLIS)
             programmeDao.deleteStartsAfter(nowUtcMillis + RETENTION_FUTURE_MILLIS)
-            logDiskUsage("after prune")
-
-            // The text rewrite and the VACUUM are a ONE-TIME migration of a database that grew
-            // before the field caps existed - not per-sync housekeeping. Running them every time
-            // is what made this sync never appear to finish: a whole-table UPDATE plus a VACUUM
-            // that copies the entire file, holding the database's write lock while the viewer
-            // watches television. The flag is set only when the work actually completes, so an
-            // interrupted run (kill, power cycle, 10-minute worker limit, cancellation) retries
-            // on the next sync instead of never running again.
-            if (settings?.oneTimeGuideCleanupDone != true) {
-                say("One-time guide cleanup…")
-                try {
-                    pruneOversizedText()
-                    say("Reclaiming disk space…")
-                    if (reclaimDiskSpace(fullVacuumAllowed = true)) {
-                        settings?.oneTimeGuideCleanupDone = true
-                    } else {
-                        Log.w(TAG, "One-time guide cleanup incomplete, will retry next sync")
-                    }
-                } catch (e: CancellationException) {
-                    Log.w(TAG, "One-time guide cleanup cancelled, will retry next sync")
-                    throw e
-                }
-            } else {
-                // Steady-state reclaim: checkpoint the WAL and free a bounded slice. Keeps the
-                // file from creeping back up without another whole-file rewrite.
-                try {
-                    reclaimDiskSpace(fullVacuumAllowed = false)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.w(TAG, "Disk reclaim skipped: ${e.message}")
-                }
-            }
 
             val (matched, total) = if (processed > 0) {
                 publish(SyncProgress(feeds.size, feeds.size, written, "Matching channels…", matching = true))
@@ -526,6 +523,74 @@ class EpgRepository(
             } else {
                 0 to 0
             }
+
+            // Programs for guide channels the playlist does not hold are unreachable by the UI -
+            // drop them. Runs only after a pass that matched anything, because until the matcher
+            // has named a channel's guide ids, "not matched" and "not yet matched" are the same
+            // query. A filtered import never writes these rows; this catches what older builds
+            // (and the one unfiltered pass every install takes) left behind.
+            var forceFullVacuum = false
+            if (processed > 0 && allowedEpgIds != null) {
+                say("Dropping guide data for channels you don't watch…")
+                val orphans = programmeDao.deleteOrphans()
+                if (orphans > 0) {
+                    Log.i(TAG, "Dropped %,d programme(s) for unmatched guide channels".format(orphans))
+                }
+                // An install upgrading from the unfiltered era frees hundreds of thousands of
+                // rows in this one pass. Leaving that space to trickle back at a bounded
+                // incremental slice per sync would take a month - a big prune earns a full
+                // vacuum today, once, and the freelist check inside reclaims it only if the
+                // space is actually there.
+                if (orphans >= FULL_VACUUM_AFTER_ROWS) forceFullVacuum = true
+                // A match change means some channel's ids moved. The rows were filtered against
+                // the *previous* match set, so let one unfiltered pass catch up.
+                if (matcherChanged && allowedEpgIds != null) {
+                    settings?.guideNextImportUnfiltered = true
+                }
+            }
+            logDiskUsage("after prune+orphans")
+            if (unmatchedSkipped > 0) {
+                Log.i(TAG, "Skipped %,d programme(s) for guide channels not in the playlist".format(unmatchedSkipped))
+            }
+
+            // The text rewrite and the VACUUM are a ONE-TIME migration of a database that grew
+            // before the field caps existed - not per-sync housekeeping. Running them every time
+            // is what made this sync never appear to finish: a whole-table UPDATE plus a VACUUM
+            // that copies the entire file, holding the database's write lock while the viewer
+            // watches television. The flag is set only when the work actually completes, so an
+            // interrupted run (kill, power cycle, 10-minute worker limit, cancellation) retries
+            // on the next sync instead of never running again.
+            //
+            // It runs AFTER the prunes and the orphan drop above, so the one expensive rewrite
+            // compacts the file to its final, small shape rather than an intermediate one.
+            if (settings?.oneTimeGuideCleanupDone != true) {
+                say("One-time guide cleanup…")
+                try {
+                    pruneOversizedText()
+                    say("Reclaiming disk space…")
+                    if (reclaimDiskSpace(fullVacuumAllowed = true)) {
+                        settings?.oneTimeGuideCleanupDone = true
+                    } else {
+                        Log.w(TAG, "One-time guide cleanup incomplete, will retry next sync")
+                    }
+                } catch (e: CancellationException) {
+                    Log.w(TAG, "One-time guide cleanup cancelled, will retry next sync")
+                    throw e
+                }
+            } else {
+                // Steady-state reclaim: checkpoint the WAL and free a bounded slice. Keeps the
+                // file from creeping back up without another whole-file rewrite - unless this
+                // sync just dropped a large block (the first orphan sweep on an upgrading
+                // install), which is exactly the one-time-scale event that earns the rewrite.
+                try {
+                    reclaimDiskSpace(fullVacuumAllowed = forceFullVacuum)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Disk reclaim skipped: ${e.message}")
+                }
+            }
+
             if (processed > 0) {
                 settings?.lastGuideUpdatedMillis = nowUtcMillis
                 settings?.lastGuideChannelCount = total
@@ -682,7 +747,7 @@ class EpgRepository(
     private fun String.asSuffix(): String = if (isBlank()) "" else " · $this"
 
     private sealed interface FeedResult {
-        data class Success(val programmes: Int, val channels: Int) : FeedResult
+        data class Success(val programmes: Int, val channels: Int, val unmatchedSkipped: Int = 0) : FeedResult
         data class Failed(val reason: String) : FeedResult
     }
 
@@ -718,10 +783,17 @@ class EpgRepository(
         Log.i(TAG, "Trimmed $trimmed programme row(s) to fit the text caps")
     }
 
-    private suspend fun syncFeed(feed: EpgFeed, nowUtcMillis: Long): FeedResult {
+    private suspend fun syncFeed(
+        feed: EpgFeed,
+        nowUtcMillis: Long,
+        allowedEpgIds: Set<String>?,
+    ): FeedResult {
         val batch = ArrayList<Programme>(BATCH_SIZE)
         val aliases = ArrayList<EpgChannelAlias>(BATCH_SIZE)
         var written = 0
+        var unmatchedSkipped = 0
+        val startMs = SystemClock.elapsedRealtime()
+        Log.i(TAG, "Feed '${feed.name}': downloading…")
 
         try {
             openFeedStream(feed).use { stream ->
@@ -741,12 +813,21 @@ class EpgRepository(
                         }
                     },
                     onProgramme = { programme ->
-                        // Skip anything outside the retention window; no point writing rows we
-                        // are about to prune. Past is bounded for catch-up browsing, future is
-                        // bounded because providers ship 7-14 day schedules while the guide
-                        // shows 48h and scheduled recordings only need ~7 days ahead — storing
-                        // the full horizon for every channel is what grew the database past 1 GB.
-                        if (programme.endUtcMillis >= nowUtcMillis - RETENTION_PAST_MILLIS &&
+                        // Skip programs for guide channels the viewer's playlist does not hold.
+                        // The provider ships every channel it carries - the guide renders only
+                        // what matched - and storing the difference across the whole retention
+                        // window is what turned a few hundred useful channels into a 670,000-row,
+                        // multi-minute import. Aliases are still recorded for every channel:
+                        // they are what the matcher uses to find new matches, and they are cheap.
+                        if (allowedEpgIds != null && programme.epgChannelId !in allowedEpgIds) {
+                            unmatchedSkipped++
+                        } else if (
+                            // Skip anything outside the retention window; no point writing rows we
+                            // are about to prune. Past is bounded for catch-up browsing, future is
+                            // bounded because providers ship 7-14 day schedules while the guide
+                            // shows 48h and scheduled recordings only need ~7 days ahead — storing
+                            // the full horizon for every channel is what grew the database past 1 GB.
+                            programme.endUtcMillis >= nowUtcMillis - RETENTION_PAST_MILLIS &&
                             programme.startUtcMillis <= nowUtcMillis + RETENTION_FUTURE_MILLIS
                         ) {
                             batch += programme.compact()
@@ -771,13 +852,29 @@ class EpgRepository(
                 if (written == 0 && stats.programmeCount == 0) {
                     return FeedResult.Failed("Downloaded, but it contained no programs.")
                 }
-                return FeedResult.Success(written, stats.channelCount)
+                Log.i(
+                    TAG,
+                    "Feed '${feed.name}': %d programme(s) stored (%d parsed, %d off-window, " +
+                        "%d unmatched-channel) from %d channel(s) in %.1fs".format(
+                            written,
+                            stats.programmeCount,
+                            stats.skippedProgrammes,
+                            unmatchedSkipped,
+                            stats.channelCount,
+                            (SystemClock.elapsedRealtime() - startMs) / 1000.0,
+                        ),
+                )
+                return FeedResult.Success(written, stats.channelCount, unmatchedSkipped)
             }
         } catch (e: CancellationException) {
+            Log.w(TAG, "Feed '${feed.name}': cancelled after " +
+                "${(SystemClock.elapsedRealtime() - startMs) / 1000.0}s")
             throw e
         } catch (e: Exception) {
             // Deliberately no cleanup. Whatever was written is newer than what was there,
             // and what was there is still there.
+            Log.w(TAG, "Feed '${feed.name}': failed after " +
+                "${(SystemClock.elapsedRealtime() - startMs) / 1000.0}s: ${e.message}")
             return FeedResult.Failed(e.message ?: "Download failed.")
         }
     }
@@ -913,8 +1010,9 @@ class EpgRepository(
     companion object {
         private const val TAG = "EpgRepository"
 
-        /** Writes per transaction. Large enough to be fast, small enough not to hold WAL open. */
-        const val BATCH_SIZE = 500
+        /** Writes per transaction. Large enough to keep a big import to few commits, small
+         *  enough that no single write lock is long (the guide must stay readable on a slow box). */
+        const val BATCH_SIZE = 2000
 
         /** Keep finished programmes for 3 days to support catch-up / archive TV browsing. */
         val RETENTION_PAST_MILLIS: Long = TimeUnit.DAYS.toMillis(3)
@@ -937,6 +1035,9 @@ class EpgRepository(
 
         /** Vacuum only when the freelist holds at least this much — a full rewrite is not cheap. */
         const val VACUUM_THRESHOLD_BYTES: Long = 32L * 1024 * 1024
+
+        /** Rows a single pass must drop before the freed space gets a full vacuum, not a trickle. */
+        const val FULL_VACUUM_AFTER_ROWS = 20_000
 
         /**
          * Pages freed per routine sync once the database is in incremental-auto-vacuum mode.

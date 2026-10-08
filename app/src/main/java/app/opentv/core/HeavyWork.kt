@@ -5,6 +5,7 @@
  */
 package app.opentv.core
 
+import android.util.Log
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -24,9 +25,20 @@ import kotlinx.coroutines.sync.withLock
  * for (see [isBusy]) rather than reporting progress that is not moving. For a job nobody asked for
  * — the opportunistic guide refresh on launch — there is [runIfIdle], which yields instead of
  * queueing, because the next launch or the periodic worker will pick it up anyway.
+ *
+ * The gate used to be silent, which made "the guide is queued behind a catalogue import" look
+ * identical to "the guide download is taking an hour": no log, no progress, no explanation.
+ * Every holder now names itself in [activeJob] and logs its waits, so the UI can say what the
+ * job is waiting for and logcat can answer it later.
  */
 object HeavyWork {
+    private const val TAG = "HeavyWork"
     private val mutex = Mutex()
+
+    /** What is holding the gate right now, or null when it is free. Advisory like [isBusy]. */
+    @Volatile
+    var activeJob: String? = null
+        private set
 
     /**
      * True while a job is inside the gate.
@@ -37,17 +49,31 @@ object HeavyWork {
     val isBusy: Boolean get() = mutex.isLocked
 
     /** Runs [block] holding the gate, waiting for whatever is inside to finish first. */
-    suspend fun <T> run(block: suspend () -> T): T = mutex.withLock { block() }
+    suspend fun <T> run(label: String = "job", block: suspend () -> T): T {
+        if (mutex.isLocked) {
+            Log.i(TAG, "'$label' is queued behind '${activeJob ?: "another job"}'")
+        }
+        return mutex.withLock {
+            activeJob = label
+            try {
+                block()
+            } finally {
+                activeJob = null
+            }
+        }
+    }
 
     /**
      * Runs [block] only if the gate is free this instant, returning null when a job already holds
      * it. For work that is worth doing but not worth waiting for.
      */
-    suspend fun <T> runIfIdle(block: suspend () -> T): T? {
+    suspend fun <T> runIfIdle(label: String = "job", block: suspend () -> T): T? {
         if (!mutex.tryLock()) return null
+        activeJob = label
         return try {
             block()
         } finally {
+            activeJob = null
             mutex.unlock()
         }
     }
