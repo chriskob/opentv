@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16.23
+
+- **The guide header shows when it is working.** A small spinner sits beside the "EPG updated"
+  line for as long as a guide sync is running - including while it waits for another job - so a
+  long import reads as work in progress rather than a frozen screen.
+
 ## 0.16.22
 
 - **A finished guide sync no longer reports itself as failed.** The import wrote its rows, then a

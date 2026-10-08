@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -207,6 +208,8 @@ fun GuideGrid(
     reminderKeys: Set<Pair<Long, Long>> = emptySet(),
     /** "EPG updated â€¦ Â· N channels" stamp shown in the time header, or null until first sync. */
     epgInfoLine: String? = null,
+    /** True while a guide sync is running - the header shows a spinner beside the stamp. */
+    epgSyncing: Boolean = false,
     /** Increment to ask the grid to restore the cursor onto the playing channel at "now". */
     restoreTick: Int = 0,
     /** Bumped when a rail category is focus-previewed: snaps the grid to its first channel. */
@@ -891,6 +894,7 @@ fun GuideGrid(
                 nowMillis = currentTickMillis,
                 scroll = scroll,
                 epgInfoLine = epgInfoLine,
+                epgSyncing = epgSyncing,
             )
             Spacer(Modifier.height(2.dp))
 
@@ -1336,6 +1340,7 @@ private fun TimeHeader(
     nowMillis: Long,
     scroll: androidx.compose.foundation.ScrollState,
     epgInfoLine: String? = null,
+    epgSyncing: Boolean = false,
 ) {
     val currentDateTimeFmt = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
     val slotTimeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
@@ -1370,13 +1375,23 @@ private fun TimeHeader(
                     maxLines = 1,
                 )
                 if (epgInfoLine != null) {
-                    Text(
-                        text = epgInfoLine,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = AppTheme.palette.textMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (epgSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(9.dp),
+                                strokeWidth = 1.5.dp,
+                                color = AppTheme.primary,
+                            )
+                            Spacer(Modifier.width(5.dp))
+                        }
+                        Text(
+                            text = epgInfoLine,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = AppTheme.palette.textMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }

@@ -1702,6 +1702,7 @@ fun HomeScreen(
                         catchUpChannelIds = catchUpChannelIds,
                         reminderKeys = reminderKeys,
                         epgInfoLine = epgSyncLine ?: epgInfoLine,
+                        epgSyncing = epgSyncLine != null,
                         restoreTick = guideRestoreTick,
                         onTimeShifted = { timeShifted = it },
                         scrollTopTick = guideScrollTopTick,
