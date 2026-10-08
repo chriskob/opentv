@@ -525,12 +525,14 @@ class EpgRepository(
             }
 
             // Programs for guide channels the playlist does not hold are unreachable by the UI -
-            // drop them. Runs only after a pass that matched anything, because until the matcher
-            // has named a channel's guide ids, "not matched" and "not yet matched" are the same
-            // query. A filtered import never writes these rows; this catches what older builds
-            // (and the one unfiltered pass every install takes) left behind.
+            // drop them. The sweep runs on every due pass, not only ones where a feed succeeded:
+            // rows become orphans as the playlist shrinks and as older builds' data ages, and
+            // neither of those waits for a successful download. It only needs the match set to be
+            // trustworthy - until the matcher has named a channel's guide ids, "not matched" and
+            // "not yet matched" are the same query. A filtered import never writes these rows;
+            // this catches what older builds (and the one unfiltered pass) left behind.
             var forceFullVacuum = false
-            if (processed > 0 && allowedEpgIds != null) {
+            if (allowedEpgIds != null) {
                 say("Dropping guide data for channels you don't watch…")
                 val orphans = programmeDao.deleteOrphans()
                 if (orphans > 0) {
@@ -868,13 +870,19 @@ class EpgRepository(
             }
         } catch (e: CancellationException) {
             Log.w(TAG, "Feed '${feed.name}': cancelled after " +
-                "${(SystemClock.elapsedRealtime() - startMs) / 1000.0}s")
+                "${(SystemClock.elapsedRealtime() - startMs) / 1000.0}s", e)
             throw e
         } catch (e: Exception) {
             // Deliberately no cleanup. Whatever was written is newer than what was there,
             // and what was there is still there.
-            Log.w(TAG, "Feed '${feed.name}': failed after " +
-                "${(SystemClock.elapsedRealtime() - startMs) / 1000.0}s: ${e.message}")
+            // The throwable itself is logged because the message alone ("f !=
+            // java.lang.Integer") cannot say which read failed; the stack can.
+            Log.e(
+                TAG,
+                "Feed '${feed.name}': failed after " +
+                    "${(SystemClock.elapsedRealtime() - startMs) / 1000.0}s: ${e.message}",
+                e,
+            )
             return FeedResult.Failed(e.message ?: "Download failed.")
         }
     }

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.21
+
+- **A failed guide feed now logs its whole stack, not one word.** Tonight's provider import died
+  at minute nine with the bare message "f != java.lang.Integer" and no trace, which makes it a
+  riddle rather than a bug report. The throwable is now logged in full.
+- **The orphan sweep runs even when a feed failed.** Unwatched-channel data ages into orphans on
+  the clock, not on new arrivals; gating the sweep on a successful import meant a box whose feed
+  failed (as tonight's did) also skipped the prune that would have reclaimed its space. The
+  sweep's own guard - a trustworthy match set - is what actually protects it.
+
 ## 0.16.20
 
 - **"Update guide" no longer kills itself.** The download ran inside the settings screen's own
