@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import app.opentv.ui.theme.AppTheme
-import app.opentv.ui.theme.GuideMotion
 import app.opentv.ui.theme.LocalGuideChromeAlpha
 import app.opentv.ui.theme.LocalGuideMetrics
 import app.opentv.ui.theme.widthFor
@@ -2129,14 +2128,6 @@ private fun ProgrammeBlock(
     // curve and duration. Scale rather than a layout change, so moving the cursor never
     // re-measures the grid (which is what makes a 20-programme row stay smooth).
     val isCursor = highlighted || focused
-    val focusScale by animateFloatAsState(
-        targetValue = if (isCursor) GuideMotion.FOCUS_SCALE else 1f,
-        animationSpec = tween(
-            durationMillis = GuideMotion.FOCUS_HIGHLIGHT_MS,
-            easing = GuideMotion.FOCUS_EASING,
-        ),
-        label = "guideCellFocusScale",
-    )
     // D-pad long-OK detection. combinedClickable's onLongClick never fires for a held
     // DPAD_CENTER/ENTER from a TV remote, and a timer is the wrong shape for it anyway:
     // firing mid-hold while the key is still down leaves the remaining repeat events (and the
@@ -2153,10 +2144,6 @@ private fun ProgrammeBlock(
             .then(if (rowFocusRequester != null) Modifier.focusRequester(rowFocusRequester) else Modifier)
             .then(if (externalFocusRequester != null) Modifier.focusRequester(externalFocusRequester) else Modifier)
             .width(width)
-            .graphicsLayer {
-                scaleX = focusScale
-                scaleY = focusScale
-            }
             .fillMaxSize()
             .padding(end = 1.5.dp)
             // Rounded corners come from the background/border shapes, NOT Modifier.clip: a clip
