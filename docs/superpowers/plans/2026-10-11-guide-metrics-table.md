@@ -95,3 +95,26 @@ Residual uncertainty: these are derived from proportions in a photograph of a TV
 3. **Contrast check** — `onCellFocus` (`#111111`) on `cellFocus` (`#ffc107`) is high-contrast;
    `onSurface` (`#eeeeee`) on `surface` (`#1f415c`) likewise. `GuidePaletteContrastTest` in
    Task 3 encodes this as an invariant.
+
+## 4c. Native 1920x1080 capture from the Onn 4K box (2026-10-11) - exact measurements
+
+A `screencap` of TiviMate's guide taken from the maintainer's own Onn 4K Streaming Box
+(192.168.1.128:5555, 1920x1080 @ density 320, so **1dp = 2px exactly**), then measured pixel-by-pixel
+with System.Drawing. These replace the photo-derived values in 4b:
+
+| Field | 4b value | Measured | How it was measured |
+|---|---|---|---|
+| `rowHeight` | 48.dp | **44.dp** | Programme cells run 82px of cell background with a 6px gap between rows = 88px |
+| `halfHourWidth` | 168.dp | **160.dp** | Ruler label left edges at x = 542, 862, 1182, 1502, 1822 -> exactly 320px apart |
+| `channelColumnWidth` | 270.dp | **270.dp** | Channel column ends / first cell begins at x = 540 |
+| `timeHeaderHeight` | 38.dp | **25.dp** | Ruler text occupies y=427..447 and the divider sits at y=462 |
+| `cellGap` | 4.dp | **3.dp** | The 6px gutter between adjacent timeline cells (3dp each side) |
+| `timeRulerSp` | 12.sp | **12.sp** | Inked glyph height 20px at x2 = a 12sp label |
+
+Confirmed as-is: `logoSize` 32.dp (logo images vary in height - 28px for the NBC mark, 36px for abc7 -
+so they are fit inside a container rather than sized by it), `channelNumberWidth` 40.dp, and the
+focused cell being a light plain fill (#DFE1E4) with dark ink against a dark programme cell
+(#242B33) on a #1C232C page - which is what the parity palette already does (light cursor, dark cells).
+
+Colours observed in the capture, for future reference: page background `#1C232C`, programme cell
+`#242B33`, the cell slightly lighter while its programme is airing `#2C323A`, focused cell `#DFE1E4`.

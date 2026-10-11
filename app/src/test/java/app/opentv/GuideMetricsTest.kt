@@ -48,7 +48,7 @@ class GuideMetricsTest {
         // not leave a sliver of the next cell uncovered.
         val start = minutes(10 * 60 + 7)
         val end = minutes(11 * 60)
-        assertThat(metrics.widthFor(start, end)).isEqualTo(297.dp)
+        assertThat(metrics.widthFor(start, end)).isEqualTo(283.dp)
     }
 
     @Test
@@ -61,14 +61,14 @@ class GuideMetricsTest {
     @Test
     fun parityDefaults_matchTheMeasuredTable() {
         val metrics = GuideMetrics.TIVIMATE_PARITY
-        assertThat(metrics.rowHeight).isEqualTo(48.dp)
+        assertThat(metrics.rowHeight).isEqualTo(44.dp)
         assertThat(metrics.channelColumnWidth).isEqualTo(270.dp)
         assertThat(metrics.channelNumberWidth).isEqualTo(40.dp)
         assertThat(metrics.logoSize).isEqualTo(32.dp)
-        assertThat(metrics.timeHeaderHeight).isEqualTo(38.dp)
-        assertThat(metrics.halfHourWidth).isEqualTo(168.dp)
+        assertThat(metrics.timeHeaderHeight).isEqualTo(25.dp)
+        assertThat(metrics.halfHourWidth).isEqualTo(160.dp)
         assertThat(metrics.cellCornerRadius).isEqualTo(6.dp)
-        assertThat(metrics.cellGap).isEqualTo(4.dp)
+        assertThat(metrics.cellGap).isEqualTo(3.dp)
         assertThat(metrics.cellPaddingHorizontal).isEqualTo(8.dp)
         assertThat(metrics.cellPaddingVertical).isEqualTo(6.dp)
         assertThat(metrics.focusRingWidth).isEqualTo(2.dp)
