@@ -46,7 +46,10 @@
 | `app/src/test/java/app/opentv/GuideRenderParityTest.kt` | **New.** Robolectric + Compose: rendered cell/row geometry equals the metrics. |
 | `docs/superpowers/plans/2026-10-11-guide-metrics-table.md` | **New.** The measured/derived number table Task 1 produces. |
 
-## Seed metric table (starting point; Task 1 confirms or corrects)
+## Seed metric table (locked by Task 1)
+
+Values below are confirmed in `docs/superpowers/plans/2026-10-11-guide-metrics-table.md` with their
+measured/derived labels. Palette hex values live in that table; only geometry/type is repeated here.
 
 Seeded from the values measured in the APK's resource table plus OpenTV's existing guide
 constants. Each is confirmed in Task 1 and then pinned in `GuideMetricsTest`.
