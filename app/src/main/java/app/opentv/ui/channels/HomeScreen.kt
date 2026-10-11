@@ -197,6 +197,7 @@ fun HomeScreen(
     // a tree of playlists now rather than a provider filter plus a flat category list.
     val sources by viewModel.sources.collectAsState()
     val showFavouritesCategory by settings.showFavouritesCategory.collectAsState()
+    val showPreviousWithoutCatchup by settings.guideShowPreviousWithoutCatchup.collectAsState()
     val collapsedSources by settings.collapsedSources.collectAsState()
 
     // Rail open targets â€” declared before the index helpers below, which read them. Set at the
@@ -1700,6 +1701,7 @@ fun HomeScreen(
                         windowStartMillis = windowStart,
                         dayOffset = guideHourOffset / 24,
                         catchUpChannelIds = catchUpChannelIds,
+                        showPreviousWithoutCatchup = showPreviousWithoutCatchup,
                         reminderKeys = reminderKeys,
                         epgInfoLine = epgSyncLine ?: epgInfoLine,
                         epgSyncing = epgSyncLine != null,

@@ -9,9 +9,12 @@ import android.content.Context
 import app.opentv.BuildConfig
 import app.opentv.data.model.StremioAddon
 import app.opentv.ui.theme.AppPalette
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -77,6 +80,15 @@ class AppSettings private constructor(context: Context) {
     /** Whether reopening the guide resets the viewport and focus to the current live broadcast. */
     private val _guideResetOnOpen = MutableStateFlow(prefs.getBoolean(KEY_GUIDE_RESET_ON_OPEN, true))
     val guideResetOnOpen: StateFlow<Boolean> = _guideResetOnOpen.asStateFlow()
+
+    /**
+     * Whether the guide still shows a programme that has already aired on a channel with no
+     * archive, dimmed and non-actionable. Off (the default) hides those cells, so a past slot
+     * never suggests a catch-up the provider cannot serve.
+     */
+    private val _guideShowPreviousWithoutCatchup =
+        MutableStateFlow(prefs.getBoolean(KEY_GUIDE_SHOW_PREVIOUS_WITHOUT_CATCHUP, false))
+    val guideShowPreviousWithoutCatchup: StateFlow<Boolean> = _guideShowPreviousWithoutCatchup.asStateFlow()
 
     /** The profile whose watch history is active. Defaults to the built-in profile (id 1). */
     private val _activeProfileId = MutableStateFlow(prefs.getLong(KEY_ACTIVE_PROFILE, 1L))
@@ -203,8 +215,10 @@ class AppSettings private constructor(context: Context) {
     private val _hiddenUnlocked = MutableStateFlow(false)
     val hiddenUnlocked: StateFlow<Boolean> = _hiddenUnlocked.asStateFlow()
 
-    fun setPin(pin: String) {
-        prefs.edit().putString(KEY_PIN_HASH, hashPin(pin)).apply()
+    /** Suspends: hashes on [Dispatchers.Default] so the caller does not block. */
+    suspend fun setPin(pin: String) {
+        val hash = hashPin(pin)
+        prefs.edit().putString(KEY_PIN_HASH, hash).apply()
         _pinIsSet.value = true
     }
 
@@ -214,9 +228,38 @@ class AppSettings private constructor(context: Context) {
         _hiddenUnlocked.value = true
     }
 
-    fun verifyPin(pin: String): Boolean {
+    /**
+     * Suspends: PBKDF2 at [PIN_ITERATIONS] iterations is deliberately slow, so it must not run on
+     * the caller's thread. Callers are composables handling a key press.
+     */
+    suspend fun verifyPinAsync(pin: String): Boolean {
         val stored = prefs.getString(KEY_PIN_HASH, null) ?: return true
-        return stored == hashPin(pin)
+        val storedHash = withContext(Dispatchers.Default) {
+            if (stored.startsWith("$PIN_HASH_ID$")) null else legacyPinHash(pin)
+        }
+        if (storedHash == null) return checkPinHash(pin, stored)
+        // Legacy unsalted SHA-256 from earlier builds: accept it once, then store the stronger form.
+        if (stored == storedHash) {
+            setPin(pin)
+            return true
+        }
+        return false
+    }
+
+    /** Blocking form, for callers that are already off the main thread. Prefer [verifyPinAsync]. */
+    fun verifyPin(pin: String): Boolean = runBlocking {
+        val stored = prefs.getString(KEY_PIN_HASH, null) ?: return@runBlocking true
+        val storedHash = withContext(Dispatchers.Default) {
+            if (stored.startsWith("$PIN_HASH_ID$")) null else legacyPinHash(pin)
+        }
+        if (storedHash == null) return@runBlocking checkPinHash(pin, stored)
+        // Legacy unsalted SHA-256 from earlier builds: accept it once, then store the stronger form.
+        if (stored == storedHash) {
+            setPin(pin)
+            true
+        } else {
+            false
+        }
     }
 
     fun setHiddenCategories(keys: Set<String>) {
@@ -228,7 +271,39 @@ class AppSettings private constructor(context: Context) {
         _hiddenUnlocked.value = unlocked
     }
 
-    private fun hashPin(pin: String): String {
+    private suspend fun hashPin(pin: String): String = withContext(Dispatchers.Default) {
+        val salt = ByteArray(PIN_SALT_BYTES).also { java.security.SecureRandom().nextBytes(it) }
+        val derived = derivePinKey(pin, salt, PIN_ITERATIONS)
+        listOf(
+            PIN_HASH_ID,
+            PIN_ITERATIONS.toString(),
+            android.util.Base64.encodeToString(salt, android.util.Base64.NO_WRAP),
+            android.util.Base64.encodeToString(derived, android.util.Base64.NO_WRAP),
+        ).joinToString("$")
+    }
+
+    private suspend fun checkPinHash(pin: String, stored: String): Boolean =
+        withContext(Dispatchers.Default) {
+            val parts = stored.split('$')
+            if (parts.size != 4) return@withContext false
+            val iterations = parts[1].toIntOrNull() ?: return@withContext false
+            // The count comes from disk, and the derived key runs PBKDF2 for that many rounds.
+            // Clamp it so a corrupt or edited value can't ask for a regexp-scale loop on a UI thread.
+            if (iterations <= 0 || iterations > PIN_MAX_ITERATIONS) return@withContext false
+            val salt = android.util.Base64.decode(parts[2], android.util.Base64.NO_WRAP)
+            val expected = android.util.Base64.decode(parts[3], android.util.Base64.NO_WRAP)
+            return@withContext java.security.MessageDigest.isEqual(
+                derivePinKey(pin, salt, iterations),
+                expected,
+            )
+        }
+
+    private fun derivePinKey(pin: String, salt: ByteArray, iterations: Int): ByteArray {
+        val spec = javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, iterations, 256)
+        return javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+    }
+
+    private fun legacyPinHash(pin: String): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         val bytes = digest.digest("opentv-pin::$pin".toByteArray())
         return bytes.joinToString("") { "%02x".format(it) }
@@ -273,6 +348,11 @@ class AppSettings private constructor(context: Context) {
     fun setGuideResetOnOpen(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_GUIDE_RESET_ON_OPEN, enabled).apply()
         _guideResetOnOpen.value = enabled
+    }
+
+    fun setGuideShowPreviousWithoutCatchup(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GUIDE_SHOW_PREVIOUS_WITHOUT_CATCHUP, enabled).apply()
+        _guideShowPreviousWithoutCatchup.value = enabled
     }
 
     /** Whether launching the app jumps straight back to the last channel you watched. */
@@ -506,18 +586,18 @@ class AppSettings private constructor(context: Context) {
     }
 
     private fun readPalette(): AppPalette {
-        // One-shot v138 takeover (see KEY_THEME_FORCED_VERSION): everyone lands on TVPlayer
-        // once, upgrading or new. Runs before any UI reads `palette`, so the first frame after
-        // update already renders TVPlayer; afterwards the viewer's own pick is untouched.
+        // One-shot takeover (see KEY_THEME_FORCED_VERSION): everyone lands on Slate Guide once,
+        // upgrading or new. Runs before any UI reads `palette`, so the first frame after update
+        // already renders Slate Guide; afterwards the viewer's own pick is untouched.
         if (prefs.getInt(KEY_THEME_FORCED_VERSION, 0) < THEME_FORCE_VERSION) {
             prefs.edit()
-                .putString(KEY_PALETTE, AppPalette.TVPLAYER.name)
+                .putString(KEY_PALETTE, DEFAULT_PALETTE.name)
                 .putInt(KEY_THEME_FORCED_VERSION, THEME_FORCE_VERSION)
                 .apply()
-            return AppPalette.TVPLAYER
+            return DEFAULT_PALETTE
         }
         return runCatching { AppPalette.valueOf(prefs.getString(KEY_PALETTE, null) ?: "") }
-            .getOrDefault(AppPalette.TVPLAYER)
+            .getOrDefault(DEFAULT_PALETTE)
     }
 
     private fun readChannelLayout(): ChannelLayout =
@@ -572,7 +652,7 @@ class AppSettings private constructor(context: Context) {
     private val _smbUser = MutableStateFlow(prefs.getString(KEY_SMB_USER, "").orEmpty())
     val smbUser: StateFlow<String> = _smbUser.asStateFlow()
 
-    private val _smbPassword = MutableStateFlow(prefs.getString(KEY_SMB_PASS, "").orEmpty())
+    private val _smbPassword = MutableStateFlow(SecretBox.open(prefs.getString(KEY_SMB_PASS, "").orEmpty()))
     val smbPassword: StateFlow<String> = _smbPassword.asStateFlow()
 
     fun setRecordingTarget(target: RecordingTarget) {
@@ -586,7 +666,7 @@ class AppSettings private constructor(context: Context) {
             .putString(KEY_SMB_SHARE, share.trim())
             .putString(KEY_SMB_FOLDER, folder.trim())
             .putString(KEY_SMB_USER, user)
-            .putString(KEY_SMB_PASS, password)
+            .putString(KEY_SMB_PASS, SecretBox.seal(password))
             .apply()
         _smbHost.value = host.trim()
         _smbShare.value = share.trim()
@@ -1116,7 +1196,8 @@ class AppSettings private constructor(context: Context) {
          * version that already forced, so later versions never re-trigger.
          */
         private const val KEY_THEME_FORCED_VERSION = "theme_forced_version"
-        private const val THEME_FORCE_VERSION = 138
+        private const val THEME_FORCE_VERSION = 139
+        val DEFAULT_PALETTE = AppPalette.SLATE_GUIDE
 private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_SUBMENU_BUTTONS = "submenu_buttons"
     private const val KEY_VOD_BUTTONS = "vod_player_buttons"
@@ -1134,7 +1215,12 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_COLLAPSED_SOURCES = "guide_collapsed_sources"
         private const val KEY_PREVIEW_SOUND = "guide_preview_sound"
         private const val KEY_GUIDE_RESET_ON_OPEN = "guide_reset_on_open"
+    private const val KEY_GUIDE_SHOW_PREVIOUS_WITHOUT_CATCHUP = "guide_show_previous_without_catchup"
         private const val KEY_PIN_HASH = "parental_pin_hash"
+        private const val PIN_HASH_ID = "pbkdf2-sha256"
+        private const val PIN_ITERATIONS = 100_000
+        private const val PIN_MAX_ITERATIONS = 1_000_000
+        private const val PIN_SALT_BYTES = 16
         private const val KEY_HIDDEN_CATS = "hidden_categories"
         private const val KEY_ACTIVE_PROFILE = "active_profile_id"
         private const val KEY_RESUME_LAST = "resume_last_channel"

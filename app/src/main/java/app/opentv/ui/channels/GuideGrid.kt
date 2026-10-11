@@ -222,6 +222,8 @@ fun GuideGrid(
     onTimeShifted: (Boolean) -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
     backScrollActive: Boolean = false,
+    /** Show already-aired programmes on channels with no archive, dimmed and inert. */
+    showPreviousWithoutCatchup: Boolean = false,
 ) {
     // The guide carries its own palette and metrics: the parity look is the screen's, while the
     // rest of the app keeps whichever theme the viewer picked.
@@ -319,10 +321,11 @@ internal fun GuideGridContent(
     onTimeShifted: (Boolean) -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
     backScrollActive: Boolean = false,
+    /** Show already-aired programmes on channels with no archive, dimmed and inert. */
+    showPreviousWithoutCatchup: Boolean = false,
 ) {
     val metrics = LocalGuideMetrics.current
-    // The caller's highlight is read through its State only from key handlers and effects (via
-    // selectedKeyState.value), never during composition. Reading it here would recompose the
+    // The caller's highlight is read through its State only from key handlers and effects (via    // selectedKeyState.value), never during composition. Reading it here would recompose the
     // whole grid on every d-pad step â€” and the grid is the source of that very value.
     val density = LocalDensity.current
     val focusTargetKey = playingKey ?: rows.firstOrNull()?.key
@@ -1006,6 +1009,8 @@ internal fun GuideGridContent(
                 scroll = scroll,
                 epgInfoLine = epgInfoLine,
                 epgSyncing = epgSyncing,
+                timeShifted = backScrollActive || scroll.value > 4,
+                onGoToLive = handleJumpToLive,
             )
             Spacer(Modifier.height(2.dp))
 
@@ -1073,8 +1078,8 @@ internal fun GuideGridContent(
                             scroll = scroll,
                             visibleStartMillis = viewportStartMillis,
                             catchUpChannelIds = catchUpChannelIds,
-                            reminderStartsByChannel = reminderStartsByChannel,
-                            isSelected = isPlaying,
+                            showPreviousWithoutCatchup = showPreviousWithoutCatchup,
+                            reminderStartsByChannel = reminderStartsByChannel,                            isSelected = isPlaying,
                             previewHighlight = isPreviewAnchor,
                             rowFocusRequester = rowRequester,
                             externalFocusRequester = activeCellFocusRequester,
@@ -1170,6 +1175,8 @@ fun ChannelList(
     onExitLeftFromChannel: () -> Boolean = { false },
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
+    /** Show already-aired programmes on channels with no archive, dimmed and inert. */
+    showPreviousWithoutCatchup: Boolean = false,
     nowMillis: Long = System.currentTimeMillis(),
 ) {
     val metrics = LocalGuideMetrics.current
@@ -1464,6 +1471,9 @@ private fun TimeHeader(
     scroll: androidx.compose.foundation.ScrollState,
     epgInfoLine: String? = null,
     epgSyncing: Boolean = false,
+    /** True while the timeline is displaced from "now" — shows the jump-back control. */
+    timeShifted: Boolean = false,
+    onGoToLive: () -> Unit = {},
 ) {
     val metrics = LocalGuideMetrics.current
     val currentDateTimeFmt = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
@@ -1518,6 +1528,18 @@ private fun TimeHeader(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        if (timeShifted) {
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = stringResource(R.string.guide_jump_to_live),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.timeRulerSp),
+                                color = AppTheme.primary,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .clickable { onGoToLive() }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -1597,6 +1619,8 @@ private fun GuideRow(
     onStepColumn: (Boolean) -> Boolean = { false },
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
+    /** Show already-aired programmes on channels with no archive, dimmed and inert. */
+    showPreviousWithoutCatchup: Boolean = false,
 ) {
     val metrics = LocalGuideMetrics.current
     val epgRowFlow = remember(baseRow.key, epgRows) {
@@ -1917,8 +1941,19 @@ private fun GuideRow(
                     // TiviMate greys past slots; replayable ones (archive channel) wear the
                     // replay marker so 1-click catch-up targets are visible at a glance.
                     val isPast = prog.endUtcMillis <= nowMillis
-                    val canReplay = isPast &&
-                        (row.primary.tvArchive || row.primary.id in catchUpChannelIds)
+                    val archiveCapable = row.primary.tvArchive || row.primary.id in catchUpChannelIds
+                    val canReplay = isPast && archiveCapable
+                    val cellAction = resolveGuideCellAction(
+                        isPast = isPast,
+                        archiveCapable = archiveCapable,
+                        showPreviousWithoutCatchup = showPreviousWithoutCatchup,
+                    )
+                    // A past slot with no archive behind it is only composed when the viewer asked
+                    // to see it; otherwise it would suggest a catch-up the provider cannot serve.
+                    if (cellAction == GuideCellAction.HIDE) {
+                        cursorMillis = layout.endMillis
+                        continue
+                    }
                     val blockRequester = remember(pOrder) {
                         blockFocusRequesters.getOrPut(pOrder) { FocusRequester() }
                     }
