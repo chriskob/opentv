@@ -1946,14 +1946,10 @@ private fun GuideRow(
                     val cellAction = resolveGuideCellAction(
                         isPast = isPast,
                         archiveCapable = archiveCapable,
-                        showPreviousWithoutCatchup = showPreviousWithoutCatchup,
                     )
-                    // A past slot with no archive behind it is only composed when the viewer asked
-                    // to see it; otherwise it would suggest a catch-up the provider cannot serve.
-                    if (cellAction == GuideCellAction.HIDE) {
-                        cursorMillis = layout.endMillis
-                        continue
-                    }
+                    // A finished programme with no archive behind it is drawn dimmed and inert; the
+                    // cursor only steps onto it when the viewer asked to see previous programmes.
+                    val cellFocusable = guideCellTakesFocus(cellAction, showPreviousWithoutCatchup)
                     val blockRequester = remember(pOrder) {
                         blockFocusRequesters.getOrPut(pOrder) { FocusRequester() }
                     }
@@ -1991,7 +1987,8 @@ private fun GuideRow(
                             rowFocusRequester = if (isTarget) rowFocusRequester else null,
                             externalFocusRequester = extReq,
                             onFocus = { onFocus(prog) },
-                            onClick = { onProgramme(prog) },
+                            takesFocus = cellFocusable,
+                            onClick = { if (cellAction != GuideCellAction.INERT) onProgramme(prog) },
                             onLongClick = { onProgrammeLongPress(prog) },
                             onNavigateVertical = onNavigateVertical,
                             onStepColumn = onStepColumn,
@@ -2105,6 +2102,9 @@ private fun ProgrammeBlock(
     rowFocusRequester: FocusRequester? = null,
     externalFocusRequester: FocusRequester? = null,
     onFocus: () -> Unit = {},
+    /** The cursor may land on this cell (false for a finished programme with no archive, unless the
+     *  viewer asked to see previous programmes). */
+    takesFocus: Boolean = true,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     onNavigateVertical: ((isDown: Boolean) -> Boolean)? = null,
@@ -2182,8 +2182,17 @@ private fun ProgrammeBlock(
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
             }
-            .focusable()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            // A cell the cursor may not land on takes no focus target at all, so the d-pad steps
+            // over it; `combinedClickable` would otherwise make it focusable by itself.
+            .then(
+                if (takesFocus) {
+                    Modifier
+                        .focusable()
+                        .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                } else {
+                    Modifier
+                },
+            )
             // One accessibility node per programme cell, not two (the cell + its title Text).
             // Projectivy's accessibility service is active on these boxes, so Compose walks the
             // semantics tree every frame â€” merging halves the nodes on the guide's busiest screen.
