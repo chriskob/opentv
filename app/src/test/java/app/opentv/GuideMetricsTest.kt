@@ -29,7 +29,6 @@ class GuideMetricsTest {
         val metrics = GuideMetrics.TIVIMATE_PARITY
         assertThat(metrics.widthFor(0L, minutes(30))).isEqualTo(metrics.halfHourWidth)
     }
-
     @Test
     fun ninetyMinutes_spansThreeHalfHourCells() {
         val metrics = GuideMetrics.TIVIMATE_PARITY
@@ -49,7 +48,7 @@ class GuideMetricsTest {
         // not leave a sliver of the next cell uncovered.
         val start = minutes(10 * 60 + 7)
         val end = minutes(11 * 60)
-        assertThat(metrics.widthFor(start, end)).isEqualTo(424.dp)
+        assertThat(metrics.widthFor(start, end)).isEqualTo(297.dp)
     }
 
     @Test
@@ -63,11 +62,11 @@ class GuideMetricsTest {
     fun parityDefaults_matchTheMeasuredTable() {
         val metrics = GuideMetrics.TIVIMATE_PARITY
         assertThat(metrics.rowHeight).isEqualTo(48.dp)
-        assertThat(metrics.channelColumnWidth).isEqualTo(296.dp)
+        assertThat(metrics.channelColumnWidth).isEqualTo(270.dp)
         assertThat(metrics.channelNumberWidth).isEqualTo(40.dp)
         assertThat(metrics.logoSize).isEqualTo(32.dp)
         assertThat(metrics.timeHeaderHeight).isEqualTo(38.dp)
-        assertThat(metrics.halfHourWidth).isEqualTo(240.dp)
+        assertThat(metrics.halfHourWidth).isEqualTo(168.dp)
         assertThat(metrics.cellCornerRadius).isEqualTo(6.dp)
         assertThat(metrics.cellGap).isEqualTo(4.dp)
         assertThat(metrics.cellPaddingHorizontal).isEqualTo(8.dp)

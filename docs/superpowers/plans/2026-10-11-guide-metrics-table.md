@@ -68,7 +68,23 @@ amber family the guide uses (the amber accent is what paints the focus border an
 | `cellFocus` | `#FFFFC107` | measured / derived role | amber: the focused cell is amber-bordered per the guide screenshot |
 | `onCellFocus` | `#FF111111` | measured / derived role | dark ink on amber |
 
-## 4. Open confirmations
+## 4b. Reference screenshot (supplied 2026-10-11) — corrections applied
+
+A TiviMate guide screenshot (1920×1080 TV panel, read-only reference; never committed) was measured
+against the seeds above. Two values were wrong and have been corrected and pinned:
+
+| Field | Was | Now | How it was measured |
+|---|---|---|---|
+| `halfHourWidth` | 240.dp | **168.dp** | The visible timeline spans ~2 h (06:30→08:30) across ~70 % of a 1920 px panel ≈ 1344 px → 336 px per half-hour → ~168 dp at ×2 density. The 240 dp seed made cells ~45 % too wide. |
+| `channelColumnWidth` | 296.dp | **270.dp** | The channel column (number + logo + two-line name) measures ~28 % of the panel ≈ 538 px → ~270 dp. |
+
+Confirmed unchanged by the reference: `rowHeight` 48.dp (7 rows in ~60 % of 1080 px ≈ 92 px/row ≈
+46 dp), the header's date in the channel column with the 30-minute ruler on the same line, the
+`New` superscript chip, the ▶ indicator on the playing cell, and the detail panel's
+"time – time ▬ duration / episode / description / ☆ / category" arrangement.
+
+Residual uncertainty: these are derived from proportions in a photograph of a TV, so treat them as
+±5 dp. `rowHeight` may be 46 rather than 48; the logo is 32.dp in both channel rows and matches.
 
 1. **Reference screenshot** (1920×1080 if available) — pins the derived element mappings in §2
    (which dip is the row height, the column width, the 30-minute slot) and the roles in §3.

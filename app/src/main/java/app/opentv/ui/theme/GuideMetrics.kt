@@ -65,11 +65,11 @@ data class GuideMetrics(
         /** The parity defaults; confirmed in the measurement table. */
         val TIVIMATE_PARITY = GuideMetrics(
             rowHeight = 48.dp,
-            channelColumnWidth = 296.dp,
+            channelColumnWidth = 270.dp,
             channelNumberWidth = 40.dp,
             logoSize = 32.dp,
             timeHeaderHeight = 38.dp,
-            halfHourWidth = 240.dp,
+            halfHourWidth = 168.dp,
             cellCornerRadius = 6.dp,
             cellGap = 4.dp,
             cellPaddingHorizontal = 8.dp,
