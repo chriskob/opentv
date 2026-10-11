@@ -5,6 +5,9 @@
  */
 package app.opentv.ui.channels
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import app.opentv.ui.theme.AppTheme
+import app.opentv.ui.theme.GuideMotion
 import app.opentv.ui.theme.LocalGuideChromeAlpha
 import app.opentv.ui.theme.LocalGuideMetrics
 import app.opentv.ui.theme.widthFor
@@ -803,7 +807,11 @@ internal fun GuideGridContent(
             verticalNavJob = coroutineScope.launch {
                 if (generation != navigationGeneration) return@launch
                 if (targetScrollIndex != null) {
-                    listState.scrollToItem(targetScrollIndex, 0)
+                    // Animated, as the reference's "animated channels scrolling" is. The job above is
+                    // cancelled on the next d-pad step, so a held key restarts the travel instead of
+                    // queueing it, and `animateScrollToItem` (rather than `scrollToItem`) means the
+                    // row still lands exactly, never mid-way.
+                    listState.animateScrollToItem(targetScrollIndex, 0)
                 }
                 if (generation != navigationGeneration) return@launch
                 if (!success) {
@@ -2117,6 +2125,36 @@ private fun ProgrammeBlock(
     // Pseudo-cursor: rendered like focus without stealing it (rail category preview).
     val highlighted = pseudoFocused
     val chromeAlpha = LocalGuideChromeAlpha.current
+
+    // The cursor's "lift" — leanback's focus-highlight zoom, reproduced with the reference's own
+    // curve and duration. Scale rather than a layout change, so moving the cursor never
+    // re-measures the grid (which is what makes a 20-programme row stay smooth).
+    val isCursor = highlighted || focused
+    val focusScale by animateFloatAsState(
+        targetValue = if (isCursor) GuideMotion.FOCUS_SCALE else 1f,
+        animationSpec = tween(
+            durationMillis = GuideMotion.FOCUS_MS,
+            easing = GuideMotion.CURSOR_EASING,
+        ),
+        label = "guideCellFocusScale",
+    )
+    // And its pulse: the reference grows its cursor ring from a 2dp hairline to an 18dp emphasis
+    // over the focus duration, then collapses it in a 16ms beat. Same gesture, same numbers.
+    val ringPulse = remember { Animatable(GuideMotion.CURSOR_RING_MIN.value) }
+    LaunchedEffect(isCursor) {
+        if (isCursor) {
+            ringPulse.snapTo(GuideMotion.CURSOR_RING_MIN.value)
+            ringPulse.animateTo(
+                GuideMotion.CURSOR_RING_MAX.value,
+                tween(GuideMotion.FOCUS_MS, easing = GuideMotion.CURSOR_EASING),
+            )
+            ringPulse.animateTo(
+                GuideMotion.CURSOR_RING_MIN.value,
+                tween(GuideMotion.RECOVER_MS, easing = GuideMotion.CURSOR_EASING),
+            )
+        }
+    }
+    val ringWidthDp = ringPulse.value.dp
     // D-pad long-OK detection. combinedClickable's onLongClick never fires for a held
     // DPAD_CENTER/ENTER from a TV remote, and a timer is the wrong shape for it anyway:
     // firing mid-hold while the key is still down leaves the remaining repeat events (and the
@@ -2133,6 +2171,10 @@ private fun ProgrammeBlock(
             .then(if (rowFocusRequester != null) Modifier.focusRequester(rowFocusRequester) else Modifier)
             .then(if (externalFocusRequester != null) Modifier.focusRequester(externalFocusRequester) else Modifier)
             .width(width)
+            .graphicsLayer {
+                scaleX = focusScale
+                scaleY = focusScale
+            }
             .fillMaxSize()
             .padding(end = 1.5.dp)
             // Rounded corners come from the background/border shapes, NOT Modifier.clip: a clip
@@ -2146,7 +2188,7 @@ private fun ProgrammeBlock(
                 guideCellShape(),
             )
             .then(
-                if (highlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, guideCellShape())
+                if (highlighted) Modifier.border(ringWidthDp, AppTheme.palette.outline, guideCellShape())
                 else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), guideCellShape())
             )
             .onPreviewKeyEvent { e ->
