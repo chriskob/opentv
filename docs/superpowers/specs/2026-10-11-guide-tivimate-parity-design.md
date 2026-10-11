@@ -107,6 +107,14 @@ affiliation; e.g. "Parity Guide"). It reuses the existing guide roles rather tha
 `chromeCellBorder`, `live`, `recording`, `favourite`, `textMuted`. Values come from the measured
 navy family in §3.
 
+Two existing mechanisms must not be touched:
+
+- `AppSettings.DEFAULT_PALETTE` is `SLATE_GUIDE`, and a one-shot `THEME_FORCE_VERSION` bump force-moves
+  every user onto it. Changing either would alter Slate Guide for existing users, which decision 1
+  rules out. The guide takes the parity palette from the §4.3 wrapper, not from the default.
+- The settings picker iterates `AppPalette.entries`, so the new palette appears there automatically
+  and a user may select it app-wide; that is fine, but it is not what drives the guide's look.
+
 Slate Guide is not modified. The theme list order puts the parity palette first so it is the
 default when a user has not chosen one.
 
