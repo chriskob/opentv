@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import app.opentv.ui.theme.AppTheme
 import app.opentv.ui.theme.LocalGuideChromeAlpha
+import app.opentv.ui.theme.LocalGuideMetrics
+import app.opentv.ui.theme.widthFor
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -318,6 +320,7 @@ internal fun GuideGridContent(
     nowMillis: Long = System.currentTimeMillis(),
     backScrollActive: Boolean = false,
 ) {
+    val metrics = LocalGuideMetrics.current
     // The caller's highlight is read through its State only from key handlers and effects (via
     // selectedKeyState.value), never during composition. Reading it here would recompose the
     // whole grid on every d-pad step â€” and the grid is the source of that very value.
@@ -354,7 +357,7 @@ internal fun GuideGridContent(
             calculateInitialScrollOffsetPx(
                 windowStartMillis = windowStartMillis,
                 frameStartMillis = currentMountedStart,
-                minuteDp = MINUTE_DP,
+                minuteDp = metrics.minuteDp,
                 density = density.density,
             )
         } else {
@@ -407,7 +410,7 @@ internal fun GuideGridContent(
     val timelineViewportPxState = remember(screenWidthPx) {
         derivedStateOf {
             val guideWidth = if (guideWidthPx > 0) guideWidthPx else screenWidthPx
-            (guideWidth - with(density) { CHANNEL_COLUMN.roundToPx() }).coerceAtLeast(1)
+            (guideWidth - with(density) { metrics.channelColumnWidth.roundToPx() }).coerceAtLeast(1)
         }
     }
 
@@ -424,7 +427,7 @@ internal fun GuideGridContent(
             if (densityF <= 0f) {
                 null
             } else {
-                val pxPerMinute = MINUTE_DP * densityF
+                val pxPerMinute = metrics.minuteDp * densityF
                 val firstMinute = scroll.value / pxPerMinute
                 val lastMinute = firstMinute + timelineViewportPx / pxPerMinute
                 val startMillis = effectiveStartMillis +
@@ -446,7 +449,7 @@ internal fun GuideGridContent(
     // on nearly every frame. Same pattern (and same reason) as composeWindow above.
     val viewportStartMillis by remember(effectiveStartMillis) {
         derivedStateOf {
-            val pxPerMinute = MINUTE_DP * density.density
+            val pxPerMinute = metrics.minuteDp * density.density
             if (pxPerMinute <= 0f) {
                 effectiveStartMillis
             } else {
@@ -506,7 +509,7 @@ internal fun GuideGridContent(
                 val anchorPx = calculateInitialScrollOffsetPx(
                     windowStartMillis = windowStartMillis,
                     frameStartMillis = frameStart,
-                    minuteDp = MINUTE_DP,
+                    minuteDp = metrics.minuteDp,
                     density = density.density,
                 )
                 scroll.scrollTo(anchorPx)
@@ -515,7 +518,7 @@ internal fun GuideGridContent(
                 // matching the guide's header ruler, rather than scrolling by pixels. Wait for the
                 // back-scroll layout to give the timeline a real scroll extent first â€” until then
                 // the range is 0 and every step would clamp straight back to the start.
-                val stepPx = (HALF_HOUR_MS / 60_000.0 * MINUTE_DP * density.density).roundToInt()
+                val stepPx = (HALF_HOUR_MS / 60_000.0 * metrics.minuteDp * density.density).roundToInt()
                 var anchored = false
                 while (isActive && stepPx > 0) {
                     if (scroll.maxValue > 0) {
@@ -556,7 +559,7 @@ internal fun GuideGridContent(
             val key = activeFocusedKey ?: playingKey ?: selectedKeyState.value ?: rows.firstOrNull()?.key
             val row = rows.firstOrNull { it.key == key }
             val scrollDp = with(density) { scroll.value.toDp() }
-            val anchorMillis = effectiveStartMillis + (scrollDp.value / MINUTE_DP).toLong() * 60_000L
+            val anchorMillis = effectiveStartMillis + (scrollDp.value / metrics.minuteDp).toLong() * 60_000L
             val anchorProgramme = row?.programmes
                 ?.firstOrNull { anchorMillis in it.startUtcMillis until it.endUtcMillis }
                 ?: row?.programmes?.minByOrNull {
@@ -623,7 +626,7 @@ internal fun GuideGridContent(
             val targetPx = calculateSnappedScrollOffsetPx(
                 windowStartMillis = effectiveStartMillis,
                 columnStartMillis = temporalAnchorMillis,
-                minuteDp = MINUTE_DP,
+                minuteDp = metrics.minuteDp,
                 density = density.density,
             )
             focusCenterJob = coroutineScope.launch {
@@ -671,7 +674,7 @@ internal fun GuideGridContent(
             val targetPx = calculateSnappedScrollOffsetPx(
                 windowStartMillis = windowStartMillis,
                 columnStartMillis = temporalAnchorMillis,
-                minuteDp = MINUTE_DP,
+                minuteDp = metrics.minuteDp,
                 density = density.density,
             )
             if (targetPx != scroll.value) {
@@ -738,7 +741,7 @@ internal fun GuideGridContent(
             val targetPx = calculateSnappedScrollOffsetPx(
                 windowStartMillis = windowStartMillis,
                 columnStartMillis = temporalAnchorMillis,
-                minuteDp = MINUTE_DP,
+                minuteDp = metrics.minuteDp,
                 density = density.density,
             )
             scroll.scrollTo(targetPx)
@@ -790,7 +793,7 @@ internal fun GuideGridContent(
             val snappedPx = calculateSnappedScrollOffsetPx(
                 windowStartMillis = effectiveStartMillis,
                 columnStartMillis = temporalAnchorMillis,
-                minuteDp = MINUTE_DP,
+                minuteDp = metrics.minuteDp,
                 density = density.density,
             )
             verticalNavJob?.cancel()
@@ -841,7 +844,7 @@ internal fun GuideGridContent(
                 val targetPx = calculateSnappedScrollOffsetPx(
                     windowStartMillis = effectiveStartMillis,
                     columnStartMillis = column,
-                    minuteDp = MINUTE_DP,
+                    minuteDp = metrics.minuteDp,
                     density = density.density,
                     maxValue = scroll.maxValue,
                 )
@@ -859,7 +862,7 @@ internal fun GuideGridContent(
                     calculateSnappedScrollOffsetPx(
                         windowStartMillis = effectiveStartMillis,
                         columnStartMillis = column,
-                        minuteDp = MINUTE_DP,
+                        minuteDp = metrics.minuteDp,
                         density = density.density,
                         maxValue = scroll.maxValue,
                     ),
@@ -882,7 +885,7 @@ internal fun GuideGridContent(
             val finalPx = calculateSnappedScrollOffsetPx(
                 windowStartMillis = effectiveStartMillis,
                 columnStartMillis = column,
-                minuteDp = MINUTE_DP,
+                minuteDp = metrics.minuteDp,
                 density = density.density,
                 maxValue = scroll.maxValue,
             )
@@ -1113,7 +1116,7 @@ internal fun GuideGridContent(
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(start = CHANNEL_COLUMN)
+                .padding(start = metrics.channelColumnWidth)
                 .clipToBounds()
                 .zIndex(15f)
         ) {
@@ -1121,7 +1124,7 @@ internal fun GuideGridContent(
             // scroll.value at draw time, so the "now" line and pip track the scroll without
             // recomposing this overlay on every scrolled pixel. clipToBounds hides them once
             // they leave the timeline.
-            val nowOffsetDp = widthFor(effectiveStartMillis, currentTickMillis)
+            val nowOffsetDp = metrics.widthFor(effectiveStartMillis, currentTickMillis)
             // Continuous vertical line running from header divider down through all rows
             Box(
                 Modifier
@@ -1169,6 +1172,7 @@ fun ChannelList(
     onWrapToTop: () -> Unit = {},
     nowMillis: Long = System.currentTimeMillis(),
 ) {
+    val metrics = LocalGuideMetrics.current
     val focusTargetKey = playingKey ?: rows.firstOrNull()?.key
     // See GuideGrid: seed-only, so it must not rescan on every focus change.
     val initialFirstVisible = remember(rows, playingKey) {
@@ -1306,7 +1310,10 @@ fun ChannelList(
 }
 
 /** Shared rounded-corner shape used on all guide cells for a smooth TiviMate-style look. */
-private val GuideCellShape = RoundedCornerShape(6.dp)
+/** Cell shape for guide blocks; the metric's corner radius, so a metric edit repaints the grid. */
+@Composable
+private fun guideCellShape(): RoundedCornerShape =
+    RoundedCornerShape(LocalGuideMetrics.current.cellCornerRadius)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1329,6 +1336,7 @@ private fun ChannelListRow(
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
 ) {
+    val metrics = LocalGuideMetrics.current
     val epgRowFlow = remember(baseRow.key, epgRows) {
         epgRows?.map { it[baseRow.key] }?.distinctUntilChanged() ?: emptyFlow<ChannelsViewModel.Row?>()
     }
@@ -1357,14 +1365,14 @@ private fun ChannelListRow(
         Modifier
             .then(if (effectiveFocusRequester != null) Modifier.focusRequester(effectiveFocusRequester) else Modifier)
             .fillMaxWidth()
-            .height(ROW_HEIGHT)
+            .height(metrics.rowHeight)
             .background(
                 if (isSelected) AppTheme.palette.selectedFill
                 else AppTheme.palette.chrome.copy(alpha = chromeAlpha),
-                GuideCellShape,
+                guideCellShape(),
             )
             .tvFocus(
-                shape = GuideCellShape,
+                shape = guideCellShape(),
                 selected = isSelected,
                 onFocusChange = {
                     focused = it
@@ -1454,6 +1462,7 @@ private fun TimeHeader(
     epgInfoLine: String? = null,
     epgSyncing: Boolean = false,
 ) {
+    val metrics = LocalGuideMetrics.current
     val currentDateTimeFmt = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
     val slotTimeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     val slotLabels = remember(windowStartMillis) {
@@ -1477,7 +1486,7 @@ private fun TimeHeader(
         // EPG sync stamp ("EPG updated â€¦ Â· N channels") stacked underneath it.
         Row(
             Modifier
-                .width(CHANNEL_COLUMN)
+                .width(metrics.channelColumnWidth)
                 .fillMaxHeight()
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1526,7 +1535,7 @@ private fun TimeHeader(
                 repeat(HOURS_IN_WINDOW * 2) { i ->
                     Box(
                         Modifier
-                            .width(HALF_HOUR_WIDTH)
+                            .width(metrics.halfHourWidth)
                             .height(38.dp)
                             .padding(start = 6.dp),
                         contentAlignment = Alignment.CenterStart,
@@ -1586,6 +1595,7 @@ private fun GuideRow(
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
 ) {
+    val metrics = LocalGuideMetrics.current
     val epgRowFlow = remember(baseRow.key, epgRows) {
         epgRows?.map { it[baseRow.key] }?.distinctUntilChanged() ?: emptyFlow<ChannelsViewModel.Row?>()
     }
@@ -1613,7 +1623,7 @@ private fun GuideRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .height(ROW_HEIGHT)
+            .height(metrics.rowHeight)
             .onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown) {
                     when {
@@ -1634,7 +1644,7 @@ private fun GuideRow(
         // ---- Channel column (Fixed left header, NOT focusable, no white cursor highlight) ----
         Row(
             Modifier
-                .width(CHANNEL_COLUMN)
+                .width(metrics.channelColumnWidth)
                 .fillMaxHeight()
                 .background(
                     when {
@@ -1749,16 +1759,16 @@ private fun GuideRow(
                     Modifier
                         .then(Modifier.focusRequester(rowFocusRequester))
                         .then(if (extReq != null) Modifier.focusRequester(extReq) else Modifier)
-                        .width(widthFor(windowStartMillis, windowEndMillis))
+                        .width(metrics.widthFor(windowStartMillis, windowEndMillis))
                         .fillMaxSize()
                         .background(
                             if (emptyHighlighted) AppTheme.palette.cellFocus
                             else AppTheme.palette.chromeCell.copy(alpha = chromeAlpha),
-                            GuideCellShape,
+                            guideCellShape(),
                         )
                         .then(
-                            if (emptyHighlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, GuideCellShape)
-                            else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), GuideCellShape),
+                            if (emptyHighlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, guideCellShape())
+                            else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), guideCellShape()),
                         )
                         .onFocusChanged {
                             emptyFocused = it.isFocused
@@ -1805,7 +1815,7 @@ private fun GuideRow(
                         if (start >= windowEndMillis) break
                         val end = maxOf(start, rawEnd)
 
-                        val blockWidth = widthFor(start, end)
+                        val blockWidth = metrics.widthFor(start, end)
 
                         if (blockWidth > 0.dp) {
                             layouts.add(
@@ -1893,7 +1903,7 @@ private fun GuideRow(
                 var cursorMillis = windowStartMillis
                 for (pOrder in composedIndices) {
                     val layout = blockLayouts[pOrder]
-                    val gap = widthFor(cursorMillis, layout.startMillis)
+                    val gap = metrics.widthFor(cursorMillis, layout.startMillis)
                     if (gap > 0.dp) Spacer(Modifier.width(gap))
                     val prog = programmes[layout.programmeIndex]
                     val isNow = nowMillis in prog.startUtcMillis until prog.endUtcMillis
@@ -1907,7 +1917,7 @@ private fun GuideRow(
                         blockFocusRequesters.getOrPut(pOrder) { FocusRequester() }
                     }
                     val textOffset = if (layout.startMillis < visibleStartMillis) {
-                        minOf(widthFor(layout.startMillis, visibleStartMillis), layout.blockWidth)
+                        minOf(metrics.widthFor(layout.startMillis, visibleStartMillis), layout.blockWidth)
                     } else {
                         0.dp
                     }
@@ -1958,9 +1968,9 @@ private fun GuideRow(
                 }
                 if (lastCursor < windowEndMillis) {
                     if (lastCursor > cursorMillis) {
-                        Spacer(Modifier.width(widthFor(cursorMillis, lastCursor)))
+                        Spacer(Modifier.width(metrics.widthFor(cursorMillis, lastCursor)))
                     }
-                    val remainingWidth = widthFor(lastCursor, windowEndMillis)
+                    val remainingWidth = metrics.widthFor(lastCursor, windowEndMillis)
                     val isFillerTarget = blockLayouts.isEmpty() || targetBlockIdx < 0
                     val extReq = if (isFillerTarget && isFocused) externalFocusRequester else null
                     ProgrammeBlock(
@@ -1977,7 +1987,7 @@ private fun GuideRow(
                         onStepColumn = onStepColumn,
                     )
                 } else if (windowEndMillis > cursorMillis) {
-                    Spacer(Modifier.width(widthFor(cursorMillis, windowEndMillis)))
+                    Spacer(Modifier.width(metrics.widthFor(cursorMillis, windowEndMillis)))
                 }
             }
         }
@@ -2059,6 +2069,7 @@ private fun ProgrammeBlock(
     /** Steps the cursor one half-hour column; [Boolean] is true for RIGHT. */
     onStepColumn: ((Boolean) -> Boolean)? = null,
 ) {
+    val metrics = LocalGuideMetrics.current
     var focused by remember { mutableStateOf(false) }
 
     // Pseudo-cursor: rendered like focus without stealing it (rail category preview).
@@ -2090,11 +2101,11 @@ private fun ProgrammeBlock(
                 if (highlighted) AppTheme.palette.cellFocus
                 else if (isPast) AppTheme.palette.chromeCell.copy(alpha = chromeAlpha * 0.55f)
                 else AppTheme.palette.chromeCell.copy(alpha = chromeAlpha),
-                GuideCellShape,
+                guideCellShape(),
             )
             .then(
-                if (highlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, GuideCellShape)
-                else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), GuideCellShape)
+                if (highlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, guideCellShape())
+                else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), guideCellShape())
             )
             .onPreviewKeyEvent { e ->
                 if (e.key == Key.DirectionUp) {
@@ -2195,14 +2206,7 @@ internal fun firstBlockEndingAfter(layouts: List<BlockLayout>, millis: Long): In
     return low
 }
 
-private fun widthFor(fromMillis: Long, toMillis: Long): Dp {
-    val minutes = ((toMillis - fromMillis) / 60_000L).coerceAtLeast(0)
-    return (minutes * MINUTE_DP).dp
-}
-
-private const val MINUTE_DP = 5.5f
-
-// ---- TiviMate-style hold-to-scrub tuning ------------------------------------------------
+// ---- TiviMate-style hold-to-scrub tuning ---------------------------------------------------
 /** How long LEFT must be held before the back-in-time scrub engages (a tap stays a tap). */
 private const val SCRUB_ENGAGE_MILLIS = 400L
 /** Delay between the discrete 30-minute steps while LEFT is held. */
@@ -2211,9 +2215,6 @@ private const val PAST_HOURS = 24
 private const val FUTURE_HOURS = 24
 private const val HOURS_IN_WINDOW = PAST_HOURS + FUTURE_HOURS
 private const val HALF_HOUR_MS = 30 * 60 * 1000L
-private val CHANNEL_COLUMN = 258.dp
-private val ROW_HEIGHT = 44.dp
-private val HALF_HOUR_WIDTH: Dp = (30 * MINUTE_DP).dp
 
 /**
  * Extra timeline millis composed on each side of the visible viewport, so d-pad stepping and

@@ -56,6 +56,9 @@ data class GuideMetrics(
     val detailBodySp: TextUnit,
     val detailCategorySp: TextUnit,
 ) {
+    /** Minutes of programme time per dp of grid width — the grid's axis unit. */
+    val minuteDp: Float get() = halfHourWidth.value / 30f
+
     companion object {
         /** The parity defaults; confirmed in the measurement table. */
         val TIVIMATE_PARITY = GuideMetrics(
