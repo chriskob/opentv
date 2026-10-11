@@ -5,45 +5,37 @@
  */
 package app.opentv.ui.theme
 
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.cos
 
 /**
- * The guide's motion.
+ * The guide's cursor motion.
  *
- * Two sources, kept separate because they do different jobs and sound different if swapped:
+ * The reference's guide and menus are `androidx.leanback.widget.VerticalGridView` /
+ * `HorizontalGridView` (both classes are present in its dex, as is `GridLayoutManager`), and the
+ * lift a TV cursor has is leanback's own focus highlight. From leanback's Apache-2.0 source
+ * (`FocusHighlightHelper.java`): `BrowseItemFocusHighlight` scales the focused child over
+ * [FOCUS_HIGHLIGHT_MS] on an `AccelerateDecelerateInterpolator`, using `view.setScaleX/setScaleY`
+ * rather than re-laying the child out. That is reproduced here — [FOCUS_EASING] is Android's
+ * accelerate-decelerate curve exactly, not an approximation — with the same "scale the child,
+ * never re-measure" approach, which is what keeps a 20-programme row smooth.
  *
- * **The engine.** TiviMate's guide and menus are `androidx.leanback.widget.VerticalGridView` /
- * `HorizontalGridView` (both classes are present in its dex, as is `GridLayoutManager`). From
- * leanback's own Apache-2.0 source (`FocusHighlightHelper.java`): the focus highlight zooms the
- * focused item over **150 ms** on an `AccelerateDecelerateInterpolator`, scaling the child rather
- * than re-laying it out. That is the "lift" a TV cursor has, and it is reproduced faithfully here —
- * [FOCUS_EASING] is Android's accelerate-decelerate curve, not an approximation of it.
- *
- * **The app's own flourish.** The reference ships its own cursor animation: a stroke grows from
- * 2 dp to 18 dp over 166 ms on its decelerate curve and collapses in a 16 ms beat. That pulse is
- * [CURSOR_EASING] with [PULSE_MS]/[RECOVER_MS], and it is deliberately not the same curve as the
- * focus lift.
+ * Not applied, deliberately: the reference also ships a cursor pulse (a stroke growing 2dp to 18dp
+ * over 166ms and collapsing in 16ms — both curves and timings are in its resource table).
+ * Reproducing it as the *cell border* flashed visibly on every d-pad step, because 18dp of border
+ * on a 44dp-tall row is eight dp of ring on each side. It belongs on a decorative ring behind the
+ * cell, and is left for when one exists rather than faked here.
  *
  * Values live in one object (not inlined at call sites) so the guide's motion is adjustable in one
  * place and pinned by `GuideMotionTest`.
  */
 object GuideMotion {
 
-    /** A focus change: 166 ms of travel, the reference's own focus animation. */
-    const val PULSE_MS: Int = 166
-
-    /** The recovery beat after the travel — the reference snaps back in 16 ms. */
-    const val RECOVER_MS: Int = 16
-
     /**
-     * The focus highlight's travel, straight from leanback's `BrowseItemFocusHighlight`.
-     * 150 ms on an accelerate-decelerate curve: slow in, fast through the middle, slow out — which
-     * is what keeps a cursor lift from feeling like a snap.
+     * The focus highlight's travel, straight from leanback's `BrowseItemFocusHighlight`. Slow in,
+     * fast through the middle, slow out — which is what keeps a cursor lift from feeling like a
+     * snap.
      */
     const val FOCUS_HIGHLIGHT_MS: Int = 150
 
@@ -52,23 +44,11 @@ object GuideMotion {
         ((cos((fraction + 1f) * PI) + 1f) / 2f).toFloat()
     }
 
-    /** The reference's own decelerate curve: fast out of the gate, long settle. */
-    val CURSOR_EASING: Easing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
-
     /**
      * How much the focused cell lifts, as leanback's `FocusHighlightHelper` zoom does. Scale, not
-     * layout, so moving the cursor never re-measures the grid — the reason a 20-programme row stays
-     * smooth. Leanback's factor comes from its `lb_focus_zoom_factor_*` fractions (small / xsmall /
-     * medium / large, chosen by the presenter); 1.06 is the medium case this guide's cell size maps
-     * to.
+     * layout, so moving the cursor never re-measures the grid. Leanback's factor comes from its
+     * `lb_focus_zoom_factor_*` fractions (small / xsmall / medium / large, chosen by the
+     * presenter); 1.06 is the medium case this guide's cell size maps to.
      */
     const val FOCUS_SCALE: Float = 1.06f
-
-    /**
-     * The cursor ring's pulse: the reference grows its stroke from 2 dp to 18 dp over [PULSE_MS]
-     * and collapses it back over [RECOVER_MS]. Reproduced as the ring's width so the emphasis
-     * reads as the same gesture.
-     */
-    val CURSOR_RING_MIN: Dp = 2.dp
-    val CURSOR_RING_MAX: Dp = 18.dp
 }

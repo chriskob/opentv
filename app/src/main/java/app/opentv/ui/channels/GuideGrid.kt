@@ -807,11 +807,10 @@ internal fun GuideGridContent(
             verticalNavJob = coroutineScope.launch {
                 if (generation != navigationGeneration) return@launch
                 if (targetScrollIndex != null) {
-                    // Animated, as the reference's "animated channels scrolling" is. The job above is
-                    // cancelled on the next d-pad step, so a held key restarts the travel instead of
-                    // queueing it, and `animateScrollToItem` (rather than `scrollToItem`) means the
-                    // row still lands exactly, never mid-way.
-                    listState.animateScrollToItem(targetScrollIndex, 0)
+                    // A d-pad step is one row: it must land on the row the press selected, not
+                    // glide toward it. Only the deliberate jumps (jump-to-live, restore, a rail
+                    // preview's snap) animate, via focusAndCenterRow's animate path.
+                    listState.scrollToItem(targetScrollIndex, 0)
                 }
                 if (generation != navigationGeneration) return@launch
                 if (!success) {
@@ -2138,23 +2137,6 @@ private fun ProgrammeBlock(
         ),
         label = "guideCellFocusScale",
     )
-    // And its pulse: the reference grows its cursor ring from a 2dp hairline to an 18dp emphasis
-    // over the focus duration, then collapses it in a 16ms beat. Same gesture, same numbers.
-    val ringPulse = remember { Animatable(GuideMotion.CURSOR_RING_MIN.value) }
-    LaunchedEffect(isCursor) {
-        if (isCursor) {
-            ringPulse.snapTo(GuideMotion.CURSOR_RING_MIN.value)
-            ringPulse.animateTo(
-                GuideMotion.CURSOR_RING_MAX.value,
-                tween(GuideMotion.PULSE_MS, easing = GuideMotion.CURSOR_EASING),
-            )
-            ringPulse.animateTo(
-                GuideMotion.CURSOR_RING_MIN.value,
-                tween(GuideMotion.RECOVER_MS, easing = GuideMotion.CURSOR_EASING),
-            )
-        }
-    }
-    val ringWidthDp = ringPulse.value.dp
     // D-pad long-OK detection. combinedClickable's onLongClick never fires for a held
     // DPAD_CENTER/ENTER from a TV remote, and a timer is the wrong shape for it anyway:
     // firing mid-hold while the key is still down leaves the remaining repeat events (and the
@@ -2188,7 +2170,7 @@ private fun ProgrammeBlock(
                 guideCellShape(),
             )
             .then(
-                if (highlighted) Modifier.border(ringWidthDp, AppTheme.palette.outline, guideCellShape())
+                if (highlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, guideCellShape())
                 else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), guideCellShape())
             )
             .onPreviewKeyEvent { e ->

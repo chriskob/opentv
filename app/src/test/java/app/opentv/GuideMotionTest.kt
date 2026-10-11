@@ -6,42 +6,22 @@
 package app.opentv
 
 import app.opentv.ui.theme.GuideMotion
-import androidx.compose.animation.core.CubicBezierEasing
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import kotlin.math.abs
 
 /**
- * The guide's motion constants, pinned against the reference's own shipped curves and timings.
+ * The guide's cursor motion, pinned against leanback's own focus-highlight behaviour.
  *
- * An easing curve is easy to "close enough" into something wrong: `CubicBezierEasing(0.4f, 0f, 0.2f, 1f)`
- * and a plain `FastOutSlowIn` differ audibly on a TV at 166 ms. These assert the endpoints and the
- * midpoint of each curve so a well-meant substitution cannot pass unnoticed.
+ * The curve matters more than it looks: leanback uses `AccelerateDecelerateInterpolator`, which is
+ * symmetric and therefore *arrives and settles*; the decelerate curve a well-meant substitution
+ * would use is fast-out, which reads as a flick on a TV at this duration. These pin the endpoints,
+ * the exact midpoint, and the timing.
  */
 class GuideMotionTest {
 
     @Test
-    fun cursorEasing_startsAtRest_andEndsAtRest() {
-        assertThat(GuideMotion.CURSOR_EASING.transform(0f)).isEqualTo(0f)
-        assertThat(GuideMotion.CURSOR_EASING.transform(1f)).isEqualTo(1f)
-    }
-
-    @Test
-    fun cursorEasing_isTheReferencesDecelerateCurve() {
-        // c 0.4,0.0 0.2,1.0 - the curve the reference uses on its focus animations.
-        val e = GuideMotion.CURSOR_EASING
-        assertThat(abs(e.transform(0.5f) - CubicBezierEasing(0.4f, 0f, 0.2f, 1f).transform(0.5f)))
-            .isLessThan(0.001f)
-        // Decelerate means most of the distance is covered early: past the midpoint by halfway.
-        assertThat(e.transform(0.5f)).isGreaterThan(0.5f)
-    }
-
-    @Test
-    fun timings_matchTheReferencesFocusAnimation() {
-        // The reference's own cursor pulse.
-        assertThat(GuideMotion.PULSE_MS).isEqualTo(166)
-        assertThat(GuideMotion.RECOVER_MS).isEqualTo(16)
-        // And leanback's focus-highlight travel, which is a different animation.
+    fun focusHighlightTravel_isLeanbacks150ms() {
         assertThat(GuideMotion.FOCUS_HIGHLIGHT_MS).isEqualTo(150)
     }
 
@@ -50,10 +30,17 @@ class GuideMotionTest {
         val e = GuideMotion.FOCUS_EASING
         assertThat(e.transform(0f)).isEqualTo(0f)
         assertThat(e.transform(1f)).isEqualTo(1f)
-        // Android's AccelerateDecelerateInterpolator is symmetric about the midpoint.
+        // Symmetric about the midpoint: slow in, fast through, slow out.
         assertThat(e.transform(0.5f)).isWithin(0.001f).of(0.5f)
         assertThat(e.transform(0.25f)).isLessThan(0.25f)
         assertThat(e.transform(0.75f)).isGreaterThan(0.75f)
+    }
+
+    @Test
+    fun focusEasing_isNotAFastOutDecelerate() {
+        // Guards the substitution: at a quarter in, a decelerate curve would be past halfway,
+        // while the accelerate-decelerate curve is still behind it.
+        assertThat(GuideMotion.FOCUS_EASING.transform(0.25f)).isLessThan(0.25f)
     }
 
     @Test
@@ -65,9 +52,15 @@ class GuideMotionTest {
     }
 
     @Test
-    fun cursorRing_pulsesFromHairlineToEmphasis() {
-        assertThat(GuideMotion.CURSOR_RING_MAX.value).isGreaterThan(GuideMotion.CURSOR_RING_MIN.value)
-        assertThat(GuideMotion.CURSOR_RING_MIN.value).isEqualTo(2f)
-        assertThat(GuideMotion.CURSOR_RING_MAX.value).isEqualTo(18f)
+    fun focusEasing_isMonotonic() {
+        // A cursor that eases backward mid-travel reads as a stutter.
+        var previous = GuideMotion.FOCUS_EASING.transform(0f)
+        for (i in 1..20) {
+            val t = i / 20f
+            val v = GuideMotion.FOCUS_EASING.transform(t)
+            assertThat(v).isAtLeast(previous - 0.0001f)
+            previous = v
+        }
+        assertThat(abs(previous - 1f)).isLessThan(0.001f)
     }
 }
