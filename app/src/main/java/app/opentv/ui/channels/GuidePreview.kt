@@ -57,6 +57,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import app.opentv.R
 import app.opentv.ui.theme.AppTheme
+import app.opentv.ui.theme.LocalGuideMetrics
 import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Programme
 import app.opentv.data.model.shownName
@@ -106,6 +107,8 @@ fun GuidePreview(
     catchUpChannelIds: Set<Long> = emptySet(),
     onPreviewBoundsChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
 ) {
+    val metrics = LocalGuideMetrics.current
+
     // Read the caller's highlight here rather than receiving its value, so a d-pad step only
     // recomposes this card, not the whole Live TV screen behind it.
     val row = rowState.value
@@ -171,9 +174,9 @@ fun GuidePreview(
                             Text(
                                 text = "NEW",
                                 color = AppTheme.palette.onPrimary,
-                                fontSize = 11.sp,
+                                fontSize = metrics.badgeTextSp,
                                 fontWeight = FontWeight.Bold,
-                                lineHeight = 12.sp,
+                                lineHeight = (metrics.badgeTextSp.value + 1).sp,
                             )
                         }
                         Spacer(Modifier.width(8.dp))
@@ -181,7 +184,7 @@ fun GuidePreview(
                     val titleText = displayProg?.resolvedTitle() ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
                     Text(
                         text = titleText,
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
+                        style = MaterialTheme.typography.titleLarge.copy(fontSize = metrics.detailTitleSp, lineHeight = (metrics.detailTitleSp.value + 4).sp),
                         fontWeight = FontWeight.Bold,
                         color = AppTheme.palette.onSurface,
                         maxLines = 2,
@@ -194,15 +197,21 @@ fun GuidePreview(
                         imageVector = if (row.primary.favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
                         contentDescription = null,
                         tint = if (row.primary.favourite) AppTheme.palette.favourite else AppTheme.palette.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp).padding(top = 2.dp),
+                        modifier = Modifier.size(metrics.favouriteStarSize).padding(top = 2.dp),
                     )
                 }
             }
 
             // Line 2: Time range, inline progress bar, duration, Category/Source
             if (displayProg != null) {
-                val startStr = timeFmt.format(Date(displayProg.startUtcMillis))
-                val endStr = timeFmt.format(Date(displayProg.endUtcMillis))
+                // The card recomposes on every d-pad step, so memoise the formatting to the
+                // programme rather than re-running two SimpleDateFormat.format calls per step.
+                val startStr = remember(displayProg.startUtcMillis) {
+                    timeFmt.format(Date(displayProg.startUtcMillis))
+                }
+                val endStr = remember(displayProg.endUtcMillis) {
+                    timeFmt.format(Date(displayProg.endUtcMillis))
+                }
                 val durationMins = (displayProg.durationMillis / 60_000L).coerceAtLeast(1)
                 val isLiveShow = nowMillis in displayProg.startUtcMillis until displayProg.endUtcMillis
                 val isPastShow = displayProg.endUtcMillis <= nowMillis
@@ -215,7 +224,7 @@ fun GuidePreview(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "$startStr – $endStr",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.detailMetaSp),
                             color = AppTheme.palette.onSurface,
                             fontWeight = FontWeight.Normal,
                         )
@@ -240,13 +249,13 @@ fun GuidePreview(
                         } else {
                             Text(
                                 text = "  —  ",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.detailMetaSp),
                                 color = AppTheme.palette.textMuted,
                             )
                         }
                         Text(
                             text = "$durationMins min",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.detailMetaSp),
                             color = AppTheme.palette.onSurface,
                             fontWeight = FontWeight.Normal,
                         )
@@ -254,7 +263,7 @@ fun GuidePreview(
                             Spacer(Modifier.width(10.dp))
                             Text(
                                 text = dayLabel,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.detailMetaSp),
                                 color = AppTheme.palette.onSurfaceVariant,
                                 fontWeight = FontWeight.Normal,
                             )
@@ -271,9 +280,9 @@ fun GuidePreview(
                                 Text(
                                     text = "Catch-up",
                                     color = AppTheme.palette.onSurface,
-                                    fontSize = 11.sp,
+                                    fontSize = metrics.badgeTextSp,
                                     fontWeight = FontWeight.Bold,
-                                    lineHeight = 12.sp,
+                                    lineHeight = (metrics.badgeTextSp.value + 1).sp,
                                 )
                             }
                         }
@@ -283,7 +292,7 @@ fun GuidePreview(
                     if (categoryTag != null) {
                         Text(
                             text = categoryTag,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.detailCategorySp),
                             color = AppTheme.palette.onSurfaceVariant,
                             fontWeight = FontWeight.Normal,
                             maxLines = 1,
@@ -296,7 +305,7 @@ fun GuidePreview(
                 if (synopsis != null) {
                     Text(
                         text = synopsis,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, lineHeight = 18.sp),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.detailBodySp, lineHeight = 18.sp),
                         color = AppTheme.palette.onSurfaceVariant,
                         maxLines = 5,
                         overflow = TextOverflow.Ellipsis,
