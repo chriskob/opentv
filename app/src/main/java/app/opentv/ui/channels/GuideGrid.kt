@@ -1406,24 +1406,27 @@ private fun ChannelListRow(
         val displayNum = rowIndex + 1
         Text(
             "$displayNum",
-            style = MaterialTheme.typography.labelMedium.copy(fontSize = 14.sp),
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = metrics.channelNameSp),
             color = if (listHighlighted) AppTheme.palette.onCursor else AppTheme.palette.textMuted,
             maxLines = 1,
-            modifier = Modifier.width(32.dp),
+            modifier = Modifier.width(metrics.channelNumberWidth),
         )
         // Channel Logo â€” enlarged for high legibility across the room
         AsyncImage(
             model = logoModel,
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(4.dp)),
+            modifier = Modifier.size(metrics.logoSize).clip(RoundedCornerShape(4.dp)),
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     displayName,
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = metrics.channelNameSp,
+                        lineHeight = (metrics.channelNameSp.value + 2).sp,
+                    ),
                     fontWeight = if (isLive || focused) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (listHighlighted) AppTheme.palette.onCursor else if (isLive) AppTheme.primary else AppTheme.palette.onSurface,
                     maxLines = 2,
@@ -1494,7 +1497,7 @@ private fun TimeHeader(
             Column {
                 Text(
                     text = currentDateTimeText,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.timeRulerSp, fontWeight = FontWeight.Medium),
                     color = AppTheme.primary,
                     maxLines = 1,
                 )
@@ -1510,7 +1513,7 @@ private fun TimeHeader(
                         }
                         Text(
                             text = epgInfoLine,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.timeRulerSp),
                             color = AppTheme.palette.textMuted,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1542,7 +1545,7 @@ private fun TimeHeader(
                     ) {
                         Text(
                             slotLabels[i],
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.timeRulerSp),
                             color = AppTheme.palette.onSurface,
                             fontWeight = FontWeight.Normal,
                         )
@@ -1660,7 +1663,7 @@ private fun GuideRow(
             val displayNum = rowIndex + 1
             Text(
                 "$displayNum",
-                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = metrics.channelNameSp),
                 color = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.textMuted,
                 maxLines = 1,
                 modifier = Modifier.width(32.dp),
@@ -1671,7 +1674,7 @@ private fun GuideRow(
                 model = logoModel,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.size(32.dp).clip(RoundedCornerShape(4.dp)),
+                modifier = Modifier.size(metrics.logoSize).clip(RoundedCornerShape(4.dp)),
             )
 
             Spacer(Modifier.width(8.dp))
@@ -1680,7 +1683,10 @@ private fun GuideRow(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                 Text(
                     displayName,
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 15.sp),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = metrics.channelNameSp,
+                    lineHeight = (metrics.channelNameSp.value + 2).sp,
+                ),
                     fontWeight = if (isRowHighlighted) FontWeight.Bold else FontWeight.Medium,
                     color = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.onSurface,
                     maxLines = 2,
@@ -1793,7 +1799,7 @@ private fun GuideRow(
                 ) {
                     Text(
                         emptyRowLabel,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 13.sp),
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = metrics.programmeMetaSp),
                         color = if (emptyHighlighted) AppTheme.palette.onCellFocus else AppTheme.palette.textMuted,
                     )
                 }
@@ -2016,10 +2022,11 @@ private fun RowScope.gutterTop(): Modifier =
 
 @Composable
 private fun GuideBadge(text: String, background: Color, modifier: Modifier = Modifier) {
+    val metrics = LocalGuideMetrics.current
     Box(
         modifier = modifier
             .padding(end = 4.dp)
-            .clip(RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(metrics.badgeCornerRadius))
             .background(background)
             .padding(horizontal = 3.dp, vertical = 0.5.dp),
         contentAlignment = Alignment.Center,
@@ -2027,9 +2034,9 @@ private fun GuideBadge(text: String, background: Color, modifier: Modifier = Mod
         Text(
             text = text,
             color = AppTheme.palette.onPrimary,
-            fontSize = 8.sp,
+            fontSize = metrics.badgeTextSp,
             fontWeight = FontWeight.Bold,
-            lineHeight = 9.sp,
+            lineHeight = (metrics.badgeTextSp.value + 1).sp,
         )
     }
 }
@@ -2167,7 +2174,7 @@ private fun ProgrammeBlock(
                     imageVector = Icons.Filled.History,
                     contentDescription = "Replay",
                     tint = if (highlighted) AppTheme.palette.onCellFocus else AppTheme.palette.textMuted,
-                    modifier = gutterTop().padding(end = 4.dp).size(12.dp),
+                    modifier = gutterTop().padding(end = 4.dp).size(metrics.replayMarkerSize),
                 )
             }
             if (hasReminder) {
@@ -2175,14 +2182,14 @@ private fun ProgrammeBlock(
                     imageVector = Icons.Filled.Notifications,
                     contentDescription = stringResource(R.string.guide_reminder_badge),
                     tint = if (highlighted) AppTheme.palette.onCellFocus else AppTheme.palette.favourite,
-                    modifier = gutterTop().padding(end = 4.dp).size(12.dp),
+                    modifier = gutterTop().padding(end = 4.dp).size(metrics.reminderBadgeSize),
                 )
             }
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp,
+                    fontSize = metrics.programmeTitleSp,
+                    lineHeight = (metrics.programmeTitleSp.value + 2).sp,
                 ),
                 fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (highlighted) AppTheme.palette.onCellFocus

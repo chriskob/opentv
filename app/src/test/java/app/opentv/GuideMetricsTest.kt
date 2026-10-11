@@ -66,7 +66,7 @@ class GuideMetricsTest {
         assertThat(metrics.channelColumnWidth).isEqualTo(296.dp)
         assertThat(metrics.channelNumberWidth).isEqualTo(40.dp)
         assertThat(metrics.logoSize).isEqualTo(32.dp)
-        assertThat(metrics.timeHeaderHeight).isEqualTo(56.dp)
+        assertThat(metrics.timeHeaderHeight).isEqualTo(38.dp)
         assertThat(metrics.halfHourWidth).isEqualTo(240.dp)
         assertThat(metrics.cellCornerRadius).isEqualTo(6.dp)
         assertThat(metrics.cellGap).isEqualTo(4.dp)
@@ -76,8 +76,10 @@ class GuideMetricsTest {
         assertThat(metrics.nowLineWidth).isEqualTo(2.dp)
         assertThat(metrics.chromeAlpha).isEqualTo(0.7f)
         assertThat(metrics.badgeHeight).isEqualTo(20.dp)
+        assertThat(metrics.badgeCornerRadius).isEqualTo(4.dp)
         assertThat(metrics.liveBadgeSize).isEqualTo(12.dp)
         assertThat(metrics.replayMarkerSize).isEqualTo(16.dp)
+        assertThat(metrics.reminderBadgeSize).isEqualTo(16.dp)
         assertThat(metrics.favouriteStarSize).isEqualTo(24.dp)
     }
 
