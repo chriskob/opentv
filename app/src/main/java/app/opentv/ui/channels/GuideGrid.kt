@@ -2133,8 +2133,8 @@ private fun ProgrammeBlock(
     val focusScale by animateFloatAsState(
         targetValue = if (isCursor) GuideMotion.FOCUS_SCALE else 1f,
         animationSpec = tween(
-            durationMillis = GuideMotion.FOCUS_MS,
-            easing = GuideMotion.CURSOR_EASING,
+            durationMillis = GuideMotion.FOCUS_HIGHLIGHT_MS,
+            easing = GuideMotion.FOCUS_EASING,
         ),
         label = "guideCellFocusScale",
     )
@@ -2146,7 +2146,7 @@ private fun ProgrammeBlock(
             ringPulse.snapTo(GuideMotion.CURSOR_RING_MIN.value)
             ringPulse.animateTo(
                 GuideMotion.CURSOR_RING_MAX.value,
-                tween(GuideMotion.FOCUS_MS, easing = GuideMotion.CURSOR_EASING),
+                tween(GuideMotion.PULSE_MS, easing = GuideMotion.CURSOR_EASING),
             )
             ringPulse.animateTo(
                 GuideMotion.CURSOR_RING_MIN.value,

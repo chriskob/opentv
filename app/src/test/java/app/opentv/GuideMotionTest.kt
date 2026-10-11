@@ -38,8 +38,22 @@ class GuideMotionTest {
 
     @Test
     fun timings_matchTheReferencesFocusAnimation() {
-        assertThat(GuideMotion.FOCUS_MS).isEqualTo(166)
+        // The reference's own cursor pulse.
+        assertThat(GuideMotion.PULSE_MS).isEqualTo(166)
         assertThat(GuideMotion.RECOVER_MS).isEqualTo(16)
+        // And leanback's focus-highlight travel, which is a different animation.
+        assertThat(GuideMotion.FOCUS_HIGHLIGHT_MS).isEqualTo(150)
+    }
+
+    @Test
+    fun focusEasing_isAndroidsAccelerateDecelerateCurve() {
+        val e = GuideMotion.FOCUS_EASING
+        assertThat(e.transform(0f)).isEqualTo(0f)
+        assertThat(e.transform(1f)).isEqualTo(1f)
+        // Android's AccelerateDecelerateInterpolator is symmetric about the midpoint.
+        assertThat(e.transform(0.5f)).isWithin(0.001f).of(0.5f)
+        assertThat(e.transform(0.25f)).isLessThan(0.25f)
+        assertThat(e.transform(0.75f)).isGreaterThan(0.75f)
     }
 
     @Test
