@@ -28,6 +28,7 @@ enum class AppPalette(val displayName: String) {
     OPENCHAMBER("OpenChamber"),
     SLATE_GUIDE("Slate Guide"),
     TVPLAYER("TVPlayer"),
+    TVIMATE_PARITY("Parity Guide"),
 }
 
 /**
@@ -417,6 +418,49 @@ private val TvPlayerPalette = OpenTvPalette(
     onCellFocus = Color(0xFF0D1824),
 )
 
+/**
+ * The parity palette: the guide's own look, measured rather than themed by hand.
+ *
+ * Dark navy surfaces (background, cells, elevated rows) carry slate programme blocks, an amber
+ * accent paints the focused cell, the now-line and the NEW badge, and cyan/red carry the live and
+ * recording semantics. Values are the measured navy-plus-amber family recorded in
+ * `docs/superpowers/plans/2026-10-11-guide-metrics-table.md`.
+ *
+ * This palette is the guide's, not the app's: the guide screen wraps itself in it (see
+ * `GuideTheme`), while every other screen keeps whichever theme the viewer chose. Slate Guide is
+ * deliberately untouched - `AppSettings.DEFAULT_PALETTE` still points at it and
+ * `THEME_FORCE_VERSION` is not bumped, so no existing user's theme changes under them.
+ */
+private val TivimateParityPalette = OpenTvPalette(
+    background = Color(0xFF142B3D),
+    surface = Color(0xFF1F415C),
+    subtle = Color(0xFF29577B),
+    onSurface = Color(0xFFEEEEEE),
+    onSurfaceVariant = Color(0xFF90CAF9),
+    outline = Color(0xFF29577B),
+    borderHover = Color(0xFF90CAF9),
+    focusBorder = Color(0xFFFFC107),
+    primary = Color(0xFFFFC107),
+    onPrimary = Color(0xFF111111),
+    primaryHover = Color(0xFFFF9800),
+    primaryActive = Color(0xFFFFE082),
+    focusRing = Color(0x66FFC107),
+    selection = Color(0x4DFFC107),
+    hover = Color(0x1FFFFFFF),
+    recording = Color(0xFFFF5252),
+    favourite = Color(0xFFFFC107),
+    live = Color(0xFF00BCD4),
+    error = Color(0xFFFF5252),
+    errorContainer = Color(0x33FF5252),
+    success = Color(0xFF64D58A),
+    successContainer = Color(0x2064D58A),
+    warning = Color(0xFFFFC107),
+    info = Color(0xFF00BCD4),
+    onCursor = Color(0xFF142B3D),
+    cellFocus = Color(0xFFFFC107),
+    onCellFocus = Color(0xFF111111),
+)
+
 /** The resolved palette for this selection. */
 fun AppPalette.palette(): OpenTvPalette = when (this) {
     AppPalette.AURA -> AuraPalette
@@ -429,4 +473,5 @@ fun AppPalette.palette(): OpenTvPalette = when (this) {
     AppPalette.OPENCHAMBER -> OpenChamberPalette
     AppPalette.SLATE_GUIDE -> SlateGuidePalette
     AppPalette.TVPLAYER -> TvPlayerPalette
+    AppPalette.TVIMATE_PARITY -> TivimateParityPalette
 }

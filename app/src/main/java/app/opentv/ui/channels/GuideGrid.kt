@@ -198,6 +198,103 @@ fun GuideGrid(
     onJumpToLive: () -> Unit = {},
     onWrapToBottom: () -> Unit = {},
     onWrapToTop: () -> Unit = {},
+    /** Fired when LEFT is pressed on the leftmost programme block — opens the category rail. */
+    onExitLeft: () -> Boolean = { false },
+    dayOffset: Int = 0,
+    /** Channel ids whose catch-up the resolver can actually build (per-channel capability) —
+     *  the guide's catch-up badge shows exactly for these, never for the rest. */
+    catchUpChannelIds: Set<Long> = emptySet(),
+    /** (channelId, programme start) pairs the viewer has set a reminder for — each draws a bell. */
+    reminderKeys: Set<Pair<Long, Long>> = emptySet(),
+    /** "EPG updated … · N channels" stamp shown in the time header, or null until first sync. */
+    epgInfoLine: String? = null,
+    /** True while a guide sync is running - the header shows a spinner beside the stamp. */
+    epgSyncing: Boolean = false,
+    /** Increment to ask the grid to restore the cursor onto the playing channel at "now". */
+    restoreTick: Int = 0,
+    /** Bumped when a rail category is focus-previewed: snaps the grid to its first channel. */
+    scrollTopTick: Int = 0,
+    /** True while the rail previews a category: the grid tints its first row as the cursor. */
+    previewTopRow: Boolean = false,
+    /** Fires whenever the timeline is displaced from "now" (scrubbed, paged, or panned). */
+    onTimeShifted: (Boolean) -> Unit = {},
+    nowMillis: Long = System.currentTimeMillis(),
+    backScrollActive: Boolean = false,
+) {
+    // The guide carries its own palette and metrics: the parity look is the screen's, while the
+    // rest of the app keeps whichever theme the viewer picked.
+    GuideScreenHost {
+        GuideGridContent(
+            rows = rows,
+            windowStartMillis = windowStartMillis,
+            selectedKeyState = selectedKeyState,
+            onSelectRow = onSelectRow,
+            onFocusRow = onFocusRow,
+            modifier = modifier,
+            epgRows = epgRows,
+            epgHydrationComplete = epgHydrationComplete,
+            epgQueriedKeys = epgQueriedKeys,
+            onViewportChanged = onViewportChanged,
+            playingKey = playingKey,
+            focusRequester = focusRequester,
+            horizontalScrollState = horizontalScrollState,
+            providedListState = providedListState,
+            onLongSelectRow = onLongSelectRow,
+            onProgramme = onProgramme,
+            onProgrammeLongPress = onProgrammeLongPress,
+            onToggleFavourite = onToggleFavourite,
+            onEnableBackScroll = onEnableBackScroll,
+            onJumpToLive = onJumpToLive,
+            onWrapToBottom = onWrapToBottom,
+            onWrapToTop = onWrapToTop,
+            onExitLeft = onExitLeft,
+            dayOffset = dayOffset,
+            catchUpChannelIds = catchUpChannelIds,
+            reminderKeys = reminderKeys,
+            epgInfoLine = epgInfoLine,
+            epgSyncing = epgSyncing,
+            restoreTick = restoreTick,
+            scrollTopTick = scrollTopTick,
+            previewTopRow = previewTopRow,
+            onTimeShifted = onTimeShifted,
+            nowMillis = nowMillis,
+            backScrollActive = backScrollActive,
+        )
+    }
+}
+
+/**
+ * The guide grid itself. [GuideGrid] wraps this in the parity palette and metrics; this composable
+ * is the layout, and reads its geometry from [app.opentv.ui.theme.LocalGuideMetrics] once Task 4
+ * lands. Same signature as [GuideGrid] so callers never see the difference.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun GuideGridContent(
+    rows: List<ChannelsViewModel.Row>,
+    windowStartMillis: Long,
+    selectedKeyState: State<Any?>,
+    onSelectRow: (ChannelsViewModel.Row) -> Unit,
+    onFocusRow: (ChannelsViewModel.Row, Programme?) -> Unit,
+    modifier: Modifier = Modifier,
+    epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
+    epgHydrationComplete: StateFlow<Boolean>? = null,
+    /** Rows whose guide query has landed (answered, even if empty) — honest empty-cell label. */
+    epgQueriedKeys: StateFlow<Set<Any>>? = null,
+    /** Visible row range, reported upward so hydration is walked from the viewer outward. */
+    onViewportChanged: (first: Int, lastExclusive: Int) -> Unit = { _, _ -> },
+    playingKey: Any? = null,
+    focusRequester: FocusRequester? = null,
+    horizontalScrollState: androidx.compose.foundation.ScrollState? = null,
+    providedListState: androidx.compose.foundation.lazy.LazyListState? = null,
+    onLongSelectRow: (ChannelsViewModel.Row) -> Unit = {},
+    onProgramme: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
+    onProgrammeLongPress: (ChannelsViewModel.Row, Programme) -> Unit = { _, _ -> },
+    onToggleFavourite: (ChannelsViewModel.Row) -> Unit = {},
+    onEnableBackScroll: () -> Unit = {},
+    onJumpToLive: () -> Unit = {},
+    onWrapToBottom: () -> Unit = {},
+    onWrapToTop: () -> Unit = {},
     /** Fired when LEFT is pressed on the leftmost programme block â€” opens the category rail. */
     onExitLeft: () -> Boolean = { false },
     dayOffset: Int = 0,
@@ -275,6 +372,17 @@ fun GuideGrid(
         initialFirstVisibleItemIndex = initialFirstVisible,
         initialFirstVisibleItemScrollOffset = 0,
     )
+
+    // Collected ONCE, here, instead of inside each GuideRow. Both are app-wide flows written on
+    // every hydration-walk step, so per-row collection meant one write recomposed every visible
+    // row. The State objects are passed down unchanged and read inside derivedStateOf, so a row
+    // only recomposes when ITS key actually enters the set.
+    val queriedKeysState = epgQueriedKeys?.collectAsState(initial = emptySet<Any>())
+    val guideSettled = epgHydrationComplete?.collectAsState(initial = false)?.value ?: true
+    // One pass over the whole app's reminder set, here, instead of once per row that scrolls in.
+    val reminderStartsByChannel = remember(reminderKeys) {
+        reminderKeys.groupBy({ it.first }, { it.second }).mapValues { it.value.toHashSet() }
+    }
 
     // Report the visible row window upward: the ViewModel spends its 48h hydration budget
     // around these rows (and re-centres when the viewer outruns it), so the guide fills the
@@ -933,7 +1041,11 @@ fun GuideGrid(
                         contentType = { _, _ -> "guide_row" },
                     ) { index, row ->
                         val isPlaying = row.key == playingKey
-                        val rowRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() }
+                        // remember keyed on the row: a map write must not happen on every
+                        // recomposition of this item (composition can be discarded and replayed).
+                        val rowRequester = remember(row.key) {
+                            rowFocusRequesters.getOrPut(row.key) { FocusRequester() }
+                        }
                         // During a rail preview the pseudo-cursor must sit on the ANCHOR row (the
                         // playing channel when visible, else the first row) â€” NOT hard-bound to
                         // index 0. Hard-binding it made the cursor jump to the top block whenever
@@ -942,8 +1054,8 @@ fun GuideGrid(
                         GuideRow(
                             baseRow = row,
                             epgRows = epgRows,
-                            epgHydrationComplete = epgHydrationComplete,
-                            epgQueriedKeys = epgQueriedKeys,
+                            epgHydrationComplete = guideSettled,
+                            epgQueriedKeys = queriedKeysState,
                             rowIndex = index,
 
                             totalRows = rows.size,
@@ -958,7 +1070,7 @@ fun GuideGrid(
                             scroll = scroll,
                             visibleStartMillis = viewportStartMillis,
                             catchUpChannelIds = catchUpChannelIds,
-                            reminderKeys = reminderKeys,
+                            reminderStartsByChannel = reminderStartsByChannel,
                             isSelected = isPlaying,
                             previewHighlight = isPreviewAnchor,
                             rowFocusRequester = rowRequester,
@@ -1350,6 +1462,9 @@ private fun TimeHeader(
         }
     }
     val chromeAlpha = LocalGuideChromeAlpha.current
+    // Format only when the tick changes. This header recomposes on every guide-width animation
+    // frame, and a SimpleDateFormat per frame is exactly the sort of waste that adds up.
+    val currentDateTimeText = remember(nowMillis) { currentDateTimeFmt.format(Date(nowMillis)) }
 
     Row(
         Modifier
@@ -1369,7 +1484,7 @@ private fun TimeHeader(
         ) {
             Column {
                 Text(
-                    text = currentDateTimeFmt.format(Date(nowMillis)),
+                    text = currentDateTimeText,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
                     color = AppTheme.primary,
                     maxLines = 1,
@@ -1434,9 +1549,10 @@ private fun TimeHeader(
 private fun GuideRow(
     baseRow: ChannelsViewModel.Row,
     epgRows: StateFlow<Map<Any, ChannelsViewModel.Row>>? = null,
-    epgHydrationComplete: StateFlow<Boolean>? = null,
+    /** True once the guide's hydration walk has finished. */
+    epgHydrationComplete: Boolean = true,
     /** Rows whose guide query has landed; decides "loading" vs honest "no guide" vs pending. */
-    epgQueriedKeys: StateFlow<Set<Any>>? = null,
+    epgQueriedKeys: State<Set<Any>>? = null,
     rowIndex: Int = 0,
     totalRows: Int = 1,
     windowStartMillis: Long,
@@ -1447,7 +1563,8 @@ private fun GuideRow(
     scroll: androidx.compose.foundation.ScrollState,
     visibleStartMillis: Long,
     catchUpChannelIds: Set<Long> = emptySet(),
-    reminderKeys: Set<Pair<Long, Long>> = emptySet(),
+    /** Reminder start millis grouped by channel id, precomputed by the grid. */
+    reminderStartsByChannel: Map<Long, Set<Long>> = emptyMap(),
     previewHighlight: Boolean = false,
     isSelected: Boolean,
     /** Focused row key, read through a derivedStateOf so focus moves only recompose changed rows. */
@@ -1478,9 +1595,6 @@ private fun GuideRow(
     val context = LocalContext.current
     val logoModel = remember(context, row.primary.logoUrl) {
         logoRequest(context, row.primary.logoUrl, 96)
-    }
-    val reminderStartsByChannel = remember(reminderKeys) {
-        reminderKeys.groupBy({ it.first }, { it.second }).mapValues { it.value.toHashSet() }
     }
 
     // Read focus/anchor state through derivedStateOf: this row recomposes only when ITS
@@ -1614,14 +1728,11 @@ private fun GuideRow(
             // channel that genuinely has no guide data never gets a non-null epgRow either, so
             // keying off that alone left those rows reading "Loading guide…" forever. Hydration
             // being finished is what tells the two cases apart.
-            val guideSettled = epgHydrationComplete?.collectAsState(initial = false)?.value ?: true
-            // Per-row truth beats the global flag: a row whose own query landed and answered
-            // with nothing says so immediately (no waiting for the walk to finish), and a row
-            // the budget never reached stays honestly pending — the re-centred walk covers it
-            // the moment the viewer scrolls there, so a channel is never reported as having
-            // no guide when nobody actually asked about it.
-            val rowAnswered = epgQueriedKeys?.collectAsState(initial = emptySet())?.value
-                ?.contains(row.key) ?: guideSettled
+            // Read inside derivedStateOf over the shared State object, so this row recomposes only
+            // when its own key enters or leaves the set — not on every hydration-walk write.
+            val rowAnswered by remember(row.key, epgQueriedKeys) {
+                derivedStateOf { epgQueriedKeys?.value?.contains(row.key) ?: epgHydrationComplete }
+            }
             val awaitingGuide = programmes.isEmpty() && !rowAnswered
             val emptyRowLabel = stringResource(
                 if (awaitingGuide) R.string.guide_loading_info else R.string.guide_no_info,
@@ -1792,7 +1903,9 @@ private fun GuideRow(
                     val isPast = prog.endUtcMillis <= nowMillis
                     val canReplay = isPast &&
                         (row.primary.tvArchive || row.primary.id in catchUpChannelIds)
-                    val blockRequester = blockFocusRequesters.getOrPut(pOrder) { FocusRequester() }
+                    val blockRequester = remember(pOrder) {
+                        blockFocusRequesters.getOrPut(pOrder) { FocusRequester() }
+                    }
                     val textOffset = if (layout.startMillis < visibleStartMillis) {
                         minOf(widthFor(layout.startMillis, visibleStartMillis), layout.blockWidth)
                     } else {
