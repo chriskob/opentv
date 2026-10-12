@@ -225,18 +225,20 @@ class MainActivity : ComponentActivity() {
         }
         // A Compose bug, not ours, and worth surviving: when a key arrives while the focus tree is
         // being rebuilt — a focused row scrolling out of a long list, a screen swapping, the main
-        // thread busy enough that frames are being skipped — Compose's two-dimensional focus search
-        // throws "ActiveParent must have a focusedChild" from dispatchKeyEvent and takes the whole app
-        // down. It fired on a box mid-sync with the guide rebuilding under a key press (the log shows
-        // a 2.9s KeyEvent and 249 skipped frames just before it). No key press is worth a crash, so a
-        // failed search just means this one press goes unhandled; anything else still propagates.
+        // thread busy enough that frames are being skipped — Compose throws from the key dispatch
+        // and takes the whole app down. Two families have been seen on boxes mid-sync: the focus
+        // search failing ("ActiveParent must have a focusedChild") and the focus system still
+        // invalidated from the previous repeat's focus change ("Dispatching key event while focus
+        // system is invalidated", twice in the 2026-10-12 dropbox, both under held d-pad scrolls).
+        // No key press is worth a crash, so a failed dispatch just means this one press goes
+        // unhandled; the next frame resolves the invalidation. Anything else still propagates.
         return try {
             super.dispatchKeyEvent(event)
         } catch (e: IllegalStateException) {
-            if (e.message?.contains("focusedChild") == true) {
+            if (isComposeKeyDispatchRace(e)) {
                 android.util.Log.w(
                     TAG,
-                    "Compose focus search failed for key ${event.keyCode} (action ${event.action}); " +
+                    "Compose focus dispatch failed for key ${event.keyCode} (action ${event.action}); " +
                         "ignoring the key rather than crashing",
                     e,
                 )
@@ -1029,4 +1031,15 @@ fun isRunningOnTelevision(context: Context): Boolean {
     val packageManager = context.packageManager
     return packageManager.hasSystemFeature("android.software.leanback") ||
         packageManager.hasSystemFeature("android.hardware.type.television")
+}
+
+/**
+ * True for the Compose key-dispatch races: both the failed focus search and the
+ * invalidated-focus-system variants. Deliberately matches on the message text — these are
+ * framework asserts with no dedicated exception type (see GuideInputGuardsTest).
+ */
+internal fun isComposeKeyDispatchRace(e: IllegalStateException): Boolean {
+    val message = e.message ?: return false
+    return message.contains("focusedChild") ||
+        message.contains("focus system is invalidated")
 }

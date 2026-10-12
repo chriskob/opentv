@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import app.opentv.ui.theme.AppTheme
+import app.opentv.ui.components.KeyRepeatGate
 import app.opentv.ui.theme.LocalGuideChromeAlpha
 import app.opentv.ui.theme.LocalGuideMetrics
 import app.opentv.ui.theme.widthFor
@@ -497,6 +498,11 @@ internal fun GuideGridContent(
     // step. On release, focus re-anchors to the programme now under the viewport's left edge, so the
     // cursor is back on screen and Up/Down continues from the scrubbed time. Back returns to live
     // (HomeScreen's backScrollActive handler), which is also how the category rail is reached.
+    // One cursor step per window while a d-pad key auto-repeats (30-50 ms): repeats otherwise
+    // queue faster than a busy box completes frames, and each ungated step moved focus while the
+    // previous step's change was still unresolved — the "focus system is invalidated" crash
+    // (see KeyRepeatGate, GuideInputGuardsTest).
+    val navGate = remember { KeyRepeatGate() }
     var holdPressActive by remember { mutableStateOf(false) }
     var scrubEngaged by remember { mutableStateOf(false) }
     var holdTimeoutJob by remember { mutableStateOf<Job?>(null) }
@@ -760,8 +766,11 @@ internal fun GuideGridContent(
         onJumpToLive()
     }
 
-    val handleNavigateVertical: (isDown: Boolean, fromRowIndex: Int) -> Boolean = { isDown, fromRowIndex ->
+    val handleNavigateVertical: (isDown: Boolean, fromRowIndex: Int) -> Boolean = navigate@{ isDown, fromRowIndex ->
         if (rows.isNotEmpty()) {
+            // A coalesced repeat is still a consumed key — the step just behind it already moved
+            // the cursor. Returning false here would hand it to Compose's own focus traversal.
+            if (!navGate.accept()) return@navigate true
             columnStepJob?.cancel()
             focusCenterJob?.cancel()
             val generation = navigationGeneration + 1L
@@ -778,9 +787,6 @@ internal fun GuideGridContent(
             isNavigatingVertically = true
 
             val targetRequester = rowFocusRequesters[targetRow.key]
-            val success = if (targetRequester != null) {
-                runCatching { targetRequester.requestFocus() }.isSuccess
-            } else false
 
             val visibleItems = listState.layoutInfo.visibleItemsInfo
             val firstVisible = listState.firstVisibleItemIndex
@@ -805,6 +811,14 @@ internal fun GuideGridContent(
             verticalNavJob?.cancel()
             verticalNavJob = coroutineScope.launch {
                 if (generation != navigationGeneration) return@launch
+                // The focus move happens here, one message-loop tick after the key dispatch
+                // returned — never synchronously inside it. requestFocus during dispatch leaves
+                // the focus system invalidated for the rest of the frame, and on a busy box the
+                // next repeat arrives before that frame lands: "Dispatching key event while focus
+                // system is invalidated" (see KeyRepeatGate, GuideInputGuardsTest).
+                val success = if (targetRequester != null) {
+                    runCatching { targetRequester.requestFocus() }.isSuccess
+                } else false
                 if (targetScrollIndex != null) {
                     // A d-pad step is one row: it must land on the row the press selected, not
                     // glide toward it. Only the deliberate jumps (jump-to-live, restore, a rail
