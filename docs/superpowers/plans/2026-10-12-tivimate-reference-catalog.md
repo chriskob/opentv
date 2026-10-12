@@ -68,12 +68,12 @@ set identified against the native 1920×1080 Onn 4K capture (which measured the 
 | 0x7f0600a8/07 | `#b0000000` | 69%-black — the menu/list scrim backdrop (see layout 0x7f0e003f) |
 | 0x7f060055 | `#e0e0e0` | light-grey (light theme cell tone) |
 
-**Correction vs the metrics table §3:** the navy set (`#142b3d/#1f415c/#29577b`) is a
-legitimate palette family in the APK, but the *native capture* matches the neutral set
-above (`#1c232c` page, `#2c333c` cell, `#3c434c` emphasis, `#dfe1e4` focused). If the
-maintainer wants the guide to match the capture exactly, `TVIMATE_PARITY` should use
-the neutral set; the navy set is what TiviMate's "Dark Blue" user theme would give.
-`gammaHex`/categories: category coding uses the saturated families (green/cyan/blue/brown).
+**Correction vs the metrics table §3 — RESOLVED 2026-10-12:** the navy set was already
+replaced in HEAD: `TivimateParityPalette` (OpenTvPalette.kt 434-462) now carries the
+neutral capture set — background `#1C232C`, surface/cell `#242B33`, subtle (airing)
+`#2C323A`, cyan accents `#00BCD4`, cursor ring `#00BCD4` family, `recording #FF5252`.
+The on-screencap colors therefore must derive from chrome alpha layering, not from the
+base values — see §7 for the runtime finding.
 
 ## 3. Guide layout — the hard limit (complete)
 
@@ -204,4 +204,62 @@ if a setting row is wanted to swap Down from zap to seek, it is one enum + one h
 2. **The two unpinned motion-model tests** from §5 (detail-panel frame decoupling;
    no-layout-on-focus-move) — small Robolectric pins, unrelated to catch-up correctness.
 3. Optional: a "Down seeks" playback option row, per the reference above.
+
+## 7. Remote runtime pass (2026-10-12, adb to the Onn box 192.168.1.128)
+
+The box was reachable over the network, so the render could be measured today.
+
+**Box state found / instrumentation setup:**
+- Two OpenTV builds installed: `app.opentv` (release-signed daily build, versionCode 151,
+  v0.16.23, installed 2026-10-11 — the maintainer's own data) and `app.opentv.debug`
+  (same version, signed with this machine's default debug key `2e3ec6e5…`).
+- Neither local build could install over the production package (different signature),
+  so a temporary `applicationIdSuffix = ".debug"` was used to build/install over the
+  existing `app.opentv.debug` **in place (data kept)**, then reverted. The restored
+  `_work\debugkey-restore\debug.keystore` proved unrelated (legacy PKCS12, unopenable by
+  apksigner on this toolchain; not needed — the box's debug app already matches the
+  machine's default debug key).
+- The debug app carries its own synced guide data (20,604 channels, EPG synced
+  2026-10-11 16:42), so renders are real-data renders. Its own pref stores
+  `app_palette = SLATE_GUIDE`.
+
+**Verified at runtime (screenshots `final_guide.png`, probe captures in `_work\`):**
+| Element | TiviMate capture (§4c) | OpenTV HEAD render | Δ |
+|---|---|---|---|
+| Row pitch | 88 px (44 dp) | **92 px (46 dp)** | cells render 2 dp taller |
+| Cell height | 82 px (41 dp) | **88 px (44 dp)** | +3 dp cell, −1 dp gap vs 3 dp ref |
+| Row gap | 6 px (3 dp) | 4 px (2 dp) | −1 dp |
+| Half-hour slot | 320 px (160 dp) | **328 px/30 min** (a 2 h cell measured 1311 px) | ~2.4 % wide |
+| Channel column | 540 px (270 dp) | 540 px (cells start x=543) | ✓ |
+| Header divider | y=462 | y=460..464 | ✓ |
+| Cell tone | `#242B33` | `#26364A` | bluer/lighter than the pinned base |
+| Track/gaps | `#1C232C` | `#1E2A3B` | lighter than the pinned base |
+| NEW chip | cyan | `#33DFFF` in some runs, parity cyan `#00BCD4` in others | see below |
+| LIVE chip | red | `#E5484D` (Slate's recording) in some runs, parity `#FF5252` in others | see below |
+| Cursor | light plain fill `#DFE1E4`, dark ink | WHITE fill + dark ink in the last run; dark cell + teal ring in other runs | state-dependent — see below |
+
+**Runtime finding — the guide palette flips between parity and Slate across app restarts** (the
+pass's main surprise, and a real defect to chase):
+- A colour canary (parity `recording`→magenta, `live`→green), installed and verified
+  byte-identical on the box, proved two runs render the canary through **both** palettes:
+  one start showed the guide fully in parity canary style (green NEW chips, magenta LIVE,
+  dark cursor + teal ring); other starts with the same build rendered Slate-exact chips
+  (`#E5484D`/`#33DFFF`) and a WHITE cursor cell — a colour that matches **neither**
+  palette's `cellFocus`/`onCellFocus`.
+- A composition-time probe inside `GuideGridContent` logged `AppTheme.palette.recording`
+  = the canary values — so `LocalPalette` **is** the parity palette inside the guide in
+  that run.
+- The stored `app_palette` pref also reverted a direct `DRACULA` sed write back to
+  `SLATE_GUIDE` during an app start, though `readPalette()` only ever *writes* during a
+  force-migration (version already satisfied) — something else on the boot path writes the
+  key.
+- Conclusion: a state/initialisation-order defect in theme resolution (Main's palette
+  state vs GuideTheme's provider vs whatever rewrites the pref), not a constant-value
+  problem. The probe log line and canary colours were reverted after the experiment;
+  captures of both states are kept under `_work\`.
+
+**The geometry deltas above are small, concrete, and correctable:** make the parity
+`rowHeight`/`halfHourWidth` render match the reference (cell 41-44 dp pitch semantics,
+half-hour 160 dp) once the palette state stops skewing which colours are drawn. Both are
+one-line `GuideMetrics.TIVIMATE_PARITY` edits guarded by `GuideMetricsTest`.
 
