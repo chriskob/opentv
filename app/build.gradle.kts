@@ -115,6 +115,21 @@ android {
             // Keep package name as app.opentv so debug builds update existing TV app without wiping data
             isMinifyEnabled = false
         }
+        create("perf") {
+            /*
+             * Release-speed build that still installs in the debug slot (same suffix), so the box
+             * can run parity work at usable speed. Measured 2026-10-12 on the Onn 4K: a plain
+             * debug build scrubbed the guide at a 500 ms median frame (100% janky) while the
+             * production build sat at 24 ms - debuggable + unminified on a 2 GB box is the whole
+             * gap. Same signing (debug key), same applicationId as debug, so `install -r` keeps
+             * the debug app's data.
+             */
+            applicationIdSuffix = ".debug"
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 
     compileOptions {

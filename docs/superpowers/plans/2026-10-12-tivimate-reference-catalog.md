@@ -214,13 +214,47 @@ guide), `drawer geometry` from `tvshots\ui_1.xml`.
 6. Environment note: the box's front-camera app kept raising "Driveway Motion" system
    notifications over the captures — repeated noise in screenshots, no measurement impact.
 
-### Still needed for a complete submenu comparison (device session)
+ ### Still needed for a complete submenu comparison (device session)
 
 - TiviMate Settings root (couldn't be driven blind — the menu's focus position after open
   is ambiguous; drive it with the viewer's own focus or a uiautomator-assisted loop).
 - OpenTV's equivalent screens: its programme long-OK menu (if any), its Settings hub +
   the sub-screens (Providers / TV guide / Display & playback / Channels / Parental), then a
   side-by-side delta table like §8's.
+
+## 9. Performance investigation (2026-10-12 on-device, the "unusable" report)
+
+**Repro (plain debug build, full 20,604-channel guide, video playing):** 10 d-pad row steps
+→ 26/26 frames janky, **median 500 ms/frame**, p99 1.15-4.95 s. GPU 5-6 ms.
+
+**Box-wide context:** 1.97 GB RAM, 1.86 GB used, swap 766/981 MB (78 %), 112 MB free;
+system_server background-GC every few seconds; the app chews ~45 % CPU while visually idle;
+ExoPlayer decode pipeline active. The box is memory-starved and swapping — multi-second
+frames are page-in stalls, the ~100-500 ms frame floor below that is UI-thread work.
+
+**Build-type contribution (measured, same screen state):**
+| Build | Frame median | Janky |
+|---|---|---|
+| plain debug (unminified, debuggable) | **500 ms** | 100 % |
+| `perf` (R8, non-debuggable, debug-signed) | **~100 ms** | ~92 % |
+
+**Shipped:** a new `perf` build type (`assemblePerf`) — minified, non-debuggable, same
+`.debug` applicationId + debug signing, so `install -r` replaces the debug app keeping its
+data. Instantly 5× faster; that is the build to use on the box for parity work.
+
+**Still open (next):**
+1. The remaining ~100 ms/frame floor vs production's… — production's own scrub number
+   turned out **unmeasurable** this pass (its process wasn't rendering during the window:
+   0 frames after reset), so the much-quoted "24 ms" comparison earlier was an invalid
+   measurement (it sampled player/OSD video frames, not guide scrub). A valid prod
+   comparison has not been done yet.
+2. Suspects for the per-step floor: the preview player's surface being composed during
+   scroll, the guide sync's status flows recomposing HomeScreen continuously, or per-step
+   focus/scroll choreography (the 16 ms retry loop, Requester focus dance).
+3. Method for next pass: perfetto trace during scrub with the preview player off vs on,
+   plus a `graphicsstats`/`gfxinfo framestats` correlation of durations to key presses.
+4. `debug builds unusable on 2 GB boxes` is ruler-material for the changelog: nobody
+   should judge app speed on a debug install of this app.
 
 
 ## 7. Catch-up audit (complete — the feature is already built)
