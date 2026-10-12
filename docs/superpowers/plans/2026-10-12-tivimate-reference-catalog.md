@@ -349,3 +349,31 @@ pass's main surprise, and a real defect to chase):
 half-hour 160 dp) once the palette state stops skewing which colours are drawn. Both are
 one-line `GuideMetrics.TIVIMATE_PARITY` edits guarded by `GuideMetricsTest`.
 
+
+## 10. The slow-and-crash report (2026-10-12 evening, maintainer at the TV)
+
+Root causes found, all fixed tonight unless marked otherwise:
+
+1. **Held d-pad crashed the app.** Two FATAL dropbox entries + one intercepted-soft-keyboard
+   variant: IllegalStateException from Compose's focus dispatch when a key repeat arrives while
+   the focus system is still invalidated from the previous step's focus move. On this box a frame
+   costs 100-500ms mid-sync; TV key repeat is ~35ms - the crash was arithmetic, not luck.
+   Fixed (5b3ac88): KeyRepeatGate coalesces repeats to one step per 60ms window; the cursor's
+   requestFocus moved out of the synchronous dispatch into the navigation coroutine's first
+   message; MainActivity's existing focusedChild guard widened to the whole race family.
+2. **Sync starved the UI.** Room re-emits the channel list per catalogue write-batch; each
+   re-emission re-ran a 20k regex catch-up scan and a full playback-queue rebuild from
+   LaunchedEffects keyed on rows, plus a full row build. Production's leftover process held 94%
+   of a core for 137 CPU-minutes with zero logs (the walk chunk loop and the per-batch rebuilds
+   log nothing). Fixed (663a44e): channel emissions debounced 300ms to settled updates, and the
+   badge set computed once in the view model (CatchupResolver.capableChannelIds + unit test).
+3. **Double-encoded string literals** - rail chevrons and the zapper time separator rendered as
+   mojibake on screen. Fixed (469c04b). Note: PlayerScreen / PhonePairingScreen /
+   RemotePairingScreen also contain the same mojibake in the maintainer's modified files - not
+   touched here, worth a pass.
+
+**Verified on the Onn box (perf build):** 130-event hammer (down/up/scrub) - process alive, zero
+new FATALs, pipeline logs healthy (full walk 1.5s, parks=0), no pinned worker when idle.
+Remaining honest gaps: per-step main-thread cost is still ~150ms on the box during fast hammering
+(the draw-only-cursor refactor - track B - is the answer); production install runs the old code
+until the next release build.

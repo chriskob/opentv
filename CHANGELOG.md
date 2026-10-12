@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **Holding a d-pad key no longer kills the app.** With the guide open, a fast scroll or a held
+  arrow could crash OpenTV outright: Compose's focus system was still rebuilding from the previous
+  step when the next repeat key arrived, and its guard threw and took the process down. Key repeats
+  are now coalesced to one step per frame window, and the cursor's focus move happens after the
+  key has been dispatched instead of during it. The last-resort guard in the activity also catches
+  the crash family now instead of just its sibling - a dropped key press beats a dead app.
+- **Guide sync no longer starves the interface.** A catalogue or EPG import writes the channel
+  table in dozens of batches, and the guide re-derived everything from every batch: a 20,000-channel
+  regex scan, a full playback-queue rebuild, a whole row build. On 2 GB boxes that was minutes of
+  a pinned core - the "unusable while updating" reports. Channel-derived work now runs once per
+  settled change (300 ms of quiet), and the catch-up badge set moved out of the interface layer
+  into the view model, where it belongs.
+- **Broken characters in the interface fixed.** The category-rail chevrons rendered as "â–¾" and
+  the now-playing time range as "11:00 AMâ€“12:00 PM" - string literals that had been saved once
+  with their bytes re-encoded. They are real glyphs again.
+- **A `perf` build for slow boxes.** `.\gradlew.bat :app:assemblePerf` builds a release-speed
+  variant (R8, non-debuggable) that installs into the same slot and keeps the debug app's data -
+  measured on an Onn 4K: plain debug scrubs the guide at a 500 ms median frame, perf is usable.
+  Debug builds of this app are genuinely unusable on 2 GB hardware; speed tests must use perf.
+
 ## 0.16.23
 
 - **The guide header shows when it is working.** A small spinner sits beside the "EPG updated"
