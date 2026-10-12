@@ -79,6 +79,22 @@ class CatchupResolverTest {
     }
 
     @Test
+    fun `capableChannelIds badges exactly the resolvable channels`() {
+        val byId = mapOf(1L to m3uSource())
+        val archived = m3uChannel(tvArchive = true).copy(id = 11)
+        val templated = m3uChannel(cmd = "catchup-source http://h/x?utc={utc}").copy(id = 12)
+        val plain = m3uChannel(cmd = "ffmpeg http://example.com/x").copy(id = 13)
+        // The channel's own source row is gone: a tvArchive flag is still evidence on its own.
+        val orphanedSource = m3uChannel(tvArchive = true).copy(id = 14, sourceId = 99)
+        assertThat(
+            CatchupResolver.capableChannelIds(
+                byId,
+                listOf(archived, templated, plain, orphanedSource),
+            ),
+        ).containsExactly(11L, 12L, 14L)
+    }
+
+    @Test
     fun `native xtream builds the timeshift url`() {
         val src = Source(name = "X", kind = SourceKind.XTREAM, url = "http://panel.example.com:8080", username = "u", password = "p")
         val ch = m3uChannel().copy(streamId = "12345", sourceId = 2)

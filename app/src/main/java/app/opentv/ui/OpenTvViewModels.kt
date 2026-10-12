@@ -9,6 +9,7 @@ import android.app.Application
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.opentv.core.CatchupResolver
 import app.opentv.core.ServiceLocator
 import app.opentv.data.model.Category
 import app.opentv.data.model.Channel
@@ -1178,6 +1179,18 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     val epgRows: StateFlow<Map<Any, Row>> = _epgRows.asStateFlow()
 
     /**
+     * Channels the catch-up resolver can actually build a timeshift URL for — the guide's badge
+     * set, computed once per settled channel-list emission (see [CHANNEL_SETTLE_MILLIS]).
+     *
+     * Deliberately not derived from the hydrated row list: capability depends only on the
+     * channel row and its source, so every guide-sync chunk re-emitting `rows` used to re-trigger
+     * a full 20k-regex scan from a LaunchedEffect — starving the UI mid-sync. The scan now runs
+     * on the pipeline's Default dispatcher, once per settled change.
+     */
+    private val _catchupChannelIds = MutableStateFlow<Set<Long>>(emptySet())
+    val catchupChannelIds: StateFlow<Set<Long>> = _catchupChannelIds.asStateFlow()
+
+    /**
      * Whether the current window has finished hydrating every row.
      *
      * The guide builds all rows first and attaches guide data afterwards, in chunks, so for a
@@ -1261,7 +1274,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         return hydrated
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
     val rows: StateFlow<List<Row>> =
         combine(selectedCategory, favouritesOnly, query, categoryGroups, hiddenCategoryIds) {
                 category, favs, q, groups, hidden ->
@@ -1304,6 +1317,14 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                 // batches. Drop emissions whose content is identical so a sync that changes
                 // nothing the guide reads cannot restart the pipeline at all.
                 .distinctUntilChanged()
+                // Then coalesce what remains: a settled channel list is the only version the
+                // guide can use, and each raw batch restart used to re-run the full row build
+                // plus the badge scan — the storm this replaces. (CHANNEL_SETTLE_MILLIS.)
+                .debounce(CHANNEL_SETTLE_MILLIS)
+                .onEach { channels ->
+                    val byId = graph.sourceRepository.observeAll().first().associateBy { it.id }
+                    _catchupChannelIds.value = CatchupResolver.capableChannelIds(byId, channels)
+                }
                 // TiviMate Optimization: Query programmes ONLY for the active channels in this view.
                 // Never query or group 500,000 programmes for the entire universe, which exhausts 2GB RAM.
                 // Four-phase emission: (1) ALL rows built in ONE pass with no EPG — the guide
@@ -1924,6 +1945,15 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
         const val HALF_HOUR_MILLIS = 30 * 60 * 1000L
         const val PAST_HOURS = 24
         const val FUTURE_HOURS = 24
+
+        /**
+         * Quiet period before a burst of Room channel-write re-emissions is treated as settled.
+         * A catalogue sync writes `channels` in batches; the guide cannot use a list captured
+         * mid-import, and every raw re-emission re-ran the full row build and the badge scan —
+         * the storm that starves a 2 GB box for minutes. 300 ms turns dozens of batches into a
+         * handful of settled updates, one step after a deliberate edit (rename, hide) ends.
+         */
+        const val CHANNEL_SETTLE_MILLIS = 300L
 
         /**
          * How far back day-paging may go, derived from EPG retention — never hard-code this

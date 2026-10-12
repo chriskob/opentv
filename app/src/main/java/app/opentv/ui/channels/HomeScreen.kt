@@ -1578,10 +1578,10 @@ fun HomeScreen(
                 // channel is one `playCatchup` can actually build a URL for.
                 //
                 // Evidence counted (see CatchupResolver.isSupported):
-                //   * tvArchive â€” Xtream `tv_archive`, or the M3U `catchup` / `catchup-days` /
+                //   * tvArchive — Xtream `tv_archive`, or the M3U `catchup` / `catchup-days` /
                 //     `timeshift` attributes (see M3uParser).
-                //   * cmd â€” an M3U `catchup-source` template (Stalker commands excluded).
-                //   * portal capability â€” an Xtream source, or an M3U whose source URL carries
+                //   * cmd — an M3U `catchup-source` template (Stalker commands excluded).
+                //   * portal capability — an Xtream source, or an M3U whose source URL carries
                 //     Xtream credentials (`get.php`/`player_api.php`), or a stream URL shaped
                 //     like an Xtream panel URL.
                 // Nothing else does. In particular:
@@ -1589,17 +1589,11 @@ fun HomeScreen(
                 //     `tv_archive_duration` for channels whose `tv_archive` is 0, so treating a
                 //     duration as evidence badged channels that have no archive.
                 //
-                // Runs once per channel over the whole list, so it is computed off the main thread.
-                var catchUpChannelIds by remember(sources, rows) { mutableStateOf(emptySet<Long>()) }
-                LaunchedEffect(sources, rows) {
-                    catchUpChannelIds = withContext(Dispatchers.Default) {
-                        val byId = sources.associateBy { it.id }
-                        rows.mapNotNull { row ->
-                            val ch = row.primary
-                            if (CatchupResolver.isSupported(byId[ch.sourceId], ch)) ch.id else null
-                        }.toSet()
-                    }
-                }
+                // Computed in the view model once per settled channel-list change — this used to
+                // be a LaunchedEffect keyed on `rows`, which meant a 20k regex scan re-fired on
+                // every guide-sync chunk and starved the UI mid-import (see the 2026-10-12
+                // slow-and-crash report). HomeScreen just reads the result.
+                val catchUpChannelIds by viewModel.catchupChannelIds.collectAsStateWithLifecycle()
                 GuidePreview(
                     rowState = highlightedRowState,
                     programmeState = highlightedProgrammeState,

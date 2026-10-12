@@ -49,6 +49,19 @@ object CatchupResolver {
     }
 
     /**
+     * The channels [isSupported] can actually build a timeshift URL for — the guide's badge set.
+     *
+     * Extracted so the caller can key the scan to *channel* changes: the hydrated row list
+     * re-emits on every guide-sync chunk, and re-scanning a 20k list per emission (regex per
+     * channel) starved the UI thread on the 2 GB boxes. Capability depends only on the channel
+     * row and its source, never on programmes.
+     */
+    fun capableChannelIds(sourcesById: Map<Long, Source>, channels: List<Channel>): Set<Long> =
+        channels.mapNotNull { channel ->
+            if (isSupported(sourcesById[channel.sourceId], channel)) channel.id else null
+        }.toSet()
+
+    /**
      * Whether this source's provider does catch-up for its channels at the portal level — an
      * Xtream portal, or one reached through the portal's playlist endpoint. Many such providers
      * never set the per-channel archive flag in their M3U, yet every channel supports catch-up,
