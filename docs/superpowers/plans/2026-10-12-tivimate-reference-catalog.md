@@ -73,7 +73,7 @@ replaced in HEAD: `TivimateParityPalette` (OpenTvPalette.kt 434-462) now carries
 neutral capture set — background `#1C232C`, surface/cell `#242B33`, subtle (airing)
 `#2C323A`, cyan accents `#00BCD4`, cursor ring `#00BCD4` family, `recording #FF5252`.
 The on-screencap colors therefore must derive from chrome alpha layering, not from the
-base values — see §7 for the runtime finding.
+base values — see §8 for the runtime finding.
 
 ## 3. Guide layout — the hard limit (complete)
 
@@ -171,7 +171,59 @@ architecture already implements the motion model:
    ever shows churn.
    All three are small Compose/Robolectric tests; none block the catch-up work.
 
-## 6. Catch-up audit (complete — the feature is already built)
+## 6. Sub-menu comparison (2026-10-12 remote pass, adb)
+
+Captures: `_work\tvm_step2.png` (programme context menu), `tvm_settings.png` (player
+OSD), `tvm_settings_try2.png` (player actions strip), `tvm_settings_root.png`
+("Channels sorting" panel over All-Channels), `otv_mainmenu.png` (OpenTV main menu +
+guide), `drawer geometry` from `tvshots\ui_1.xml`.
+
+### TiviMate menu references (measured where possible)
+
+| Surface | Geometry / structure |
+|---|---|
+| Side drawer (ui_1.xml) | 440 px (220 dp) wide, rows **80 px (40 dp)** pitch with 16 px (8 dp) gaps; icons 40 px (20 dp) at 12 px inset; logo header zone ~96 px (48 dp) tall; rows start y=260 (130 dp from top) |
+| Programme context menu (right panel) | ~475 px (~238 dp) wide, right-anchored, scrimmed; Search field + Settings row (gear); sections in cyan (programme name, then channel name) with dividers; rows ~72 px (36 dp) pitch: Open in external player · Record · Custom recording · Add to My list · Program description · Add to Favorites · Block channel · Hide channel |
+| Player OSD | dimmed video; programme info bottom-left; transport circles ~96 px (48 dp); cyan seek bar with thumb; LIVE pill + red REC dot + circle at right; "TV guide / History" tiles + channel shortcut tiles with per-tile progress hairlines at the bottom |
+| Player actions strip | icon + label single row: Search · Movies · Shows · Recordings · Multiview · audio Off · subtitle Off · 0 ms · Off · Normal · Channels list · Add Favorites |
+| "Channels sorting" panel | right-aligned ~720 px (360 dp) wide; radio rows 96 px (48 dp) pitch (Default / By order in playlist / By name / By date added / ), toggles (Show favourites, Group channels by playlists in "All" category), destructive actions below |
+
+### OpenTV today (otv_mainmenu.png)
+
+- Global nav: 380 px (190 dp) panel, text rows with icons, ~76 px (38+dp) rows; Live TV
+  selected with a cyan outline box; guide + detail pane as per parity work.
+- Guide/now-line dot, "LIVE" badge next to the playing title, star + "US GENERAL" top-right:
+  arrangement matches the TiviMate detail panel (title/times/progress/description right of
+  preview, category top-right).
+
+### Deltas found (menu level)
+
+1. **Nav drawer scale is off:** TiviMate rows are fixed 40 dp with 20 dp icons and
+   medium-weight labels; OpenTV's nav rows are fatter (label-heavy, headline-sized) and its
+   panel is 190 dp vs 220 dp. One `RailEntry` restyle + width change.
+2. **Badge language differs:** OpenTV paints LIVE/NEW as coloured pill chips on cells and
+   next to the playing title; TiviMate uses small superscript text ("New"/"Live") after the
+   title, uncoloured pills only for LIVE on the player OSD. Parity work: drop pills on
+   programme *cells* to superscript style (player OSD can keep pills).
+3. **Programme context menu exists in TiviMate but OpenTV has no equivalent yet** (record/
+   custom-record, My list, external player, block/hide channel, add-to-favourites all in one
+   panel). This is the biggest single missing submenu.
+4. **Player actions strip** (TiviMate's audio/subtitle/latency/multiview row) has no
+   OpenTV equivalent row yet; OpenTV's OSD covers seek/transport/shortcuts only.
+5. Both render the now-line as a cyan hairline with a dot at the ruler — already matched.
+6. Environment note: the box's front-camera app kept raising "Driveway Motion" system
+   notifications over the captures — repeated noise in screenshots, no measurement impact.
+
+### Still needed for a complete submenu comparison (device session)
+
+- TiviMate Settings root (couldn't be driven blind — the menu's focus position after open
+  is ambiguous; drive it with the viewer's own focus or a uiautomator-assisted loop).
+- OpenTV's equivalent screens: its programme long-OK menu (if any), its Settings hub +
+  the sub-screens (Providers / TV guide / Display & playback / Channels / Parental), then a
+  side-by-side delta table like §8's.
+
+
+## 7. Catch-up audit (complete — the feature is already built)
 
 **State: implemented end-to-end, test suite green** (`Catchup*` + `Archive*`
 filtered run, 2026-10-12: BUILD SUCCESSFUL). Inventory of what exists:
@@ -205,7 +257,7 @@ if a setting row is wanted to swap Down from zap to seek, it is one enum + one h
    no-layout-on-focus-move) — small Robolectric pins, unrelated to catch-up correctness.
 3. Optional: a "Down seeks" playback option row, per the reference above.
 
-## 7. Remote runtime pass (2026-10-12, adb to the Onn box 192.168.1.128)
+## 8. Remote runtime pass (2026-10-12, adb to the Onn box 192.168.1.128)
 
 The box was reachable over the network, so the render could be measured today.
 
