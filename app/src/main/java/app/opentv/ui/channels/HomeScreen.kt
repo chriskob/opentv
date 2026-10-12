@@ -1076,7 +1076,7 @@ fun HomeScreen(
             previewController.play(
                 PlayerController.Request(
                     url = url,
-                    title = "${channel.shownName} â€” ${programme.title}",
+                    title = "${channel.shownName} — ${programme.title}",
                     userAgent = userAgent,
                     isLive = false,
                 ),
@@ -1813,7 +1813,7 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "${formatTime(programme.startUtcMillis)}â€“${formatTime(programme.endUtcMillis)}   ${channel.shownName}",
+                    "${formatTime(programme.startUtcMillis)} – ${formatTime(programme.endUtcMillis)}   ${channel.shownName}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -2316,7 +2316,7 @@ private fun RailEntry(
         if (expanded != null) {
             Spacer(Modifier.width(8.dp))
             Text(
-                text = if (expanded) "â–¾" else "â–¸",
+                text = if (expanded) "▾" else "▸",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
