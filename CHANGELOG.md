@@ -17,6 +17,12 @@
 - **Broken characters in the interface fixed.** The category-rail chevrons rendered as "â–¾" and
   the now-playing time range as "11:00 AMâ€“12:00 PM" - string literals that had been saved once
   with their bytes re-encoded. They are real glyphs again.
+- **The guide cursor is the reference's filled plate again.** It had been drawn as a dark cell
+  with a coloured ring, which on the TV read as "the cursor is just a coloured border": the
+  palette's focus fill had been set to the same dark as an ordinary cell, so the outline was the
+  only visible difference. The focused cell is now the light plate with dark ink the captures
+  show (measured #DFE1E4 on #111318), with no ring, and a test pins the plate so it cannot
+  quietly regress to a border again.
 - **A `perf` build for slow boxes.** `.\gradlew.bat :app:assemblePerf` builds a release-speed
   variant (R8, non-debuggable) that installs into the same slot and keeps the debug app's data -
   measured on an Onn 4K: plain debug scrubs the guide at a 500 ms median frame, perf is usable.

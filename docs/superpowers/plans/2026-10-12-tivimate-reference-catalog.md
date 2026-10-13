@@ -372,6 +372,16 @@ Root causes found, all fixed tonight unless marked otherwise:
    RemotePairingScreen also contain the same mojibake in the maintainer's modified files - not
    touched here, worth a pass.
 
+4. **The guide cursor read as "just a coloured border"** (maintainer, at the TV, same evening).
+   Root: TVIMATE_PARITY's `cellFocus` had been set to `#242B33` - the same fill as an ordinary
+   programme cell - so the only thing distinguishing the cursor was the 1.5dp `outline` ring.
+   The reference's cursor is a filled light plate (`#DFE1E4`) with dark ink, no ring (measured
+   in the Onn capture; visible in `_work/tvshots/tvm_open.png`). Fixed (e415913): `cellFocus`
+   is the plate, `onCellFocus` the dark ink, the focused-cell border dropped, and
+   `GuidePaletteContrastTest.theCursor_isAFilledLightPlate_notABorderOnADarkCell` pins it.
+   Caveat: if the guide ever renders in Slate (the unresolved palette-flip in §8) the cursor
+   would look like a ring again - that bug is still open.
+
 **Verified on the Onn box (perf build):** 130-event hammer (down/up/scrub) - process alive, zero
 new FATALs, pipeline logs healthy (full walk 1.5s, parks=0), no pinned worker when idle.
 Remaining honest gaps: per-step main-thread cost is still ~150ms on the box during fast hammering
