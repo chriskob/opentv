@@ -457,8 +457,12 @@ private val TivimateParityPalette = OpenTvPalette(
     warning = Color(0xFFFFC94D),
     info = Color(0xFF00BCD4),
     onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
+    // The cursor is the reference's filled plate: a light cell carrying dark ink (#DFE1E4 on
+    // #111318, measured from the Onn capture). It is a fill, not a ring — a dark cellFocus plus
+    // a border is the "cursor is just a coloured border" regression pinned against in
+    // GuidePaletteContrastTest.
+    cellFocus = Color(0xFFDFE1E4),
+    onCellFocus = Color(0xFF111318),
 )
 
 /** The resolved palette for this selection. */

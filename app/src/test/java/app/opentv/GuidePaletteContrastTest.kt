@@ -62,4 +62,15 @@ class GuidePaletteContrastTest {
         // point of the theme, and Slate stays untouched for everyone else.
         assertThat(AppPalette.TVIMATE_PARITY).isNotEqualTo(AppPalette.SLATE_GUIDE)
     }
+
+    @Test
+    fun theCursor_isAFilledLightPlate_notABorderOnADarkCell() {
+        // The reference draws the cursor as a solid light plate (the #DFE1E4 family) carrying
+        // dark ink - a filled cell, not a ring around a dark one. Regressing this to a
+        // dark fill plus a coloured border is exactly the "the cursor is just a coloured
+        // border" report from the TV on 2026-10-12, so the character is pinned here.
+        val p = AppPalette.TVIMATE_PARITY.palette()
+        assertThat(luminance(p.cellFocus)).isGreaterThan(luminance(p.chromeCell) + 0.3)
+        assertThat(luminance(p.onCellFocus)).isLessThan(0.2)
+    }
 }

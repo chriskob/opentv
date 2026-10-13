@@ -1817,7 +1817,8 @@ private fun GuideRow(
                             guideCellShape(),
                         )
                         .then(
-                            if (emptyHighlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, guideCellShape())
+                            // The cursor is the plate itself — no ring (see TVIMATE_PARITY.cellFocus).
+                            if (emptyHighlighted) Modifier
                             else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), guideCellShape()),
                         )
                         .onFocusChanged {
@@ -2171,7 +2172,7 @@ private fun ProgrammeBlock(
                 guideCellShape(),
             )
             .then(
-                if (highlighted) Modifier.border(1.5.dp, AppTheme.palette.outline, guideCellShape())
+                if (highlighted) Modifier
                 else Modifier.border(0.5.dp, AppTheme.palette.chromeCellBorder.copy(alpha = 0.6f), guideCellShape())
             )
             .onPreviewKeyEvent { e ->
