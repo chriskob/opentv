@@ -1,7 +1,47 @@
 # Changelog
 
-## Unreleased
+## 0.16.24
 
+- **The guide's LIVE and NEW chips are the small annotations they were originally.** The
+  parity pass that moved the cell's type onto metrics set the badge font to 12sp - the
+  programme title's own size - so every live or new show drew as a loud pill crowding the
+  cell. The chips now render at the 8sp the badge's own documentation describes, the size
+  they were hard-coded to before all of it; the same applies to the tag beside the
+  preview's programme title.
+- **Back from the player lands on a settled guide.** The restore used to run from a
+  coroutine about half a second after the picture started shrinking: the guide painted
+  wherever it had been parked, jumped to "now" underneath the shrinking video, and if the
+  playing channel's category had to load, the rows pipeline held the fresh answer back for
+  the full settle window anyway - every deliberate switch paid a third of a second of dead
+  remote. The restore now happens synchronously with the press, the timeline is already at
+  "now" at first paint, and the settle window only coalesces Room's batch storm; the first
+  list after a category change goes straight through. And the cold start can never open on
+  "Nothing in this view": resuming straight into the player means the guide has not been
+  built yet when Back composes it, and the channel-count probe answers before the row
+  pipeline does - so an empty list that means *not yet* used to render as *nothing
+  matches*. Until the pipeline answers for the first time the guide now says so honestly
+  and shows its loading bar.
+- **The guide cursor shows - every time - and returns to what is playing.** Backing out of
+  fullscreen had two sixty-line copies of the restore logic, one for the Back key and one
+  for the player's own back gesture, already drifted apart (one handled empty rows, the
+  other reset the rail). There is now one `exitFullScreenToGuide`. The focus handover was a
+  single `requestFocus` attempt: if the cursor's cell had not been composed yet there was
+  no retry, and the guide simply sat without a cursor; it now retries within a bounded
+  window until the handover lands. And the grid no longer adopts a cursor key that matches
+  no drawn row - the invisible-cursor report was always that. When the playing channel's
+  category is still loading it parks the target and centres onto it the frame those rows
+  settle, falling back to the first drawn row otherwise, so there is never no cursor and
+  never one on the wrong shelf. And a cursor centred while its row's guide data is still in
+  flight - the cold-start order - no longer rides the disposal of that placeholder cell to
+  whatever neighbour happens to compose next: the centre leaves a claim on its row, and the
+  grid re-drives the cursor back the moment the swap lands, as long as the viewer has not
+  moved it themselves. The adoption decision and the settle window are pure and
+  tested (`GuideInstantGuideOpenTest`). The handover now also verifies its own success: a
+  bare `requestFocus` reports success even when the cursor's cell had not been composed
+  yet, and Compose's initial focus pass then dropped the cursor on whatever neighbouring
+  row was composed first - the "cursor opens on the wrong channel" report. The grid waits
+  for the row's real focus adoption to be witnessed before declaring the handover done,
+  and re-parks the target if the proof never arrives.
 - **Holding a d-pad key no longer kills the app.** With the guide open, a fast scroll or a held
   arrow could crash OpenTV outright: Compose's focus system was still rebuilding from the previous
   step when the next repeat key arrived, and its guard threw and took the process down. Key repeats
