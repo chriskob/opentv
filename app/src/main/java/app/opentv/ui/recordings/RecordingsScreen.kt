@@ -142,7 +142,8 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
     // Flag scheduled bookings that overlap *on the same provider* — that's the real single-
     // connection clash. Overlaps spread across two providers (the multi-provider fallback did its
     // job) both record fine and aren't flagged.
-    val clashingIds = buildSet {
+    val scheduledBySeriesRule = remember(scheduled) { scheduled.groupBy { it.seriesRuleId } }
+    val clashingIds = remember(scheduled) { buildSet {
         for (i in scheduled.indices) for (j in i + 1 until scheduled.size) {
             val a = scheduled[i]; val b = scheduled[j]
             if (a.sourceId == b.sourceId &&
@@ -151,6 +152,7 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
                 add(a.id); add(b.id)
             }
         }
+    }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp)) {
@@ -181,7 +183,7 @@ fun RecordingsScreen(onPlay: (Recording) -> Unit) {
                 if (seriesRules.isNotEmpty()) {
                     item(key = "series-header") { SectionHeader(stringResource(R.string.rec_section_series_links)) }
                     items(seriesRules, key = { "series-${it.id}" }) { rule ->
-                        val ruleEpisodes = scheduled.filter { it.seriesRuleId == rule.id }
+                        val ruleEpisodes = scheduledBySeriesRule[rule.id].orEmpty()
                         SeriesRuleRow(
                             rule = rule,
                             upcomingCount = ruleEpisodes.size,

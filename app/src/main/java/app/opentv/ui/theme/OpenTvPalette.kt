@@ -65,6 +65,13 @@ class OpenTvPalette internal constructor(
     val onCursor: Color,
     val cellFocus: Color,
     val onCellFocus: Color,
+    /**
+     * The guide header's hairline. The reference's own screen layout declares a 1dip `#20ffffff`
+     * rule at the clock's bottom edge (`0x7f0b0140`), but ships it `android:visibility="gone"`, and
+     * the device capture shows no line there - so the guide leaves it off unless a caller asks for
+     * it. The colour lives here so that asking for it is one flag, not a new literal.
+     */
+    val headerDivider: Color = Color(0x20FFFFFF),
 ) {
     // ---- Surface ramp -----------------------------------------------------------------------
     val surfaceContainerLowest: Color get() = background
@@ -435,8 +442,8 @@ private val TivimateParityPalette = OpenTvPalette(
     background = Color(0xFF1C232C),
     surface = Color(0xFF242B33),
     subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFEEEEEE),
-    onSurfaceVariant = Color(0xFFB6C5D2),
+    onSurface = Color(0xFFFFFFFF),
+    onSurfaceVariant = Color(0xA0FFFFFF),
     outline = Color(0xFF4A6E78),
     borderHover = Color(0xFF5A728C),
     focusBorder = Color(0xFF00BCD4),

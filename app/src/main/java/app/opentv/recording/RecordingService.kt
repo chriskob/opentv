@@ -109,9 +109,11 @@ class RecordingService : Service() {
             // during playback). A single read-to-EOF therefore captures only ~30s — the exact bug. So
             // when the connection drops we reopen it and keep appending to the same file, until the
             // scheduled end, a user stop, or the stream is genuinely gone (several empty reconnects).
-            val scheduledEnd = recording.scheduledEndMillis
+            // A "record now" with no programme has no end, so cap it to stop runaway NAS/disk use.
+            val scheduledEnd = recording.scheduledEndMillis.takeIf { it > 0 }
+                ?: (System.currentTimeMillis() + MAX_OPEN_ENDED_MILLIS)
             while (kotlin.coroutines.coroutineContext[Job]?.isActive == true) {
-                if (scheduledEnd > 0 && System.currentTimeMillis() >= scheduledEnd) break
+                if (System.currentTimeMillis() >= scheduledEnd) break
 
                 val request = Request.Builder()
                     .url(recording.streamUrl)
@@ -128,10 +130,14 @@ class RecordingService : Service() {
                         while (kotlin.coroutines.coroutineContext[Job]?.isActive == true) {
                             val read = input.read(buffer)
                             if (read < 0) break
-                            sink.output.write(buffer, 0, read)
+                            try {
+                                sink.output.write(buffer, 0, read)
+                            } catch (t: java.io.IOException) {
+                                throw SinkWriteFailure(t)
+                            }
                             total += read
                             leg += read
-                            if (scheduledEnd > 0 && System.currentTimeMillis() >= scheduledEnd) break
+                            if (System.currentTimeMillis() >= scheduledEnd) break
                             if (total - lastReport >= SIZE_REPORT_BYTES) {
                                 lastReport = total
                                 repo.setSize(id, total)
@@ -184,6 +190,9 @@ class RecordingService : Service() {
             finish(id)
         }
     }
+
+    /** Storage write failed (disk full, NAS dropped). Not a network drop, so never reconnected. */
+    private class SinkWriteFailure(cause: Throwable) : RuntimeException(cause.message, cause)
 
     private fun stopCapture(id: Long) {
         val capture = captures[id] ?: return
@@ -301,6 +310,7 @@ class RecordingService : Service() {
         // Providers close a live .ts socket every ~30s; reconnect and keep appending. Give up only
         // after this many consecutive reconnects deliver nothing (the stream is genuinely gone).
         private const val MAX_DEAD_RECONNECTS = 5
+        private const val MAX_OPEN_ENDED_MILLIS = 6L * 60 * 60 * 1000
         private const val RECONNECT_BACKOFF_MILLIS = 1500L
 
         private const val ACTION_START = "app.opentv.recording.START"

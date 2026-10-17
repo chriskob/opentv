@@ -222,7 +222,7 @@ fun MoviesScreen(
                 selectedProvider = selectedSource,
                 onSelectProviderAll = { browseCategory = null; viewModel.selectVodSource(null) },
                 onSelectProvider = { id -> browseCategory = null; viewModel.selectVodSource(id) },
-                categories = categories.map { it.id to it.name },
+                categories = remember(categories) { categories.map { it.id to it.name } },
                 categoryCounts = categoryCounts,
                 selectedCategory = browseCategory,
                 onSelectCategory = { id -> browseCategory = id; viewModel.selectMovieCategory(id) },
@@ -343,7 +343,7 @@ fun SeriesScreen(
                 selectedProvider = selectedSource,
                 onSelectProviderAll = { browseCategory = null; viewModel.selectVodSource(null) },
                 onSelectProvider = { id -> browseCategory = null; viewModel.selectVodSource(id) },
-                categories = categories.map { it.id to it.name },
+                categories = remember(categories) { categories.map { it.id to it.name } },
                 categoryCounts = categoryCounts,
                 selectedCategory = browseCategory,
                 onSelectCategory = { id -> browseCategory = id; viewModel.selectSeriesCategory(id) },
@@ -777,7 +777,9 @@ internal fun PosterCard(
     cardWidth: Dp = POSTER_WIDTH,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "posterScale")
+    // Binary, like the rest of OpenTV's focus treatment: a per-card scale animator
+    // recomposes on every frame of its tween — too much work for a VOD shelf scroll.
+    val scale = if (focused) 1.06f else 1f
     val returnFocus = remember { FocusRequester() }
     LaunchedEffect(requestFocus) {
         if (requestFocus) runCatching { returnFocus.requestFocus() }

@@ -247,7 +247,7 @@ private fun SearchPane(
                 results.isEmpty() -> Hint(stringResource(R.string.channels_manager_no_match, query))
                 else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(results, key = { it.key }) { row ->
-                        val hidden = row.variants.all { it.hidden }
+                        val hidden = remember(row) { row.variants.all { it.hidden } }
                         ManagerRow(
                             row = row,
                             hidden = hidden,

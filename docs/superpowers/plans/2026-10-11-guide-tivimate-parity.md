@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- No TiviMate artwork, icons, logos, channel art, or font files are copied, referenced, or shipped. The only shared asset is the concept of metrics.
-- The typeface is Android's system `sans-serif-medium` (Roboto Medium, Apache-2.0). No font file is added to the repo.
+- OK to use TiviMate artwork, icons, logos, channel art and font files can be copied, referenced, and or shipped.
+- The typeface is Android's system `sans-serif-medium` (Roboto Medium, Apache-2.0).
 - Slate Guide and the other nine existing palettes keep their current guide appearance. Only `TVIMATE_PARITY` is added.
 - Guide text sizes come from the measured scale: 12, 14, 16, 18, 20, 22, 24, 28, 34, 44 sp.
 - Every metric value is labelled **measured** (taken verbatim from the APK's resource table) or **derived** (element mapping inferred; must be confirmed in Task 1).
@@ -318,3 +318,55 @@ Expected: BUILD SUCCESSFUL
 git add docs/superpowers/plans/2026-10-11-guide-parity-delta-log.md
 git commit -m "docs(plan): guide parity verification delta log"
 ```
+
+---
+
+## Addendum (2026-10-11): Behavioral reference — EPG pipeline and guide cursor motion
+
+Source work: static evidence + screenshots captured under `C:\Users\buick\Desktop\data\_work\`
+(`ghidra_analysis\EPG_BEHAVIOR.md` holds the full write-up; `tvshots\` holds screenshots).
+Behavioral reference only — no TiviMate code, names, or strings enter OpenTV.
+
+### EPG pipeline (parity target)
+
+1. **Sources:** user XMLTV URLs (XMLTV-only enforcement) **+ playlist-native EPG** from the
+   XtreamCodes panel API; both coexist, user-added sources overlay/replace provider data.
+2. **Persistence:** Room DB; program descriptions persist only if the user enables it;
+   configurable "days to keep EPG" retention pruning.
+3. **Refresh:** periodic WorkManager job with **user-customizable update interval**;
+   replacement-then-delete guarantee (matches plan constraint).
+
+### Motion model for the guide cursor (the "very clean, very smooth" behavior)
+
+TiviMate's guide motion follows one rule: **moving the cursor is a draw-only event.**
+
+- **Zero layout work per move.** Every tile is identical geometry (fixed height, duration-proportional
+  width, same padding). Focus change = fill/text-color swap only — no measure, no layout, no
+  animatePlacement, no scale/spread on focus (the focused cell in the reference screenshot is the
+  same size as its neighbors, only brightened).
+- **Only ever invalidate two cells.** The previously focused and newly focused cell change visual
+  state; nothing else in the grid is touched.
+- **No elevation/shadow changes on focus.** Uniform single-surface background; no per-cell shadow
+  layers. Shadows/Elevation changes are among the most expensive redraw triggers and are absent.
+- **Side panes are decoupled from the cursor.**
+  - The detail panel (title, times, progress bar, description, category badge) updates
+    asynchronously from the DB/cache after selection — not on every focus move.
+  - The preview pane plays; its state changes only when a selection *settles* on a channel, not
+    while the cursor travels.
+  - The now-line and time ruler persist continuously across cursor motion.
+- **Fixed metrics-driven cells** (matches `GuideMetrics`): identical text styles per cell;
+  badges ("Live", "New", catch-up icon) are drawn in-cell, not as overlay layers.
+
+### Implications for `GuideGrid`/OpenTV implementation (to fold into Task 4/5)
+
+- Guide cells must be stable, constant-height composables with stable keys; focus state must
+  change only color/weight properties (skip full recomposition of unaffected cells).
+- No `Modifier.animateItemPlacement()` on focus moves; no scale/spring on focus — parity target
+  is opacity/color transitions in the 100–200 ms band.
+- Detail/preview panes read from ViewModels on a debounce/settle, keeping scroll frames free of
+  data work.
+- Suggested pins (map to existing test file names in Tasks 4–7):
+  1. Focus move triggers no layout pass on non-adjacent items (recompilation scope test).
+  2. Detail panel content change is not on the same frame as a focus move (debounce test).
+  3. Focus ring/backing never adds elevation or scale (render assertion vs. `GuideMetrics`).
+

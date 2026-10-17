@@ -5,11 +5,10 @@
  */
 package app.opentv.ui.channels
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -26,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import app.opentv.ui.theme.AppTheme
 import app.opentv.ui.components.KeyRepeatGate
+import app.opentv.ui.theme.GuideProgrammeFontFamily
 import app.opentv.ui.theme.LocalGuideChromeAlpha
 import app.opentv.ui.theme.LocalGuideMetrics
 import app.opentv.ui.theme.widthFor
@@ -87,7 +87,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -269,6 +271,57 @@ fun GuideGrid(
             backScrollActive = backScrollActive,
         )
     }
+}
+
+/**
+ * Requests row focus until the focus adoption lands, or the bound hits.
+ *
+ * A vertical step scrolls first and focuses second: the target row is only composed once the
+ * jump has landed, so a request issued beforehand can only miss — and [FocusRequester] reports
+ * even a vacuous request (nothing attached yet) as success, so callers cannot tell. The arrival
+ * check is the adoption the row's `onFocus` performs, which is also what clears the pending
+ * target and lets the next press through. Bounded and cancellable so a row that never composes
+ * (or a step a newer press already superseded) cannot hold navigation hostage.
+ */
+internal suspend fun awaitRowFocus(
+    requestFocus: () -> Unit,
+    isFocused: () -> Boolean,
+    maxAttempts: Int = 10,
+    delayMillis: Long = 30L,
+    delay: suspend (Long) -> Unit = { ms -> kotlinx.coroutines.delay(ms) },
+    isCancelled: () -> Boolean = { false },
+): Boolean {
+    repeat(maxAttempts) {
+        if (isCancelled()) return false
+        runCatching { requestFocus() }
+        if (isFocused()) return true
+        delay(delayMillis)
+    }
+    return isFocused()
+}
+
+/**
+ * Which row the guide must draw its cursor on after the drawn list changed.
+ *
+ * A cursor key that matches no drawn row is a cursor the viewer cannot see - the "no cursor
+ * after Back" report. Returns null when nothing should move: the current cursor is drawn and
+ * no restore is pending. Otherwise the key to adopt: the parked restore target first (Back
+ * asked for it and its rows have only just landed), then the current cursor when it survived,
+ * then the playing channel, then the highlight, then the first row.
+ */
+internal fun guideCursorAdoption(
+    drawnKeys: List<Any>,
+    activeKey: Any?,
+    pendingKey: Any?,
+    playingKey: Any?,
+    selectedKey: Any?,
+): Any? {
+    if (drawnKeys.isEmpty()) return null
+    if (pendingKey != null && pendingKey in drawnKeys) return pendingKey
+    if (activeKey != null && activeKey in drawnKeys) return null
+    if (playingKey != null && playingKey in drawnKeys) return playingKey
+    if (selectedKey != null && selectedKey in drawnKeys) return selectedKey
+    return drawnKeys.first()
 }
 
 /**
@@ -476,6 +529,33 @@ internal fun GuideGridContent(
     // target block actually changed.
     val activeFocusedKeyState = remember { mutableStateOf<Any?>(playingKey ?: rows.firstOrNull()?.key) }
     var activeFocusedKey by activeFocusedKeyState
+    // Witness of the last REAL focus adoption inside the grid: a row's onFocus fires only on a
+    // genuine focus event. focusAndCenterRow verifies the handover with this instead of trusting
+    // requestFocus() - a vacuous request reports success without moving focus (see awaitRowFocus),
+    // and Compose's initial pass then drops the cursor on the first composed row: the "cursor
+    // opens on the wrong channel after Back" report.
+    var adoptedRowKey by remember { mutableStateOf<Any?>(null) }
+    // A restore target whose rows have not landed yet (a Back while the playing channel's
+    // category was still loading): parked here; the rows effect below centres onto it the frame
+    // it appears, so the guide cannot strand the viewer on the wrong category or hide the cursor.
+    var pendingRestoreKey by remember { mutableStateOf<Any?>(null) }
+    // The cursor was centred while its row had no programmes yet (the cold-start order: bare
+    // rows are emitted first, the EPG behind them), so it could only sit on the row's fallback
+    // cell. When the programmes arrive that cell is disposed, Compose throws focus to whatever
+    // neighbour is composed next, and the adoption gate - armed with no programme to wait for -
+    // cannot refuse it: the "sometimes the cursor is on the wrong channel after Back" report.
+    // A centre onto a bare row therefore leaves a claim behind, and the rows effect re-centres
+    // onto the row the moment it has a real programme block to stand on.
+    var pendingHydrationCenter by remember { mutableStateOf<Any?>(null) }
+    // The navigation generation the claim was taken at. While it still matches, nothing the
+    // user did (d-pad, rail, scrub - every one of them steps it) has moved the cursor since,
+    // so the rows effect below can tell "the hydration swap stole the focus back" from "the
+    // viewer has started browsing" and only reclaim for the former.
+    var pendingHydrationGen by remember { mutableLongStateOf(0L) }
+    // Which rows list the adoption decision last considered. The effect above also fires on
+    // cursor changes now, and the decision walks the whole list - per d-pad step on a 25k
+    // category is exactly the cost this project has already learned not to pay twice.
+    var lastAdoptedRows by remember { mutableStateOf<Any?>(null) }
     val targetProgKeyState = remember { mutableStateOf<Long?>(null) }
     var targetProgKey by targetProgKeyState
     var pendingTargetProgId by remember { mutableStateOf<Long?>(null) }
@@ -619,6 +699,8 @@ internal fun GuideGridContent(
                 ?: matchedRow.now
                 ?: matchedRow.programmes.firstOrNull()
             pendingTargetProgId = liveProg?.id
+            pendingHydrationCenter = if (liveProg == null) k else null
+            pendingHydrationGen = generation
             activeFocusedIndex = index
             activeFocusedKey = k
             targetProgKey = liveProg?.id
@@ -656,11 +738,29 @@ internal fun GuideGridContent(
                 // While the rail is previewing, focus must stay in the rail: centering is purely
                 // visual. Reclaiming row focus here would collapse the rail (onFocusRow closes it).
                 if (!previewTopRow) {
-                    val targetReq = rowFocusRequesters[k] ?: activeCellFocusRequester
-                    for (attempt in 0..3) {
-                        val res = runCatching { targetReq.requestFocus() }
-                        if (res.isSuccess) break
-                        delay(30)
+                    // Verify the handover instead of trusting the call: a request that lands on
+                    // a node which is not composed yet still reports success (see awaitRowFocus),
+                    // and Compose's own initial focus pass then settles on the nearest composed
+                    // row - the cursor opening on a channel that is not the one playing. The
+                    // witness is the row's own onFocus adoption (adoptedRowKey), which only a
+                    // genuine focus event writes. The requester is re-resolved each attempt: the
+                    // row registers its own as it composes.
+                    val adopted = awaitRowFocus(
+                        requestFocus = {
+                            (rowFocusRequesters[k] ?: activeCellFocusRequester).requestFocus()
+                        },
+                        isFocused = { adoptedRowKey == k },
+                        // Generous on a busy box: a restore lands while the list is still
+                        // settling and hydration is recomposing rows, so the target cell can
+                        // need more than the first frames to attach.
+                        maxAttempts = 20,
+                        isCancelled = { generation != navigationGeneration },
+                    )
+                    if (!adopted && generation == navigationGeneration) {
+                        // The target still has not taken the cursor. Park it: the next settled
+                        // rows emission re-drives the centre through the adoption rule, rather
+                        // than letting a wrongly-focused neighbour keep the cursor.
+                        pendingRestoreKey = k
                     }
                 }
                 if (generation == navigationGeneration) scroll.scrollTo(targetPx)
@@ -703,7 +803,7 @@ internal fun GuideGridContent(
             if (previewTopRow) {
                 if (rows.isNotEmpty()) {
                     // Anchor on the playing channel when the previewed category contains it, else
-                    // the first row â€” never a key that matches no drawn row, or the cursor vanishes.
+                    // the first row - never a key that matches no drawn row, or the cursor vanishes.
                     val k = rows.firstOrNull { it.key == (playingKey ?: selectedKeyState.value) }?.key
                         ?: rows.first().key
                     val index = rows.indexOfFirst { it.key == k }.coerceAtLeast(0)
@@ -718,9 +818,54 @@ internal fun GuideGridContent(
                     activeFocusedKey = k
                 }
             } else {
-                focusAndCenterRow(playingKey ?: selectedKeyState.value, false)
+                val want = playingKey ?: selectedKeyState.value
+                if (want != null && rows.any { it.key == want }) {
+                    pendingRestoreKey = null
+                    focusAndCenterRow(want, false)
+                } else {
+                    // Back landed while the playing channel's category was still loading. Centring
+                    // on row 0 now would draw the cursor on the wrong shelf; adopting the missing
+                    // key would draw it nowhere at all. Park the target instead and let the rows
+                    // effect re-centre the frame those rows arrive.
+                    pendingRestoreKey = want ?: pendingRestoreKey
+                }
             }
         }
+    }
+
+    // The cursor must always sit on a row that is actually drawn. A key adopted from a list that
+    // has since been replaced - a category swap under an in-flight restore, a refresh that
+    // dropped the channel - matches no row and the guide reads as "no cursor at all". The
+    // decision is pure (guideCursorAdoption) so it is testable without a composition.
+    LaunchedEffect(rows, previewTopRow, activeFocusedKey) {
+        if (previewTopRow) return@LaunchedEffect
+        // Hydration theft reclaim: the cursor was centred onto a bare row, the EPG swap then
+        // disposed its fallback cell and focus fell to a neighbour. Keyed on the cursor itself
+        // as well as the rows because the disposal-driven reassignment can land after the last
+        // emission of the swap that caused it - waiting for the next rows change would wait
+        // forever. As long as nothing the user did has stepped the navigation generation since
+        // the centre (d-pad, rail, scrub all step it), the cursor belongs back on the claim.
+        val claim = pendingHydrationCenter
+        if (claim != null && navigationGeneration == pendingHydrationGen && activeFocusedKey != claim) {
+            if (rows.any { it.key == claim }) {
+                focusAndCenterRow(claim, false)
+                return@LaunchedEffect
+            }
+            pendingHydrationCenter = null
+        }
+        // The adoption scan below is O(rows); it must not run per d-pad step (this effect now
+        // also fires on cursor moves), so it is gated to run once per rows identity.
+        if (lastAdoptedRows === rows) return@LaunchedEffect
+        lastAdoptedRows = rows
+        val adopt = guideCursorAdoption(
+            drawnKeys = rows.map { it.key },
+            activeKey = activeFocusedKey,
+            pendingKey = pendingRestoreKey,
+            playingKey = playingKey,
+            selectedKey = selectedKeyState.value,
+        ) ?: return@LaunchedEffect
+        if (adopt == pendingRestoreKey) pendingRestoreKey = null
+        focusAndCenterRow(adopt, false)
     }
 
     // Report timeline displacement so HomeScreen's Back handler knows the user is browsing
@@ -786,8 +931,6 @@ internal fun GuideGridContent(
             pendingTargetProgId = getVerticalTargetProgram(targetProgrammes, temporalAnchorMillis)?.id
             isNavigatingVertically = true
 
-            val targetRequester = rowFocusRequesters[targetRow.key]
-
             val visibleItems = listState.layoutInfo.visibleItemsInfo
             val firstVisible = listState.firstVisibleItemIndex
             val lastVisible = visibleItems.lastOrNull()?.index ?: (firstVisible + 5)
@@ -796,7 +939,12 @@ internal fun GuideGridContent(
             // Only scroll LazyColumn when the target item is at or beyond viewport edges
             val targetScrollIndex = when {
                 targetIndex == 0 -> 0
-                targetIndex >= rows.size - 1 -> (rows.size - visibleCount).coerceAtLeast(0)
+                // Scroll straight at the last row and let the list clamp to its end: the
+                // visible-count arithmetic undershot by a row (spacing/padding), which left the
+                // focused row just off-screen — no cursor, and the bring-into-view glide fighting
+                // back on every press read as scrolling on its own. Clamping lands the last row
+                // fully visible at the viewport's end regardless.
+                targetIndex >= rows.size - 1 -> (rows.size - 1).coerceAtLeast(0)
                 targetIndex <= firstVisible -> (targetIndex - 1).coerceAtLeast(0)
                 targetIndex >= lastVisible -> (targetIndex - visibleCount + 2).coerceAtLeast(0)
                 else -> null
@@ -816,24 +964,28 @@ internal fun GuideGridContent(
                 // the focus system invalidated for the rest of the frame, and on a busy box the
                 // next repeat arrives before that frame lands: "Dispatching key event while focus
                 // system is invalidated" (see KeyRepeatGate, GuideInputGuardsTest).
-                val success = if (targetRequester != null) {
-                    runCatching { targetRequester.requestFocus() }.isSuccess
-                } else false
+                //
+                // Scroll first, focus second: the target row is only composed once the jump has
+                // landed, so a request issued before the scroll can only ever miss — and a miss
+                // used to strand focus on the disposed edge row, which is how the cursor vanished
+                // on wrap-around and every later press re-fired the wrap. The waiter retries until
+                // the focus adoption lands (bounded, generation-guarded).
                 if (targetScrollIndex != null) {
                     // A d-pad step is one row: it must land on the row the press selected, not
                     // glide toward it. Only the deliberate jumps (jump-to-live, restore, a rail
                     // preview's snap) animate, via focusAndCenterRow's animate path.
                     listState.scrollToItem(targetScrollIndex, 0)
                 }
+                awaitRowFocus(
+                    requestFocus = { rowFocusRequesters[targetRow.key]?.requestFocus() },
+                    isFocused = { activeFocusedKey == targetRow.key },
+                    // Generous on a busy box: EPG hydration plus the preview video can hold a
+                    // composition past the first few frames, and giving up early is what stranded
+                    // the cursor on the disposed edge row. Still bounded and generation-guarded.
+                    maxAttempts = 20,
+                    isCancelled = { generation != navigationGeneration },
+                )
                 if (generation != navigationGeneration) return@launch
-                if (!success) {
-                    delay(16L)
-                    for (attempt in 0..1) {
-                        val res = runCatching { rowFocusRequesters[targetRow.key]?.requestFocus() }
-                        if (res.isSuccess) break
-                        delay(16L)
-                    }
-                }
                 repeat(3) {
                     if (generation != navigationGeneration) return@launch
                     scroll.scrollTo(snappedPx)
@@ -917,9 +1069,11 @@ internal fun GuideGridContent(
     }
 
     val stepColumn: (Boolean) -> Boolean = { isRight ->
-        if (rows.isEmpty()) {
-            false
-        } else {
+        // Coalesce auto-repeat / late key-up events so a quick burst of d-pad presses
+        // does not queue up and keep firing after the user lets go of the button.
+        if (!navGate.accept()) true
+        else if (rows.isEmpty()) false
+        else {
             val rowKey = activeFocusedKey ?: selectedKeyState.value ?: rows.first().key
             val rowIndex = rows.indexOfFirst { it.key == rowKey }.coerceAtLeast(0)
             val row = rows.getOrNull(rowIndex)
@@ -1032,13 +1186,16 @@ internal fun GuideGridContent(
                 timeShifted = backScrollActive || scroll.value > 4,
                 onGoToLive = handleJumpToLive,
             )
-            Spacer(Modifier.height(2.dp))
+            // The reference's grid block declares a 2dip margin above its first row and an 8dip
+            // padding below its last (`0x7f0b0430`), and `clipToPadding=false` lets the rows scroll
+            // through that padding - which is what a LazyColumn's contentPadding is.
+            Spacer(Modifier.height(metrics.gridMarginTop))
 
             Box(Modifier.weight(1f).fillMaxWidth().onSizeChanged { guideWidthPx = it.width }) {
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(top = 2.dp, bottom = 2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    contentPadding = PaddingValues(bottom = metrics.gridPaddingBottom),
+                    verticalArrangement = Arrangement.spacedBy(metrics.cellGap),
 
                 ) {
                     if (rows.isEmpty()) {
@@ -1106,7 +1263,12 @@ internal fun GuideGridContent(
                             onSelect = { onSelectRow(row) },
                             onLongSelect = { onLongSelectRow(row) },
                              onFocus = { prog ->
-                                 if (pendingTargetProgId == null || pendingTargetProgId == prog?.id) {
+                                 // The null programme is a legitimate cursor, not a bystander: it is
+                                 // what the row's fallback cell (empty guide / trailing filler) reports
+                                 // when the cursor sits on it. Rows whose programmes all fall outside
+                                 // the composed window have no other focusable, so rejecting null here
+                                 // would strand focus on a disposed row every wrap onto such a row.
+                                 if (prog == null || pendingTargetProgId == null || pendingTargetProgId == prog.id) {
                                      // The temporal anchor is the half-hour column, and it is only moved
                                      // by an explicit horizontal step (stepColumn), a scrub release, or a
                                      // jump to live â€” never by gaining focus. Rewriting it from the
@@ -1116,6 +1278,7 @@ internal fun GuideGridContent(
 
                                      activeFocusedIndex = index
                                      activeFocusedKey = row.key
+                                     adoptedRowKey = row.key
                                      targetProgKey = prog?.id
                                      onFocusRow(row, prog)
                                  }
@@ -1379,7 +1542,7 @@ private fun ChannelListRow(
     val displayName = remember(row.primary.shownName) { formatChannelNameForDisplay(row.primary.shownName) }
     val context = LocalContext.current
     val logoModel = remember(context, row.primary.logoUrl) {
-        logoRequest(context, row.primary.logoUrl, 96)
+        logoRequest(context, row.primary.logoUrl, 128)
     }
 
     val isLive = isSelected
@@ -1508,56 +1671,67 @@ private fun TimeHeader(
     // frame, and a SimpleDateFormat per frame is exactly the sort of waste that adds up.
     val currentDateTimeText = remember(nowMillis) { currentDateTimeFmt.format(Date(nowMillis)) }
 
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
-            .height(38.dp)
-            .background(AppTheme.palette.chrome.copy(alpha = chromeAlpha)),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(AppTheme.palette.chrome.copy(alpha = chromeAlpha))
+            .padding(top = metrics.headerClockMarginTop),
     ) {
-        // Top-left label: Current Date & Time in clean Cyan, matching TiviMate, with the
-        // EPG sync stamp ("EPG updated â€¦ Â· N channels") stacked underneath it.
+        // The reference's own screen layout gives the clock a 29dip band inside a 12dip top margin
+        // - exactly one channel row - and puts the ruler labels in that band, which is why the
+        // date/time and the hour labels share a line. That band is the header. OpenTV's own EPG
+        // freshness stamp has no counterpart in the reference, so it rides below the band rather
+        // than inside it.
         Row(
             Modifier
-                .width(metrics.channelColumnWidth)
-                .fillMaxHeight()
-                .padding(horizontal = 12.dp),
+                .fillMaxWidth()
+                .height(metrics.headerClockHeight),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column {
+            Row(
+                Modifier
+                    .width(metrics.channelColumnWidth)
+                    .fillMaxHeight()
+                    .padding(start = metrics.headerClockMarginStart, end = metrics.headerClockMarginEnd),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     text = currentDateTimeText,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.timeRulerSp, fontWeight = FontWeight.Medium),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = metrics.headerClockSp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = FontFamily.SansSerif,
+                    ),
                     color = AppTheme.primary,
                     maxLines = 1,
                 )
-                if (epgInfoLine != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (epgSyncing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(9.dp),
-                                strokeWidth = 1.5.dp,
-                                color = AppTheme.primary,
-                            )
-                            Spacer(Modifier.width(5.dp))
-                        }
-                        Text(
-                            text = epgInfoLine,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.timeRulerSp),
-                            color = AppTheme.palette.textMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (timeShifted) {
-                            Spacer(Modifier.width(10.dp))
+            }
+
+            // Timeline slots
+            Box(
+                Modifier
+                    .horizontalScroll(scroll)
+                    .background(AppTheme.palette.chrome.copy(alpha = chromeAlpha))
+                    // The 96 half-hour ruler labels are pure decoration. Marking the strip
+                    // semantically empty keeps them out of the accessibility tree: this box runs
+                    // Projectivy's accessibility service, so Compose walks that tree on every frame
+                    // and each node costs a HashMap allocation on the main thread.
+                    .clearAndSetSemantics { },
+            ) {
+                Row {
+                    repeat(HOURS_IN_WINDOW * 2) { i ->
+                        Box(
+                            Modifier
+                                .width(metrics.halfHourWidth)
+                                .height(metrics.headerClockHeight)
+                                .padding(start = 6.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
                             Text(
-                                text = stringResource(R.string.guide_jump_to_live),
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.timeRulerSp),
-                                color = AppTheme.primary,
-                                maxLines = 1,
-                                modifier = Modifier
-                                    .clickable { onGoToLive() }
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                slotLabels[i],
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.timeRulerSp),
+                                color = AppTheme.palette.onSurface,
+                                fontWeight = FontWeight.Normal,
                             )
                         }
                     }
@@ -1565,35 +1739,56 @@ private fun TimeHeader(
             }
         }
 
-        // Timeline slots
-        Box(
-            Modifier
-                .horizontalScroll(scroll)
-                .background(AppTheme.palette.chrome.copy(alpha = chromeAlpha))
-                // The 96 half-hour ruler labels are pure decoration. Marking the strip
-                // semantically empty keeps them out of the accessibility tree: this box runs
-                // Projectivy's accessibility service, so Compose walks that tree on every frame
-                // and each node costs a HashMap allocation on the main thread.
-                .clearAndSetSemantics { },
-        ) {
-            Row {
-                repeat(HOURS_IN_WINDOW * 2) { i ->
-                    Box(
-                        Modifier
-                            .width(metrics.halfHourWidth)
-                            .height(38.dp)
-                            .padding(start = 6.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Text(
-                            slotLabels[i],
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = metrics.timeRulerSp),
-                            color = AppTheme.palette.onSurface,
-                            fontWeight = FontWeight.Normal,
-                        )
-                    }
+        if (epgInfoLine != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = metrics.headerClockMarginStart,
+                        end = metrics.headerClockMarginEnd,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (epgSyncing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(9.dp),
+                        strokeWidth = 1.5.dp,
+                        color = AppTheme.primary,
+                    )
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(
+                    text = epgInfoLine,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.timeRulerSp),
+                    color = AppTheme.palette.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (timeShifted) {
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.guide_jump_to_live),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.timeRulerSp),
+                        color = AppTheme.primary,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .clickable { onGoToLive() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
                 }
             }
+        }
+
+        // The reference declares a 1dip #20ffffff rule at the clock's bottom edge, then ships it
+        // `gone`, and the capture shows no line there. Here it is the header's bottom edge, so
+        // turning it on is a metric change rather than a new element.
+        if (metrics.headerDividerVisible) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(metrics.headerDividerHeight)
+                    .background(AppTheme.palette.headerDivider),
+            )
         }
     }
 }
@@ -1651,7 +1846,7 @@ private fun GuideRow(
     val displayName = remember(row.primary.shownName) { formatChannelNameForDisplay(row.primary.shownName) }
     val context = LocalContext.current
     val logoModel = remember(context, row.primary.logoUrl) {
-        logoRequest(context, row.primary.logoUrl, 96)
+        logoRequest(context, row.primary.logoUrl, 128)
     }
 
     // Read focus/anchor state through derivedStateOf: this row recomposes only when ITS
@@ -1700,76 +1895,107 @@ private fun GuideRow(
                         else -> AppTheme.palette.chrome.copy(alpha = chromeAlpha)
                     },
                 )
-                .padding(horizontal = 8.dp),
+                .padding(start = metrics.channelNumberMarginStart),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Channel Number (Starts at 1 in each category, sequential without duplicates)
+            // Channel Number (Starts at 1 in each category, sequential without duplicates).
+            // The reference gives the number a 28dip box behind a 16dip margin, drawn white like
+            // the name: the capture shows both at full #ffffff on an unfocused row, and only the
+            // number's own glyphs carry the size the layout declares.
             val displayNum = rowIndex + 1
             Text(
                 "$displayNum",
-                style = MaterialTheme.typography.labelLarge.copy(fontSize = metrics.channelNameSp),
-                color = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.textMuted,
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = metrics.channelNumberSp),
+                color = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.onSurface,
                 maxLines = 1,
-                modifier = Modifier.width(32.dp),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.width(metrics.channelNumberWidth),
             )
 
-            // Channel Logo
+            Spacer(Modifier.width(metrics.logoMarginStart))
+
+            // Channel Logo. The reference fits the mark in a 47x31dip box - wider than tall, and
+            // unclipped, so a logo's own artwork keeps the shape its broadcaster drew.
             AsyncImage(
                 model = logoModel,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.size(metrics.logoSize).clip(RoundedCornerShape(4.dp)),
+                modifier = Modifier
+                    .width(metrics.logoWidth)
+                    .height(metrics.logoHeight),
             )
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(metrics.channelNameMarginStart))
 
-            // Channel Name & Icons
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                Text(
-                    displayName,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = metrics.channelNameSp,
-                    lineHeight = (metrics.channelNameSp.value + 2).sp,
-                ),
-                    fontWeight = if (isRowHighlighted) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            // Channel Name. The reference sets it at 14sp in `sans-serif-medium`, `singleLine` with
+            // `ellipsize=marquee` and `marqueeRepeatLimit=1`, ending 6dip early. Focus is shown by
+            // the row plate's colour rather than by a heavier weight, so the weight never changes.
+            // The marquee runs on the highlighted row only - which is Android's own rule for
+            // `ellipsize="marquee"` (it animates the selected view, not every view) and is what
+            // stops a column of long names from all animating at once.
+            val nameModifier = if (isRowHighlighted) {
+                Modifier.weight(1f).basicMarquee(iterations = 1)
+            } else {
+                Modifier.weight(1f)
             }
+            Text(
+                displayName,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = metrics.channelNameSp,
+                    fontFamily = FontFamily.SansSerif,
+                ),
+                fontWeight = FontWeight.Medium,
+                color = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.onSurface,
+                maxLines = metrics.channelNameMaxLines,
+                softWrap = false,
+                modifier = nameModifier,
+            )
+            Spacer(Modifier.width(metrics.channelNameMarginEnd))
 
-            // Live Play Triangle indicator (shown on currently playing channel, like ABC 7 in Image 2)
+            // The row's trailing status marks, in the reference's own slots, sizes and order: its
+            // first slot is 20dip behind a 6dip end margin, its second 16dip at alpha 0.6 behind
+            // 8dip, its third 18dip behind 8dip. The capture assigns them: the playing mark is the
+            // 20dip one - accent tinted, leftmost, 6dip before the clock - the catch-up clock is
+            // the quiet 16dip one on most rows, and the favourite star takes the slot the
+            // reference leaves `gone`. The reference spaces these with those margins rather than
+            // with inserted spacers, so the order here is the chain order there.
+
+            // Live Play Triangle indicator (shown on currently playing channel).
             if (isSelected) {
-                Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Playing",
                     tint = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.primary,
-                    modifier = Modifier.size(15.dp),
+                    modifier = Modifier
+                        .padding(end = metrics.statusIconPrimaryMarginEnd)
+                        .size(metrics.statusIconPrimarySize),
                 )
             }
 
-            // Catchup Icon if available (circular replay icon â†º) â€” per-channel, mirroring what
-            // CatchupResolver can actually build for THIS channel (flag, template, portal source,
-            // or Xtream-format stream URL). Channels outside that get no badge.
+            // Catch-up clock: the reference draws it white at 0.6. Tinting at the 0.6 rather than
+            // wrapping in Modifier.alpha is the same pixels over a flat row background, one draw
+            // modifier less on every row.
             if (row.primary.tvArchive || row.primary.id in catchUpChannelIds) {
-                Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.Filled.History,
                     contentDescription = "Catchup",
-                    tint = if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.textMuted,
-                    modifier = Modifier.size(14.dp),
+                    tint = (if (isRowHighlighted) AppTheme.palette.onCursor else AppTheme.palette.onSurface)
+                        .copy(alpha = metrics.statusIconSecondaryAlpha),
+                    modifier = Modifier
+                        .padding(end = metrics.statusIconSecondaryMarginEnd)
+                        .size(metrics.statusIconSecondarySize),
                 )
             }
 
-            // Favorite Icon if favorited
+            // Favorite Icon if favorited.
             if (row.primary.favourite) {
-                Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.Filled.Star,
                     contentDescription = "Favorite",
                     tint = AppTheme.palette.favourite,
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier
+                        .padding(end = metrics.statusIconTertiaryMarginEnd)
+                        .size(metrics.statusIconTertiarySize),
                 )
             }
         }
@@ -1853,7 +2079,7 @@ private fun GuideRow(
                 // that already ends in that word says it twice - once in colour, once in white.
                 val programmeTitles = remember(programmes) { programmes.map { it.guideDisplayTitle() } }
                 val programmeIsNew = remember(programmes) { programmes.map { it.isNewEpisode() } }
-                val blockLayouts = remember(programmes, windowStartMillis) {
+                val blockLayouts = remember(programmes, windowStartMillis, metrics.halfHourWidth) {
                     val layouts = mutableListOf<BlockLayout>()
                     var cursor = windowStartMillis
                     for ((pIdx, programme) in programmes.withIndex()) {
@@ -1971,7 +2197,7 @@ private fun GuideRow(
                     // A finished programme with no archive behind it is drawn dimmed and inert; the
                     // cursor only steps onto it when the viewer asked to see previous programmes.
                     val cellFocusable = guideCellTakesFocus(cellAction, showPreviousWithoutCatchup)
-                    val blockRequester = remember(pOrder) {
+                    val blockRequester = remember(prog.id) {
                         blockFocusRequesters.getOrPut(pOrder) { FocusRequester() }
                     }
                     val textOffset = if (layout.startMillis < visibleStartMillis) {
@@ -1983,8 +2209,9 @@ private fun GuideRow(
                     val extReq = if (isTarget && isFocused) externalFocusRequester else null
                     // A reminder is stored against one channel id, but the row groups every quality
                     // variant, so test them all â€” the bell then survives the primary changing.
-                    val hasReminder = row.variants.any { variant ->
-                        prog.startUtcMillis in reminderStartsByChannel[variant.id].orEmpty()
+                    val rowVariantIds = remember(row.variants) { row.variants.mapTo(mutableSetOf()) { it.id } }
+                    val hasReminder = rowVariantIds.any { variantId ->
+                        prog.startUtcMillis in reminderStartsByChannel[variantId].orEmpty()
                     }
 
 
@@ -2038,6 +2265,9 @@ private fun GuideRow(
                         isNow = false,
                         progress = 0f,
                         isRowHighlighted = isRowHighlighted,
+                        // The filler is the cursor when the row has nothing else to stand on: draw
+                        // the plate like every other adopted cell, or the cursor sits here invisibly.
+                        pseudoFocused = isRowHighlighted,
                         rowFocusRequester = if (isFillerTarget) rowFocusRequester else null,
                         externalFocusRequester = extReq,
                         onFocus = { onFocus(null) },
@@ -2062,16 +2292,15 @@ private fun GuideRow(
  * scannable in peripheral vision, not to be read.
  */
 /**
- * Aligns a status mark to the first line of the cell's title instead of the vertical middle.
+ * Vertically centres a status mark against the cell's title.
  *
- * Two-line titles are the norm here, and centring against both lines puts the chip level with
- * the break between a programme's name and its episode - it reads as belonging to neither. The
- * nudge is half the difference between a 15sp line box and a 10sp chip, which centres the chip on
- * the first line without the title's own position moving.
+ * The title is one line (the reference's cell layout sets maxLines=1), so the mark and the title
+ * share a single line box. Aligning the mark to the cell's top edge - which is where it belonged
+ * while titles wrapped to two lines - now leaves it hanging above the name it labels.
  */
 @Composable
-private fun RowScope.gutterTop(): Modifier =
-    Modifier.align(Alignment.Top).offset(y = 2.dp)
+private fun RowScope.cellGutter(): Modifier =
+    Modifier.align(Alignment.CenterVertically)
 
 @Composable
 private fun GuideBadge(text: String, background: Color, modifier: Modifier = Modifier) {
@@ -2229,22 +2458,22 @@ private fun ProgrammeBlock(
                 .align(Alignment.CenterStart)
                 .width((width - textOffset).coerceAtLeast(0.dp))
                 .offset(x = textOffset)
-                .padding(horizontal = 7.dp, vertical = 2.dp),
+                .padding(
+                    horizontal = metrics.cellPaddingHorizontal,
+                    vertical = metrics.cellPaddingVertical,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // The status gutter aligns to the first line of the title rather than the middle of
-            // the cell. Most titles here wrap to two lines, and a chip centred against both of
-            // them floats beside the break rather than beside the name it belongs to. The
-            // offset centres each chip on that first line instead, since the chip is shorter
-            // than the line box. All four marks share the gutter so they read as one column.
-            if (isLive) GuideBadge("LIVE", AppTheme.palette.recording, gutterTop())
-            if (isNew) GuideBadge("NEW", AppTheme.palette.live, gutterTop())
+            // All four status marks share one gutter so they read as a column at the left of the
+            // title, centred against its single line (see cellGutter).
+            if (isLive) GuideBadge("LIVE", AppTheme.palette.recording, cellGutter())
+            if (isNew) GuideBadge("NEW", AppTheme.palette.live, cellGutter())
             if (canReplay) {
                 Icon(
                     imageVector = Icons.Filled.History,
                     contentDescription = "Replay",
                     tint = if (highlighted) AppTheme.palette.onCellFocus else AppTheme.palette.textMuted,
-                    modifier = gutterTop().padding(end = 4.dp).size(metrics.replayMarkerSize),
+                    modifier = cellGutter().padding(end = 4.dp).size(metrics.replayMarkerSize),
                 )
             }
             if (hasReminder) {
@@ -2252,12 +2481,13 @@ private fun ProgrammeBlock(
                     imageVector = Icons.Filled.Notifications,
                     contentDescription = stringResource(R.string.guide_reminder_badge),
                     tint = if (highlighted) AppTheme.palette.onCellFocus else AppTheme.palette.favourite,
-                    modifier = gutterTop().padding(end = 4.dp).size(metrics.reminderBadgeSize),
+                    modifier = cellGutter().padding(end = 4.dp).size(metrics.reminderBadgeSize),
                 )
             }
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = GuideProgrammeFontFamily,
                     fontSize = metrics.programmeTitleSp,
                     lineHeight = (metrics.programmeTitleSp.value + 2).sp,
                 ),
@@ -2265,7 +2495,7 @@ private fun ProgrammeBlock(
                 color = if (highlighted) AppTheme.palette.onCellFocus
                 else if (isPast) AppTheme.palette.textMuted
                 else AppTheme.palette.onSurface,
-                maxLines = 2,
+                maxLines = metrics.programmeTitleMaxLines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )

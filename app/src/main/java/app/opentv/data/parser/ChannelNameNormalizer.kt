@@ -195,7 +195,7 @@ object ChannelNameNormalizer {
     }
 
     private val CAMEL_BOUNDARY = Regex("""([a-z])([A-Z])""")
-    private val NON_ALNUM = Regex("""[^a-zA-Z0-9]+""")
+    private val NON_ALNUM = Regex("""[^\p{L}\p{Nd}]+""")
     private val NUMBER_WORDS = mapOf(
         "one" to "1", "two" to "2", "three" to "3", "four" to "4", "five" to "5",
         "six" to "6", "seven" to "7", "eight" to "8", "nine" to "9",

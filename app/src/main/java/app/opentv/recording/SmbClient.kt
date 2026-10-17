@@ -134,9 +134,9 @@ object SmbClient {
 
     /** Open the file named by [locator] for writing. Caller writes to [SmbWriteHandle.output]. */
     fun openForWrite(config: SmbConfig, locator: String): SmbWriteHandle {
+        requireOwnShare(config, locator)
         val parsed = parse(locator)
-        val cfg = config.copy(host = parsed.host, share = parsed.share)
-        val q = connect(cfg)
+        val q = connect(config)
         try {
             val folder = parsed.path.substringBeforeLast('/', "")
             ensureFolder(q.share, folder)
@@ -163,9 +163,9 @@ object SmbClient {
 
     /** Open an existing `smb://host/share/path` locator for random-access reading (playback). */
     fun openForRead(config: SmbConfig, locator: String): SmbReadHandle {
+        requireOwnShare(config, locator)
         val parsed = parse(locator)
-        val cfg = config.copy(host = parsed.host, share = parsed.share)
-        val q = connect(cfg)
+        val q = connect(config)
         try {
             val file = q.share.openFile(
                 parsed.path.replace('/', '\\'),
@@ -188,9 +188,9 @@ object SmbClient {
 
     /** Delete a recording from the NAS. */
     fun delete(config: SmbConfig, locator: String) {
+        requireOwnShare(config, locator)
         val parsed = parse(locator)
-        val cfg = config.copy(host = parsed.host, share = parsed.share)
-        val q = connect(cfg)
+        val q = connect(config)
         try {
             runCatching { q.share.rm(parsed.path.replace('/', '\\')) }
         } finally {
@@ -277,4 +277,21 @@ object SmbClient {
     }
 
     fun isSmb(locator: String): Boolean = locator.startsWith("smb://")
+
+    /**
+     * True only when [locator] addresses the NAS share this device is configured for, with no
+     * `..` segments. Locators can come from a synced peer, so they must never redirect the saved
+     * credentials to another host or share.
+     */
+    fun isOwnShare(config: SmbConfig, locator: String): Boolean {
+        if (!isSmb(locator)) return false
+        val parsed = parse(locator)
+        return parsed.host.equals(config.host, ignoreCase = true) &&
+            parsed.share.equals(config.share, ignoreCase = true) &&
+            parsed.path.split('/').none { it == ".." }
+    }
+
+    private fun requireOwnShare(config: SmbConfig, locator: String) {
+        require(isOwnShare(config, locator)) { "Locator is outside the configured NAS share" }
+    }
 }

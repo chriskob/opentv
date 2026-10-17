@@ -438,7 +438,7 @@ private fun NavRail(
             horizontalArrangement = if (expanded) Arrangement.Start else Arrangement.Center,
         ) {
             OpenTvLogo(size = 28.dp)
-            AnimatedVisibility(visible = expanded, enter = fadeIn(), exit = fadeOut()) {
+            AnimatedVisibility(visible = expanded, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.width(12.dp))
                     Text(

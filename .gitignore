@@ -32,3 +32,7 @@ cc_err.txt
 # Root-level Node tooling only; the pairing-service keeps its own package.json.
 /package.json
 /package-lock.json
+
+# Build output captured by local scripts
+cerr.txt
+cc_err.txt

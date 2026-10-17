@@ -5,7 +5,6 @@
  */
 package app.opentv.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -60,25 +59,23 @@ fun Modifier.tvFocus(
     var focused by remember { mutableStateOf(false) }
     val palette = AppTheme.palette
 
-    val fill by animateColorAsState(
-        targetValue = when {
-            !enabled -> Color.Transparent
-            focused -> if (danger) palette.errorContainer else palette.cursorFill
-            selected -> if (danger) palette.errorContainer else palette.selectedFill
-            else -> Color.Transparent
-        },
-        animationSpec = tween(120),
-        label = "tvFocusFill",
-    )
-    val outline by animateColorAsState(
-        targetValue = when {
-            !enabled -> Color.Transparent
-            focused -> if (danger) palette.error else palette.cursorBorder
-            else -> Color.Transparent
-        },
-        animationSpec = tween(120),
-        label = "tvFocusOutline",
-    )
+    // Chosen straight from `focused` rather than animated. A colour animation is a state read in
+    // composition, so it restarts recomposition every frame of its tween — and every d-pad step
+    // touches two rows. With ~60 rows on a settings page that was ~180 animators running for a
+    // 120ms fade nobody sees. Focus colour is binary: it snaps, and the layer stays put.
+    val fill = when {
+        !enabled -> Color.Transparent
+        focused -> if (danger) palette.errorContainer else palette.cursorFill
+        selected -> if (danger) palette.errorContainer else palette.selectedFill
+        else -> Color.Transparent
+    }
+    val outline = when {
+        !enabled -> Color.Transparent
+        focused -> if (danger) palette.error else palette.cursorBorder
+        else -> Color.Transparent
+    }
+    // The one animation worth keeping: its value is read inside graphicsLayer, which is the draw
+    // phase, so a focus move writes a layer instead of recomposing the row.
     val scaleValue by animateFloatAsState(
         targetValue = if (focused && enabled) scale else 1f,
         animationSpec = tween(120),

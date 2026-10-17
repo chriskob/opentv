@@ -34,4 +34,6 @@ data class GitHubAsset(
     val name: String = "",
     @SerialName("browser_download_url") val browserDownloadUrl: String = "",
     val size: Long = 0,
+    /** GitHub's content digest for the asset, formatted `sha256:<hex>`. */
+    val digest: String = "",
 )

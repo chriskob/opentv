@@ -103,7 +103,7 @@ object XmltvParser {
                 XmlPullParser.START_TAG -> {
                     depth++
                     if (parser.name == "display-name" && displayName == null) {
-                        displayName = parser.nextText().trim().takeIf { it.isNotEmpty() }
+                        displayName = readText(parser).trim().takeIf { it.isNotEmpty() }
                         depth--
                     }
                 }
@@ -136,16 +136,16 @@ object XmltvParser {
                     depth++
                     when (parser.name) {
                         "title" -> {
-                            if (title == null) { title = parser.nextText().trim(); depth-- }
+                            if (title == null) { title = readText(parser).trim(); depth-- }
                         }
                         "sub-title" -> {
-                            if (subTitle == null) { subTitle = parser.nextText().trim(); depth-- }
+                            if (subTitle == null) { subTitle = readText(parser).trim(); depth-- }
                         }
                         "desc" -> {
-                            if (description == null) { description = parser.nextText().trim(); depth-- }
+                            if (description == null) { description = readText(parser).trim(); depth-- }
                         }
                         "category" -> {
-                            if (category == null) { category = parser.nextText().trim(); depth-- }
+                            if (category == null) { category = readText(parser).trim(); depth-- }
                         }
                         "icon" -> {
                             if (iconUrl == null) iconUrl = parser.getAttributeValue(null, "src")
@@ -158,7 +158,7 @@ object XmltvParser {
                         }
                         "episode-num" -> {
                             val system = parser.getAttributeValue(null, "system")
-                            val value = parser.nextText().trim()
+                            val value = readText(parser).trim()
                             depth--
                             if (system == "xmltv_ns") {
                                 val parts = value.split('.')
@@ -244,6 +244,24 @@ object XmltvParser {
         if (length >= from + 2) substring(from, from + 2).toIntOrNull() ?: 0 else 0
 
     /** `+0100` / `-0530` / `+01:00` / `UTC` / `Z` / empty. Returns minutes east of UTC. */
+    /**
+     * Text of the element just opened, through its end tag. Unlike `nextText()` this tolerates
+     * child tags, and it keeps at most [MAX_FIELD_CHARS] so one oversized field cannot exhaust memory.
+     */
+    private fun readText(parser: XmlPullParser): String {
+        val out = StringBuilder()
+        var depth = 1
+        while (depth > 0) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> depth++
+                XmlPullParser.END_TAG -> depth--
+                XmlPullParser.TEXT -> if (out.length < MAX_FIELD_CHARS) out.append(parser.text)
+                XmlPullParser.END_DOCUMENT -> break
+            }
+        }
+        return out.toString().take(MAX_FIELD_CHARS)
+    }
+
     private fun parseOffset(raw: String): Int? {
         if (raw.isEmpty()) return null
         if (raw.equals("Z", true) || raw.equals("UTC", true) || raw.equals("GMT", true)) return 0
@@ -261,5 +279,6 @@ object XmltvParser {
     }
 
     private const val DEFAULT_DURATION_MILLIS = 30 * 60 * 1000L
+    private const val MAX_FIELD_CHARS = 16_384
     private const val UNTITLED = "No information"
 }

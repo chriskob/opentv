@@ -346,7 +346,7 @@ fun AddSourceScreen(
                         onClick = { usePhone = true },
                     )
                     OnboardingButton(
-                        text = "Remote Setup (NAS)",
+                        text = "Remote Setup",
                         onClick = { useRemote = true },
                     )
                 }

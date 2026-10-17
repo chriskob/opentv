@@ -61,6 +61,7 @@ class ApkInstaller(private val http: OkHttpClient) {
         context: Context,
         url: String,
         expectedBytes: Long,
+        expectedSha256: String,
         progress: Progress,
         /**
          * Invoked once the platform reports the *final* result of a session install. [success] is
@@ -70,7 +71,7 @@ class ApkInstaller(private val http: OkHttpClient) {
          */
         onSessionResult: ((success: Boolean, reason: String?) -> Unit)? = null,
     ): Outcome {
-        val apk = download(context, url, expectedBytes, progress)
+        val apk = download(context, url, expectedBytes, expectedSha256, progress)
         return launchInstaller(context, apk, onSessionResult)
     }
 
@@ -78,12 +79,14 @@ class ApkInstaller(private val http: OkHttpClient) {
         context: Context,
         url: String,
         expectedBytes: Long,
+        expectedSha256: String,
         progress: Progress,
     ): File = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         // A fixed name means each download overwrites the last rather than piling up copies.
         val out = File(dir, "opentv-update.apk")
 
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
         val request = Request.Builder().url(url).header("User-Agent", "OpenTV").build()
         http.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("Download failed: HTTP ${response.code}")
@@ -96,6 +99,7 @@ class ApkInstaller(private val http: OkHttpClient) {
                 var written = 0L
                 while (bodyStream.read(buffer).also { read = it } != -1) {
                     sink.write(buffer, 0, read)
+                    digest.update(buffer, 0, read)
                     written += read
                     progress.onProgress(if (total > 0) (written.toFloat() / total) else -1f)
                 }
@@ -110,6 +114,12 @@ class ApkInstaller(private val http: OkHttpClient) {
             error("Download incomplete: ${out.length()} of $expectedBytes bytes")
         }
         if (!looksLikeApk(out)) error("Downloaded file is not an APK")
+
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        if (!actual.equals(expectedSha256, ignoreCase = true)) {
+            out.delete()
+            error("Downloaded update failed its checksum")
+        }
 
         out
     }
@@ -204,6 +214,9 @@ class ApkInstaller(private val http: OkHttpClient) {
         val installer = context.packageManager.packageInstaller
         val sessionId = installer.createSession(PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL))
         val session = installer.openSession(sessionId)
+        // Unique per session and never shown anywhere else. A fixed action would let any app on the
+        // device send a forged status broadcast whose EXTRA_INTENT we would then launch.
+        val statusAction = "$STATUS_ACTION.${java.util.UUID.randomUUID()}"
         var committed = false
         try {
             apk.inputStream().use { source ->
@@ -267,7 +280,7 @@ class ApkInstaller(private val http: OkHttpClient) {
 
             // The status callback arrives as a platform broadcast, so on Android 13+ the receiver
             // is explicitly exported; the action is unique to this install session.
-            val filter = IntentFilter(STATUS_ACTION)
+            val filter = IntentFilter(statusAction)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
             } else {
@@ -278,7 +291,7 @@ class ApkInstaller(private val http: OkHttpClient) {
                 PendingIntent.getBroadcast(
                     context,
                     sessionId,
-                    Intent(STATUS_ACTION).setPackage(context.packageName),
+                    Intent(statusAction).setPackage(context.packageName),
                     PendingIntent.FLAG_UPDATE_CURRENT or mutableFlag,
                 ).intentSender,
             )

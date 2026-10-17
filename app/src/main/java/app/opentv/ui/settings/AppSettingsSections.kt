@@ -8,6 +8,11 @@ package app.opentv.ui.settings
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -265,7 +270,11 @@ internal fun SleepTimerSection() {
                 }
             },
         )
-        AnimatedVisibility(visible = expanded) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(tween(120)) + fadeIn(tween(120)),
+            exit = shrinkVertically(tween(100)) + fadeOut(tween(100)),
+        ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 SettingsChoiceRow(
                     title = stringResource(R.string.settings_sleep_off),

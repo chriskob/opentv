@@ -211,6 +211,7 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
                     context = getApplication(),
                     url = update.apkUrl,
                     expectedBytes = update.apkSizeBytes,
+                    expectedSha256 = update.apkSha256,
                     progress = { fraction -> _state.value = UpdateUiState.Downloading(update, fraction) },
                     // A session install can be rejected after the download succeeds (Fire OS
                     // refusing the install, a signature clash, the user cancelling). Surface it so

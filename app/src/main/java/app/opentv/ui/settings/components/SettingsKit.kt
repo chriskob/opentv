@@ -62,6 +62,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -78,6 +79,10 @@ import app.opentv.R
 import app.opentv.ui.components.tvFocus
 import app.opentv.ui.theme.AppTheme
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -119,6 +124,9 @@ object SettingsSpacing {
     val PageHorizontal = 48.dp
     val PageVertical = 32.dp
     val SectionGap = 28.dp
+
+    /** One height for every button and icon button, so controls in a row line up. */
+    val ControlHeight = 36.dp
 }
 
 /**
@@ -148,16 +156,52 @@ fun Modifier.settingsFocus(
     onFocusChange = onFocusChange,
 )
 
-/** One switch palette for the whole app (the old code copy-pasted its own into six files). */
+/**
+ * One switch palette for the whole app. On a track the accent is blended into the surface, so the
+ * on-state reads as a calm tinted track with a light thumb, on every palette, with no dark ink.
+ */
 @Composable
 fun settingsSwitchColors() = SwitchDefaults.colors(
-    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-    checkedTrackColor = AppTheme.primary,
-    checkedBorderColor = AppTheme.primary,
+    checkedThumbColor = MaterialTheme.colorScheme.onSurface,
+    checkedTrackColor = lerp(MaterialTheme.colorScheme.surfaceContainerHighest, AppTheme.primary, 0.5f),
+    checkedBorderColor = Color.Transparent,
     uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
     uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
     uncheckedBorderColor = MaterialTheme.colorScheme.outlineVariant,
 )
+
+/**
+ * A bare switch that takes focus and flips on OK/Enter, for rows whose label is elsewhere (a playlist
+ * row's enable toggle). The switch itself is not focusable, so this wrapper is the focus stop.
+ */
+@Composable
+fun SettingsSwitch(
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier
+            .settingsFocus(shape = SettingsShape.Pill, enabled = enabled)
+            .focusable(enabled)
+            .clickable(
+                enabled = enabled,
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+            ) { onToggle(!checked) }
+            .padding(6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            enabled = enabled,
+            colors = settingsSwitchColors(),
+            modifier = Modifier.focusProperties { canFocus = false },
+        )
+    }
+}
 
 /** A small focused icon control, for trailing actions inside a row (refresh, reveal, remove). */
 @Composable
@@ -171,7 +215,7 @@ fun SettingsIconButton(
     var focused by remember { mutableStateOf(false) }
     Box(
         modifier
-            .size(40.dp)
+            .size(SettingsSpacing.ControlHeight)
             .settingsFocus(shape = SettingsShape.Control, focusScale = 1.06f, onFocusChange = { focused = it })
             .focusable()
             .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onClick),
@@ -292,7 +336,11 @@ fun SettingsSection(
         if (collapsible) {
             var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
             SettingsSectionHeader(title = title, summary = summary, icon = icon, expanded = expanded, onToggle = { expanded = !expanded })
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(tween(120)) + fadeIn(tween(120)),
+                exit = shrinkVertically(tween(100)) + fadeOut(tween(100)),
+            ) {
                 SettingsCard(content = content)
             }
         } else {
@@ -558,17 +606,17 @@ fun SettingsButton(
     val danger = style == SettingsButtonStyle.Danger
     val shape = SettingsShape.Control
 
-    // The base fill is the button's identity (solid accent for Primary, tinted for Danger); focus
-    // only adds the shared neutral cursor lift on top, it never repaints the button's colour.
+    // Every button keeps light ink. Primary is a translucent accent wash rather than a solid accent
+    // block, so the label never has to switch to a dark colour to stay readable.
     val baseFill = when {
-        danger -> SettingsDanger.copy(alpha = 0.14f)
-        style == SettingsButtonStyle.Primary -> AppTheme.primary
+        danger -> Color.Transparent
+        style == SettingsButtonStyle.Primary -> AppTheme.primary.copy(alpha = 0.2f)
         else -> MaterialTheme.colorScheme.surfaceContainerHighest
     }
     val fill = when {
         !enabled -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.4f)
         focused && danger -> SettingsDanger.copy(alpha = 0.22f)
-        focused && style == SettingsButtonStyle.Primary -> AppTheme.primary
+        focused && style == SettingsButtonStyle.Primary -> AppTheme.primary.copy(alpha = 0.36f)
         focused -> AppTheme.palette.cursorFill
         else -> baseFill
     }
@@ -576,17 +624,17 @@ fun SettingsButton(
         !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         focused -> MaterialTheme.colorScheme.onSurface
         danger -> SettingsDanger
-        style == SettingsButtonStyle.Primary -> MaterialTheme.colorScheme.onPrimary
         else -> MaterialTheme.colorScheme.onSurface
     }
     val outline = when {
         focused -> if (danger) SettingsDanger else AppTheme.palette.cursorBorder
-        danger -> SettingsDanger.copy(alpha = 0.45f)
-        style == SettingsButtonStyle.Primary -> AppTheme.primary
+        danger -> Color.Transparent
+        style == SettingsButtonStyle.Primary -> AppTheme.primary.copy(alpha = 0.6f)
         else -> MaterialTheme.colorScheme.outlineVariant
     }
     Row(
         modifier
+            .height(SettingsSpacing.ControlHeight)
             .clip(shape)
             .background(fill, shape)
             .border(if (focused) 1.5.dp else 1.dp, outline, shape)
@@ -594,7 +642,7 @@ fun SettingsButton(
             .onFocusChanged { focused = it.isFocused }
             .focusable(enabled)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 22.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -621,6 +669,70 @@ fun SettingsBackButton(
         style = SettingsButtonStyle.Secondary,
         icon = Icons.AutoMirrored.Filled.ArrowBack,
     )
+}
+
+/**
+ * The one dialog for settings: confirmations and edit forms alike. Same surface, title, spacing
+ * and button row everywhere. [content] scrolls inside the dialog when it is taller than the screen,
+ * and [actions] sits right-aligned at the bottom (cancel first, then the confirming action).
+ */
+@Composable
+fun SettingsDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    titleColor: Color = MaterialTheme.colorScheme.onSurface,
+    message: String? = null,
+    content: (@Composable ColumnScope.() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier
+                .width(560.dp)
+                .heightIn(max = 640.dp)
+                .clip(SettingsShape.Dialogs)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), SettingsShape.Dialogs)
+                .padding(28.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp),
+                fontWeight = FontWeight.SemiBold,
+                color = titleColor,
+            )
+            if (message != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (content != null) {
+                Spacer(Modifier.height(20.dp))
+                Column(
+                    Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = content,
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                actions()
+            }
+        }
+    }
 }
 
 /**
@@ -751,20 +863,22 @@ fun <T> SettingsDropdown(
         onClick = { showDialog = true },
         modifier = modifier,
         trailing = {
+            // The value sits in the same neutral control as the stepper, so the two read as one family;
+            // the accent is kept for the chevron only.
             Row(
                 Modifier
-                    .clip(SettingsShape.Row)
-                    .background(AppTheme.primary.copy(alpha = 0.12f))
-                    .border(1.dp, AppTheme.primary.copy(alpha = 0.3f), SettingsShape.Row)
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                    .clip(SettingsShape.Control)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, SettingsShape.Control)
+                    .padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
                     text = currentLabel,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    color = AppTheme.primary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.widthIn(max = 320.dp),

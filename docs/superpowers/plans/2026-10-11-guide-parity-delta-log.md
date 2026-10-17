@@ -60,3 +60,25 @@ On-device checklist, in the order a viewer would hit it:
    the previous opaque panels.
 3. The **"show previous programmes without catch-up"** setting has no UI row yet; the value is
    stored and plumbed (default off). Adding the toggle is a settings-screen row, out of this scope.
+
+## 2026-10-16 - Plan 1 (grid and chrome) landed on the device
+
+The element mirror replaced the photo-derived numbers with the decoded layout's own: row band 41dip,
+number box 28dip behind a 16dip margin, logo 47x31dip, name 14sp `sans-serif` in one marqueed line,
+status slots 20/16/18dip, header clock a 29dip band inset 16dip with the ruler sharing its line, the
+divider pinned but not drawn, and the grid's 2dip top / 8dip bottom. Capture: `parity-10.png`
+(`parity-07..09` remain the before set). Suite: 333 tests, 0 failures.
+
+Two values the first pass took from the declaration alone were corrected against the reference's own
+render (evidence in the metrics table, section 4d):
+
+1. **The channel number was ~1.5x too big.** The layout declares 24sp but TiviMate draws 22px digits
+   (`channelNumberSp` is now 16sp), and the number is `onSurface` rather than muted - the decoder's
+   style and the capture both put the number at white, and only its size is overridden by code.
+2. **The status slots were in the wrong order.** The capture puts the playing mark in the 20dip slot
+   (leftmost, accent tinted) and the catch-up clock in the quiet 16dip @0.6 slot - the reverse of what
+   this pass first shipped, and now what `GuideMetricsTest` and the render comments pin.
+
+Still open, unchanged: the reference's own icons (Plan 5), the detail panel (Plan 2, G17), the guide
+context menu (Plan 3, G18) and the expandable channel row (Plan 4, G3/G19); the 44dp-vs-39dp row
+pitch question; and the ruler's fading edge, which stays unmirrored.

@@ -8,6 +8,8 @@ package app.opentv.ui.onboarding
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -42,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,6 +72,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
 
 import android.app.Activity
 import android.content.ContextWrapper
@@ -104,6 +108,7 @@ fun RemotePairingScreen(
     viewModel: SourcesViewModel = viewModel(),
     onCancel: () -> Unit,
     onFinished: () -> Unit = onCancel,
+    onContinue: () -> Unit = onFinished,
 ) {
     val context = LocalContext.current
 
@@ -195,6 +200,7 @@ fun RemotePairingScreen(
             ProvisioningProgressDashboard(
                 progress = syncProgress!!,
                 onDone = onFinished,
+                onContinue = onContinue,
                 onCancel = onCancel,
             )
         } else {
@@ -282,13 +288,18 @@ private fun Listening(
     onCancel: () -> Unit,
     onChangeServer: () -> Unit,
 ) {
-    val qr = remember(session.webPortalUrl) { QrCodes.render(session.webPortalUrl, QR_SIZE_PX) }
+    // Encoded off the composition thread: QRCodeWriter plus a 600x600 pixel write was blocking
+    // the frame this screen appeared in.
+    val qr by produceState<android.graphics.Bitmap?>(initialValue = null, session.webPortalUrl) {
+        value = withContext(Dispatchers.Default) { QrCodes.render(session.webPortalUrl, QR_SIZE_PX) }
+    }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(48.dp),
     ) {
-        if (qr != null) {
+        val code = qr
+        if (code != null) {
             Box(
                 Modifier
                     .size(290.dp)
@@ -298,7 +309,7 @@ private fun Listening(
                     .padding(14.dp)
             ) {
                 Image(
-                    bitmap = qr.asImageBitmap(),
+                    bitmap = code.asImageBitmap(),
                     contentDescription = "Scan with phone camera",
                     modifier = Modifier.fillMaxSize()
                 )
@@ -408,6 +419,7 @@ private fun ServerConfigDialog(
 private fun ProvisioningProgressDashboard(
     progress: RemoteProvisioningProgress,
     onDone: () -> Unit,
+    onContinue: () -> Unit = onDone,
     onCancel: () -> Unit,
 ) {
     val dateFormat = remember { SimpleDateFormat("EEE h:mm a", Locale.getDefault()) }
@@ -420,12 +432,17 @@ private fun ProvisioningProgressDashboard(
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(DashBgTop, DashBgBottom)))
     ) {
+    // Scrollable so a progress card that grows as the guide syncs can never push the Continue
+    // affordance (or anything else at the bottom) off the visible screen �?" including on TVs
+    // whose overscan hides a few pixels at the bottom.
+    val dashboardScroll = rememberScrollState()
     Column(
         Modifier
             .fillMaxSize()
+            .verticalScroll(dashboardScroll)
             .padding(horizontal = 40.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Top
     ) {
         // Eyebrow, then state: the title carries what is happening, the line under it explains, and
         // nothing repeats itself.
@@ -749,10 +766,26 @@ private fun ProvisioningProgressDashboard(
         } else {
             // No indeterminate spinner here: it is an animation that never settles, redrawn every
             // frame for as long as the sync runs. The dot above already says work is in progress.
+            Spacer(Modifier.height(120.dp))
+        }
+    }
+    if (!isComplete) {
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 40.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
-                text = "Keep this screen open while OpenTV downloads channels and the guide.",
+                text = "Safe to continue. Channels and guide finish loading in the background.",
                 style = MaterialTheme.typography.bodySmall,
                 color = DashMuted
+            )
+            Spacer(Modifier.height(8.dp))
+            OnboardingButton(
+                text = "Continue",
+                onClick = onContinue,
+                primary = true,
             )
         }
     }

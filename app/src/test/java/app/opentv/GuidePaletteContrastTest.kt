@@ -73,4 +73,15 @@ class GuidePaletteContrastTest {
         assertThat(luminance(p.cellFocus)).isGreaterThan(luminance(p.chromeCell) + 0.3)
         assertThat(luminance(p.onCellFocus)).isLessThan(0.2)
     }
+
+    @Test
+    fun theParityText_isTheMeasuredWhite() {
+        // The reference's own colour table carries programme and channel text as pure white
+        // (#ffffffff) and secondary text as white at 63% (#a0ffffff). The parity palette shipped
+        // softer values (#eeeeee and #b6c5d2) that predate reading that table, so the literal is
+        // pinned: a future edit cannot quietly soften the guide's text again.
+        val p = AppPalette.TVIMATE_PARITY.palette()
+        assertThat(p.onSurface).isEqualTo(Color(0xFFFFFFFF))
+        assertThat(p.onSurfaceVariant).isEqualTo(Color(0xA0FFFFFF))
+    }
 }

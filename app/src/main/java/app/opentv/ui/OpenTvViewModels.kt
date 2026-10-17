@@ -52,6 +52,8 @@ import app.opentv.core.HeavyWork
 import app.opentv.data.db.CategoryCount
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.awaitAll
@@ -917,6 +919,43 @@ private fun scopeToContentType(
         .filter { it.sourceId in allowed }
 }
 
+/**
+ * Like `debounce`, but the FIRST value seen after subscription passes through without waiting for
+ * the quiet period; every later value is coalesced to the latest one that settles.
+ *
+ * The guide's channel flow wants both behaviours at once. Room re-emits `channels` in batches
+ * mid-sync, and every raw restart re-ran the full row build and the badge scan - that storm is
+ * what CHANNEL_SETTLE_MILLIS exists for. But the first list after a deliberate change (a category
+ * switch, the Back-from-fullscreen that moves category, a favourites toggle, a search edit) is
+ * already the settled answer to a fresh query, and a plain debounce made every such switch wait
+ * the full quiet period before painting anything - roughly a third of a second of dead remote on
+ * exactly the press the viewer is watching for.
+ */
+internal fun <T> Flow<T>.debounceExceptFirst(timeoutMillis: Long): Flow<T> = channelFlow {
+    var sentFirst = false
+    var pending: Job? = null
+    var latest: Any? = DEBOUNCE_UNSET
+    collect { value ->
+        if (!sentFirst) {
+            sentFirst = true
+            send(value)
+        } else {
+            pending?.cancel()
+            latest = value
+            pending = launch {
+                delay(timeoutMillis)
+                if (latest !== DEBOUNCE_UNSET) {
+                    @Suppress("UNCHECKED_CAST")
+                    send(latest as T)
+                    latest = DEBOUNCE_UNSET
+                }
+            }
+        }
+    }
+}
+
+private val DEBOUNCE_UNSET = Any()
+
 class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = ServiceLocator.get(app)
     private val settings = graph.settings
@@ -1140,6 +1179,18 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
     private var guideBuilt = false
 
     /**
+     * False until the rows pipeline has answered once in this process. Channels on disk
+     * (`channelsPresent`) are known long before the first guide build completes on a cold
+     * start, and until the pipeline speaks the guide simply has nothing to show yet - an
+     * empty list then means "pending", not "your filter matches nothing". The home screen
+     * holds its loading state while this is false; without it, the first Back out of a
+     * resumed player landed on the dead-end "Nothing in this view" panel on a box that had
+     * channels and a perfectly good filter.
+     */
+    private val _guideFirstSettle = MutableStateFlow(false)
+    val guideFirstSettle: StateFlow<Boolean> = _guideFirstSettle.asStateFlow()
+
+    /**
      * Programmes already hydrated for the CURRENT guide window, keyed by [Row.key].
      *
      * Room re-emits `channels` on every write, and syncing a 27k-channel catalogue writes it in
@@ -1320,7 +1371,7 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
                 // Then coalesce what remains: a settled channel list is the only version the
                 // guide can use, and each raw batch restart used to re-run the full row build
                 // plus the badge scan — the storm this replaces. (CHANNEL_SETTLE_MILLIS.)
-                .debounce(CHANNEL_SETTLE_MILLIS)
+                .debounceExceptFirst(CHANNEL_SETTLE_MILLIS)
                 .onEach { channels ->
                     val byId = graph.sourceRepository.observeAll().first().associateBy { it.id }
                     _catchupChannelIds.value = CatchupResolver.capableChannelIds(byId, channels)
@@ -1620,7 +1671,10 @@ class ChannelsViewModel(app: Application) : AndroidViewModel(app) {
             // enough to freeze the UI for a big provider — a category tap that took minutes. Run the
             // whole pipeline off the main thread so the list just appears when it's ready.
             .flowOn(Dispatchers.Default)
-            .onEach { if (!guideBuilt && it.isNotEmpty()) { guideBuilt = true; StatusBus.set(null) } }
+            .onEach {
+                if (!_guideFirstSettle.value) _guideFirstSettle.value = true
+                if (!guideBuilt && it.isNotEmpty()) { guideBuilt = true; StatusBus.set(null) }
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**

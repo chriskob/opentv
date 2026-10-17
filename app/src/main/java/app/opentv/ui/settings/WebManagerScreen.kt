@@ -26,7 +26,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import android.graphics.Bitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -113,14 +117,20 @@ fun WebManagerScreen(
 
 @Composable
 private fun Listening(session: ManagerServer.Session) {
-    val qr = remember(session.url) { QrCodes.render(session.url, QR_SIZE_PX) }
+    // Rendering encodes the string and writes a 600x600 pixel matrix. Doing that on the
+    // composition thread blocked the frame the dialog appeared in; move it to Default and hand
+    // the bitmap over once, showing the spinner until it lands.
+    val qr by produceState<Bitmap?>(initialValue = null, session.url) {
+        value = withContext(Dispatchers.Default) { QrCodes.render(session.url, QR_SIZE_PX) }
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(48.dp),
     ) {
-        if (qr != null) {
+        val code = qr
+        if (code != null) {
             Box(
                 Modifier
                     .widthIn(max = 280.dp)
@@ -131,7 +141,7 @@ private fun Listening(session: ManagerServer.Session) {
                     .padding(14.dp),
             ) {
                 Image(
-                    bitmap = qr.asImageBitmap(),
+                    bitmap = code.asImageBitmap(),
                     contentDescription = stringResource(R.string.webmanager_qr_desc),
                     modifier = Modifier.fillMaxSize(),
                 )

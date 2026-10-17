@@ -1,0 +1,7 @@
+#EXTM3U
+#EXTINF:-1 tvg-id="test.one" tvg-name="Test One" group-title="Test",Test Channel One
+http://192.168.1.111:3100/stream/test1.ts
+#EXTINF:-1 tvg-id="test.two" tvg-name="Test Two" group-title="Test",Test Channel Two
+http://192.168.1.111:3100/stream/test2.ts
+#EXTINF:-1 tvg-id="test.three" tvg-name="Test Three" group-title="Test",Test Channel Three
+http://192.168.1.111:3100/stream/test3.ts

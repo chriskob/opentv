@@ -29,7 +29,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -62,11 +64,23 @@ fun ParentalControlsScreen(
     val categories by channelsViewModel.categoryGroups.collectAsState()
 
     var authed by remember { mutableStateOf(false) }
+    // Drives the "wrong PIN" state on the gate. Verification is now async (PBKDF2 runs off the
+    // main thread), so the result reaches PinGate through this instead of a synchronous return.
+    var pinFailed by remember { mutableStateOf(false) }
+    val pinScope = rememberCoroutineScope()
 
     if (pinIsSet && !authed) {
         PinGate(
             onCancel = onBack,
-            onSubmit = { entered -> settings.verifyPin(entered).also { if (it) authed = true } },
+            showError = pinFailed,
+            onSubmit = { entered ->
+                pinScope.launch {
+                    val ok = settings.verifyPinAsync(entered)
+                    pinFailed = !ok
+                    if (ok) authed = true
+                }
+                true
+            },
         )
         return
     }
@@ -76,7 +90,11 @@ fun ParentalControlsScreen(
         subtitle = stringResource(R.string.settings_parental_page_subtitle),
         onBack = onBack,
     ) {
-        PinSection(pinIsSet = pinIsSet, onSetPin = settings::setPin, onClearPin = settings::clearPin)
+        PinSection(
+            pinIsSet = pinIsSet,
+            onSetPin = { pin -> pinScope.launch { settings.setPin(pin) } },
+            onClearPin = settings::clearPin,
+        )
 
         Spacer(Modifier.height(SettingsSpacing.SectionGap))
 
@@ -202,9 +220,14 @@ private fun PinField(label: String, value: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun PinGate(onCancel: () -> Unit, onSubmit: (String) -> Boolean) {
+private fun PinGate(
+    onCancel: () -> Unit,
+    onSubmit: (String) -> Boolean,
+    /** Set by the caller once async verification has actually failed. */
+    showError: Boolean = false,
+) {
     var pin by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf(false) }
+    val error = showError
 
     Box(
         Modifier
@@ -239,7 +262,9 @@ private fun PinGate(onCancel: () -> Unit, onSubmit: (String) -> Boolean) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SettingsButton(
                         text = stringResource(R.string.parental_unlock),
-                        onClick = { if (!onSubmit(pin)) { error = true; pin = "" } },
+                        // onSubmit still returns true so the field clears; the failure appears
+                        // when the async result reaches `showError` a frame later.
+                        onClick = { onSubmit(pin); pin = "" },
                         style = SettingsButtonStyle.Primary,
                         enabled = pin.length == 4,
                     )

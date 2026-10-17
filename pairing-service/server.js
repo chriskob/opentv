@@ -21,17 +21,6 @@ const app = express();
 // Trust reverse proxy headers (X-Forwarded-For, X-Forwarded-Proto) for Cloudflare Tunnels, Synology, Traefik, etc.
 app.set('trust proxy', 1);
 
-// Enable CORS for NAS-hosted web files, playlists (M3U/M3U8), and EPG XML files
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  next();
-});
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -44,6 +33,10 @@ express.static.mime.define({
 });
 
 // Serve the static Admin Web Portal and NAS-hosted files
+app.use((req, res, next) => {
+  console.log(`[HTTP] ${req.method} ${req.originalUrl} from ${req.ip}`);
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Rate Limiting
@@ -63,8 +56,38 @@ const pushLimiter = rateLimit({
   message: { error: 'Too many configuration push attempts from this IP. Please wait a minute and try again.' }
 });
 
+const categoriesLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20, // Max 20 Xtream category lookups per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many category lookups from this IP. Please wait a minute and try again.' }
+});
+
+const MAX_SESSIONS = 1000;
+
 // In-memory state: Map<string, { ws: WebSocket | null, timer: NodeJS.Timeout, createdAt: number }>()
 const sessions = new Map();
+
+/**
+ * Mask a pairing code for logs so live codes are not stored in plain text.
+ */
+function maskCode(code) {
+  return `${code.slice(0, 2)}****`;
+}
+
+/**
+ * Reject hosts that point at this machine or its link-local network, so the
+ * category proxy cannot be used to reach local services or cloud metadata.
+ */
+function isBlockedHost(hostname) {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (h === '0.0.0.0' || h === '::' || h === '::1') return true;
+  if (/^127\./.test(h) || /^169\.254\./.test(h)) return true;
+  if (/^fe80:/i.test(h)) return true;
+  return false;
+}
 
 /**
  * Generate a cryptographically secure, collision-free ephemeral 6-character code
@@ -116,6 +139,9 @@ function purgeSession(code, reason = 'purged') {
  * Generates an ephemeral 6-character code with a 10-minute TTL.
  */
 app.post('/api/pair/init', initLimiter, (req, res) => {
+  if (sessions.size >= MAX_SESSIONS) {
+    return res.status(503).json({ error: 'Pairing service is busy. Please try again shortly.' });
+  }
   try {
     const code = generateUniqueCode();
 
@@ -138,7 +164,7 @@ app.post('/api/pair/init', initLimiter, (req, res) => {
       createdAt: Date.now()
     });
 
-    console.log(`[Session Created] Code: ${code} (expires in ${SESSION_TTL_SECONDS}s)`);
+    console.log(`[Session Created] Code: ${maskCode(code)} (expires in ${SESSION_TTL_SECONDS}s)`);
 
     res.status(200).json({
       code,
@@ -172,11 +198,38 @@ app.get('/api/pair/session', (req, res) => {
 });
 
 /**
+ * GET /api/pair/claim
+ * Polling counterpart to the websocket push: a device that cannot hold a socket asks for its
+ * payload until it becomes available, then the session is consumed.
+ */
+app.get('/api/pair/claim', (req, res) => {
+  const code = (req.query.code || '').trim().toUpperCase();
+  if (!code) {
+    return res.status(400).json({ status: 'error', error: 'code is required' });
+  }
+
+  const session = sessions.get(code);
+  if (!session) {
+    return res.status(200).json({ status: 'expired' });
+  }
+
+  if (session.payload) {
+    const payload = session.payload;
+    try { clearTimeout(session.timer); } catch (_) {}
+    sessions.delete(code);
+    console.log(`[Provision Collected] Code ${maskCode(code)} collected by polling device`);
+    return res.status(200).json({ status: 'ready', payload });
+  }
+
+  return res.status(200).json({ status: 'pending' });
+});
+
+/**
  * POST /api/xtream/categories
  * Proxies live categories lookup to an Xtream server so the Admin Portal
  * can display interactive include/exclude category selectors.
  */
-app.post('/api/xtream/categories', async (req, res) => {
+app.post('/api/xtream/categories', categoriesLimiter, async (req, res) => {
   const { serverUrl, username, password } = req.body;
 
   if (!serverUrl || !username || !password) {
@@ -186,6 +239,16 @@ app.post('/api/xtream/categories', async (req, res) => {
   let cleanUrl = serverUrl.trim().replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(cleanUrl)) {
     cleanUrl = `http://${cleanUrl}`;
+  }
+
+  let parsedHost;
+  try {
+    parsedHost = new URL(cleanUrl);
+  } catch (_) {
+    return res.status(400).json({ error: 'Server URL is not valid.' });
+  }
+  if (isBlockedHost(parsedHost.hostname)) {
+    return res.status(400).json({ error: 'That server address is not allowed.' });
   }
 
   const endpoint = `${cleanUrl}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&action=get_live_categories`;
@@ -246,11 +309,7 @@ app.post('/api/pair/push', pushLimiter, (req, res) => {
     });
   }
 
-  if (!session.ws || session.ws.readyState !== WebSocket.OPEN) {
-    return res.status(400).json({
-      error: 'Device is not connected. Make sure OpenTV is open on the Remote Setup screen.'
-    });
-  }
+  const realtime = !!(session.ws && session.ws.readyState === WebSocket.OPEN);
 
   // Normalize into an array of playlists
   let normalizedPlaylists = [];
@@ -368,6 +427,18 @@ app.post('/api/pair/push', pushLimiter, (req, res) => {
     timestamp: Date.now()
   };
 
+  if (!realtime) {
+    // No websocket: the device polls /api/pair/claim instead (TV apps that cannot hold a socket).
+    session.payload = payload;
+    session.payloadAt = Date.now();
+    console.log(`[Provision Stored] Code ${maskCode(normalizedCode)} queued for the polling device`);
+    return res.status(200).json({
+      success: true,
+      count: normalizedPlaylists.length,
+      message: `${normalizedPlaylists.length} playlist(s) queued for the device.`
+    });
+  }
+
   try {
     // Send configuration data in real time to the TV client
     session.ws.send(JSON.stringify(payload));
@@ -433,11 +504,25 @@ server.on('upgrade', (request, socket, head) => {
     return;
   }
 
+  // Browsers always send Origin; the TV client does not. Only accept same-host browser origins.
+  const origin = request.headers.origin;
+  if (origin) {
+    let originHost = null;
+    try {
+      originHost = new URL(origin).host;
+    } catch (_) {}
+    if (originHost !== host) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+  }
+
   const rawCode = urlObj.searchParams.get('code');
   const code = rawCode ? rawCode.trim().toUpperCase() : null;
 
   if (!code || !sessions.has(code)) {
-    console.warn(`[WS Rejected] Code invalid or expired: ${code}`);
+    console.warn(`[WS Rejected] Code invalid or expired: ${code ? maskCode(code) : null}`);
     wss.handleUpgrade(request, socket, head, (ws) => {
       // 4001: Session Not Found / Expired
       ws.close(4001, 'Session Not Found');
@@ -468,7 +553,7 @@ wss.on('connection', (ws, request, code) => {
   session.ws = ws;
   ws.isAlive = true;
 
-  console.log(`[WS Connected] Device paired to session code ${code}`);
+  console.log(`[WS Connected] Device paired to session code ${maskCode(code)}`);
 
   // Send an immediate connection acknowledgment to the client
   ws.send(JSON.stringify({

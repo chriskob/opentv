@@ -260,6 +260,9 @@ fun HomeScreen(
     // Tri-state: null = still checking the catalogue, true = channels on disk, false = confirmed
     // empty. Drives the choice between the loading spinner and a recoverable error below.
     val channelsPresent by viewModel.channelsPresent.collectAsState()
+    // "The pipeline has answered once this process" - while it is false an empty `rows` is
+    // still-pending, not a filter that matches nothing (see ChannelsViewModel.guideFirstSettle).
+    val guideFirstSettle by viewModel.guideFirstSettle.collectAsState()
 
     // Two separate ideas, on purpose:
     //  - highlightedRow: where the d-pad is in the grid. Moves freely with up/down.
@@ -411,6 +414,85 @@ fun HomeScreen(
     // moving focus onto it â€” a just-revealed node isn't focusable on the very same frame.
     var pendingRailFocus by remember { mutableStateOf(false) }
     var pendingGuideFocus by remember { mutableStateOf(false) }
+
+    /**
+     * Leaving fullscreen back into the guide: land the cursor on the channel that is actually
+     * playing, snap the timeline to "now", and queue the focus handover.
+     *
+     * This used to be two near-identical sixty-line blocks - the BackHandler below fullscreen and
+     * PlayerScreen's onBack - kept in sync by hand, and they had already drifted (one reset the
+     * rail, the other missed the empty-rows case; both waited on a delayed coroutine to
+     * reposition the guide, which is the half second the viewer watched a stale list before it
+     * jumped). There is now exactly one copy, and it restores synchronously: from the first frame
+     * the guide paints, the highlight is on the playing row, the timeline is at "now" when
+     * guideResetOnOpen is on, and the grid has been told (via restoreTick) to centre onto the
+     * playing channel - including when its category has to load first, in which case GuideGrid
+     * parks the target and lands on it the moment those rows arrive.
+     */
+    fun exitFullScreenToGuide() {
+        // Backing out of a catch-up programme leaves the guide exactly where the viewer scrubbed
+        // to, so they can pick another archived show. The next Back (the browsingAwayFromLive
+        // handler below) returns the guide to now. The shared player keeps the timeshift stream in
+        // the preview pane; with preview video off there is no surface for it, so stop it rather
+        // than leave a hidden stream running.
+        if (catchup != null) {
+            if (!previewEnabled) graph.livePlayer.player.pause()
+            pendingGuideFocus = true
+            leaveFullScreen()
+            return
+        }
+        // Return the guide to the channel that was ACTUALLY playing fullscreen. selectedRow is
+        // kept in lockstep with the player via PlayerScreen's onChannelChange (covers zapping),
+        // so it is authoritative here; lastChannelId is only a fallback for a fresh process.
+        val currentId = selectedRow?.primary?.id
+            ?: highlightedRow?.primary?.id
+            ?: settings.lastChannelId
+        val targetRow = rows.firstOrNull { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }
+            ?: selectedRow
+            ?: highlightedRow
+        if (targetRow != null) {
+            selectedRow = targetRow
+            highlightedRow = targetRow
+            val now = System.currentTimeMillis()
+            highlightedProgramme = targetRow.programmes.firstOrNull { now in it.startUtcMillis until it.endUtcMillis } ?: targetRow.now
+        }
+        if (currentId > 0L && (rows.isEmpty() || rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } })) {
+            // The playing channel lives outside the current category rows: keep the selection
+            // pointing at it with a provisional row while the matching category loads; the grid
+            // parks the restore target and centres the playing channel when those rows settle,
+            // so the cursor never has to be guessed from the wrong shelf.
+            scope.launch {
+                val ch = graph.catalogRepository.channel(currentId)
+                if (ch != null) {
+                    val prov = ChannelsViewModel.Row(
+                        primary = ch,
+                        variants = listOf(ch),
+                        now = null,
+                        next = null,
+                        programmes = emptyList(),
+                    )
+                    selectedRow = prov
+                    highlightedRow = prov
+                }
+            }
+            viewModel.selectCategoryForChannel(currentId)
+        }
+        nowMillis = System.currentTimeMillis()
+        viewModel.tick()
+        if (guideResetOnOpen) {
+            // Reposition BEFORE the picture starts shrinking. The old version reset from a
+            // coroutine ~400 ms into the transition, so the guide painted wherever it was parked
+            // and then visibly jumped underneath the shrinking video; now it is already correct
+            // at first paint.
+            viewModel.guideToNow()
+            backScrollActive = false
+            scope.launch { guideScrollState.scrollTo(0) }
+        }
+        guideRestoreTick++
+        pendingGuideFocus = true
+        railExpanded = false
+        leaveFullScreen()
+    }
 
     /**
      * Steps d-pad focus through the rail by index, wrapping at both ends, instead of leaving
@@ -569,17 +651,24 @@ fun HomeScreen(
         }
         return true
     }
-    LaunchedEffect(pendingGuideFocus, mainMenuVisible, shrinkingFromFullScreen) {
+    LaunchedEffect(pendingGuideFocus, mainMenuVisible, shrinkingFromFullScreen, rows) {
         // Never pull focus back to the guide while the main menu is open: doing so hands focus out
         // of the rail the moment it is summoned and the menu reads as "won't open at all".
         // Also wait out the shrink: the guide is visible underneath during the animation but
         // must not take focus until the picture has docked.
         if (pendingGuideFocus && !mainMenuVisible && !shrinkingFromFullScreen) {
-            delay(30)
-            // Only clear on success: a failed request (cell not composed yet) must retry on the
-            // next trigger instead of stranding focus on whatever holds it now.
-            if (runCatching { guideFocusRequester.requestFocus() }.isSuccess) {
-                pendingGuideFocus = false
+            // Retry until the cursor's cell is composed. Back from fullscreen can start a category
+            // reload at the very moment focus is handed over, and the requester is attached to the
+            // highlighted row, which may still be a frame away. A single attempt whose one try
+            // threw left pendingGuideFocus set with no later trigger to retry it - that was the
+            // "cursor sometimes never shows after Back" report. Still bounded, and left pending
+            // on total failure so the next state change can try again.
+            for (attempt in 0 until 12) {
+                if (runCatching { guideFocusRequester.requestFocus() }.isSuccess) {
+                    pendingGuideFocus = false
+                    break
+                }
+                delay(25)
             }
         }
     }
@@ -603,69 +692,7 @@ fun HomeScreen(
 
     // ---- Back button navigation flow ---------------------------------------------------------
     BackHandler(enabled = isFullScreen) {
-        // Backing out of a catch-up programme leaves the guide exactly where the viewer scrubbed
-        // to, so they can pick another archived show. The next Back (the browsingAwayFromLive
-        // handler below) returns the guide to now. The shared player keeps the timeshift stream in
-        // the preview pane; with preview video off there is no surface for it, so stop it rather
-        // than leave a hidden stream running.
-        if (catchup != null) {
-            if (!previewEnabled) graph.livePlayer.player.pause()
-            pendingGuideFocus = true
-            leaveFullScreen()
-            return@BackHandler
-        }
-        // Return the guide to the channel that was ACTUALLY playing fullscreen. selectedRow is
-        // kept in lockstep with the player via PlayerScreen's onChannelChange (covers zapping),
-        // so it is authoritative here; lastChannelId is only a fallback for a fresh process.
-        val currentId = selectedRow?.primary?.id
-            ?: highlightedRow?.primary?.id
-            ?: settings.lastChannelId
-        val targetRow = rows.firstOrNull { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }
-            ?: selectedRow
-            ?: highlightedRow
-        if (targetRow != null) {
-            selectedRow = targetRow
-            highlightedRow = targetRow
-            val now = System.currentTimeMillis()
-            highlightedProgramme = targetRow.programmes.firstOrNull { now in it.startUtcMillis until it.endUtcMillis } ?: targetRow.now
-        }
-        if (currentId > 0L && rows.isNotEmpty() && rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }) {
-            // The playing channel lives outside the current category rows: keep the selection
-            // pointing at it with a provisional row while the matching category loads.
-            scope.launch {
-                val ch = graph.catalogRepository.channel(currentId)
-                if (ch != null) {
-                    val prov = ChannelsViewModel.Row(
-                        primary = ch,
-                        variants = listOf(ch),
-                        now = null,
-                        next = null,
-                        programmes = emptyList(),
-                    )
-                    selectedRow = prov
-                    highlightedRow = prov
-                }
-            }
-        }
-         val channelOutsideCurrentRows = currentId > 0L &&
-             (rows.isEmpty() || rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } })
-         if (channelOutsideCurrentRows) {
-             viewModel.selectCategoryForChannel(currentId)
-         }
-         nowMillis = System.currentTimeMillis()
-         viewModel.tick()
-         if (guideResetOnOpen) {
-             scope.launch {
-                 delay(PLAYER_TRANSITION_MILLIS + 100L)
-                 if (!isFullScreen && !shrinkingFromFullScreen) {
-                     viewModel.guideToNow()
-                     guideScrollState.scrollTo(0)
-                     backScrollActive = false
-                 }
-             }
-         }
-         pendingGuideFocus = true
-         leaveFullScreen()
+        exitFullScreenToGuide()
     }
 
     // 1. If channel menu / recording dialog / background prompt is open, close it.
@@ -1250,66 +1277,7 @@ fun HomeScreen(
             PlayerScreen(
                 channelId = (selectedRow ?: highlightedRow ?: activeSelectedRow ?: activeHighlightedRowState.value)?.primary?.id ?: (if (settings.lastChannelId > 0L) settings.lastChannelId else null),
                 onBack = {
-                    // Backing out of catch-up leaves the guide at the scrubbed time so another
-                    // archived show can be picked; the next Back returns to now (browsingAwayFromLive).
-                    // With preview video off there is no surface for the timeshift stream, so stop it.
-                    if (catchup != null) {
-                        if (!previewEnabled) previewController.player.pause()
-                        pendingGuideFocus = true
-                        leaveFullScreen()
-                        return@PlayerScreen
-                    }
-                    // Mirror of the BackHandler above: the guide returns to the channel that was
-                    // actually playing fullscreen (selectedRow is synced via onChannelChange).
-                    val currentId = selectedRow?.primary?.id
-                        ?: highlightedRow?.primary?.id
-                        ?: settings.lastChannelId
-                    val targetRow = rows.firstOrNull { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }
-                        ?: selectedRow
-                        ?: highlightedRow
-                    if (targetRow != null) {
-                        selectedRow = targetRow
-                        highlightedRow = targetRow
-                        val now = System.currentTimeMillis()
-                        highlightedProgramme = targetRow.programmes.firstOrNull { now in it.startUtcMillis until it.endUtcMillis } ?: targetRow.now
-                    }
-                    if (currentId > 0L && rows.isNotEmpty() && rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }) {
-                        scope.launch {
-                            val ch = graph.catalogRepository.channel(currentId)
-                            if (ch != null) {
-                                val prov = ChannelsViewModel.Row(
-                                    primary = ch,
-                                    variants = listOf(ch),
-                                    now = null,
-                                    next = null,
-                                    programmes = emptyList(),
-                                )
-                                selectedRow = prov
-                                highlightedRow = prov
-                            }
-                        }
-                    }
-                     val channelOutsideCurrentRows = currentId > 0L &&
-                         rows.none { it.primary.id == currentId || it.variants.any { v -> v.id == currentId } }
-                     if (channelOutsideCurrentRows) {
-                         viewModel.selectCategoryForChannel(currentId)
-                     }
-                     nowMillis = System.currentTimeMillis()
-                     viewModel.tick()
-                     if (guideResetOnOpen) {
-                         scope.launch {
-                             delay(PLAYER_TRANSITION_MILLIS + 100L)
-                             if (!isFullScreen && !shrinkingFromFullScreen) {
-                                 viewModel.guideToNow()
-                                 guideScrollState.scrollTo(0)
-                                 backScrollActive = false
-                             }
-                         }
-                     }
-                     pendingGuideFocus = true
-
-                     railExpanded = false
-                     leaveFullScreen()
+                    exitFullScreenToGuide()
                 },
                 onOpenSearch = onOpenSearch,
                 // These three leave the live player for another content type. Asking the tab
@@ -1380,8 +1348,8 @@ fun HomeScreen(
             ) {
          AnimatedVisibility(
              visible = railExpanded,
-             enter = expandHorizontally(animationSpec = tween(180)),
-             exit = shrinkHorizontally(animationSpec = tween(160)),
+             enter = expandHorizontally(animationSpec = tween(100)),
+             exit = shrinkHorizontally(animationSpec = tween(80)),
              modifier = Modifier.width(240.dp),
          ) {
         // ---- Category rail -----------------------------------------------------------------
@@ -1468,7 +1436,7 @@ fun HomeScreen(
                                 railExpanded = false
                                 suppressRailPreviewSelection = false
                                 guideRestoreTick++
-                                 pendingGuideFocus = true
+                                pendingGuideFocus = true
 
                             },
                             modifier = entryModifier,
@@ -1498,7 +1466,7 @@ fun HomeScreen(
                                 railExpanded = false
                                 suppressRailPreviewSelection = false
                                 guideRestoreTick++
-                                 pendingGuideFocus = true
+                                pendingGuideFocus = true
 
                             },
                             modifier = entryModifier,
@@ -1515,7 +1483,7 @@ fun HomeScreen(
             if (rows.isEmpty()) {
                 when {
                     favouritesOnly -> NoFavouritesState()
-                    isSyncing || channelsPresent == null || shrinkingFromFullScreen -> LoadingState(isSyncing)
+                    isSyncing || channelsPresent == null || !guideFirstSettle -> LoadingState(isSyncing)
                     channelsPresent == true -> {
                         // Channels are on the box but the current filter matches none (stale
                         // category/provider after a playlist change, mid-transition). A bare

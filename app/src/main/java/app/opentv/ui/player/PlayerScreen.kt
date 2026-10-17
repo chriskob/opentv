@@ -294,6 +294,11 @@ fun PlayerScreen(
     }
     var variants by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var currentId by remember { mutableStateOf(channelId) }
+    // Derive the recording for the channel currently viewed once, instead of rescanning the
+    // whole active-recording set from two later composable lambdas on every recomposition.
+    val activeRecordingForCurrent = remember(activeRecordings, currentId) {
+        activeRecordings.firstOrNull { it.channelId == currentId }
+    }
     // The channel we were on before this one â€” powers the "Last channel" recall in the list.
     var previousId by remember { mutableStateOf<Long?>(null) }
     // Digits typed on the remote accumulate here, then jump to that channel number after a beat.
@@ -733,6 +738,8 @@ fun PlayerScreen(
                 val resolvedUrl = graph.catalogRepository.resolvePlaybackUrl(channel, src)
                 src to resolvedUrl
             }
+            // Zapped elsewhere while resolving: this stream is stale, so drop it.
+            if (currentId != channel.id) return@launch
             controller.play(
                 PlayerController.Request(
                     url = url,
@@ -812,6 +819,8 @@ fun PlayerScreen(
                 }
                 return@launch
             }
+            // The user zapped again while this one was resolving; a late result must not replace it.
+            if (currentId != id) return@launch
 
             currentChannel = target
             paused = false
@@ -1185,7 +1194,7 @@ fun PlayerScreen(
 
 
     fun toggleRecord() {
-        val active = activeRecordings.firstOrNull { it.channelId == currentId }
+        val active = activeRecordingForCurrent
         if (active != null) {
             graph.recordingEngine.stop(active.id)
         } else {
@@ -2093,7 +2102,7 @@ fun PlayerScreen(
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically(),
                 ) {
-                    val isRecording = activeRecordings.any { it.channelId == currentId }
+                    val isRecording = activeRecordingForCurrent != null
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2297,8 +2306,8 @@ fun PlayerScreen(
                 // ---- Watched Channels History Carousel (Tier 1: Default on OK) ----
                 AnimatedVisibility(
                     visible = osdTier != OsdTier.SHORTCUTS,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
+                    enter = fadeIn(tween(100)),
+                    exit = fadeOut(tween(100)),
                 ) {
                     Column(
                         Modifier
@@ -2442,7 +2451,7 @@ fun PlayerScreen(
                                             )
                                         }
                                         AppSettings.SubMenuButton.RECORDINGS -> {
-                                            val recordingThis = activeRecordings.any { it.channelId == currentId }
+                                            val recordingThis = activeRecordingForCurrent != null
                                             SubMenuButtonCard(
                                                 icon = Icons.Filled.FiberManualRecord,
                                                 label = if (recordingThis) "Recording" else stringResource(R.string.submenu_recordings),
@@ -2621,7 +2630,7 @@ fun PlayerScreen(
             exit = fadeOut(animationSpec = tween(100)) + slideOutHorizontally(animationSpec = tween(160)) { -it },
             modifier = Modifier.align(Alignment.CenterStart),
         ) {
-            val currentIndex = queue.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
+            val currentIndex = remember(queue, currentId) { queue.indexOfFirst { it.id == currentId }.coerceAtLeast(0) }
             LaunchedEffect(channelListVisible, currentIndex) {
                 if (channelListVisible) runCatching { channelListState.scrollToItem(currentIndex) }
             }
@@ -2757,6 +2766,10 @@ private fun WeatherOptInDialog(
 ) {
     var zip by remember(initialZip) { mutableStateOf(initialZip) }
     var showError by remember { mutableStateOf(false) }
+    // The yes path is the default: landing focus on Turn On means the remote just needs
+    // a single OK press to enable weather instead of navigating across the dialog first.
+    val turnOnFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { turnOnFocus.requestFocus() } }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.weather_optin_title), color = Color.White, fontWeight = FontWeight.Bold) },
@@ -2774,6 +2787,9 @@ private fun WeatherOptInDialog(
                         zip = it.filter { c -> c.isDigit() || c == '-' }.take(10)
                         showError = false
                     },
+                    // Keep the field compact and centered so it reads like a simple zip box
+                    // instead of a full-width form line.
+                    modifier = Modifier.width(160.dp),
                     label = { Text(stringResource(R.string.weather_zip_label)) },
                     placeholder = { Text(stringResource(R.string.weather_zip_hint)) },
                     singleLine = true,
@@ -2786,10 +2802,13 @@ private fun WeatherOptInDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                if (WeatherClient.isValidZip(zip)) onTurnOn(zip.trim())
-                else showError = true
-            }) {
+            TextButton(
+                onClick = {
+                    if (WeatherClient.isValidZip(zip)) onTurnOn(zip.trim())
+                    else showError = true
+                },
+                modifier = Modifier.focusRequester(turnOnFocus),
+            ) {
                 Text(stringResource(R.string.weather_optin_turn_on), color = AppTheme.primary, fontWeight = FontWeight.Bold)
             }
         },

@@ -15,17 +15,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -81,39 +78,25 @@ fun EpgSettingsScreen(
 
     // Direct Delete Confirmation Dialog (prevents focus jumping on TV)
     pendingDeleteFeed?.let { feed ->
-        AlertDialog(
-            onDismissRequest = { pendingDeleteFeed = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = SettingsShape.Dialogs,
-            title = {
-                Text(
-                    text = "Delete Guide?",
-                    color = SettingsDanger,
-                    fontWeight = FontWeight.Medium,
-                )
-            },
-            text = {
-                Text(
-                    text = "Are you sure you want to delete \"${feed.name}\"? Channel guide matching for this feed will be removed.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            confirmButton = {
+        SettingsDialog(
+            title = "Delete guide?",
+            titleColor = SettingsDanger,
+            message = "\"${feed.name}\" will be removed, and channel guide matching for this feed will go with it.",
+            onDismiss = { pendingDeleteFeed = null },
+            actions = {
                 SettingsButton(
-                    text = "Yes, Delete",
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { pendingDeleteFeed = null },
+                    style = SettingsButtonStyle.Secondary,
+                )
+                Spacer(Modifier.width(12.dp))
+                SettingsButton(
+                    text = "Delete",
                     onClick = {
                         viewModel.remove(feed)
                         pendingDeleteFeed = null
                     },
                     style = SettingsButtonStyle.Danger,
-                )
-            },
-            dismissButton = {
-                SettingsButton(
-                    text = stringResource(R.string.common_cancel),
-                    onClick = { pendingDeleteFeed = null },
-                    style = SettingsButtonStyle.Secondary,
                 )
             },
         )
@@ -289,10 +272,9 @@ private fun FeedRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Switch(
+                SettingsSwitch(
                     checked = feed.enabled,
-                    onCheckedChange = onToggle,
-                    colors = settingsSwitchColors(),
+                    onToggle = onToggle,
                 )
                 SettingsIconButton(
                     icon = Icons.Filled.Delete,
@@ -327,68 +309,59 @@ private fun EditFeedDialog(
     var enabled by remember { mutableStateOf(feed.enabled) }
     var confirmingDelete by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = SettingsShape.Dialogs,
-        title = {
-            Text(
-                text = if (confirmingDelete) "Delete Guide?" else "Edit Guide Settings",
-                color = if (confirmingDelete) SettingsDanger else MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-            )
+    SettingsDialog(
+        title = if (confirmingDelete) "Delete guide?" else "Edit guide",
+        titleColor = if (confirmingDelete) SettingsDanger else MaterialTheme.colorScheme.onSurface,
+        message = if (confirmingDelete) {
+            "\"${feed.name}\" will be removed, and channel guide matching for this feed will go with it."
+        } else {
+            null
         },
-        text = {
-            if (confirmingDelete) {
-                Text(
-                    text = "Are you sure you want to delete \"${feed.name}\"? Channel guide matching for this feed will be removed.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        onDismiss = onDismiss,
+        content = {
+            if (!confirmingDelete) {
+                TvOutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Guide name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+
+                if (feed.providerSourceId == null) {
                     TvOutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Guide Name") },
+                        value = url,
+                        onValueChange = { url = it },
+                        label = { Text("XMLTV URL (.xml / .xml.gz)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-
-                    if (feed.providerSourceId == null) {
-                        TvOutlinedTextField(
-                            value = url,
-                            onValueChange = { url = it },
-                            label = { Text("XMLTV URL (.xml / .xml.gz)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        Text(
-                            text = "URL is derived from your IPTV provider source.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-
-                    SettingsToggleRow(
-                        title = "Enable Guide",
-                        subtitle = "Download and match channels with this guide",
-                        checked = enabled,
-                        onToggle = { enabled = it },
+                } else {
+                    Text(
+                        text = "URL is derived from your IPTV provider source.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+
+                SettingsToggleRow(
+                    title = "Enable guide",
+                    subtitle = "Download and match channels with this guide",
+                    checked = enabled,
+                    onToggle = { enabled = it },
+                )
             }
         },
-        confirmButton = {
+        actions = {
             if (confirmingDelete) {
                 SettingsButton(
-                    text = "Yes, Delete",
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { confirmingDelete = false },
+                    style = SettingsButtonStyle.Secondary,
+                )
+                Spacer(Modifier.width(12.dp))
+                SettingsButton(
+                    text = "Delete",
                     onClick = {
                         onDelete(feed)
                         onDismiss()
@@ -396,6 +369,19 @@ private fun EditFeedDialog(
                     style = SettingsButtonStyle.Danger,
                 )
             } else {
+                SettingsButton(
+                    text = stringResource(R.string.common_delete),
+                    onClick = { confirmingDelete = true },
+                    style = SettingsButtonStyle.Danger,
+                    icon = Icons.Filled.Delete,
+                )
+                Spacer(Modifier.weight(1f))
+                SettingsButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = onDismiss,
+                    style = SettingsButtonStyle.Secondary,
+                )
+                Spacer(Modifier.width(12.dp))
                 SettingsButton(
                     text = stringResource(R.string.common_save),
                     onClick = {
@@ -405,28 +391,6 @@ private fun EditFeedDialog(
                     },
                     style = SettingsButtonStyle.Primary,
                 )
-            }
-        },
-        dismissButton = {
-            if (confirmingDelete) {
-                SettingsButton(
-                    text = stringResource(R.string.common_cancel),
-                    onClick = { confirmingDelete = false },
-                    style = SettingsButtonStyle.Secondary,
-                )
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingsButton(
-                        text = stringResource(R.string.common_delete),
-                        onClick = { confirmingDelete = true },
-                        style = SettingsButtonStyle.Danger,
-                    )
-                    SettingsButton(
-                        text = stringResource(R.string.common_cancel),
-                        onClick = onDismiss,
-                        style = SettingsButtonStyle.Secondary,
-                    )
-                }
             }
         },
     )

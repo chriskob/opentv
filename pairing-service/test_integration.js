@@ -1,5 +1,6 @@
 'use strict';
 
+const assert = require('assert');
 const http = require('http');
 const { WebSocket } = require('ws');
 
@@ -46,8 +47,8 @@ async function runTests() {
     path: '/health',
     method: 'GET'
   });
-  console.assert(health.status === 200, `Expected 200, got ${health.status}`);
-  console.assert(health.data.status === 'ok', 'Expected status: ok');
+  assert(health.status === 200, `Expected 200, got ${health.status}`);
+  assert(health.data.status === 'ok', 'Expected status: ok');
   console.log('✓ Health check passed');
 
   // Test 2: Invalid code on WebSocket
@@ -60,7 +61,7 @@ async function runTests() {
       resolve();
     });
   });
-  console.assert(wsClosedCode === 4001, `Expected 4001, got ${wsClosedCode}`);
+  assert(wsClosedCode === 4001, `Expected 4001, got ${wsClosedCode}`);
   console.log('✓ Invalid code WebSocket rejected with 4001');
 
   // Test 3: POST /api/pair/init
@@ -72,10 +73,10 @@ async function runTests() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   }, {});
-  console.assert(initRes.status === 200, `Expected 200, got ${initRes.status}`);
+  assert(initRes.status === 200, `Expected 200, got ${initRes.status}`);
   const code = initRes.data.code;
-  console.assert(typeof code === 'string' && code.length === 6, `Expected 6-char code, got ${code}`);
-  console.assert(initRes.data.expiresIn === 10, `Expected expiresIn 10, got ${initRes.data.expiresIn}`);
+  assert(typeof code === 'string' && code.length === 6, `Expected 6-char code, got ${code}`);
+  assert(initRes.data.expiresIn === 10, `Expected expiresIn 10, got ${initRes.data.expiresIn}`);
   console.log(`✓ Got pairing code: ${code}`);
 
   // Test 4: Connect WebSocket with valid code
@@ -100,7 +101,7 @@ async function runTests() {
       cleanClose = code;
     });
   });
-  console.assert(receivedConnected === true, 'Expected connected event');
+  assert(receivedConnected === true, 'Expected connected event');
   console.log('✓ Received WebSocket connected confirmation');
 
   // Test 5: POST /api/pair/push
@@ -116,15 +117,15 @@ async function runTests() {
     playlistUrl: 'https://test.com/stream.m3u8',
     epgUrl: 'https://test.com/epg.xml'
   });
-  console.assert(pushRes.status === 200, `Expected 200, got ${pushRes.status}`);
-  console.assert(pushRes.data.success === true, 'Expected success: true');
+  assert(pushRes.status === 200, `Expected 200, got ${pushRes.status}`);
+  assert(pushRes.data.success === true, 'Expected success: true');
   console.log('✓ Push acknowledged with 200 OK');
 
   // Wait for provision message on WebSocket
   await delay(300);
-  console.assert(receivedProvision !== null, 'Expected provision message on WebSocket');
-  console.assert(receivedProvision.playlistUrl === 'https://test.com/stream.m3u8', 'Expected playlistUrl');
-  console.assert(cleanClose === 1000, `Expected clean socket close (1000), got ${cleanClose}`);
+  assert(receivedProvision !== null, 'Expected provision message on WebSocket');
+  assert(receivedProvision.playlistUrl === 'https://test.com/stream.m3u8', 'Expected playlistUrl');
+  assert(cleanClose === 1000, `Expected clean socket close (1000), got ${cleanClose}`);
   console.log('✓ WebSocket received payload and was closed cleanly with code 1000');
 
   // Test 6: Verify session is purged
@@ -139,7 +140,7 @@ async function runTests() {
     code: code,
     playlistUrl: 'https://test.com/stream.m3u8'
   });
-  console.assert(secondPush.status === 404, `Expected 404 for purged session, got ${secondPush.status}`);
+  assert(secondPush.status === 404, `Expected 404 for purged session, got ${secondPush.status}`);
   console.log('✓ Second push returned 404: session purged');
 
   // Test 7: Multi-playlist batch with Xtream options
@@ -190,14 +191,14 @@ async function runTests() {
     ]
   });
 
-  console.assert(multiPushRes.status === 200, `Expected 200, got ${multiPushRes.status}`);
-  console.assert(multiPushRes.data.count === 2, `Expected count 2, got ${multiPushRes.data.count}`);
+  assert(multiPushRes.status === 200, `Expected 200, got ${multiPushRes.status}`);
+  assert(multiPushRes.data.count === 2, `Expected count 2, got ${multiPushRes.data.count}`);
   await delay(200);
-  console.assert(receivedBatch !== null, 'Expected batch provision message');
-  console.assert(Array.isArray(receivedBatch.playlists), 'Expected playlists array');
-  console.assert(receivedBatch.playlists.length === 2, 'Expected 2 playlists');
-  console.assert(receivedBatch.playlists[1].options.includeLive === true, 'Expected includeLive true');
-  console.assert(receivedBatch.playlists[1].options.excludeKeywords === 'Adult, XXX', 'Expected excludeKeywords');
+  assert(receivedBatch !== null, 'Expected batch provision message');
+  assert(Array.isArray(receivedBatch.playlists), 'Expected playlists array');
+  assert(receivedBatch.playlists.length === 2, 'Expected 2 playlists');
+  assert(receivedBatch.playlists[1].options.includeLive === true, 'Expected includeLive true');
+  assert(receivedBatch.playlists[1].options.excludeKeywords === 'Adult, XXX', 'Expected excludeKeywords');
   console.log('✓ Multi-playlist batch with options verified');
 
   // Test 8: Xtream with Channels unticked must arrive unticked.
@@ -245,17 +246,17 @@ async function runTests() {
     ]
   });
 
-  console.assert(vodOnlyRes.status === 200, `Expected 200, got ${vodOnlyRes.status}`);
+  assert(vodOnlyRes.status === 200, `Expected 200, got ${vodOnlyRes.status}`);
   await delay(200);
-  console.assert(receivedVodOnly !== null, 'Expected provision message');
-  console.assert(receivedVodOnly.playlists[0].name === 'VOD', 'Expected playlist name preserved');
-  console.assert(
+  assert(receivedVodOnly !== null, 'Expected provision message');
+  assert(receivedVodOnly.playlists[0].name === 'VOD', 'Expected playlist name preserved');
+  assert(
     receivedVodOnly.playlists[0].options.includeLive === false,
     'Expected includeLive false to survive the relay'
   );
-  console.assert(receivedVodOnly.playlists[0].options.includeVod === true, 'Expected includeVod true');
-  console.assert(receivedVodOnly.playlists[0].options.includeSeries === true, 'Expected includeSeries true');
-  console.assert(
+  assert(receivedVodOnly.playlists[0].options.includeVod === true, 'Expected includeVod true');
+  assert(receivedVodOnly.playlists[0].options.includeSeries === true, 'Expected includeSeries true');
+  assert(
     receivedVodOnly.xtreamData.options.includeLive === false,
     'Expected the legacy xtreamData mirror to carry includeLive false'
   );

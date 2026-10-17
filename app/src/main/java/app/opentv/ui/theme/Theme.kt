@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
  * recording/favourite/live semantics, the focus fill — so these live here rather than being passed
  * around or, worse, re-hardcoded at each call site.
  */
-val LocalPalette = staticCompositionLocalOf { AppPalette.TVPLAYER.palette() }
+val LocalPalette = staticCompositionLocalOf { AppPalette.SLATE_GUIDE.palette() }
 
 /**
  * How translucent the guide's own chrome is — 1f leaves the old solid panels. TiviMate ships the
@@ -120,7 +120,7 @@ private val OpenTvTypography = Typography(
 
 @Composable
 fun OpenTvTheme(
-    palette: AppPalette = AppPalette.TVPLAYER,
+    palette: AppPalette = AppPalette.SLATE_GUIDE,
     guideChromeAlpha: Float = 1f,
     content: @Composable () -> Unit,
 ) {

@@ -457,24 +457,10 @@ private fun Entrance(
     index: Int,
     content: @Composable () -> Unit,
 ) {
-    var shown by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay((index * 45L).coerceAtMost(450L))
-        shown = true
-    }
-    val alpha by animateFloatAsState(
-        if (shown) 1f else 0f,
-        animationSpec = tween(300),
-        label = "plexEnter",
-    )
-    Box(
-        Modifier.graphicsLayer {
-            this.alpha = alpha
-            translationX = (1f - alpha) * 32f
-        },
-    ) {
-        content()
-    }
+    // The original staggered per-card entrance animated every poster card independently; with
+    // a dozen cards on a rail that is dozens of animators for a 300ms cosmetic effect. Direct
+    // composition keeps scrolling at frame-rate on low-end boxes; the stagger was not important.
+    content()
 }
 
 /**

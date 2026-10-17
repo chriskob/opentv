@@ -10,6 +10,7 @@
     <string name="common_play">Odtwórz</string>
     <string name="common_stop">Zatrzymaj</string>
     <string name="common_delete">Usuń</string>
+    <string name="common_edit">Edytuj</string>
     <string name="common_selected">Wybrano</string>
     <string name="common_favourite">Ulubione</string>
     <string name="common_remove_favourite">Usuń z ulubionych</string>

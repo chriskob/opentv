@@ -11,6 +11,7 @@
     <string name="common_play">Play</string>
     <string name="common_stop">Stop</string>
     <string name="common_delete">Delete</string>
+    <string name="common_edit">Edit</string>
     <string name="common_selected">Selected</string>
     <string name="exit_title">Leave OpenTV?</string>
     <string name="exit_body">You\'ll go back to your TV\'s home screen.</string>

@@ -59,6 +59,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -581,6 +587,11 @@ private fun OpenTvApp(isTelevision: Boolean) {
             val rec = runCatching {
                 ServiceLocator.get(bootContext).recordingRepository.byId(req.recordingId)
             }.getOrNull() ?: return@LaunchedEffect
+            // Register the locator the tail-following source reads from: the row is already in
+            // hand, so playback open consults only the live registry and never the database.
+            if (rec.filePath.isNotBlank()) {
+                app.opentv.recording.RecordingLiveState.markActive(rec.id, rec.filePath)
+            }
             runCatching {
                 navController.navigate(
                     Routes.vodPlayer(
@@ -653,6 +664,12 @@ private fun OpenTvApp(isTelevision: Boolean) {
                         // growing source; USB (content://) isn't.
                         val growable = !app.opentv.recording.RecordingStorage.isContent(rec.filePath) &&
                             !app.opentv.recording.RecordingStorage.isUsbPlaceholder(rec.filePath)
+                        // Register the locator the tail-following source reads from: the row is
+                        // already in hand, so playback open consults only the live registry and
+                        // never the database — including after a process restart cleared it.
+                        if (stillRecording && growable && rec.filePath.isNotBlank()) {
+                            app.opentv.recording.RecordingLiveState.markActive(rec.id, rec.filePath)
+                        }
                         val url = when {
                             stillRecording && growable -> "optvrec://${rec.id}"
                             app.opentv.recording.SmbClient.isSmb(rec.filePath) -> rec.filePath
@@ -737,6 +754,8 @@ private fun OpenTvApp(isTelevision: Boolean) {
             }
 
             composable(Routes.REMOTE_PAIRING) {
+                val pairingContext = LocalContext.current
+                val pairingScope = rememberCoroutineScope()
                 RemotePairingScreen(
                     viewModel = sourcesViewModel,
                     onFinished = {
@@ -744,9 +763,25 @@ private fun OpenTvApp(isTelevision: Boolean) {
                             popUpTo(0)
                         }
                     },
+                    onContinue = {
+                        pairingScope.launch(Dispatchers.IO) {
+                            val graph = app.opentv.core.ServiceLocator.get(pairingContext)
+                            val first = runCatching { graph.catalogRepository.firstChannel() }.getOrNull()
+                            withContext(Dispatchers.Main) {
+                                if (first != null) {
+                                    navController.navigate(Routes.player(first.id)) {
+                                        popUpTo(0)
+                                    }
+                                } else {
+                                    navController.navigate(Routes.HOME) {
+                                        popUpTo(0)
+                                    }
+                                }
+                            }
+                        }
+                    },
                     onCancel = { navController.popBackStack() },
-                )
-            }
+                )            }
 
             composable(Routes.ADDONS) {
                 StremioAddonsScreen(onBack = { navController.popBackStack() })

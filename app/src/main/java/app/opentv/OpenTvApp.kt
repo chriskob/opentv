@@ -227,6 +227,12 @@ class OpenTvApp : Application(), ImageLoaderFactory {
                 force = false,
                 refreshIntervalMillis = epgIntervalMillis,
             )
+
+            // The Sync screen's "auto-sync" promises a NAS sync each time the app opens. NasSync
+            // returns NotConfigured quickly when no share is set up, so this is cheap when unused.
+            if (liveGraph.settings.nasAutoSync.value) {
+                launch(Dispatchers.IO) { runCatching { app.opentv.sync.NasSync(liveGraph).sync() } }
+            }
         }
     }
 }

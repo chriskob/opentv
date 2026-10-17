@@ -28,6 +28,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +47,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
 
 /**
  * "Set it up from your phone."
@@ -100,7 +102,7 @@ fun PhonePairingScreen(
                         primary = true,
                     )
                     if (onSwitchToRemote != null) {
-                        OnboardingButton(text = "Try Remote Setup (NAS)", onClick = onSwitchToRemote)
+                        OnboardingButton(text = "Try Remote Setup", onClick = onSwitchToRemote)
                     }
                     OnboardingButton(text = stringResource(R.string.pairing_type_here), onClick = onCancel)
                 }
@@ -127,15 +129,18 @@ private fun Listening(
 ) {
     // Generated once per session rather than on every recomposition â€” encoding is not free
     // and the content does not change.
-    val qr = remember(session.url) { QrCodes.render(session.url, QR_SIZE_PX) }
+    val qr by produceState<android.graphics.Bitmap?>(initialValue = null, session.url) {
+        value = withContext(Dispatchers.Default) { QrCodes.render(session.url, QR_SIZE_PX) }
+    }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(48.dp),
     ) {
-        if (qr != null) {
+        val code = qr
+        if (code != null) {
             Image(
-                bitmap = qr.asImageBitmap(),
+                bitmap = code.asImageBitmap(),
                 contentDescription = stringResource(R.string.pairing_qr_desc),
                 modifier = Modifier
                     .size(300.dp)
@@ -182,7 +187,7 @@ private fun Listening(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OnboardingButton(text = stringResource(R.string.pairing_type_on_tv), onClick = onCancel)
                 if (onSwitchToRemote != null) {
-                    OnboardingButton(text = "Use Remote NAS Setup", onClick = onSwitchToRemote)
+                    OnboardingButton(text = "Use Remote Setup", onClick = onSwitchToRemote)
                 }
             }
         }

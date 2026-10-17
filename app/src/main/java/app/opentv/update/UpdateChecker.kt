@@ -41,6 +41,7 @@ class UpdateChecker(
         val notes: String,
         val apkUrl: String,
         val apkSizeBytes: Long,
+        val apkSha256: String,
         val releaseUrl: String,
     )
 
@@ -65,6 +66,10 @@ class UpdateChecker(
 
                 val asset = release.apkAsset() ?: return@withContext null
                 if (!isNewer(release.tagName, currentVersionName)) return@withContext null
+                // Only offer a download from GitHub, and only one with a published checksum to
+                // verify against. Anything else is not installed, rather than trusted blindly.
+                if (!isTrustedDownload(asset.browserDownloadUrl)) return@withContext null
+                if (!asset.digest.startsWith("sha256:")) return@withContext null
 
                 Update(
                     versionName = release.tagName.trimStart('v', 'V'),
@@ -72,6 +77,7 @@ class UpdateChecker(
                     notes = cleanNotes(release.body),
                     apkUrl = asset.browserDownloadUrl,
                     apkSizeBytes = asset.size,
+                    apkSha256 = asset.digest.removePrefix("sha256:").lowercase(),
                     releaseUrl = release.htmlUrl,
                 )
             }
@@ -81,6 +87,14 @@ class UpdateChecker(
     companion object {
         /** The single place the project's GitHub location is written down. */
         const val REPO_SLUG = "chriskob/opentv"
+
+        /** HTTPS, on GitHub's own download hosts only. */
+        internal fun isTrustedDownload(url: String): Boolean {
+            val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+            if (uri.scheme != "https") return false
+            val host = uri.host ?: return false
+            return host == "github.com" || host.endsWith(".githubusercontent.com")
+        }
 
         /**
          * The GitHub release body is written for developers and has GitHub's auto-generated

@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
@@ -32,15 +33,14 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,7 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -67,6 +68,7 @@ import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.components.TvOutlinedTextField
 import app.opentv.ui.settings.components.*
 import app.opentv.ui.theme.AppTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -86,50 +88,41 @@ fun ProvidersScreen(
     editingSource?.let { src ->
         EditSourceDialog(
             source = src,
+            refreshing = ui.syncingSourceId == src.id,
             onDismiss = { editingSource = null },
             onSave = { updated, resync ->
                 viewModel.updateSource(updated, resync = resync)
                 editingSource = null
             },
             onTest = { draft -> viewModel.testSource(draft) },
+            onRefresh = { viewModel.refreshSource(src) },
+            onDelete = {
+                pendingRemove = src
+                editingSource = null
+            },
         )
     }
 
     pendingRemove?.let { source ->
-        AlertDialog(
-            onDismissRequest = { pendingRemove = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = SettingsShape.Dialogs,
-            title = {
-                Text(
-                    text = "Delete Playlist",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            },
-            text = {
-                Text(
-                    text = "Are you sure you want to delete \"${source.name}\"? Channels and VOD associated with this playlist will be removed from OpenTV.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            confirmButton = {
+        SettingsDialog(
+            title = "Delete playlist?",
+            titleColor = SettingsDanger,
+            message = "\"${source.name}\" and its channels and VOD will be removed from OpenTV.",
+            onDismiss = { pendingRemove = null },
+            actions = {
                 SettingsButton(
-                    text = "Yes, Delete",
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { pendingRemove = null },
+                    style = SettingsButtonStyle.Secondary,
+                )
+                Spacer(Modifier.width(12.dp))
+                SettingsButton(
+                    text = "Delete",
                     onClick = {
                         viewModel.delete(source)
                         pendingRemove = null
                     },
                     style = SettingsButtonStyle.Danger,
-                )
-            },
-            dismissButton = {
-                SettingsButton(
-                    text = stringResource(R.string.common_cancel),
-                    onClick = { pendingRemove = null },
-                    style = SettingsButtonStyle.Secondary,
                 )
             },
         )
@@ -177,6 +170,7 @@ fun ProvidersScreen(
                 syncingSourceId = ui.syncingSourceId,
                 showMove = true,
                 onMove = { source, delta -> viewModel.moveSource(source.id, delta) },
+                focusFirst = true,
             )
 
             if (disabledSources.isNotEmpty()) {
@@ -215,7 +209,15 @@ private fun ProviderSection(
     emptyMessage: String? = null,
     showMove: Boolean = false,
     onMove: (Source, Int) -> Unit = { _, _ -> },
+    focusFirst: Boolean = false,
 ) {
+    val firstName = remember { FocusRequester() }
+    if (focusFirst && sources.isNotEmpty()) {
+        LaunchedEffect(sources.first().id) {
+            delay(120)
+            runCatching { firstName.requestFocus() }
+        }
+    }
     SettingsSection(title = title, icon = icon, collapsible = false) {
         if (sources.isEmpty() && emptyMessage != null) {
             SettingsEmptyState(title = emptyMessage)
@@ -223,6 +225,7 @@ private fun ProviderSection(
             sources.forEachIndexed { index, source ->
                 if (index > 0) Spacer(Modifier.height(8.dp))
                 ProviderRow(
+                    nameFocus = if (focusFirst && index == 0) firstName else null,
                     source = source,
                     index = index,
                     count = sources.size,
@@ -235,6 +238,14 @@ private fun ProviderSection(
                     onSetLiveFormat = { onSetLiveFormat(source, it) },
                     onRefresh = { onRefresh(source) },
                 )
+            }
+            val xtream = sources.filter { it.kind == SourceKind.XTREAM }
+            if (xtream.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                xtream.forEach { source ->
+                    StreamFormatLine(source = source, onSetLiveFormat = { onSetLiveFormat(source, it) })
+                }
             }
         }
     }
@@ -250,7 +261,7 @@ private fun MoveButton(
 ) {
     Box(
         Modifier
-            .size(30.dp)
+            .size(SettingsSpacing.ControlHeight)
             .settingsFocus(shape = SettingsShape.Control, enabled = enabled, focusScale = 1.06f)
             .focusable(enabled)
             .clickable(
@@ -270,6 +281,8 @@ private fun MoveButton(
     }
 }
 
+private val NameColumnWidth = 440.dp
+
 @Composable
 private fun ProviderRow(
     source: Source,
@@ -283,6 +296,7 @@ private fun ProviderRow(
     onDelete: () -> Unit,
     onSetLiveFormat: (LiveStreamFormat) -> Unit,
     onRefresh: () -> Unit,
+    nameFocus: FocusRequester? = null,
 ) {
     Column(
         Modifier
@@ -294,10 +308,11 @@ private fun ProviderRow(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Provider Info & Edit card (primary clickable element)
+            // The name is the edit target; the reorder arrows sit right after it.
             Row(
                 modifier = Modifier
-                    .weight(1f)
+                    .width(NameColumnWidth)
+                    .then(if (nameFocus != null) Modifier.focusRequester(nameFocus) else Modifier)
                     .settingsFocus(shape = SettingsShape.Row)
                     .focusable()
                     .clickable(
@@ -351,39 +366,18 @@ private fun ProviderRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-
-                Spacer(Modifier.width(8.dp))
-
-                // Visual edit indicator
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Edit,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = "Edit",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "Edit playlist",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
             }
-
-            Spacer(Modifier.width(10.dp))
 
             // Reorder controls — only on the enabled list, where the order actually shows in the app.
             if (showMove) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Spacer(Modifier.width(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     MoveButton(
                         icon = Icons.Filled.KeyboardArrowUp,
                         enabled = index > 0,
@@ -397,116 +391,69 @@ private fun ProviderRow(
                         onClick = { onMove(1) },
                     )
                 }
-                Spacer(Modifier.width(10.dp))
             }
 
-            // Update action: re-fetch just this playlist, then re-match the guide.
-            Row(
-                modifier = Modifier
-                    .settingsFocus(shape = SettingsShape.Control, enabled = !refreshing)
-                    .focusable(!refreshing)
-                    .clickable(
-                        enabled = !refreshing,
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onRefresh,
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (refreshing) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                } else {
-                    Text(
-                        text = stringResource(R.string.provider_update),
-                        color = AppTheme.primary,
-                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            Spacer(Modifier.weight(1f))
 
-            Spacer(Modifier.width(10.dp))
-
-            // Delete action button
-            Row(
-                modifier = Modifier
-                    .settingsFocus(shape = SettingsShape.Control, danger = true)
-                    .focusable()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onDelete,
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = stringResource(R.string.common_delete),
-                    tint = SettingsDanger,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(R.string.common_delete),
-                    color = SettingsDanger,
-                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            Spacer(Modifier.width(12.dp))
-
-            // Toggle switch
-            Switch(
+            SettingsSwitch(
                 checked = source.enabled,
-                onCheckedChange = onToggle,
-                colors = settingsSwitchColors(),
-                modifier = Modifier.focusProperties { canFocus = false },
+                onToggle = onToggle,
             )
         }
 
-        // Stream format picker for Xtream sources
-        if (source.kind == SourceKind.XTREAM) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, top = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = "Stream Format:",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                SettingsSegmented(
-                    options = listOf(
-                        stringResource(R.string.provider_stream_format_hls),
-                        stringResource(R.string.provider_stream_format_ts),
-                    ),
-                    selectedIndex = if (source.liveFormat == LiveStreamFormat.HLS) 0 else 1,
-                    onSelect = { index ->
-                        onSetLiveFormat(if (index == 0) LiveStreamFormat.HLS else LiveStreamFormat.MPEG_TS)
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            }
+    }
+}
+
+@Composable
+private fun StreamFormatLine(
+    source: Source,
+    onSetLiveFormat: (LiveStreamFormat) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.width(NameColumnWidth)) {
+            Text(
+                text = source.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "Stream format",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
+        SettingsSegmented(
+            options = listOf(
+                stringResource(R.string.provider_stream_format_hls),
+                stringResource(R.string.provider_stream_format_ts),
+            ),
+            selectedIndex = if (source.liveFormat == LiveStreamFormat.HLS) 0 else 1,
+            onSelect = { index ->
+                onSetLiveFormat(if (index == 0) LiveStreamFormat.HLS else LiveStreamFormat.MPEG_TS)
+            },
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
 @Composable
 private fun EditSourceDialog(
     source: Source,
+    refreshing: Boolean,
     onDismiss: () -> Unit,
     onSave: (Source, Boolean) -> Unit,
     onTest: suspend (Source) -> Result<String>,
+    onRefresh: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     var name by remember { mutableStateOf(source.name) }
     var url by remember { mutableStateOf(source.url) }
@@ -522,143 +469,147 @@ private fun EditSourceDialog(
     var testing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = SettingsShape.Dialogs,
-        title = { Text("Edit Playlist Settings") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                TvOutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Playlist / Provider Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+    SettingsDialog(
+        title = "Edit playlist",
+        onDismiss = onDismiss,
+        content = {
+            TvOutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Playlist / Provider Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
-                TvOutlinedTextField(
-                    value = url,
-                    onValueChange = { url = it },
-                    label = {
-                        Text(
-                            when (source.kind) {
-                                SourceKind.XTREAM -> "Server Address"
-                                SourceKind.M3U -> "Playlist URL"
-                                SourceKind.STALKER -> "Portal URL"
-                                SourceKind.PLEX -> "Plex Server Address"
-                            }
-                        )
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                if (source.kind == SourceKind.XTREAM) {
-                    TvOutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = { Text("Username") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    TvOutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Password") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    StreamFormatSelector(
-                        selected = liveFormat,
-                        onSelect = { liveFormat = it },
-                    )
-                } else if (source.kind == SourceKind.STALKER) {
-                    TvOutlinedTextField(
-                        value = mac,
-                        onValueChange = { mac = it },
-                        label = { Text("MAC Address") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                TvOutlinedTextField(
-                    value = epgUrl,
-                    onValueChange = { epgUrl = it },
-                    label = { Text("Custom EPG / XMLTV URL (Optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                TvOutlinedTextField(
-                    value = userAgent,
-                    onValueChange = { userAgent = it },
-                    label = { Text("User-Agent Header") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Checkbox(
-                        checked = resyncOnSave,
-                        onCheckedChange = { resyncOnSave = it },
-                    )
-                    Text("Re-sync playlist and guide after saving", style = MaterialTheme.typography.bodyMedium)
-                }
-
-                if (testStatus != null) {
+            TvOutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = {
                     Text(
-                        text = testStatus!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        when (source.kind) {
+                            SourceKind.XTREAM -> "Server Address"
+                            SourceKind.M3U -> "Playlist URL"
+                            SourceKind.STALKER -> "Portal URL"
+                            SourceKind.PLEX -> "Plex Server Address"
+                        }
                     )
-                }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (testing) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    }
-                    SettingsButton(
-                        text = "Test Connection",
-                        onClick = {
-                            testing = true
-                            testStatus = "Testing connection…"
-                            val draft = source.copy(
-                                name = name.ifBlank { source.name },
-                                url = url,
-                                username = username.takeIf { it.isNotBlank() },
-                                password = password.takeIf { it.isNotBlank() },
-                                macAddress = mac.takeIf { it.isNotBlank() },
-                                epgUrl = epgUrl.takeIf { it.isNotBlank() },
-                                userAgent = userAgent.ifBlank { Source.DEFAULT_USER_AGENT },
-                                liveFormat = liveFormat,
-                            )
-                            scope.launch {
-                                val res = onTest(draft)
-                                testing = false
-                                testStatus = res.getOrElse { it.message ?: "Connection failed." }
-                            }
-                        },
-                        style = SettingsButtonStyle.Secondary,
-                        enabled = !testing,
+            if (source.kind == SourceKind.XTREAM) {
+                TvOutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TvOutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                StreamFormatSelector(
+                    selected = liveFormat,
+                    onSelect = { liveFormat = it },
+                )
+            } else if (source.kind == SourceKind.STALKER) {
+                TvOutlinedTextField(
+                    value = mac,
+                    onValueChange = { mac = it },
+                    label = { Text("MAC Address") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            TvOutlinedTextField(
+                value = epgUrl,
+                onValueChange = { epgUrl = it },
+                label = { Text("Custom EPG / XMLTV URL (Optional)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            TvOutlinedTextField(
+                value = userAgent,
+                onValueChange = { userAgent = it },
+                label = { Text("User-Agent Header") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            SettingsToggleRow(
+                title = "Re-sync playlist and guide after saving",
+                checked = resyncOnSave,
+                onToggle = { resyncOnSave = it },
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SettingsButton(
+                    text = "Test connection",
+                    onClick = {
+                        testing = true
+                        testStatus = "Testing connection…"
+                        val draft = source.copy(
+                            name = name.ifBlank { source.name },
+                            url = url,
+                            username = username.takeIf { it.isNotBlank() },
+                            password = password.takeIf { it.isNotBlank() },
+                            macAddress = mac.takeIf { it.isNotBlank() },
+                            epgUrl = epgUrl.takeIf { it.isNotBlank() },
+                            userAgent = userAgent.ifBlank { Source.DEFAULT_USER_AGENT },
+                            liveFormat = liveFormat,
+                        )
+                        scope.launch {
+                            val res = onTest(draft)
+                            testing = false
+                            testStatus = res.getOrElse { it.message ?: "Connection failed." }
+                        }
+                    },
+                    style = SettingsButtonStyle.Secondary,
+                    enabled = !testing,
+                )
+                SettingsButton(
+                    text = stringResource(R.string.provider_update),
+                    onClick = onRefresh,
+                    style = SettingsButtonStyle.Secondary,
+                    enabled = !refreshing,
+                )
+                if (testing) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                }
+                testStatus?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AppTheme.primary,
                     )
                 }
             }
         },
-        confirmButton = {
+        actions = {
+            SettingsButton(
+                text = stringResource(R.string.common_delete),
+                onClick = onDelete,
+                style = SettingsButtonStyle.Danger,
+                icon = Icons.Filled.Delete,
+            )
+            Spacer(Modifier.weight(1f))
+            SettingsButton(
+                text = stringResource(R.string.common_cancel),
+                onClick = onDismiss,
+                style = SettingsButtonStyle.Secondary,
+            )
+            Spacer(Modifier.width(12.dp))
             SettingsButton(
                 text = stringResource(R.string.common_save),
                 onClick = {
@@ -676,13 +627,6 @@ private fun EditSourceDialog(
                     onDismiss()
                 },
                 style = SettingsButtonStyle.Primary,
-            )
-        },
-        dismissButton = {
-            SettingsButton(
-                text = stringResource(R.string.common_cancel),
-                onClick = onDismiss,
-                style = SettingsButtonStyle.Secondary,
             )
         },
     )

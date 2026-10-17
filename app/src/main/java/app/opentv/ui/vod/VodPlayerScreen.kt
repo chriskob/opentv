@@ -347,9 +347,12 @@ fun VodPlayerScreen(
         onDispose {
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             view.keepScreenOn = false
-            scope.launch { savePosition() }
-            controller.release()
-            scope.cancel()
+            // Save before tearing down: release() cancels this scope, which would drop the write.
+            scope.launch {
+                savePosition()
+                controller.release()
+                scope.cancel()
+            }
         }
     }
 

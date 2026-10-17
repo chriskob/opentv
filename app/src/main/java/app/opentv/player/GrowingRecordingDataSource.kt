@@ -18,7 +18,6 @@ import app.opentv.recording.RecordingLiveState
 import app.opentv.recording.RecordingStorage
 import app.opentv.recording.SmbClient
 import app.opentv.recording.SmbReadHandle
-import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -41,9 +40,22 @@ import java.io.RandomAccessFile
  * the SMB file (re-reading past the last size, and reopening the handle if the server's cached
  * end-of-file hasn't caught up to what the recorder has appended).
  */
+
+/**
+ * Resolves the locator a growing recording is read from, from the in-process live registry only.
+ *
+ * Media3 calls `DataSource.open()` synchronously on its loader thread, so this must never touch
+ * the database: the navigation sites register the locator from the already-loaded row before
+ * playback starts (see `RecordingLiveState.markActive`). A missing or blank registration fails
+ * fast with a clear error instead of blocking behind a Room lookup.
+ */
+fun resolveGrowingLocator(recordingId: Long, livePath: String?): String {
+    if (!livePath.isNullOrBlank()) return livePath
+    throw IOException("Recording $recordingId not found")
+}
+
 @OptIn(UnstableApi::class)
 class GrowingRecordingDataSource(private val context: Context) : BaseDataSource(true) {
-
     private var uri: Uri? = null
     private var recordingId: Long = -1L
     private var position: Long = 0L
@@ -65,11 +77,9 @@ class GrowingRecordingDataSource(private val context: Context) : BaseDataSource(
             ?: dataSpec.uri.schemeSpecificPart?.trim('/')?.toLongOrNull()
             ?: throw IOException("Bad recording URI: ${dataSpec.uri}")
 
-        val graph = ServiceLocator.get(context)
-        // Prefer the live registry (no I/O); fall back to the row if it just finished.
-        val locator = RecordingLiveState.pathOf(recordingId)
-            ?: runBlocking { graph.recordingRepository.byId(recordingId)?.filePath }
-            ?: throw IOException("Recording $recordingId not found")
+        // The live registry only (no I/O): the navigation sites register the locator from the
+        // already-loaded row before playback starts, so open() never blocks on the database.
+        val locator = resolveGrowingLocator(recordingId, RecordingLiveState.pathOf(recordingId))
 
         position = dataSpec.position
 

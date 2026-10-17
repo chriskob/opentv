@@ -10,6 +10,7 @@ import app.opentv.data.model.PlaybackPosition
 import app.opentv.data.model.Profile
 import app.opentv.data.model.Recording
 import app.opentv.data.model.RecordingStatus
+import app.opentv.recording.RecordingStorage
 import app.opentv.recording.SmbClient
 import kotlinx.serialization.json.Json
 
@@ -150,8 +151,9 @@ class SyncEngine(private val graph: ServiceLocator.Graph) {
         // NAS recordings — insert any smb:// recording we don't already have, keyed by its locator.
         // Never touch an existing row; a peer's copy and ours are the same file on the same NAS.
         var recordings = 0
+        val nas = RecordingStorage.smbConfig(graph.settings)
         for (rec in bundle.recordings) {
-            if (!SmbClient.isSmb(rec.filePath)) continue
+            if (!SmbClient.isOwnShare(nas, rec.filePath)) continue
             if (graph.recordingRepository.byFilePath(rec.filePath) != null) continue
             val inserted = runCatching {
                 graph.recordingRepository.insert(

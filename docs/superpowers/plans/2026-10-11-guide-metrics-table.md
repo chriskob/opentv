@@ -118,3 +118,33 @@ focused cell being a light plain fill (#DFE1E4) with dark ink against a dark pro
 
 Colours observed in the capture, for future reference: page background `#1C232C`, programme cell
 `#242B33`, the cell slightly lighter while its programme is airing `#2C323A`, focused cell `#DFE1E4`.
+
+## 4d. Device render vs the decoded layout (2026-10-16)
+
+The element mirror (`2026-10-16-guide-element-mirror.md`) re-measured the reference on the box at
+1920x1080 @ density 320 and found one value where the APK's *declaration* and its own *render*
+disagree, plus the icon slots the declaration cannot assign. The render is the reference; this table
+follows it.
+
+| Field | Decoded layout says | Render measures | Verdict |
+|---|---|---|---|
+| `channelNumberSp` | 24.0sp (`0x7f0e008e`) | digits 22px tall, 14px wide, beside the 14sp name's 21px caps | **16sp** - the declared 24sp draws 34px, ~1.5x the reference |
+| `channelNameSp` | 14.0sp | caps 20-21px | 14sp confirmed |
+| status slot 20dip `0x7f0b022a` | 20x20dip, marginEnd 6dip, dynamic tint | playing mark: ink 17x21px, `#2196F3` (the accent), 6dip before the clock | play takes this slot, leftmost |
+| status slot 16dip `0x7f0b0219` | 16x16dip, `alpha=0.6`, marginEnd 8dip | catch-up clock: ink 27x24px, `#A1A2A3` (= white at 0.6) | catch-up takes this slot |
+| status slot 18dip `0x7f0b0230` | 18x18dip, `gone` | never drawn in the capture | favourite takes the unused slot |
+| number and name colour | style textColor `#FFFFFFFF` | both at full `#FFFFFF` on an unfocused row | both white; the number is not muted |
+
+Also measured and deliberately left alone: the row pitch in this render is 78px (39dp) where the
+2026-10-11 capture measured 88px (44dp), and the header clock there is `#90CAF9` against OpenTV's own
+accent. Both are open questions in the mirror plan, not silent changes.
+
+The build measured here is the box's installed `ar.tvplayer.tv` (5.3.3, versionCode 1000005332, md5
+`fd71f925767fd27ff1f5202f6ed5e3b9`). Its own `res/layout/APKTOOL_RENAMED_0x7f0e008e.xml` still
+declares the same 24sp the decoded copy does, which is why the number's smaller draw is the code's
+doing and not a different resource table.
+
+The number's *width* is the one residual: the reference's digits are 14px wide and OpenTV's 16px,
+because OpenTV composes the number from `labelLarge` (Medium) where the reference's style is plain
+`sans-serif`. At 2-3px of ink it is below what a viewer can see across a room, and it is noted rather
+than chased.
