@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.17.4
+
+- **The collapsed settings rail is even.** The drawer's tiles used to hug its left edge, and the
+  selected row was the only one wide enough to fill the strip - a full-width pill among small
+  squares. Collapsed, every tile is now the same 40dp square centred in the rail, and the
+  selection rides on the tile itself: its fill plus the accent bar inside the tile's own left
+  edge. The expanded drawer is unchanged.
+- **Five themes that are actually five themes.** The picker offered eleven palettes sharing one
+  base room - the same background, surfaces and cyan accent - so every chip showed the same
+  swatch. It now offers five complete looks: **Slate Guide** (the default, unchanged), **Dracula**
+  (keyword purple on #282A36), **Night Owl** (navy and soft blue), **Ayu** (near-black with
+  orange) and **Carbonfox** (Carbon grey with teal). The retired entries are gone; a stored choice
+  that no longer exists lands back on Slate Guide. Parity Guide keeps its palette - the guide
+  screen still wears it, whatever the app wears - but is no longer offered as a theme.
+
 ## 0.17.3
 
 - **The strange characters are gone from the interface.** The player's info line read "My playlist
