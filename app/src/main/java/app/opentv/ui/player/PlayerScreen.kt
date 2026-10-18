@@ -1980,10 +1980,15 @@ fun PlayerScreen(
                     Column(Modifier.weight(1f)) {
                         // Line 1: Active Show Title. Two lines so long titles (or
                         // show + episode pairs) wrap instead of cutting off.
+                        //
+                        // The whole info block reads from a sofa, so it sits a step above the
+                        // theme's body size: 21sp title and 15sp meta (three and two points up
+                        // from titleLarge/bodyMedium) - the maintainer asked for a little more
+                        // size after a 1080p capture read small (photo, 2026-10-18).
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = currentProg?.title ?: currentChannel?.shownName ?: channelTitle,
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 21.sp),
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 maxLines = 2,
@@ -2005,14 +2010,14 @@ fun PlayerScreen(
 
                                 Text(
                                     text = "$startStr – $endStr",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
                                     color = Color.White.copy(alpha = 0.9f),
                                     fontWeight = FontWeight.Medium,
                                 )
                                 Text(
                                     text = if (activeCatchup != null) "  —  Catch-up  "
                                     else "  —  $remainingMins min   ",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
                                     color = Color.White.copy(alpha = 0.75f),
                                     fontWeight = FontWeight.Medium,
                                 )
@@ -2024,7 +2029,7 @@ fun PlayerScreen(
                             // Weighted so the name yields first: times and badges never get pushed off.
                             Text(
                                 text = "$numStr$chName",
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 maxLines = 1,
@@ -2060,14 +2065,14 @@ fun PlayerScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = "$nextStart – $nextEnd",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                                     color = Color.White.copy(alpha = 0.65f),
                                     maxLines = 1,
                                 )
                                 Spacer(Modifier.width(12.dp))
                                 Text(
                                     text = nextProg!!.title,
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
                                     color = Color.White.copy(alpha = 0.65f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
