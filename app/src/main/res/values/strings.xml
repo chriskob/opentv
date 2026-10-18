@@ -278,7 +278,7 @@
     <!-- ============================ Display & playback settings ============================ -->
     <string name="settings_appearance">Appearance</string>
     <string name="settings_palette_title">Theme</string>
-    <string name="settings_palette_desc">Pick one of the OpenChamber dark palettes. Every screen follows it — guide, player, and menus — accent included.</string>
+    <string name="settings_palette_desc">Pick the palette the app wears — five complete looks, accent included. The guide keeps its own measured look.</string>
 <string name="settings_ui_transparency">Interface transparency</string>
 <string name="settings_ui_transparency_value">%1$d%%</string>
 <string name="settings_ui_transparency_desc">How see-through the guide\'s own panels are. 0 is a solid slab; 30 matches TiviMate.</string>

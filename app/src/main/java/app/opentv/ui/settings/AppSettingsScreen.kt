@@ -128,7 +128,7 @@ fun AppSettingsScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                AppPalette.entries.forEach { palette ->
+                AppPalette.choices.forEach { palette ->
                     ThemePalettePill(
                         palette = palette,
                         selected = palette == currentPalette,

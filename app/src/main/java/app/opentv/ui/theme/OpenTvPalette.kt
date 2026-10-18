@@ -9,33 +9,40 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 
 /**
- * The full colour palettes OpenTV ships with, ported from OpenChamber's dark themes.
+ * The five palettes the theme picker offers, plus the guide's own.
  *
- * OpenTV used to offer a handful of accent colours painted over one fixed near-black scheme, which
- * meant every "theme" was really the same room with a different lamp. These are complete palettes:
- * background, surfaces, text, borders and semantics all move together, and the theme's own accent is
- * the app accent. The values come from OpenChamber's theme JSON (surface / interactive / primary /
- * status groups) so the two projects read as the same design language.
+ * Every palette is a complete room: background, surfaces, text, borders and semantics all move
+ * together, and the palette's own accent becomes the app accent. Slate Guide keeps the
+ * slate-and-cyan look the app has worn since 0.16.11; the other four carry the real colours of
+ * the theme families they are named after - Dracula's purple on #282A36, Night Owl's navy and
+ * blue, Ayu's near-black and orange, Carbonfox's grey and teal. They are deliberately far apart:
+ * an earlier port had flattened every family onto one base room, so all eleven chips showed the
+ * same swatch and the picker promised a choice it did not deliver (maintainer's report,
+ * 2026-10-18).
+ *
+ * [AppPalette.TVIMATE_PARITY] is not selectable: it is the guide's measured look (see
+ * `GuideTheme`) and lives here so `palette()` can resolve it.
  */
-enum class AppPalette(val displayName: String) {
-    AURA("Aura"),
+enum class AppPalette(val displayName: String, val selectable: Boolean = true) {
+    SLATE_GUIDE("Slate Guide"),
+    DRACULA("Dracula"),
+    NIGHTOWL("Night Owl"),
     AYU("Ayu"),
     CARBONFOX("Carbonfox"),
-    DRACULA("Dracula"),
-    JETBRAINS("JetBrains"),
-    NIGHTOWL("Night Owl"),
-    MONOPLUS("Mono Plus"),
-    OPENCHAMBER("OpenChamber"),
-    SLATE_GUIDE("Slate Guide"),
-    TVPLAYER("TVPlayer"),
-    TVIMATE_PARITY("Parity Guide"),
+
+    /** The guide's own palette; the guide ignores the app theme, so it is not offered. */
+    TVIMATE_PARITY("Parity Guide", selectable = false);
+
+    companion object {
+        /** The palettes the theme picker offers, the default first. */
+        val choices: List<AppPalette> get() = entries.filter { it.selectable }
+    }
 }
 
 /**
- * A resolved OpenTV palette. The stored fields are the OpenChamber tokens we translate directly;
- * everything the OpenChamber schema does not name is derived here so the ladder stays monotonic for
- * every theme (some themes put `elevated` above `background`, Night Owl puts it below — a fixed
- * blend keeps the elevation reading the same regardless).
+ * A resolved OpenTV palette. The stored fields are the tokens a theme names directly; everything
+ * else is derived here so the elevation ladder stays monotonic in every theme (a fixed blend keeps
+ * the elevation reading the same wherever a theme's surfaces sit).
  */
 class OpenTvPalette internal constructor(
     val background: Color,
@@ -108,7 +115,7 @@ class OpenTvPalette internal constructor(
     val onFocusSurface: Color get() = onPrimary
 
     /**
-     * The shared cursor / selection language, built from the OpenChamber overlay tokens.
+     * The shared cursor / selection language, built from the overlay tokens.
      *
      * The cursor is [hover] — a translucent lift over whatever is beneath — and the current item
      * (nav tab, active settings section, playing row) keeps [selection] while focus is elsewhere.
@@ -121,246 +128,10 @@ class OpenTvPalette internal constructor(
     val selectedFill: Color get() = selection
 }
 
-private val AuraPalette = OpenTvPalette(
-    background = Color(0xFF1C232C),
-    surface = Color(0xFF242B33),
-    subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFEDECEE),
-    onSurfaceVariant = Color(0xFFB6C5D2),
-    outline = Color(0xFF4A6E78),
-    borderHover = Color(0xFF5A728C),
-    focusBorder = Color(0xFF00BCD4),
-    primary = Color(0xFF00BCD4),
-    onPrimary = Color(0xFF15141B),
-    primaryHover = Color(0xFF00A5B8),
-    primaryActive = Color(0xFF5FD8E4),
-    focusRing = Color(0x4A00BCD4),
-    selection = Color(0x40DFE1E4),
-    hover = Color(0x1AFFFFFF),
-    recording = Color(0xFFFF6767),
-    favourite = Color(0xFFFFC94D),
-    live = Color(0xFFFFCA85),
-    error = Color(0xFFFF6767),
-    errorContainer = Color(0x20FF6767),
-    success = Color(0xFF61FFCA),
-    successContainer = Color(0x2061FFCA),
-    warning = Color(0xFFFFC94D),
-    info = Color(0xFF82E2FF),
-    onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
-)
-
-private val AyuPalette = OpenTvPalette(
-    background = Color(0xFF1C232C),
-    surface = Color(0xFF242B33),
-    subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFD6DAE0),
-    onSurfaceVariant = Color(0xFFB6C5D2),
-    outline = Color(0xFF4A6E78),
-    borderHover = Color(0xFF5A728C),
-    focusBorder = Color(0xFF00BCD4),
-    primary = Color(0xFF00BCD4),
-    onPrimary = Color(0xFF0F1419),
-    primaryHover = Color(0xFF00A5B8),
-    primaryActive = Color(0xFF5FD8E4),
-    focusRing = Color(0x4A00BCD4),
-    selection = Color(0x40DFE1E4),
-    hover = Color(0x1AFFFFFF),
-    recording = Color(0xFFF58572),
-    favourite = Color(0xFFFFC94D),
-    live = Color(0xFFE4A75C),
-    error = Color(0xFFF58572),
-    errorContainer = Color(0x20F58572),
-    success = Color(0xFF78D05C),
-    successContainer = Color(0x2078D05C),
-    warning = Color(0xFFFFC94D),
-    info = Color(0xFF66C6F1),
-    onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
-)
-
-private val CarbonfoxPalette = OpenTvPalette(
-    background = Color(0xFF1C232C),
-    surface = Color(0xFF242B33),
-    subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFF2F4F8),
-    onSurfaceVariant = Color(0xFFB6C5D2),
-    outline = Color(0xFF4A6E78),
-    borderHover = Color(0xFF5A728C),
-    focusBorder = Color(0xFF00BCD4),
-    primary = Color(0xFF00BCD4),
-    onPrimary = Color(0xFF161616),
-    primaryHover = Color(0xFF00A5B8),
-    primaryActive = Color(0xFF5FD8E4),
-    focusRing = Color(0x4A00BCD4),
-    selection = Color(0x40DFE1E4),
-    hover = Color(0x1AFFFFFF),
-    recording = Color(0xFFFF8389),
-    favourite = Color(0xFFFFC94D),
-    live = Color(0xFFF1C21B),
-    error = Color(0xFFFF8389),
-    errorContainer = Color(0x20FF8389),
-    success = Color(0xFF42BE65),
-    successContainer = Color(0x2042BE65),
-    warning = Color(0xFFFFC94D),
-    info = Color(0xFF78A9FF),
-    onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
-)
-
-private val DraculaPalette = OpenTvPalette(
-    background = Color(0xFF1C232C),
-    surface = Color(0xFF242B33),
-    subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFF8F8F2),
-    onSurfaceVariant = Color(0xFFB6C5D2),
-    outline = Color(0xFF4A6E78),
-    borderHover = Color(0xFF5A728C),
-    focusBorder = Color(0xFF00BCD4),
-    primary = Color(0xFF00BCD4),
-    onPrimary = Color(0xFF14151F),
-    primaryHover = Color(0xFF00A5B8),
-    primaryActive = Color(0xFF5FD8E4),
-    focusRing = Color(0x4A00BCD4),
-    selection = Color(0x40DFE1E4),
-    hover = Color(0x1AFFFFFF),
-    recording = Color(0xFFFF5555),
-    favourite = Color(0xFFFFC94D),
-    live = Color(0xFFFFB86C),
-    error = Color(0xFFFF5555),
-    errorContainer = Color(0x20FF5555),
-    success = Color(0xFF50FA7B),
-    successContainer = Color(0x2050FA7B),
-    warning = Color(0xFFFFC94D),
-    info = Color(0xFF8BE9FD),
-    onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
-)
-
-private val JetBrainsPalette = OpenTvPalette(
-    background = Color(0xFF1C232C),
-    surface = Color(0xFF242B33),
-    subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFDFE1E5),
-    onSurfaceVariant = Color(0xFFB6C5D2),
-    outline = Color(0xFF4A6E78),
-    borderHover = Color(0xFF5A728C),
-    focusBorder = Color(0xFF00BCD4),
-    primary = Color(0xFF00BCD4),
-    onPrimary = Color(0xFF1E1F22),
-    primaryHover = Color(0xFF00A5B8),
-    primaryActive = Color(0xFF5FD8E4),
-    focusRing = Color(0x4A00BCD4),
-    selection = Color(0x40DFE1E4),
-    hover = Color(0x1AFFFFFF),
-    recording = Color(0xFFFA6675),
-    favourite = Color(0xFFFFC94D),
-    live = Color(0xFFF2C55C),
-    error = Color(0xFFFA6675),
-    errorContainer = Color(0xFF402929),
-    success = Color(0xFF57965D),
-    successContainer = Color(0xFF253627),
-    warning = Color(0xFFFFC94D),
-    info = Color(0xFF3592C4),
-    onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
-)
-
-private val NightOwlPalette = OpenTvPalette(
-    background = Color(0xFF1C232C),
-    surface = Color(0xFF242B33),
-    subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFD6DEEB),
-    onSurfaceVariant = Color(0xFFB6C5D2),
-    outline = Color(0xFF4A6E78),
-    borderHover = Color(0xFF5A728C),
-    focusBorder = Color(0xFF00BCD4),
-    primary = Color(0xFF00BCD4),
-    onPrimary = Color(0xFF011627),
-    primaryHover = Color(0xFF00A5B8),
-    primaryActive = Color(0xFF5FD8E4),
-    focusRing = Color(0x4A00BCD4),
-    selection = Color(0x40DFE1E4),
-    hover = Color(0x1AFFFFFF),
-    recording = Color(0xFFEF5350),
-    favourite = Color(0xFFFFC94D),
-    live = Color(0xFFECC48D),
-    error = Color(0xFFEF5350),
-    errorContainer = Color(0x20EF5350),
-    success = Color(0xFFC5E478),
-    successContainer = Color(0x20C5E478),
-    warning = Color(0xFFFFC94D),
-    info = Color(0xFF82AAFF),
-    onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
-)
-
-private val MonoPlusPalette = OpenTvPalette(
-    background = Color(0xFF1C232C),
-    surface = Color(0xFF242B33),
-    subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFE5E5E5),
-    onSurfaceVariant = Color(0xFFB6C5D2),
-    outline = Color(0xFF4A6E78),
-    borderHover = Color(0xFF5A728C),
-    focusBorder = Color(0xFF00BCD4),
-    primary = Color(0xFF00BCD4),
-    onPrimary = Color(0xFF000000),
-    primaryHover = Color(0xFF00A5B8),
-    primaryActive = Color(0xFF5FD8E4),
-    focusRing = Color(0x4A00BCD4),
-    selection = Color(0x40DFE1E4),
-    hover = Color(0x1AFFFFFF),
-    recording = Color(0xFF9E6A6A),
-    favourite = Color(0xFFFFC94D),
-    live = Color(0xFF9E8A6A),
-    error = Color(0xFF9E6A6A),
-    errorContainer = Color(0x209E6A6A),
-    success = Color(0xFF6A8E6A),
-    successContainer = Color(0x206A8E6A),
-    warning = Color(0xFFFFC94D),
-    info = Color(0xFF6A7E9E),
-    onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
-)
-
-private val OpenChamberPalette = OpenTvPalette(
-    background = Color(0xFF1C232C),
-    surface = Color(0xFF242B33),
-    subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFC9C5BA),
-    onSurfaceVariant = Color(0xFFB6C5D2),
-    outline = Color(0xFF4A6E78),
-    borderHover = Color(0xFF5A728C),
-    focusBorder = Color(0xFF00BCD4),
-    primary = Color(0xFF00BCD4),
-    onPrimary = Color(0xFF000000),
-    primaryHover = Color(0xFF00A5B8),
-    primaryActive = Color(0xFF5FD8E4),
-    focusRing = Color(0x4A00BCD4),
-    selection = Color(0x40DFE1E4),
-    hover = Color(0x1AFFFFFF),
-    recording = Color(0xFFDA5B4A),
-    favourite = Color(0xFFFFC94D),
-    live = Color(0xFFC67F13),
-    error = Color(0xFFDA5B4A),
-    errorContainer = Color(0x20DA5B4A),
-    success = Color(0xFF76AD4F),
-    successContainer = Color(0x2076AD4F),
-    warning = Color(0xFFFFC94D),
-    info = Color(0xFF479FE6),
-    onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
-)
-
+/**
+ * The default room, and the app's own look since 0.16.11: slate-blue surfaces with a cyan accent,
+ * pure-white body text and the bright cyan (`#33DFFF`) live/info family.
+ */
 private val SlateGuidePalette = OpenTvPalette(
     background = Color(0xFF1C232C),
     surface = Color(0xFF242B33),
@@ -392,37 +163,139 @@ private val SlateGuidePalette = OpenTvPalette(
 )
 
 /**
- * TiviMate-like navy guide palette: near-black blue surfaces, slate programme cells, cyan
- * navigation accents, and a light selected cell with dark ink.
+ * Dracula's own room: purple-slate `#282A36` over `#44475A`, keyword purple `#BD93F9` as the
+ * accent, and the canonical cyan / green / yellow / red semantics.
  */
-private val TvPlayerPalette = OpenTvPalette(
-    background = Color(0xFF1C232C),
-    surface = Color(0xFF242B33),
-    subtle = Color(0xFF2C323A),
-    onSurface = Color(0xFFF3F6F8),
-    onSurfaceVariant = Color(0xFFB6C5D2),
-    outline = Color(0xFF4A6E78),
-    borderHover = Color(0xFF5A728C),
-    focusBorder = Color(0xFF00BCD4),
-    primary = Color(0xFF00BCD4),
-    onPrimary = Color(0xFF07131F),
-    primaryHover = Color(0xFF00A5B8),
-    primaryActive = Color(0xFF5FD8E4),
-    focusRing = Color(0x4A00BCD4),
+private val DraculaPalette = OpenTvPalette(
+    background = Color(0xFF282A36),
+    surface = Color(0xFF343746),
+    subtle = Color(0xFF44475A),
+    onSurface = Color(0xFFF8F8F2),
+    onSurfaceVariant = Color(0xFFA6ACCC),
+    outline = Color(0xFF6272A4),
+    borderHover = Color(0xFF7E8AB8),
+    focusBorder = Color(0xFFBD93F9),
+    primary = Color(0xFFBD93F9),
+    onPrimary = Color(0xFF282A36),
+    primaryHover = Color(0xFFCBA6FA),
+    primaryActive = Color(0xFFA87BF5),
+    focusRing = Color(0x4ABD93F9),
     selection = Color(0x40DFE1E4),
     hover = Color(0x1AFFFFFF),
-    recording = Color(0xFFF15B63),
-    favourite = Color(0xFFFFC94D),
-    live = Color(0xFF4ED7DA),
-    error = Color(0xFFF15B63),
-    errorContainer = Color(0x33F15B63),
-    success = Color(0xFF64D58A),
-    successContainer = Color(0x2064D58A),
-    warning = Color(0xFFFFC94D),
-    info = Color(0xFF4ED7DA),
-    onCursor = Color(0xFFEEEEEE),
-    cellFocus = Color(0xFF242B33),
-    onCellFocus = Color(0xFFEEEEEE),
+    recording = Color(0xFFFF5555),
+    favourite = Color(0xFFF1FA8C),
+    live = Color(0xFF8BE9FD),
+    error = Color(0xFFFF5555),
+    errorContainer = Color(0x33FF5555),
+    success = Color(0xFF50FA7B),
+    successContainer = Color(0x2050FA7B),
+    warning = Color(0xFFF1FA8C),
+    info = Color(0xFF8BE9FD),
+    onCursor = Color(0xFFF8F8F2),
+    cellFocus = Color(0xFF343746),
+    onCellFocus = Color(0xFFF8F8F2),
+)
+
+/**
+ * Night Owl's own room: near-black navy `#011627` stepping up through `#0B253A`, soft blue
+ * `#82AAFF` as the accent, cyan `#7FDBCA` for live/info and green `#22DA6E` for success.
+ */
+private val NightOwlPalette = OpenTvPalette(
+    background = Color(0xFF011627),
+    surface = Color(0xFF0B253A),
+    subtle = Color(0xFF123A55),
+    onSurface = Color(0xFFD6DEEB),
+    onSurfaceVariant = Color(0xFFA2B6C6),
+    outline = Color(0xFF3B647E),
+    borderHover = Color(0xFF4E7C99),
+    focusBorder = Color(0xFF82AAFF),
+    primary = Color(0xFF82AAFF),
+    onPrimary = Color(0xFF011627),
+    primaryHover = Color(0xFF9CBAFF),
+    primaryActive = Color(0xFF6C97F0),
+    focusRing = Color(0x4A82AAFF),
+    selection = Color(0x40DFE1E4),
+    hover = Color(0x1AFFFFFF),
+    recording = Color(0xFFEF5350),
+    favourite = Color(0xFFFFCB8B),
+    live = Color(0xFF7FDBCA),
+    error = Color(0xFFEF5350),
+    errorContainer = Color(0x33EF5350),
+    success = Color(0xFF22DA6E),
+    successContainer = Color(0x2022DA6E),
+    warning = Color(0xFFFFCB8B),
+    info = Color(0xFF7FDBCA),
+    onCursor = Color(0xFFD6DEEB),
+    cellFocus = Color(0xFF0B253A),
+    onCellFocus = Color(0xFFD6DEEB),
+)
+
+/**
+ * Ayu's own room: near-black warm `#0B0E14` stepping up through `#131821`, signature orange
+ * `#FF8F40` as the accent, with Ayu's blue `#59C2FF`, green `#AAD94C` and red `#F07178`.
+ */
+private val AyuPalette = OpenTvPalette(
+    background = Color(0xFF0B0E14),
+    surface = Color(0xFF131821),
+    subtle = Color(0xFF1C2230),
+    onSurface = Color(0xFFBFBDB6),
+    onSurfaceVariant = Color(0xFFA6A49C),
+    outline = Color(0xFF333E4C),
+    borderHover = Color(0xFF47535F),
+    focusBorder = Color(0xFFFF8F40),
+    primary = Color(0xFFFF8F40),
+    onPrimary = Color(0xFF0B0E14),
+    primaryHover = Color(0xFFFFA05C),
+    primaryActive = Color(0xFFF08030),
+    focusRing = Color(0x4AFF8F40),
+    selection = Color(0x40DFE1E4),
+    hover = Color(0x1AFFFFFF),
+    recording = Color(0xFFF07178),
+    favourite = Color(0xFFFFEE99),
+    live = Color(0xFF95E6CB),
+    error = Color(0xFFF07178),
+    errorContainer = Color(0x33F07178),
+    success = Color(0xFFAAD94C),
+    successContainer = Color(0x20AAD94C),
+    warning = Color(0xFFFFEE99),
+    info = Color(0xFF59C2FF),
+    onCursor = Color(0xFFBFBDB6),
+    cellFocus = Color(0xFF131821),
+    onCellFocus = Color(0xFFBFBDB6),
+)
+
+/**
+ * Carbonfox's own room: neutral Carbon greys `#161616` / `#262626` / `#393939` with the soft teal
+ * `#3DDBD9` as the accent, Carbon's red `#FA4D56`, yellow `#F1C21B` and green `#42BE65` semantics.
+ */
+private val CarbonfoxPalette = OpenTvPalette(
+    background = Color(0xFF161616),
+    surface = Color(0xFF262626),
+    subtle = Color(0xFF393939),
+    onSurface = Color(0xFFF2F4F8),
+    onSurfaceVariant = Color(0xFFC6C6C6),
+    outline = Color(0xFF525252),
+    borderHover = Color(0xFF6F6F6F),
+    focusBorder = Color(0xFF3DDBD9),
+    primary = Color(0xFF3DDBD9),
+    onPrimary = Color(0xFF161616),
+    primaryHover = Color(0xFF6FE7E4),
+    primaryActive = Color(0xFF2BB8B6),
+    focusRing = Color(0x4A3DDBD9),
+    selection = Color(0x40DFE1E4),
+    hover = Color(0x1AFFFFFF),
+    recording = Color(0xFFFA4D56),
+    favourite = Color(0xFFF1C21B),
+    live = Color(0xFF3DDBD9),
+    error = Color(0xFFFA4D56),
+    errorContainer = Color(0x33FA4D56),
+    success = Color(0xFF42BE65),
+    successContainer = Color(0x2042BE65),
+    warning = Color(0xFFF1C21B),
+    info = Color(0xFF78A9FF),
+    onCursor = Color(0xFFF2F4F8),
+    cellFocus = Color(0xFF262626),
+    onCellFocus = Color(0xFFF2F4F8),
 )
 
 /**
@@ -474,15 +347,10 @@ private val TivimateParityPalette = OpenTvPalette(
 
 /** The resolved palette for this selection. */
 fun AppPalette.palette(): OpenTvPalette = when (this) {
-    AppPalette.AURA -> AuraPalette
+    AppPalette.SLATE_GUIDE -> SlateGuidePalette
+    AppPalette.DRACULA -> DraculaPalette
+    AppPalette.NIGHTOWL -> NightOwlPalette
     AppPalette.AYU -> AyuPalette
     AppPalette.CARBONFOX -> CarbonfoxPalette
-    AppPalette.DRACULA -> DraculaPalette
-    AppPalette.JETBRAINS -> JetBrainsPalette
-    AppPalette.NIGHTOWL -> NightOwlPalette
-    AppPalette.MONOPLUS -> MonoPlusPalette
-    AppPalette.OPENCHAMBER -> OpenChamberPalette
-    AppPalette.SLATE_GUIDE -> SlateGuidePalette
-    AppPalette.TVPLAYER -> TvPlayerPalette
     AppPalette.TVIMATE_PARITY -> TivimateParityPalette
 }
