@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.17.6
+
+- **The LIVE chip sits beside the show name again.** A guide cell is one line tall, but the box its
+  trailing chip is laid out after measures as wide as the title's *widest* line - and this feed
+  hangs the episode under the name. The chip was anchored to a line nobody sees and landed in the
+  empty space beside the name (the CW cell's "PBR Team Series" ends at 773px and its chip sat at
+  921px; it now follows the name at 784px).
+- **The ellipsis means something again.** The same measurement drew the "..." on two-line titles
+  whose names fit - "Last Man Standing" and "Young Sheldon" read as if they were cut with room to
+  spare beside them. Cells now report the show-name line alone, so the dots appear only when the
+  name itself is longer than the cell. The preview header still shows the episode line.
+
 ## 0.17.5
 
 - **The player's info overlay is a size bigger.** The programme block at the bottom of the
