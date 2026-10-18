@@ -12,35 +12,41 @@ GitHub release.
 
 ## Signing
 
-**Right now, release builds are signed with the Android debug key.** This is deliberate, and
-it is temporary.
+Release builds are signed with **the project key** — keystore `upload.jks`, alias `upload`,
+certificate `CN=OpenTV`, SHA-256
+`F1:C2:6E:A3:B7:AD:F2:0C:7C:E3:BD:50:54:C8:99:62:60:46:B2:F5:0C:FA:0D:B0:5A:D3:CF:8F:00:70:55:75`.
 
-An *unsigned* APK cannot be installed on Android at all — the installer rejects it before the
-user sees anything, with an error that explains nothing. That would mean no one can test the
-app until signing infrastructure exists. So `app/build.gradle.kts` falls back to the debug key
-when no keystore is configured, and the result installs fine.
+Where the pieces live (all outside this repo, on the maintainer's machine):
 
-The cost, stated plainly: **when the project moves to a real keystore, Android will refuse to
-upgrade over a debug-signed install.** Everyone testing today will have to uninstall and
-reinstall, losing their settings. That is fine for a handful of early testers and completely
-unacceptable once there are hundreds. **Set up real signing before announcing the project
-publicly.**
+| Piece | Location |
+| --- | --- |
+| Keystore | `C:\Users\buick\opentv-keys\upload.jks` |
+| Passwords | `C:\Users\buick\opentv-keys\PASSWORDS.txt` (`path=`, `storepass=`, `keypass=`, `alias=`) |
+| Base64 for CI | `C:\Users\buick\opentv-keys\KEYSTORE_BASE64.txt` |
+| Local builds | `deploy-fast.ps1` reads `PASSWORDS.txt` and exports the four variables |
+| CI builds | repository secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` |
 
-### Setting up real signing
+The repository secrets are set and hold this key: every release published so far verifies
+against the fingerprint above, so every existing install updates in place.
+
+### Rebuilding the signing setup
+
+This is already done for `chriskob/opentv`. If it ever has to be redone — a new repository, a
+new machine — this is the recipe:
 
 1. Generate a keystore:
 
    ```bash
    keytool -genkeypair -v -keystore upload.jks -keyalg RSA -keysize 4096 \
-     -validity 10000 -alias opentv
+     -validity 10000 -alias upload
    ```
 
 2. Add these repository secrets under **Settings → Secrets and variables → Actions**:
    `KEYSTORE_BASE64` (the output of `base64 -i upload.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
-   `KEY_PASSWORD`.
+   `KEY_PASSWORD`. The values are the ones in `PASSWORDS.txt` beside the keystore.
 
-3. That is all — `release.yml` and `build.gradle.kts` already pick them up. The release notes
-   will report `signed: yes` instead of `debug-key`.
+3. That is all — `release.yml` and `build.gradle.kts` already pick them up, and the release
+   notes report the `Signing:` line above.
 
 **The keystore must belong to the project, not to one person.** A single maintainer holding
 the only copy is the same single point of failure this project exists to avoid — if they go
@@ -58,18 +64,30 @@ it replaces. If it is not, the platform refuses with:
 INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match previously installed version
 ```
 
-This is worth stating because it hid a real bug for a long time. A release workflow that falls
-back to the debug key is signed with *the runner's* debug key, and every runner generates its
-own — so every release was signed differently, and no release could ever be installed over the
-one before it. No amount of fixing the in-app updater could have helped: the installer at the
-bottom was refusing on signature alone.
+This is worth stating because it hid a real bug for a long time, back when releases really were
+debug-signed: a release signed with *the runner's* debug key is signed differently by every
+runner, so every release was signed differently and none could install over the one before it.
+No amount of fixing the in-app updater could have helped — the installer at the bottom was
+refusing on signature alone.
 
 Two consequences worth remembering:
 
 - **A missing keystore is not a cosmetic CI wart.** It silently disables in-place updates for
   everyone.
-- **`.github/workflows/release.yml` prints `signed: debug-key` in the release notes** when no
-  keystore was configured. Read that line before assuming an update bug is in the app.
+- **The release notes carry a `Signing:` line** saying which key signed the APK. Read it before
+  assuming an update bug is in the app.
+
+### Verifying a published release
+
+```bash
+apksigner verify --print-certs opentv.apk
+```
+
+The printed SHA-256 must be the project fingerprint above. A different digest — or a release
+noted with the debug key — cannot install over an existing app; remove the release and re-issue
+it before anyone downloads it. The in-app updater is stricter still: it only offers an APK from
+`github.com` hosts that carries a `sha256:` digest, and only when the tag is a strictly newer
+version than the installed one.
 
 ### When the key changes, ask before wiping
 
@@ -101,3 +119,11 @@ so they can be re-imported on the fresh install.
 
 Bump `versionCode` and `versionName` in `app/build.gradle.kts`. `versionCode` must increase on
 every release; Android uses it, not `versionName`, to decide what counts as an upgrade.
+
+## The bundled torrent engine
+
+The 64 MB TorrServer binary is deliberately not committed to git. As part of a release there is
+nothing to do by hand: the workflow runs `sh ./fetch-torrserver.sh`, which downloads the pinned
+upstream asset and refuses to continue unless its SHA-256 matches, and then verifies the file is
+actually inside the APK before anything is published. A fresh clone runs the same script once.
+`docs/TORRENTS.md` has the pin, the checksum and how to move to a newer engine.

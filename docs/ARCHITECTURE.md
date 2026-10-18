@@ -152,6 +152,34 @@ This matters more than it sounds. The alternative habit — hiding the error cod
 complained about seeing it — treats the symptom while the stream still fails, and removes the
 only diagnostic the user had.
 
+## The bundled torrent engine
+
+The Torrents tab plays magnet links with a BitTorrent engine that ships inside the APK and runs as a
+**child process**, not as a library linked into the app.
+
+Bundling is what makes "paste a magnet, it plays" work without a server, a companion app, or a
+download that has to happen before the feature exists at all. The child process is what makes it
+survivable: a torrent engine is the most failure-prone subsystem in a player — other people's
+clients, dead swarms, half-broken files, a 64 MB working set — and as a separate process it can be
+killed and restarted while the UI stays up to explain itself.
+
+Android 10 and later refuse to execute a file in the app's own data directory, so the engine ships as
+`jniLibs/<abi>/libtorrserver.so` — a library in name only — with `extractNativeLibs="true"` and
+`useLegacyPackaging = true`, which put it in the one directory an app may run a file from. Both
+settings are load-bearing; with either missing the engine silently cannot start.
+
+The app's side is deliberately thin: `TorrServerClient` speaks the engine's HTTP API over loopback,
+and a torrent is played by handing the existing VOD player an `http://127.0.0.1:<port>/stream/...`
+URL. There is no torrent-aware player, no custom data source and no new player route — which is the
+point. Everything the player already does (resume positions, error reporting, retry policy) applies
+to a torrent unchanged.
+
+The promises the app makes about the engine — never upload, never open a port, never advertise on the
+LAN, never write to disk — are kept by the configuration file written before the engine's first
+launch, and then *verified at startup* by reading the engine's live settings back. The engine is a
+separate program with its own release cycle; taking its defaults on trust is how a feature like this
+quietly becomes something else. `docs/TORRENTS.md` has the details.
+
 ## Defensive parsing of Xtream responses
 
 `XtreamApi` reads `JsonElement` by hand instead of deserializing into `@Serializable` data
