@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.2
+
+- **Text fields are one box.** Every field in the app drew two nested outlines the moment it had
+  the cursor: the component's own 2dp focus ring around the Material field's own border. The ring
+  is gone; the field's box carries the accent itself - its border, fill, label and pencil turn
+  cyan - so a focused field is a single box, the way a text field is supposed to look.
+
 ## 0.17.1
 
 - **The About page is down to the version and the update check.** The "What it is" paragraph and

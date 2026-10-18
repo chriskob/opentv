@@ -6,8 +6,6 @@
 package app.opentv.ui.components
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -50,8 +48,14 @@ import app.opentv.ui.theme.AppTheme
 
 /**
  * A TV-optimized [OutlinedTextField] that does not bring up the on-screen keyboard when scrolled
- * over with the D-pad. Focus highlights the text field container cleanly; pressing OK / D-pad
- * Center (or clicking) activates editing mode and displays the keyboard.
+ * over with the D-pad. Pressing OK / D-pad Center (or clicking) activates editing mode and displays
+ * the keyboard.
+ *
+ * One box, drawn by the Material field itself. Until 2026-10-18 the wrapper also painted a 2dp
+ * focus ring around the field's own outline while the row held the cursor, and the pair read as a
+ * rectangle inside a rectangle (the maintainer's report on the Plex connect screen). The ring is
+ * gone; focus moves the field's own border, fill, label and trailing pencil to the accent instead
+ * (see the colours below), so a focused field is a single cyan box.
  */
 @Composable
 fun TvOutlinedTextField(
@@ -151,10 +155,6 @@ fun TvOutlinedTextField(
         modifier = modifier
             .onFocusChanged { isBoxFocused = it.isFocused }
             .clip(shape)
-            .then(
-                if (isBoxFocused && !isEditing) Modifier.border(2.dp, AppTheme.primary, shape)
-                else Modifier
-            )
             .focusable(!isEditing && enabled)
             .clickable(
                 enabled = !isEditing && enabled && !readOnly,
