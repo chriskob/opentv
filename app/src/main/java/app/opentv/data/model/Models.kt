@@ -389,7 +389,12 @@ data class Programme(
      * New keeps its name.
      *
      * Titles here carry the episode on a second line (`Wheel of Fortune ᴺᵉʷ\nCanyon Spirit`), so
-     * each line is peeled on its own rather than only the end of the whole string.
+     * each line is peeled on its own rather than only the end of the whole string. Only the
+     * show-name line comes back, because the cell draws one line and lays its NEW/LIVE chip out
+     * after the title's box - and a Text's box is as wide as the widest line of its string, so an
+     * episode line under the name sized the box and threw the chip to the far right of the cell
+     * (and the maxLines cut put an ellipsis on names that fit). The preview header reads the
+     * title itself and still shows both lines.
      */
     fun guideDisplayTitle(): String {
         val clean = resolvedTitle()
@@ -397,7 +402,7 @@ data class Programme(
             if (isNewEpisode()) add("new")
             if (isLive) add("live")
         }
-        if (redundant.isEmpty()) return clean
+        if (redundant.isEmpty()) return clean.showNameLine()
         // Each line is peeled independently. These titles carry the episode on a second line -
         // "Wheel of Fortune ᴺᵉʷ\nCanyon Spirit" - so the status belongs to the end of the show
         // name, not to the end of the string. Peeling only the string's tail therefore matched
@@ -411,9 +416,21 @@ data class Programme(
                 !(lines.size > 1 && isStatusOnly(line, redundant))
             }
             .map { peelStatus(it, redundant) }
-        return kept.joinToString("\n")
+        return (kept.firstOrNull { it.isNotBlank() } ?: clean).showNameLine()
     }
 }
+
+/**
+ * The show-name line of a title: the first non-blank line, trimmed.
+ *
+ * A guide cell is one line tall and the NEW/LIVE chip is laid out after the title's box, whose
+ * width is that of the widest line of the string - so the episode line these feeds hang under the
+ * name ("NFL Football\nBuffalo Bills at Las Vegas Raiders Buffalo Bills at Las Vegas Raiders") is
+ * exactly what pushed the chip to the far right of the cell. Trailing whitespace is trimmed for
+ * the same reason: it has width but no ink, so the box outgrows the visible name.
+ */
+private fun String.showNameLine(): String =
+    LINE_BREAK.split(this).firstOrNull { it.isNotBlank() }?.trim().orEmpty()
 
 /** True when a whole line is just the status and nothing else. */
 private fun isStatusOnly(line: String, redundant: Set<String>): Boolean {

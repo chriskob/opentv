@@ -2226,7 +2226,11 @@ private fun GuideRow(
 
                     key(prog.id) {
                         ProgrammeBlock(
-                             title = programmeTitles.getOrElse(layout.programmeIndex) { prog.title },
+                            // Every cell title comes from guideDisplayTitle: it is the one place
+                            // that reports the single show-name line the cell can draw. (The map
+                            // above always hits; the fallback matches it so a miss cannot put a
+                            // multi-line title - and a far-right chip - back into a cell.)
+                            title = programmeTitles.getOrElse(layout.programmeIndex) { prog.guideDisplayTitle() },
 
                             width = layout.blockWidth,
                             textOffset = textOffset,

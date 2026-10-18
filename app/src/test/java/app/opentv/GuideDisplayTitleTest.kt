@@ -11,7 +11,9 @@ import org.junit.Test
 
 /**
  * The guide cell draws a NEW/LIVE chip, so a title that also ends in that word is saying it
- * twice. [Programme.guideDisplayTitle] peels the redundant trailing token off — and only that.
+ * twice. [Programme.guideDisplayTitle] peels the redundant trailing token off — and reports the
+ * show-name line alone, because the cell is one line and its trailing chip is laid out after the
+ * title's box, which is as wide as the *widest* line of the string.
  */
 class GuideDisplayTitleTest {
 
@@ -168,20 +170,66 @@ class GuideDisplayTitleTest {
     fun `a status on the first line of a two-line title is peeled`() {
         // The real shape, verbatim from the ONN: this provider puts the episode on line two and
         // hangs the status off the end of the show name, so peeling only the end of the whole
-        // string - which is the episode - matched nothing.
+        // string - which is the episode - matched nothing. The cell reports the show name alone.
         assertThat(prog("Wheel of Fortune ᴺᵉʷ\nCanyon Spirit", isNew = true).guideDisplayTitle())
-            .isEqualTo("Wheel of Fortune\nCanyon Spirit")
+            .isEqualTo("Wheel of Fortune")
         assertThat(prog("Survivor ᴺᵉʷ\nWeaponized Honesty", isNew = true).guideDisplayTitle())
-            .isEqualTo("Survivor\nWeaponized Honesty")
+            .isEqualTo("Survivor")
         assertThat(prog("MLB Baseball ᴸᶦᵛᵉ\nWild Card Series", isLive = true).guideDisplayTitle())
-            .isEqualTo("MLB Baseball\nWild Card Series")
+            .isEqualTo("MLB Baseball")
     }
 
     @Test
-    fun `the episode line is left alone`() {
+    fun `the cell title is the show name, not the episode line`() {
+        // The cell is one line tall, and the NEW/LIVE chip that trails the name is laid out after
+        // the title's own box - which measures as wide as the widest line of the string. Carrying
+        // the episode therefore sized the box to the episode: the chip sat at the far right of a
+        // half-empty cell and the maxLines cut drew an ellipsis on names that fit. The preview
+        // header reads the title itself, so the episode is still shown there.
         val shown = prog("Wheel of Fortune ᴺᵉʷ\nCanyon Spirit", isNew = true).guideDisplayTitle()
-        assertThat(shown).contains("Canyon Spirit")
-        assertThat(shown.endsWith("Canyon Spirit")).isTrue()
+        assertThat(shown).isEqualTo("Wheel of Fortune")
+        assertThat(shown).doesNotContain("Canyon Spirit")
+    }
+
+    @Test
+    fun `an episode line cannot widen the cell title`() {
+        // Verbatim from the ONN's guide dump. The provider repeats the subtitle, which made the
+        // box several times the visible name's width - the LIVE chip ended up hundreds of pixels
+        // right of the title it labels.
+        assertThat(
+            prog(
+                "NFL Football\nBuffalo Bills at Las Vegas Raiders Buffalo Bills at Las Vegas Raiders",
+                isLive = true,
+            ).guideDisplayTitle(),
+        ).isEqualTo("NFL Football")
+        assertThat(
+            prog(
+                "Spanish Primera Division Soccer\nReal Madrid vs. Sevilla FC Real Madrid vs. Sevilla FC",
+                isLive = true,
+            ).guideDisplayTitle(),
+        ).isEqualTo("Spanish Primera Division Soccer")
+    }
+
+    @Test
+    fun `a two-line title with no status chip still reports one line`() {
+        // The chip is not the only thing the box width moves: the maxLines cut alone drew the
+        // ellipsis, so titles without a chip wear one too ("PBR Team Series…").
+        assertThat(prog("PBR Team Series\nChampionship Round").guideDisplayTitle())
+            .isEqualTo("PBR Team Series")
+        assertThat(prog("Young Sheldon\nA Little Snip and Teaching Old Dogs").guideDisplayTitle())
+            .isEqualTo("Young Sheldon")
+    }
+
+    @Test
+    fun `trailing whitespace on the name line cannot widen the box either`() {
+        assertThat(prog("PBR Team Series   \nChampionship Round", isLive = true).guideDisplayTitle())
+            .isEqualTo("PBR Team Series")
+    }
+
+    @Test
+    fun `a blank first line falls through to the name`() {
+        assertThat(prog("\nBack Away From the Door").guideDisplayTitle())
+            .isEqualTo("Back Away From the Door")
     }
 
     @Test
