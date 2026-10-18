@@ -26,6 +26,10 @@ node_modules/
 
 .kotlin/
 
+# The bundled torrent engine (64 MB) is fetched and SHA-256-verified by fetch-torrserver.sh,
+# never committed. See docs/TORRENTS.md.
+app/src/main/jniLibs/armeabi-v7a/libtorrserver.so
+
 *.log
 cc_err.txt
 

@@ -44,6 +44,12 @@ jobs:
           OPENTV_PAIRING_URL: ${{ vars.OPENTV_PAIRING_URL }}
         run: ./gradlew test --stacktrace
 
+      # The 64 MB engine is not committed to git. This fetches the pinned upstream asset and
+      # refuses to continue unless its SHA-256 matches — a release either contains the engine
+      # or fails here, never ships without it.
+      - name: Fetch the bundled torrent engine
+        run: sh ./fetch-torrserver.sh
+
       - name: Assemble release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -54,6 +60,15 @@ jobs:
           # Settings -> Secrets and variables -> Actions -> Variables as OPENTV_PAIRING_URL.
           OPENTV_PAIRING_URL: ${{ vars.OPENTV_PAIRING_URL }}
         run: ./gradlew assembleRelease --stacktrace
+
+      # Belt and braces: the fetch step verified the download, and this verifies the download
+      # actually made it into the APK before anything is published.
+      - name: Verify the engine is inside the APK
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then echo "::error::assembleRelease produced no APK"; exit 1; fi
+          unzip -l "$APK" | grep -q 'lib/armeabi-v7a/libtorrserver.so' \
+            || { echo "::error::libtorrserver.so is missing from $APK — refusing to publish"; exit 1; }
 
       # A stable asset name matters: the install page and the /apk short link both look for
       # a file ending in .apk, and a predictable name keeps direct links working.
@@ -81,6 +96,7 @@ jobs:
             echo ""
             echo "---"
             echo "Built by GitHub Actions from the tagged commit — the workflow is public, so anyone can verify this APK against the source."
+            echo "Signing: $([ -n "$KEYSTORE_PATH" ] && echo 'the project key' || echo '**the debug key — this APK will not update an existing install**')"
           } >> release-notes.md
 
       - name: Publish release

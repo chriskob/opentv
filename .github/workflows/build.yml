@@ -36,6 +36,11 @@ jobs:
           OPENTV_PAIRING_URL: ${{ vars.OPENTV_PAIRING_URL }}
         run: ./gradlew test --stacktrace
 
+      # The 64 MB engine is not committed to git (see docs/TORRENTS.md). Fetch and verify it
+      # so CI-built debug APKs match what a release contains.
+      - name: Fetch the bundled torrent engine
+        run: sh ./fetch-torrserver.sh
+
       - name: Assemble debug APK
         env:
           # See release.yml — keeps CI builds pointing at the real pairing host.
