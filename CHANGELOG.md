@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.17.0
+
+- **Torrents: paste a magnet link and it plays.** A new **Torrents** tab in the side menu takes a
+  magnet link, finds the swarm, and hands the film straight to the player that is already there —
+  no second app, no server, no add-on. The torrent engine (TorrServer, GPL-3.0, ARM 32-bit) is
+  bundled inside the APK and runs as a child process of the app, so nothing has to be installed
+  beside it and nothing has to be configured. The tab is not a content type — a pasted link is a
+  one-off watch, not a library — so it needs no switch in settings and appears on every install.
+  Metadata for a magnet comes from peers, so the row shows what the engine is doing while it waits
+  ("Waiting for peers", "Reading the torrent", then real progress, speed and peers), and a magnet
+  nobody answers says so after 45 seconds instead of looking like a screen that has frozen. A
+  torrent with more than one video lists its files, largest first, so a season pack doesn't silently
+  play the wrong episode.
+- **It never uploads.** A bundled engine's defaults are a server's defaults: it seeds every torrent
+  it holds, asks the router for an inbound port over UPnP, and advertises itself on the local
+  network by LPD and Bonjour. All four are off here. They are turned off by the configuration file
+  the app writes before the engine's first launch, not by poking the engine at runtime — its
+  settings API replaces the whole settings object, and a two-field update through it wipes the
+  tracker list a magnet needs to find anyone. The engine's own settings are then read back at
+  startup and checked against the promises, and anything not honoured is shown on the tab: the app
+  verifies rather than claims. What remains is a peer handshake and tracker/DHT announces; no piece
+  of any file is ever sent to anyone.
+- **Nothing accumulates.** Torrents are added without being saved, the cache is a fixed 64 MB pool
+  in RAM with nothing written to disk, a torrent with no reader is dropped by the engine itself
+  after 30 seconds, leaving the player releases the torrent at once, and the row's Remove (and
+  Remove all) forgets a torrent outright. Put together: a two-hour film costs 64 MB of RAM and
+  leaves nothing on the box afterwards.
+- **The guide is untouched by any of it.** The engine starts when the Torrents tab is opened (or when
+  a link arrives from a phone), not at launch, so a session that never opens the tab never pays for
+  it — and a torrent play is just an `http://127.0.0.1` URL through the existing VOD player, so
+  playback, resume position and the player's own behaviour are the same code path as any other file.
+- **A magnet can arrive from a phone while the app is open.** The Torrents tab's QR page used to live
+  only as long as the tab did, which made it useless for anything saved on a phone. It now listens
+  for as long as the app is running, whichever screen is up, at an address that does not change
+  between visits (a fixed port, one saved key). A link sent to it brings the Torrents tab forward and
+  starts playing as if it had been pasted on the TV, and the phone is answered with what actually
+  happened. The page also carries a three-step iPhone Shortcuts recipe — new shortcut, Show in Share
+  Sheet, a Text action holding the address, Get Contents of URL — so a magnet can be shared straight
+  to the TV without opening anything on the phone at all.
+
+- **The Me / Profiles screen is gone.** It was never used, so the rail's person entry and the
+  Profiles section in Settings are removed. Recordings, resume positions and watch-history sync
+  keep working as before; there is simply one local viewer now, with no profile management UI.
+
 ## 0.16.24
 
 - **The guide's LIVE and NEW chips are the small annotations they were originally.** The
