@@ -56,3 +56,14 @@
 -dontwarn org.slf4j.**
 -dontwarn org.ietf.jgss.**
 -dontwarn javax.security.**
+
+# Media3 FFmpeg audio extension (bundled AAR in app/libs/). Media3 only reaches it by reflection:
+# DefaultRenderersFactory loads FfmpegAudioRenderer by class name and looks up its constructor, and
+# FfmpegAudioDecoder has methods the native decoder calls back into. Without these keeps a minified
+# release drops the extension silently and the software decoders (MP2, AC-3, E-AC-3, DTS, TrueHD)
+# are gone again.
+-keep class androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer { *; }
+-keep class androidx.media3.decoder.ffmpeg.FfmpegAudioDecoder { *; }
+-keep class androidx.media3.decoder.ffmpeg.FfmpegLibrary { *; }
+-keep class androidx.media3.decoder.ffmpeg.FfmpegDecoderException { *; }
+-keepclasseswithmembernames class androidx.media3.decoder.ffmpeg.** { native <methods>; }

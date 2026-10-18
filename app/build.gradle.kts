@@ -241,11 +241,14 @@ dependencies {
     /*
      * Software audio decoders (Media3's FFmpeg extension).
      *
-     * Android ships no free AC-3 / E-AC-3 / DTS decoder, so channels carrying them fail on devices
-     * that can only pass the bitstream through — the "plays in VLC but not here" case. The extension
-     * is not on Maven and must be cross-compiled: run .github/workflows/codecs.yml and put the
-     * resulting AAR in app/libs/. Nothing changes until that file exists, so this is safe to leave
-     * in place. See docs/CODECS.md.
+     * Android ships no free MP2 / AC-3 / E-AC-3 / DTS decoder, so channels carrying them fail on
+     * devices that can only pass the bitstream through — the "plays in TiviMate but not here" case.
+     * Media3 does not publish the extension to Google Maven (ExoPlayer issue 2781), so app/libs/
+     * carries a prebuilt from the Jellyfin Media3 fork of the same Media3 release
+     * (org.jellyfin.media3:media3-ffmpeg-decoder:1.5.0+1). Keep it in step with the media3 version
+     * in gradle/libs.versions.toml — docs/CODECS.md has the provenance, and
+     * .github/workflows/codecs.yml can rebuild it from source if needed. Nothing changes if the
+     * file is absent, so this stays safe either way.
      */
     val ffmpegDecoderAar = fileTree("libs") { include("*.aar") }
     if (ffmpegDecoderAar.files.isNotEmpty()) {
