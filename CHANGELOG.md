@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.5
+
+- **The player's info overlay is a size bigger.** The programme block at the bottom of the
+  player - the show title, its time span and remaining minutes, the channel number and name,
+  and the next show - sat on the theme's stock sizes (18sp and 13sp) and read small from across
+  a room. The title is now 21sp, the times and channel 15sp, and the next-show line a notch up
+  (14sp times, 17sp title). Nothing else in the overlay moves.
+
 ## 0.17.4
 
 - **The collapsed settings rail is even.** The drawer's tiles used to hug its left edge, and the
