@@ -425,7 +425,7 @@ private fun ProvisioningProgressDashboard(
     val dateFormat = remember { SimpleDateFormat("EEE h:mm a", Locale.getDefault()) }
     val isComplete = progress.isComplete
 
-    // Atmosphere for free: one vertical gradient behind everything. A Brush is a single draw pass â€”
+    // Atmosphere for free: one vertical gradient behind everything. A Brush is a single draw pass —
     // no blur, no shadow, no image, nothing that costs frames on a box that runs interpreted.
     Box(
         Modifier
@@ -447,7 +447,7 @@ private fun ProvisioningProgressDashboard(
         // Eyebrow, then state: the title carries what is happening, the line under it explains, and
         // nothing repeats itself.
         Text(
-            text = "OPENTV  Â·  REMOTE SETUP",
+            text = "OPENTV  ·  REMOTE SETUP",
             style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 3.sp),
             fontWeight = FontWeight.Bold,
             color = DashMuted.copy(alpha = 0.75f),
@@ -474,7 +474,7 @@ private fun ProvisioningProgressDashboard(
         // Progress Cards Grid
         Row(
             // The row takes the tallest card's height and every card fills it, so all three match
-            // exactly â€” whatever each one's contents are, and without a hardcoded height that could
+            // exactly — whatever each one's contents are, and without a hardcoded height that could
             // clip on a smaller screen.
             Modifier.fillMaxWidth().widthIn(max = 1180.dp).height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(20.dp)
@@ -513,7 +513,7 @@ private fun ProvisioningProgressDashboard(
 
                     StatValue(
                         value = if (progress.channelsSkipped) "Skipped" else "%,d".format(progress.channelsProcessed),
-                        label = if (progress.channelsSkipped) "Channels â€” unchecked" else "Channels imported",
+                        label = if (progress.channelsSkipped) "Channels — unchecked" else "Channels imported",
                         dimmed = progress.channelsSkipped,
                     )
                     if (!progress.channelsSkipped && progress.channelsTotal > 0) {
@@ -528,11 +528,11 @@ private fun ProvisioningProgressDashboard(
                     Spacer(Modifier.height(14.dp))
 
                     // Per-playlist attribution. This used to read "Source: <playlist processed last>"
-                    // beside the running total, which credited one playlist's channels to another â€” a
+                    // beside the running total, which credited one playlist's channels to another — a
                     // playlist whose Channels box was unticked appeared to have imported them anyway.
                     if (progress.playlistSummaries.isNotEmpty()) {
                         Text(
-                            text = progress.playlistSummaries.joinToString("  Â·  "),
+                            text = progress.playlistSummaries.joinToString("  ·  "),
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = AppTheme.primary
@@ -582,14 +582,14 @@ private fun ProvisioningProgressDashboard(
                         Column(Modifier.weight(1f)) {
                             StatValue(
                                 value = if (progress.moviesSkipped) "Skipped" else "%,d".format(progress.moviesProcessed),
-                                label = if (progress.moviesSkipped) "Movies â€” unchecked" else "Movies",
+                                label = if (progress.moviesSkipped) "Movies — unchecked" else "Movies",
                                 dimmed = progress.moviesSkipped,
                             )
                         }
                         Column(Modifier.weight(1f)) {
                             StatValue(
                                 value = if (progress.showsSkipped) "Skipped" else "%,d".format(progress.seriesProcessed),
-                                label = if (progress.showsSkipped) "Shows â€” unchecked" else "Shows",
+                                label = if (progress.showsSkipped) "Shows — unchecked" else "Shows",
                                 accent = AccentVod,
                                 dimmed = progress.showsSkipped,
                             )
@@ -656,7 +656,7 @@ private fun ProvisioningProgressDashboard(
                     Text(
                         text = when {
                             progress.epgBarIsMatching ->
-                                "Matching channels â€” %,d of %,d checked".format(
+                                "Matching channels — %,d of %,d checked".format(
                                     progress.epgChannelsScanned,
                                     progress.epgChannelsToScan,
                                 )
@@ -667,7 +667,7 @@ private fun ProvisioningProgressDashboard(
                             // ring sitting at 50%, and never named the fact that actually explained
                             // the ring: how many feeds had finished.
                             progress.epgFeedsTotal > 0 && progress.epgFeedsDone < progress.epgFeedsTotal ->
-                                "Fetching feeds â€” %,d of %,d done".format(
+                                "Fetching feeds — %,d of %,d done".format(
                                     progress.epgFeedsDone,
                                     progress.epgFeedsTotal,
                                 )
@@ -693,7 +693,7 @@ private fun ProvisioningProgressDashboard(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "${dateFormat.format(Date(progress.timelineStartMillis))} â†’ ${dateFormat.format(Date(progress.timelineEndMillis))}",
+                                text = "${dateFormat.format(Date(progress.timelineStartMillis))} → ${dateFormat.format(Date(progress.timelineEndMillis))}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = DashMuted
                             )
@@ -708,7 +708,7 @@ private fun ProvisioningProgressDashboard(
                         )
                     } else if (progress.epgFeedsTotal == 0) {
                         Text(
-                            text = "Fetching the guideâ€¦",
+                            text = "Fetching the guide…",
                             style = MaterialTheme.typography.bodySmall,
                             color = DashMuted
                         )
@@ -718,7 +718,7 @@ private fun ProvisioningProgressDashboard(
 
         Spacer(Modifier.height(24.dp))
 
-        // Status: a quiet pill with a state dot. The dot is deliberately not animated â€” an infinite
+        // Status: a quiet pill with a state dot. The dot is deliberately not animated — an infinite
         // transition redraws every frame, and this screen runs while a big import is already loading
         // the box.
         Box(
@@ -740,7 +740,7 @@ private fun ProvisioningProgressDashboard(
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    text = progress.statusMessage.ifBlank { "Workingâ€¦" },
+                    text = progress.statusMessage.ifBlank { "Working…" },
                     style = MaterialTheme.typography.bodyMedium,
                     color = DashInk.copy(alpha = 0.92f)
                 )
@@ -799,7 +799,7 @@ private fun ProvisioningProgressDashboard(
 /**
  * The dashboard's palette, now read from the active theme instead of hardcoded flat colours.
  *
- * Every value is still a flat colour on purpose â€” no elevation, no blur, no shadow anywhere on this
+ * Every value is still a flat colour on purpose — no elevation, no blur, no shadow anywhere on this
  * screen. It renders on boxes that execute bytecode interpreted (the ANR trace that led here was all
  * `art::interpreter` frames doing text layout), where one shadow costs more than the rest of the
  * screen combined.
@@ -825,14 +825,14 @@ private val AccentGuide: Color
 
 /** "42%", or a dash when there is no figure to show (skipped, or the provider's list is pending). */
 private fun ringLabel(fraction: Float?, skipped: Boolean): String = when {
-    skipped -> "â€”"
-    fraction == null -> "â€¦"
+    skipped -> "—"
+    fraction == null -> "…"
     else -> "%.0f%%".format(fraction * 100f)
 }
 
 /**
  * A card surface: flat fill, hairline outline, and a thin rule in the section's accent along the top
- * edge. The rule is the only decoration â€” it reads as deliberate design and costs one rectangle,
+ * edge. The rule is the only decoration — it reads as deliberate design and costs one rectangle,
  * which is the trade this screen wants: shape and colour instead of shadows.
  */
 @Composable
@@ -866,7 +866,7 @@ private fun CardShell(
     }
 }
 
-/** A big numeral over a quiet label â€” the dashboard's unit of information. */
+/** A big numeral over a quiet label — the dashboard's unit of information. */
 @Composable
 private fun StatValue(
     value: String,

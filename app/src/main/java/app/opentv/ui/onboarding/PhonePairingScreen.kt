@@ -127,7 +127,7 @@ private fun Listening(
     onCancel: () -> Unit,
     onSwitchToRemote: (() -> Unit)? = null,
 ) {
-    // Generated once per session rather than on every recomposition â€” encoding is not free
+    // Generated once per session rather than on every recomposition — encoding is not free
     // and the content does not change.
     val qr by produceState<android.graphics.Bitmap?>(initialValue = null, session.url) {
         value = withContext(Dispatchers.Default) { QrCodes.render(session.url, QR_SIZE_PX) }

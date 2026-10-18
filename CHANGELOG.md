@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.17.3
+
+- **The strange characters are gone from the interface.** The player's info line read "My playlist
+  â€¢ MUSIC", its time range "5:00 AM â€“ 5:00 PM â€” 257 min", and the pairing screens wore the same
+  bruises. They are string literals and comments that had been saved once with their bytes
+  re-encoded - the same accident an earlier release repaired in part, and this one missed the
+  player's copies of exactly the lines a viewer reads most. Every occurrence in the source is a real
+  glyph again - bullets, dashes, ellipses, arrows, triangles - and a test now scans the main sources
+  so the next one is caught by the build instead of by a television.
+
 ## 0.17.2
 
 - **Text fields are one box.** Every field in the app drew two nested outlines the moment it had

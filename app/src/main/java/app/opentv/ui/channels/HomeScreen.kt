@@ -140,7 +140,7 @@ import kotlinx.coroutines.withContext
  * Live TV: a category rail on the left, the channel list on the right.
  *
  * The rail is vertical because provider category lists run to dozens of entries and a
- * horizontal chip row hides all but the first few â€” on a d-pad, anything you cannot see
+ * horizontal chip row hides all but the first few — on a d-pad, anything you cannot see
  * you cannot reach. Favourites and All are pinned at the top.
  *
  * The list shows what is on *now* and *next* against every channel. That doubles as a
@@ -193,21 +193,21 @@ fun HomeScreen(
     val rows by viewModel.rows.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val favouritesOnly by viewModel.favouritesOnly.collectAsState()
-    // Kept for the playback-URL and record-picker lookups â€” no longer drives the sidebar, which is
+    // Kept for the playback-URL and record-picker lookups — no longer drives the sidebar, which is
     // a tree of playlists now rather than a provider filter plus a flat category list.
     val sources by viewModel.sources.collectAsState()
     val showFavouritesCategory by settings.showFavouritesCategory.collectAsState()
     val showPreviousWithoutCatchup by settings.guideShowPreviousWithoutCatchup.collectAsState()
     val collapsedSources by settings.collapsedSources.collectAsState()
 
-    // Rail open targets â€” declared before the index helpers below, which read them. Set at the
+    // Rail open targets — declared before the index helpers below, which read them. Set at the
     // moment LEFT/Back opens the rail: the entry the rail should scroll to and focus, and the
     // category it switches to (via the entry's onFocused, never inside the key dispatch).
     var railScrollToIndex by remember { mutableStateOf(-1) }
     var railOpenFocusKey by remember { mutableStateOf<String?>(null) }
 
-    // The sidebar flattened into exactly the rows it draws â€” favourites, then one header per
-    // playlist with its categories beneath â€” so scroll and focus indices are read off the real list
+    // The sidebar flattened into exactly the rows it draws — favourites, then one header per
+    // playlist with its categories beneath — so scroll and focus indices are read off the real list
     // instead of being recomputed from counts. That arithmetic had to add three rows for the
     // provider section, and a collapsed group changes the row count again; deriving the rows once
     // and indexing them cannot drift the way a hand-maintained offset does.
@@ -230,13 +230,13 @@ fun HomeScreen(
 
     /**
      * Index of the rail row whose [railFocusRequesters] entry should take focus and be scrolled to
-     * when the rail opens â€” mirroring the attachment rule on the rows below. Opening the rail
+     * when the rail opens — mirroring the attachment rule on the rows below. Opening the rail
      * scrolls here BEFORE
      * focus is requested, so focus lands on a real, composed entry instead of drifting onto the first
      * visible one (Favourites) and committing a selection change the user never made.
      *
      * The explicit open target ([railOpenFocusKey], set by LEFT/Back) wins over the guide's current
-     * selection â€” they differ whenever the guide sits on another category, which is exactly the
+     * selection — they differ whenever the guide sits on another category, which is exactly the
      * "rail opens on Favourites" bug.
      */
     fun railFocusTargetIndex(): Int {
@@ -309,7 +309,7 @@ fun HomeScreen(
     // Recording from the guide: what's capturing now, and a scope to kick a capture off.
     val activeRecordings by graph.recordingRepository.observeActive().collectAsState(initial = emptyList())
     // Programme reminders, so the guide can stamp a bell on every block the viewer has a reminder
-    // for. Keyed by (channel, slot) â€” the same pair a reminder is de-duped on.
+    // for. Keyed by (channel, slot) — the same pair a reminder is de-duped on.
     val reminders by graph.reminderRepository.observeAll().collectAsState(initial = emptyList())
     val reminderKeys = remember(reminders) {
         reminders.map { it.channelId to it.startUtcMillis }.toSet()
@@ -342,7 +342,7 @@ fun HomeScreen(
         }
     }
     val recordScope = scope
-    // The programme the user pressed OK on in the grid â€” drives the per-programme record menu.
+    // The programme the user pressed OK on in the grid — drives the per-programme record menu.
     var recordTarget by remember { mutableStateOf<Pair<ChannelsViewModel.Row, Programme>?>(null) }
     // Idle auto-close for that menu. Every d-pad key press restarts the countdown; when it runs
     // out unanswered, the menu dismisses itself.
@@ -397,7 +397,7 @@ fun HomeScreen(
     // the bottom of the LazyColumn into the guide, which collapsed the rail mid-scroll and dropped
     // the viewer back on the guide.
     val railFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
-    // The rail entry that currently holds focus â€” the origin for the next up/down move.
+    // The rail entry that currently holds focus — the origin for the next up/down move.
     var railFocusedKey by remember { mutableStateOf<String?>(null) }
     var railNavJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val railListState = rememberLazyListState()
@@ -411,7 +411,7 @@ fun HomeScreen(
     val guideScrollState = rememberScrollState()
 
     // Set when LEFT reopens the rail; the effect waits for the rail to be laid out again before
-    // moving focus onto it â€” a just-revealed node isn't focusable on the very same frame.
+    // moving focus onto it — a just-revealed node isn't focusable on the very same frame.
     var pendingRailFocus by remember { mutableStateOf(false) }
     var pendingGuideFocus by remember { mutableStateOf(false) }
 
@@ -501,7 +501,7 @@ fun HomeScreen(
      * the viewport, or a group had just collapsed) found no focusable below within the rail, so it
      * picked the nearest node in the guide column instead. Every guide row's focus closes the rail
      * (onFocusChannel), so the viewer was thrown out of the category list mid-scroll. Consuming the
-     * move and requesting the neighbour ourselves keeps focus in the rail and loops topâ†”bottom.
+     * move and requesting the neighbour ourselves keeps focus in the rail and loops top↔bottom.
      */
     fun moveRailFocus(isDown: Boolean) {
         if (railRows.isEmpty()) return
@@ -531,8 +531,8 @@ fun HomeScreen(
     }
 
     /**
-     * Opens the category rail on the category the viewer is BROWSING â€” the guide's selected category,
-     * or Favourites when that is active â€” not on the category the playing channel lives in. Opening
+     * Opens the category rail on the category the viewer is BROWSING — the guide's selected category,
+     * or Favourites when that is active — not on the category the playing channel lives in. Opening
      * on the playing channel's category meant that after switching to another category and scrolling
      * it, LEFT yanked the rail back to where the channel plays and made the viewer scroll all the way
      * back to the category they were just in. Only a fresh guide with nothing browsed yet falls back
@@ -556,7 +556,7 @@ fun HomeScreen(
             }
         }
         // Where to scroll if the entry isn't drawn (a collapsed playlist, or a category since
-        // removed). The open itself never scrolls an entry that is already on screen â€” see the
+        // removed). The open itself never scrolls an entry that is already on screen — see the
         // focus effect below.
         railScrollToIndex = when (val key = railOpenFocusKey) {
             null -> railFocusTargetIndex()
@@ -573,8 +573,8 @@ fun HomeScreen(
     LaunchedEffect(pendingRailFocus) {
         if (pendingRailFocus) {
             // Focus the intended entry FIRST and only scroll to it if it turns out not to be
-            // composed. Scrolling unconditionally on open shoved the list â€” and the cursor with
-            // it â€” a beat after the rail appeared: the entry is almost always already on screen,
+            // composed. Scrolling unconditionally on open shoved the list — and the cursor with
+            // it — a beat after the rail appeared: the entry is almost always already on screen,
             // so the scroll was pure movement, read as "the cursor jumps when I press left".
             //
             // Preview suppression stays on until focus lands on the intended entry: focus
@@ -604,7 +604,7 @@ fun HomeScreen(
     // Apply the category the rail opened on, off the key dispatch that requested it. The open
     // handlers deliberately avoid calling selectCategory() inside a key event (it disposes the
     // focused guide node mid-dispatch and caused an ANR storm); the switch happens here, after
-    // composition has settled, and only while suppression is still armed â€” so a later focus drift
+    // composition has settled, and only while suppression is still armed — so a later focus drift
     // or preview navigation never re-applies a stale target.
     LaunchedEffect(railExpanded, railOpenFocusKey) {
         if (railExpanded && suppressRailPreviewSelection) {
@@ -624,7 +624,7 @@ fun HomeScreen(
             railScrollToIndex = -1
             railOpenFocusKey = null
             // End preview mode on EVERY close path (d-pad RIGHT out of the rail, Back, OK on an
-            // entry, app switch) â€” not just OK-clicks. A stuck-on previewTopRow kept a second
+            // entry, app switch) — not just OK-clicks. A stuck-on previewTopRow kept a second
             // pseudo-cursor on the guide's top row after exiting the rail, which is exactly
             // the "two highlighted blocks" bug: the pseudo-cursor + the real focused row's
             // cursor both rendered.
@@ -633,8 +633,8 @@ fun HomeScreen(
         }
     }
     // Debounced category preview: restarts on every focused entry, so a fast walk through the
-    // rail coalesces into a single guide rebuild once focus settles on an entry. Returns false â€”
-    // and does nothing â€” when the entry is already the active category: re-selecting it rebuilt
+    // rail coalesces into a single guide rebuild once focus settles on an entry. Returns false —
+    // and does nothing — when the entry is already the active category: re-selecting it rebuilt
     // the whole guide for no reason, and that rebuild also re-measured the rail list and threw it
     // back to the top, which is the second half of the "cursor jumps on open" flicker.
     fun scheduleRailPreview(key: String): Boolean {
@@ -729,7 +729,7 @@ fun HomeScreen(
         } else {
             // Open the rail on the category being browsed. Do NOT call selectCategory() here: this
             // runs inside a key-event dispatch, and swapping the guide's rows synchronously disposes
-            // the focused guide node mid-dispatch â€” measured on-device as a >5s ANR storm (dropbox
+            // the focused guide node mid-dispatch — measured on-device as a >5s ANR storm (dropbox
             // data_app_anr 2026-09-08 17:17/17:18: createItemsAfterList subcompose at 140%+ CPU).
             // The category is applied off the dispatch, once focus has landed inside the rail.
             openCategoryRail()
@@ -820,7 +820,7 @@ fun HomeScreen(
     }
     val activeSelectedRow = selectedRow ?: initialRow
     // Membership test is O(1) via a key set built once per rows change. It used to be a full
-    // `rows.any { it.key == highlightedRow?.key }` scan that ran on EVERY d-pad focus change â€”
+    // `rows.any { it.key == highlightedRow?.key }` scan that ran on EVERY d-pad focus change —
     // for a large category that linear scan was the bulk of the guide's UI-thread cost.
     val rowKeySet = remember(rows) { rows.mapTo(HashSet(rows.size)) { it.key } }
     // State, not value: this is handed to the preview and grid, so they read it themselves and
@@ -837,7 +837,7 @@ fun HomeScreen(
     }
 
     // While rail-previewing a category, land the guide cursor on the PLAYING channel when the
-    // previewed rows contain it (TiviMate-style single highlight), else on the first row â€” then
+    // previewed rows contain it (TiviMate-style single highlight), else on the first row — then
     // ask the grid to center it (restoreTick; purely visual while the rail holds focus). The old
     // behavior forced the first row, which drew two highlights: top row box + playing row tint.
     LaunchedEffect(rows, railPreviewing) {
@@ -897,7 +897,7 @@ fun HomeScreen(
      *
      * The shared live player has to be silenced and paused first. It is a process-wide singleton
      * that outlives this screen, so just switching the tab would leave it playing: with guide-preview
-     * sound on â€” which is the default â€” live TV audio would carry on over the Movies grid, with no
+     * sound on — which is the default — live TV audio would carry on over the Movies grid, with no
      * video anywhere on screen to explain it. Pausing is safe rather than destructive: coming back to
      * the Live tab resumes the same stream, and the preview only re-tunes if the channel changed.
      */
@@ -971,7 +971,7 @@ fun HomeScreen(
     // a stop/restart.
     var previewedChannelId by remember { mutableStateOf<Long?>(null) }
 
-    // Watching a live channel while a recording runs opens a second stream on the same line â€” which
+    // Watching a live channel while a recording runs opens a second stream on the same line — which
     // cuts the recording and can get a single-connection account banned. So every jump to full-screen
     // live is funnelled through [requestLive]: with a recording active it asks first.
     fun startLive(channel: Channel) {
@@ -994,9 +994,9 @@ fun HomeScreen(
             // marker as part of the same step.
             //
             // This used to clear the marker, call enterFullScreen, and trust the preview effect to
-            // re-tune. It never could: that effect opens with `if (isFullScreen || â€¦) return`, and
+            // re-tune. It never could: that effect opens with `if (isFullScreen || …) return`, and
             // enterFullScreen had just made isFullScreen true, so it bailed on every pass. The
-            // archive stream stayed open and connected while the marker claimed live â€” which
+            // archive stream stayed open and connected while the marker claimed live — which
             // mis-routed every archive key (RIGHT fell through to "previous channel") and kept the
             // provider holding a connection, so the next stream was refused with 458 on a
             // single-connection account.
@@ -1037,7 +1037,7 @@ fun HomeScreen(
      *
      * The media item is swapped onto the provider's timeshift stream (`isLive = false`) exactly the
      * way a channel change swaps the live stream, so the preview pane and the fullscreen player are
-     * the ordinary live ones â€” nothing navigates to a separate screen and the live player is never
+     * the ordinary live ones — nothing navigates to a separate screen and the live player is never
      * torn down. The [catchup] session lets the player label the OSD and lets the guide stay where
      * the viewer scrubbed to when they back out.
      */
@@ -1047,7 +1047,7 @@ fun HomeScreen(
             onNoArchive?.invoke()
             return
         }
-        // The guide only keeps 3 days back â€” older slots stay visible until the next refresh
+        // The guide only keeps 3 days back — older slots stay visible until the next refresh
         // but the archive behind them is unreachable from this device (TiviMate shows the same
         // expired-slot behaviour).
         val effectiveDays = settings.effectiveArchiveDays(channel.tvArchiveDays)
@@ -1114,7 +1114,7 @@ fun HomeScreen(
         }
     }
 
-    // Hold the screen awake while Live TV is playing (either fullscreen or in preview) â€”
+    // Hold the screen awake while Live TV is playing (either fullscreen or in preview) —
     // ensures the Android TV / Fire OS screensaver never interrupts live broadcast viewing.
     DisposableEffect(screenResumed) {
         val window = context.findActivity()?.window
@@ -1131,7 +1131,7 @@ fun HomeScreen(
     LaunchedEffect(selectedRow?.key, previewEnabled, screenResumed, recordingActive, isFullScreen, catchup) {
         val row = selectedRow ?: activeSelectedRow ?: return@LaunchedEffect
         // While an archive programme is playing, the preview keeps the timeshift stream the shared
-        // player is already on â€” re-tuning the live URL here would yank the viewer back to now.
+        // player is already on — re-tuning the live URL here would yank the viewer back to now.
         if (isFullScreen || !previewEnabled || !screenResumed || recordingActive || catchup != null) {
             if (!isFullScreen && catchup == null && (!previewEnabled || !screenResumed || recordingActive)) {
                 previewController.player.pause()
@@ -1249,7 +1249,7 @@ fun HomeScreen(
         // During the shrink the guide is composed underneath (guideVisible) while the surface
         // stays on top by paint order (guide carries a below-zero layer); focus is handed over
         // only after docking so d-pad input cannot escape mid-animation. No elevation is ever
-        // placed above the OSD â€” the OSD composes last and always wins.
+        // placed above the OSD — the OSD composes last and always wins.
         val surfaceFullScreen = isFullScreen && !shrinkingFromFullScreen
         val guideVisible = !isFullScreen || shrinkingFromFullScreen
         val showPlayerOsd = isFullScreen && !shrinkingFromFullScreen
@@ -1281,7 +1281,7 @@ fun HomeScreen(
                 },
                 onOpenSearch = onOpenSearch,
                 // These three leave the live player for another content type. Asking the tab
-                // shell for its tab is what actually takes the viewer there â€” these used to call
+                // shell for its tab is what actually takes the viewer there — these used to call
                 // onOpenMainMenu(), which only slides the nav rail in and leaves the Live tab
                 // selected, so pressing Movies or Shows appeared to do nothing. The pressed tab is
                 // requested rather than navigated to because this player renders *inside* the tab
@@ -1400,7 +1400,7 @@ fun HomeScreen(
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
             Spacer(Modifier.height(12.dp))
-            // The top "Search channels" bar was removed â€” Search now lives in the global nav rail.
+            // The top "Search channels" bar was removed — Search now lives in the global nav rail.
 
             LazyColumn(
                 state = railListState,
@@ -1408,7 +1408,7 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 // Every rail entry carries its own FocusRequester so [moveRailFocus] can step to
-                // any neighbour by key â€” including one scrolled out of view, which the old single
+                // any neighbour by key — including one scrolled out of view, which the old single
                 // requester ([railFocusTargetIndex]'s entry) could never reach. The open handler
                 // still decides where focus goes on open via [railFocusTargetIndex].
                 itemsIndexed(railRows, key = { _, row -> row.key }) { _, row ->
@@ -1487,11 +1487,11 @@ fun HomeScreen(
                     channelsPresent == true -> {
                         // Channels are on the box but the current filter matches none (stale
                         // category/provider after a playlist change, mid-transition). A bare
-                        // spinner here is a dead end for the d-pad â€” offer the rail instead.
+                        // spinner here is a dead end for the d-pad — offer the rail instead.
                         FilterEmptyState(onBrowse = { openCategoryRail() })
                     }
                     // Nothing is syncing and the catalogue is confirmed empty. With a provider
-                    // configured, the last load failed or returned nothing â€” surface a clear error
+                    // configured, the last load failed or returned nothing — surface a clear error
                     // with Retry and a way back to setup instead of spinning forever.
                     hasSources -> ChannelsErrorState(onRetry = onRefresh, onEditProvider = onAddSource)
                     else -> EmptyState(onAddSource)
@@ -1572,7 +1572,7 @@ fun HomeScreen(
                     previewPlayer = if (previewEnabled && screenResumed && !recordingActive) previewController.player else null,
                     dayLabel = dayLabel,
                     // Bound derived from EPG retention (see MAX_PAGE_BACK_HOURS): the deepest
-                    // page's left edge is exactly the retention boundary â€” never a blank day.
+                    // page's left edge is exactly the retention boundary — never a blank day.
                     canGoPrevDay = guideHourOffset > -viewModel.maxPageBackHours,
                     onPrevDay = { viewModel.nudgeGuideDay(-1) },
                     onNextDay = { viewModel.nudgeGuideDay(1) },
@@ -1600,7 +1600,7 @@ fun HomeScreen(
                 // Shared by both layouts: focus follows the highlight and collapses the rail; LEFT
                 // from the leftmost element reopens the rail (consumed only when it was hidden).
                 // Deliberately does NOT dismiss the main menu. The menu is only on screen when the
-                // viewer summoned it with Back, and it takes focus when it appears â€” but losing focus
+                // viewer summoned it with Back, and it takes focus when it appears — but losing focus
                 // to it and back hands focus to the guide for one frame, and dismissing here killed
                 // the menu the instant it opened (it then stayed hidden because the shell only shows
                 // the rail on Live TV while it is open). RIGHT out of the rail closes it instead.
@@ -1744,7 +1744,7 @@ fun HomeScreen(
         // flows straight through to the capture. Only surfaced when the channel has more than one.
         var chosenVariant by remember(targetRow.primary.id) { mutableStateOf(targetRow.primary) }
         // Which provider records it, when this channel exists on more than one. Recording from a
-        // second provider's account is what lets you keep watching on the first â€” the only real way
+        // second provider's account is what lets you keep watching on the first — the only real way
         // around a single-connection provider (something even TiviMate can't do).
         var sourceOptions by remember(channel.id) { mutableStateOf<List<Channel>>(emptyList()) }
         LaunchedEffect(channel.id) { sourceOptions = graph.catalogRepository.recordSourceOptions(channel) }
@@ -1788,7 +1788,7 @@ fun HomeScreen(
                 Spacer(Modifier.height(16.dp))
 
                 if (multiSource) {
-                    // Record from which provider â€” keeps the other account free to watch on.
+                    // Record from which provider — keeps the other account free to watch on.
                     Text(
                         stringResource(R.string.rec_record_from),
                         style = MaterialTheme.typography.labelMedium,
@@ -1858,7 +1858,7 @@ fun HomeScreen(
                     }
                 }
 
-                // Reminders â€” only for something that hasn't started yet.
+                // Reminders — only for something that hasn't started yet.
                 if (!isPast) {
                     var reminderSet by remember(channel.id, programme.startUtcMillis) {
                         mutableStateOf<Boolean?>(null)
@@ -1941,9 +1941,9 @@ fun HomeScreen(
         }
     }
 
-    // The channel menu â€” opened by pressing OK on a channel. Watch, record what's on now, schedule
+    // The channel menu — opened by pressing OK on a channel. Watch, record what's on now, schedule
     // a later programme, or record the whole series. A plain vertical list, so it's reliable on any
-    // remote â€” no fiddly timeline navigation needed.
+    // remote — no fiddly timeline navigation needed.
     channelMenu?.let { menuRow ->
         val channel = menuRow.primary
         val nowProg = menuRow.now
@@ -2044,7 +2044,7 @@ fun HomeScreen(
                         )
                         upcoming.forEach { programme ->
                             RecordActionRow("${formatTime(programme.startUtcMillis)}   ${programme.title}") {
-                                // Open the programme dialog so the choice is record, remind or auto-switch â€”
+                                // Open the programme dialog so the choice is record, remind or auto-switch —
                                 // not a surprise one-tap recording.
                                 channelMenu = null
                                 recordTarget = menuRow to programme
@@ -2106,7 +2106,7 @@ private fun RecordActionRow(
 ) {
     val shape = RoundedCornerShape(10.dp)
     // primaryContainer/onPrimaryContainer are both accent shades in this palette, so the old
-    // primary row was accent-on-accent â€” unreadable, and worst on the focused first row. Use the
+    // primary row was accent-on-accent — unreadable, and worst on the focused first row. Use the
     // solid accent with the on-accent ink in both states: the tvFocus cursor is a translucent
     // white wash, so flipping to light onSurface ink while focused is white-on-white.
     val fill = if (primary) AppTheme.primary else MaterialTheme.colorScheme.surfaceVariant
@@ -2141,7 +2141,7 @@ private fun RecordActionRow(
 /**
  * The leading marks the programme menu wears: a filled favourite star, or the recording dot.
  *
- * The glyph is coloured by what it means, not by the label it sits beside â€” the favourite row
+ * The glyph is coloured by what it means, not by the label it sits beside — the favourite row
  * keeps the amber star even when the label reads "Remove favourite", and the recording dot is
  * always the recording red.
  */
@@ -2171,7 +2171,7 @@ private object ActionGlyph {
     }
 }
 
-/** A small focusable quality pill (FHD / HD / SDâ€¦) for the record dialog's "record HD or SD" choice. */
+/** A small focusable quality pill (FHD / HD / SD…) for the record dialog's "record HD or SD" choice. */
 @Composable
 private fun QualityChip(label: String, selected: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
@@ -2193,7 +2193,7 @@ private fun QualityChip(label: String, selected: Boolean, onClick: () -> Unit) {
 /**
  * One row of the guide's sidebar, in the order it is drawn.
  *
- * The sidebar is a tree â€” a header per playlist with its categories under it â€” but a LazyColumn needs
+ * The sidebar is a tree — a header per playlist with its categories under it — but a LazyColumn needs
  * a flat list, and the scroll/focus indices are only right if that flat list is the single source of
  * truth. Building it once and indexing it replaces the arithmetic that used to add a fixed number of
  * rows for the provider section, which was wrong the moment a collapsed group changed the row count.
@@ -2239,11 +2239,11 @@ private fun RailEntry(
     onFocused: (() -> Unit)? = null,
     /**
      * null = a plain entry. Otherwise this row is a playlist group header, and the value says whether
-     * its categories are drawn â€” a chevron at the end, so a collapsed group is still visible as one
+     * its categories are drawn — a chevron at the end, so a collapsed group is still visible as one
      * even though its children are gone.
      */
     expanded: Boolean? = null,
-    /** Drawn beneath a group header â€” indented so the sidebar reads as a tree. */
+    /** Drawn beneath a group header — indented so the sidebar reads as a tree. */
     nested: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -2323,7 +2323,7 @@ private fun ChannelRow(
         Spacer(Modifier.width(14.dp))
 
         Column(Modifier.weight(1f)) {
-            // Logo, name, guide â€” and nothing else. Quality is a playback decision;
+            // Logo, name, guide — and nothing else. Quality is a playback decision;
             // its switch lives in the player, not as clutter on every row.
             Text(
                 row.primary.shownName,
@@ -2398,11 +2398,11 @@ private fun LoadingState(isSyncing: Boolean) {
             Spacer(Modifier.height(8.dp))
             Text(
                 when {
-                    // Actively assembling â€” this is work in progress, not a failure.
+                    // Actively assembling — this is work in progress, not a failure.
                     status != null -> status
                     isSyncing -> stringResource(R.string.guide_fetching_desc)
                     // Channels are already on the device; the guide is being built from them.
-                    // A big provider takes a moment (longer on this debug build) â€” not a failure.
+                    // A big provider takes a moment (longer on this debug build) — not a failure.
                     else -> stringResource(R.string.guide_building_desc)
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2435,7 +2435,7 @@ private fun NoFavouritesState() {
 
 /**
  * Shown when a provider is configured but there are no channels to display and nothing is
- * syncing â€” i.e. the last catalogue load failed or came back empty. Replaces the endless
+ * syncing — i.e. the last catalogue load failed or came back empty. Replaces the endless
  * "Loading your channels" spinner with something the user can act on.
  */
 @Composable
@@ -2470,7 +2470,7 @@ private fun ChannelsErrorState(onRetry: () -> Unit, onEditProvider: () -> Unit) 
 }
 
 /**
- * Channels exist on the box but the current category/provider filter matches none of them â€”
+ * Channels exist on the box but the current category/provider filter matches none of them —
  * the state a stale filter leaves behind. Focusable by design (the Button takes d-pad focus),
  * so this never strands the viewer the way the old bare spinner did.
  */
@@ -2534,7 +2534,7 @@ private fun formatTime(utcMillis: Long): String = timeFormat.format(Date(utcMill
  * once and live for the whole screen, and this only ever *positions* the surface.
  *
  * The grow/shrink is a 0..1 factor eased between the preview card's rectangle and the full-screen
- * rectangle, so full screen is byte-for-byte the same surface the card was showing â€” no second
+ * rectangle, so full screen is byte-for-byte the same surface the card was showing — no second
  * decoder, no re-buffer, no shutter.
  *
  * The card's own rectangle is deliberately NOT eased: opening the category rail or stepping focus

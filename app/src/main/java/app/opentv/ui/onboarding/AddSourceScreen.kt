@@ -65,9 +65,9 @@ fun AddSourceScreen(
     onFinished: () -> Unit,
 ) {
     val context = LocalContext.current
-    // The QR "set it up from your phone" flow only makes sense on a TV â€” it serves a setup page
+    // The QR "set it up from your phone" flow only makes sense on a TV — it serves a setup page
     // FROM this device for a phone to fill in. On a phone that same screen shows a QR meant to be
-    // scanned BY a phone, which is nonsensical and traps the user â€” so a non-TV device defaults
+    // scanned BY a phone, which is nonsensical and traps the user — so a non-TV device defaults
     // straight to the direct entry form. On a TV the QR is still offered first, because typing a
     // server address and password with a d-pad is the worst moment in every app of this kind.
     val isTelevision = remember(context) { isRunningOnTelevision(context) }
@@ -87,7 +87,7 @@ fun AddSourceScreen(
         PhonePairingScreen(
             // Even on a failed sync, leave the pairing screen: the source is already saved, so the
             // home screen shows either the guide (success) or a recoverable error (failure) rather
-            // than stranding the user on an endless "Got it â€” connectingâ€¦" spinner.
+            // than stranding the user on an endless "Got it — connecting…" spinner.
             onReceived = { draft -> viewModel.saveAndSync(draft) { onFinished() } },
             onCancel = { usePhone = false },
             onSwitchToRemote = { usePhone = false; useRemote = true },
@@ -108,7 +108,7 @@ fun AddSourceScreen(
     var userAgent by remember { mutableStateOf(Source.DEFAULT_USER_AGENT) }
 
     // What to load from this playlist. Unticking TV channels leaves the guide empty for this
-    // provider â€” the same choice the phone page offers, and the reason a playlist added for its
+    // provider — the same choice the phone page offers, and the reason a playlist added for its
     // VOD must not dump its channel list into the guide. Ticking Movies/Shows fills those
     // sections straight away instead of waiting for a background refresh.
     var includeLive by remember { mutableStateOf(true) }
@@ -336,7 +336,7 @@ fun AddSourceScreen(
                 )
             }
 
-            // "Set up from your phone" (the QR pairing flow) is offered only on a TV â€” see the
+            // "Set up from your phone" (the QR pairing flow) is offered only on a TV — see the
             // isTelevision note above. On a phone it would just show a QR to nowhere.
             if (isTelevision) {
                 Spacer(Modifier.height(20.dp))
@@ -384,7 +384,7 @@ private fun PasteButton(onPaste: (String) -> Unit) {
 
 /**
  * One "load this section?" tick on the add-source screen. TV channels off means the playlist
- * contributes nothing to the guide â€” no channels and no live categories â€” which is what the
+ * contributes nothing to the guide — no channels and no live categories — which is what the
  * checkbox promises.
  */
 @Composable
