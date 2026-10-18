@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.17.7
+
+- **BACK from Search or Settings returns to the tab you were on, not the torrents box.** The shell
+  remembered whatever tab was last shown, and the phone-add magnet flow parks the app on Torrents,
+  whose screen aims the cursor at the magnet field the moment it appears. Coming back from Search or
+  any settings menu therefore landed in that field. The restore now skips Torrents and returns to
+  the last real content tab (Live TV, Movies, Shows or Recordings).
+- **The music channels that were silent have sound.** Their audio is MP2, a codec Android has no
+  decoder for - TiviMate plays them because it ships FFmpeg. While a NOW channel played, the app
+  created a video decoder and never an audio one; it now bundles Media3's FFmpeg extension
+  (Jellyfin's build of it, matching the app's Media3 version), so MP2 - and AC-3, E-AC-3, DTS and
+  TrueHD - decode in the app itself. Hardware decoders keep first refusal for everything they can
+  handle.
+
 ## 0.17.6
 
 - **The LIVE chip sits beside the show name again.** A guide cell is one line tall, but the box its
