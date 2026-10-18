@@ -1681,7 +1681,8 @@ private fun TimeHeader(
         // - exactly one channel row - and puts the ruler labels in that band, which is why the
         // date/time and the hour labels share a line. That band is the header. OpenTV's own EPG
         // freshness stamp has no counterpart in the reference, so it rides below the band rather
-        // than inside it.
+        // than inside it. The band and its margin are tightened here (24dip behind 4dip,
+        // 2026-10-18 - see the metric's own note); the shared line is what the reference fixed.
         Row(
             Modifier
                 .fillMaxWidth()
@@ -1759,7 +1760,12 @@ private fun TimeHeader(
                 }
                 Text(
                     text = epgInfoLine,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.timeRulerSp),
+                    // `epgInfoSp`, not the ruler's size: this stamp is OpenTV's own footnote under
+                    // the band, drawn smaller than the labels above it since 2026-10-18.
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = metrics.epgInfoSp,
+                        lineHeight = (metrics.epgInfoSp.value + 2).sp,
+                    ),
                     color = AppTheme.palette.textMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1768,7 +1774,10 @@ private fun TimeHeader(
                     Spacer(Modifier.width(10.dp))
                     Text(
                         text = stringResource(R.string.guide_jump_to_live),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = metrics.timeRulerSp),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = metrics.epgInfoSp,
+                            lineHeight = (metrics.epgInfoSp.value + 2).sp,
+                        ),
                         color = AppTheme.primary,
                         maxLines = 1,
                         modifier = Modifier
@@ -2306,8 +2315,10 @@ private fun RowScope.cellGutter(): Modifier =
 private fun GuideBadge(text: String, background: Color, modifier: Modifier = Modifier) {
     val metrics = LocalGuideMetrics.current
     Box(
+        // The 4dp that spaced the chip from the name moved to the call site as a start padding
+        // when the chip moved behind the name (see ProgrammeBlock); the chip keeps only its own
+        // inset here.
         modifier = modifier
-            .padding(end = 4.dp)
             .clip(RoundedCornerShape(metrics.badgeCornerRadius))
             .background(background)
             .padding(horizontal = 3.dp, vertical = 0.5.dp),
@@ -2464,10 +2475,9 @@ private fun ProgrammeBlock(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // All four status marks share one gutter so they read as a column at the left of the
-            // title, centred against its single line (see cellGutter).
-            if (isLive) GuideBadge("LIVE", AppTheme.palette.recording, cellGutter())
-            if (isNew) GuideBadge("NEW", AppTheme.palette.live, cellGutter())
+            // The replay marker and the reminder bell keep the gutter at the left of the title,
+            // centred against its single line (see cellGutter). LIVE and NEW no longer share it -
+            // they trail the name instead, further down this block.
             if (canReplay) {
                 Icon(
                     imageVector = Icons.Filled.History,
@@ -2499,6 +2509,12 @@ private fun ProgrammeBlock(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
+            // LIVE and NEW read as a suffix of the name, not a prefix in front of it - the
+            // maintainer's call (2026-10-18), and the side the reference's own superscript marks
+            // sit on. `fill = false` above is what makes them hug the name: a short title carries
+            // its chip right after it, a long one ellipsizes against the chip instead of under it.
+            if (isLive) GuideBadge("LIVE", AppTheme.palette.recording, cellGutter().padding(start = 4.dp))
+            if (isNew) GuideBadge("NEW", AppTheme.palette.live, cellGutter().padding(start = 4.dp))
         }
     }
 }

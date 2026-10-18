@@ -148,3 +148,14 @@ The number's *width* is the one residual: the reference's digits are 14px wide a
 because OpenTV composes the number from `labelLarge` (Medium) where the reference's style is plain
 `sans-serif`. At 2-3px of ink it is below what a viewer can see across a room, and it is noted rather
 than chased.
+
+## 4e. Deliberate deviations after the mirror (2026-10-18)
+
+Values in the tables above that `GuideMetrics` deliberately no longer follows. Each is pinned by
+`GuideMetricsTest`, so a future reading of the reference cannot "fix" one by mistake:
+
+| Field | Reference | Here | Why |
+|---|---|---|---|
+| `headerClockMarginTop` + `headerClockHeight` | 12dip + 29dip (exactly one row band) | 4dip + 24dip | Maintainer's call: between the guide's video pane and its first row, the full row band read as a strip of dead chrome above the clock. The clock and the ruler labels still share one band. |
+| `epgInfoSp` | - (no counterpart; OpenTV's own line) | 10sp | The "EPG updated ... - N channels" stamp is an annotation, not a readout: smaller than the 12sp ruler labels it sits under. |
+| `channelNumberSp` | 24sp declared, 16sp drawn | 16sp | Already recorded in 4d; listed here so every deviation lives in one place. |

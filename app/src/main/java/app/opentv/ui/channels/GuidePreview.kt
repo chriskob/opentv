@@ -163,7 +163,20 @@ fun GuidePreview(
                     modifier = Modifier.weight(1f, fill = false),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    val titleText = displayProg?.resolvedTitle() ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
+                    Text(
+                        text = titleText,
+                        style = MaterialTheme.typography.titleLarge.copy(fontSize = metrics.detailTitleSp, lineHeight = (metrics.detailTitleSp.value + 4).sp),
+                        fontWeight = FontWeight.Bold,
+                        color = AppTheme.palette.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    // The chip trails the title here as it does in the guide cells (2026-10-18):
+                    // the name leads and the annotation follows it - the side the provider's own
+                    // superscript marks sit on, and the side the maintainer asked for.
                     if (displayProg?.isNewEpisode() == true) {
+                        Spacer(Modifier.width(8.dp))
                         Box(
                             Modifier
                                 .clip(RoundedCornerShape(4.dp))
@@ -179,17 +192,7 @@ fun GuidePreview(
                                 lineHeight = (metrics.badgeTextSp.value + 1).sp,
                             )
                         }
-                        Spacer(Modifier.width(8.dp))
                     }
-                    val titleText = displayProg?.resolvedTitle() ?: row?.primary?.shownName ?: stringResource(R.string.guide_highlight_hint)
-                    Text(
-                        text = titleText,
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = metrics.detailTitleSp, lineHeight = (metrics.detailTitleSp.value + 4).sp),
-                        fontWeight = FontWeight.Bold,
-                        color = AppTheme.palette.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
                 if (row != null) {
                     Spacer(Modifier.width(8.dp))

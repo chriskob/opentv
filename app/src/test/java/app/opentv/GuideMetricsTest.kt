@@ -123,10 +123,12 @@ class GuideMetricsTest {
     fun theGuideChrome_matchesTheReferenceScreenLayout() {
         // `0x7f0e0058`: the clock 0x7f0b03a6 is 29dip tall with marginTop 12dip and marginStart
         // 16dip; the divider 0x7f0b0140 is 1dip of #20ffffff; the grid 0x7f0b0430 carries
-        // marginTop 2dip and paddingBottom 8dip.
+        // marginTop 2dip and paddingBottom 8dip. The clock band and its margin are the one pair
+        // the maintainer tightened (2026-10-18: a 24dip band behind 4dip); everything else here
+        // stays the reference's.
         val metrics = GuideMetrics.TIVIMATE_PARITY
-        assertThat(metrics.headerClockHeight).isEqualTo(29.dp)
-        assertThat(metrics.headerClockMarginTop).isEqualTo(12.dp)
+        assertThat(metrics.headerClockHeight).isEqualTo(24.dp)
+        assertThat(metrics.headerClockMarginTop).isEqualTo(4.dp)
         assertThat(metrics.headerClockMarginStart).isEqualTo(16.dp)
         assertThat(metrics.headerClockMarginEnd).isEqualTo(8.dp)
         assertThat(metrics.headerDividerHeight).isEqualTo(1.dp)
@@ -135,14 +137,20 @@ class GuideMetricsTest {
     }
 
     @Test
-    fun theHeaderBand_isExactlyOneChannelRowBand() {
+    fun theHeaderBand_isDeliberatelyTighterThanOneChannelRowBand() {
         val metrics = GuideMetrics.TIVIMATE_PARITY
         // The reference's clock band is 12dip of margin plus a 29dip clock, which is the 41dip of
-        // its own channel row - so the date/time sits on the first row's line rather than above it.
-        // In the device capture the clock and the 2:00 PM ruler label are on the same line, which is
-        // this relationship seen from the outside.
+        // its own channel row - so its date/time sits on the first row's line. In the device
+        // capture the clock and the 2:00 PM ruler label are on the same line, which is that
+        // relationship seen from the outside.
+        //
+        // OpenTV deviates here on purpose (maintainer, 2026-10-18): a 4dip margin plus a 24dip
+        // band. Between the guide's video pane and its first row, the full row band read as a
+        // strip of dead chrome. Pinned as a deliberate tightening, not drift.
         assertThat(metrics.headerClockMarginTop + metrics.headerClockHeight)
-            .isEqualTo(metrics.rowHeight)
+            .isLessThan(metrics.rowHeight)
+        assertThat(metrics.headerClockMarginTop).isEqualTo(4.dp)
+        assertThat(metrics.headerClockHeight).isEqualTo(24.dp)
     }
 
     @Test
@@ -174,6 +182,9 @@ class GuideMetricsTest {
         // The reference's guide layout sets the header clock at 16sp; the ruler labels above stay at
         // the 12sp the maintainer measured off their own screen, so the two are separate metrics.
         assertThat(metrics.headerClockSp).isEqualTo(16.sp)
+        // The "EPG updated ... - N channels" stamp is OpenTV's own line, with no counterpart in
+        // the reference's table; it is a size below the ruler labels it sits under (12sp).
+        assertThat(metrics.epgInfoSp).isEqualTo(10.sp)
         assertThat(metrics.detailTitleSp).isEqualTo(20.sp)
         assertThat(metrics.detailMetaSp).isEqualTo(14.sp)
         assertThat(metrics.detailBodySp).isEqualTo(14.sp)

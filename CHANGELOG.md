@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.17.1
+
+- **The About page is down to the version and the update check.** The "What it is" paragraph and
+  the license, source-code and bug-tracker links are gone: on a TV those lines are neither
+  readable across a room nor actionable with a remote, and what the page is for is what this build
+  is and whether a newer one exists. The page's subtitle no longer promises licenses it does not
+  show.
+- **The guide header is tighter.** The clock band drops from the reference's 29dip behind a 12dip
+  margin to 24dip behind 4dip, and the "EPG updated ... - N channels" stamp is drawn at 10sp
+  instead of the ruler labels' 12sp, so the first row sits noticeably closer to the video pane and
+  the header's own strip reads as chrome rather than dead space.
+- **The guide's LIVE and NEW chips follow the programme name instead of leading it.** The name is
+  what the eye scans, so the chip is now its suffix - the end of the name, the side the
+  reference's own superscript marks sit on - in the grid cells and beside the preview's title
+  alike.
+
 ## 0.17.0
 
 - **Torrents: paste a magnet link and it plays.** A new **Torrents** tab in the side menu takes a

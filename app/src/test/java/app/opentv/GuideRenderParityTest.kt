@@ -129,8 +129,11 @@ class GuideRenderParityTest {
         assertThat(guideGrid.contains("metrics.headerClockMarginEnd")).isTrue()
         assertThat(guideGrid.contains("metrics.headerDividerHeight")).isTrue()
         // The header used to be a 38dp band sized by nothing in particular; the reference's clock
-        // band is 29dip, which is what makes it line up with the ruler and the first row.
+        // band is 29dip (24dip here since the maintainer's tightening, 2026-10-18), which is what
+        // makes it line up with the ruler.
         assertThat(Regex("""height\(38\.dp\)""").containsMatchIn(guideGrid)).isFalse()
+        // The EPG stamp is drawn from its own metric rather than borrowing the ruler's size.
+        assertThat(guideGrid.contains("metrics.epgInfoSp")).isTrue()
     }
 
     @Test

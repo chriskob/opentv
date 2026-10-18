@@ -78,6 +78,11 @@ data class GuideMetrics(
      * The header clock's own band. The reference gives the clock a `12dip` top margin and a `29dip`
      * height, which together are exactly one [rowHeight] - the date/time sits on the first row's
      * line, and the ruler labels share that band.
+     *
+     * Tightened to a `24dip` band behind a `4dip` margin on the maintainer's call (2026-10-18):
+     * between the guide's video pane and the first row, the full row band left a strip of dead
+     * chrome above the clock. The clock and the ruler labels still share the band, and the pair is
+     * pinned in `GuideMetricsTest` as a deliberate departure from the table.
      */
     val headerClockHeight: Dp,
     val headerClockMarginTop: Dp,
@@ -111,6 +116,12 @@ data class GuideMetrics(
      * measured at 12sp off the maintainer's own screen.
      */
     val headerClockSp: TextUnit,
+    /**
+     * The "EPG updated ... - N channels" stamp under the clock band. OpenTV's own line - the
+     * reference has no counterpart - so it is deliberately smaller than the ruler labels it sits
+     * under: an annotation about the data, not a readout to be read across the room.
+     */
+    val epgInfoSp: TextUnit,
     val detailTitleSp: TextUnit,
     val detailMetaSp: TextUnit,
     val detailBodySp: TextUnit,
@@ -130,6 +141,8 @@ data class GuideMetrics(
          * 20/16/18dip spaced by their own end margins, the clock a 29dip band inset 16dip, and the
          * cell 12dip padded with a single line of `sans-serif-condensed`. `cellGap` supplies the
          * gutter that turns the 41dip band into the 44dp row pitch the Onn capture measured.
+         * `headerClockHeight` / `headerClockMarginTop` and `epgInfoSp` are the deliberate
+         * departures from all of it (2026-10-18); each carries its own note.
          *
          * The number is the one value the declaration alone gets wrong: the layout says 24sp, but
          * the reference's own code draws the number smaller than it declares, and the capture
@@ -159,8 +172,11 @@ data class GuideMetrics(
             statusIconSecondaryAlpha = 0.6f,
             statusIconTertiarySize = 18.dp,
             statusIconTertiaryMarginEnd = 8.dp,
-            headerClockHeight = 29.dp,
-            headerClockMarginTop = 12.dp,
+            // The reference's 29+12 is one row band; the maintainer's tightening (2026-10-18) keeps
+            // the clock and the ruler labels on one band while taking the dead chrome out from
+            // under the video pane.
+            headerClockHeight = 24.dp,
+            headerClockMarginTop = 4.dp,
             headerClockMarginStart = 16.dp,
             headerClockMarginEnd = 8.dp,
             headerDividerHeight = 1.dp,
@@ -191,6 +207,8 @@ data class GuideMetrics(
             programmeMetaSp = 12.sp,
             timeRulerSp = 12.sp,
             headerClockSp = 16.sp,
+            // OpenTV's own stamp line; smaller than the ruler labels above it (see the field).
+            epgInfoSp = 10.sp,
             detailTitleSp = 20.sp,
             detailMetaSp = 14.sp,
             detailBodySp = 14.sp,

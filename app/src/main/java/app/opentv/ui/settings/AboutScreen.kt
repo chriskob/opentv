@@ -5,9 +5,6 @@
  */
 package app.opentv.ui.settings
 
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,7 +38,11 @@ import app.opentv.update.UpdateChecker
 import kotlinx.coroutines.launch
 
 /**
- * About: what this is, what version it is, and how to get involved.
+ * About: the version and the update check, and nothing else.
+ *
+ * It used to carry a "what it is" paragraph and the license, source-code and bug-tracker links.
+ * The maintainer trimmed the page to the two things a TV remote can act on (2026-10-18): what
+ * this build is, and whether a newer one exists. The repository is where the rest lives.
  */
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
@@ -123,44 +124,6 @@ fun AboutScreen(onBack: () -> Unit) {
                     }
                 }
             }
-
-            Spacer(Modifier.height(SettingsSpacing.SectionGap))
-
-            SettingsSection(title = stringResource(R.string.about_what_is_title), collapsible = false) {
-                Text(
-                    text = stringResource(R.string.about_what_is_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            Spacer(Modifier.height(SettingsSpacing.SectionGap))
-
-            SettingsSection(title = stringResource(R.string.about_licence_links_title), collapsible = false) {
-                LinkRow(
-                    label = stringResource(R.string.about_licence_label),
-                    value = "GNU General Public License v3.0",
-                    url = "https://www.gnu.org/licenses/gpl-3.0.html",
-                )
-                LinkRow(stringResource(R.string.about_source_code), "github.com/chriskob/opentv")
-                LinkRow(stringResource(R.string.about_report_bug), "github.com/chriskob/opentv/issues")
-            }
         }
     }
-}
-
-@Composable
-private fun LinkRow(label: String, value: String, url: String = "https://$value") {
-    val context = LocalContext.current
-    SettingsNavRow(
-        title = label,
-        subtitle = value,
-        onClick = {
-            runCatching {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            }.onFailure { Toast.makeText(context, url, Toast.LENGTH_LONG).show() }
-        },
-    )
 }

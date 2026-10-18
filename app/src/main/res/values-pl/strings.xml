@@ -185,7 +185,7 @@
     <string name="settings_sync_page_subtitle">Synchronizuj postępy oglądania między urządzeniami w sieci lokalnej</string>
     <string name="settings_addons_page_subtitle">Konfiguruj źródła filmów i seriali oraz manifesty Stremio</string>
     <string name="settings_parental_page_subtitle">Zarządzaj ochroną PIN i ukrywaj wrażliwe kategorie kanałów</string>
-    <string name="settings_about_page_subtitle">Informacje o aplikacji OpenTV, aktualizacje i licencje open source</string>
+    <string name="settings_about_page_subtitle">Informacje o aplikacji OpenTV i aktualizacje</string>
     <string name="settings_appearance">Wygląd</string>
     <string name="settings_palette_title">Motyw</string>
     <string name="settings_palette_desc">Wybierz jedną z ciemnych palet OpenChamber. Każdy ekran ją przejmuje — przewodnik, odtwarzacz i menu — wraz z akcentem.</string>
@@ -341,16 +341,10 @@
     <string name="about_up_to_date">Masz najnowszą wersję.</string>
     <string name="about_checking">Sprawdzanie…</string>
     <string name="about_check_updates">Sprawdź aktualizacje</string>
-    <string name="about_what_is_title">Czym jest</string>
-    <string name="about_what_is_body">Bezpłatny odtwarzacz IPTV o otwartym kodzie źródłowym dla Android TV, Fire TV i telefonów. To tylko odtwarzacz — nie dostarcza kanałów; łączysz się z usługą, za którą już płacisz. Nic, co wprowadzisz, nie opuszcza Twojego urządzenia, poza komunikacją z Twoim dostawcą.</string>
     <string name="about_built_open_title">Tworzone w otwarty sposób</string>
     <string name="about_built_open_body">OpenTV jest rozwijane w sposób otwarty, a AI wykonuje dużą część kodowania pod kierunkiem człowieka — mówimy o tym wprost, niczego nie ukrywając. Ponieważ jest to oprogramowanie open source, odejście jednej osoby nie może go pogrzebać: każdy może przeczytać każdą linię kodu, zbudować go i kontynuować rozwój.</string>
     <string name="about_support_title">Wesprzyj projekt</string>
     <string name="about_scan_to_donate">Zeskanuj, aby wesprzeć</string>
-    <string name="about_licence_links_title">Licencja i linki</string>
-    <string name="about_licence_label">Licencja</string>
-    <string name="about_source_code">Kod źródłowy</string>
-    <string name="about_report_bug">Zgłoś błąd / zaproponuj funkcję</string>
     <string name="about_install_page">Strona instalacji</string>
     <string name="onboarding_default_provider_name">Mój dostawca</string>
     <string name="onboarding_default_playlist_name">Moja playlista</string>

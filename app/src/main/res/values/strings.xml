@@ -273,7 +273,7 @@
     <string name="settings_sync_page_subtitle">Sync watch progress across devices on your local network</string>
     <string name="settings_addons_page_subtitle">Configure movie and series stream providers and Stremio manifests</string>
     <string name="settings_parental_page_subtitle">Manage PIN protection and hide sensitive channel categories</string>
-    <string name="settings_about_page_subtitle">OpenTV application details, updates and open-source licenses</string>
+    <string name="settings_about_page_subtitle">OpenTV application details and updates</string>
 
     <!-- ============================ Display & playback settings ============================ -->
     <string name="settings_appearance">Appearance</string>
@@ -474,8 +474,6 @@
     <string name="about_up_to_date">You\'re on the latest version.</string>
     <string name="about_checking">Checking…</string>
     <string name="about_check_updates">Check for updates</string>
-    <string name="about_what_is_title">What it is</string>
-    <string name="about_what_is_body">A free, open-source IPTV player for Android TV, Fire TV and phones. It\'s a player only — it doesn\'t supply channels; you connect the service you already pay for. Nothing you enter leaves your device except to talk to your own provider.</string>
     <string name="about_built_open_title">Built in the open</string>
     <string name="about_built_open_body">OpenTV is developed openly, with AI doing a large share of the coding under human direction — that\'s stated plainly, not hidden. Because it\'s open source, no single person going away can take it down: anyone can read every line, build it, and carry it on.</string>
     <string name="about_support_title">Support the project</string>
@@ -483,10 +481,6 @@
     <string name="about_sponsor_github">GitHub Sponsors</string>
     <string name="about_donate_paypal">Donate via PayPal</string>
     <string name="about_scan_to_donate">Scan to donate</string>
-    <string name="about_licence_links_title">License &amp; links</string>
-    <string name="about_licence_label">License</string>
-    <string name="about_source_code">Source code</string>
-    <string name="about_report_bug">Report a bug / request a feature</string>
     <string name="about_install_page">Install page</string>
 
     <!-- ============================ Onboarding / add source ============================ -->
