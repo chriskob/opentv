@@ -46,7 +46,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.focusGroup
@@ -112,6 +114,24 @@ enum class Tab(val labelRes: Int, val icon: ImageVector) {
     TORRENTS(R.string.nav_torrents, Icons.Filled.Download),
 }
 
+/**
+ * What the shell writes down for its tab when the composition goes away — Search or Settings
+ * opening on top of HOME, or a player taking the screen.
+ *
+ * Torrents saves as the last real content tab instead of itself. It is a one-off view — paste a
+ * magnet, watch, leave — and its screen aims the cursor at the magnet field the moment it
+ * appears, so coming back onto it from another destination read as BACK landing people in the
+ * torrents magnet box. Everything else saves as itself.
+ */
+internal fun savedTabName(tab: Tab, lastContentTab: Tab): String =
+    if (tab == Tab.TORRENTS) lastContentTab.name else tab.name
+
+/** The inverse of [savedTabName]. An unknown or legacy name falls back to the home tab. */
+internal fun restoredTab(name: String, lastContentTab: Tab, homeTab: Tab): Tab {
+    val restored = Tab.values().firstOrNull { it.name == name } ?: return homeTab
+    return if (restored == Tab.TORRENTS) lastContentTab else restored
+}
+
 private val RAIL_EXPANDED = 190.dp
 /** Icon-only width, so the menu can stay on screen without stealing the guide's space. */
 private val RAIL_COLLAPSED = 80.dp
@@ -175,13 +195,29 @@ fun MainScreen(
     // still switched on (or Recordings if none are).
     val homeTab = visibleTabs.first()
 
+    // The last tab that is not the Torrents one — where a restore lands when the tab that was
+    // open cannot be honoured (see the tab's own saver below).
+    val lastContentTab = rememberSaveable { mutableStateOf(homeTab) }
     // Saveable so BACK from a detail/player destination (which takes HOME out of the
     // composition and back) restores the Movies/Shows tab instead of resetting to the guide.
-    var tab by rememberSaveable { mutableStateOf(homeTab) }
+    // Never Torrents, though — [savedTabName] swaps it for the last content tab, so BACK from
+    // Search or Settings cannot dump someone into the torrents magnet box.
+    var tab by rememberSaveable(
+        stateSaver = Saver<Tab, Any>(
+            save = { value -> savedTabName(value, lastContentTab.value) },
+            restore = { saved -> restoredTab(saved.toString(), lastContentTab.value, homeTab) },
+        ),
+    ) { mutableStateOf(homeTab) }
     var navRailVisible by remember { mutableStateOf(false) }
     // Whether focus is anywhere inside the main menu — the menu eases open to show its labels while
     // the d-pad is in it and eases back to icons when focus leaves.
     var railFocused by remember { mutableStateOf(false) }
+
+    // Keep the restore target current: whichever real content tab the shell is showing becomes
+    // what a later restore falls back to. Torrents is deliberately not one of them.
+    SideEffect {
+        if (tab != Tab.TORRENTS) lastContentTab.value = tab
+    }
 
     // If the selected tab gets hidden (its type toggled off while it's open), drop back to the
     // home tab so the content area never tries to show a tab that's no longer there.
