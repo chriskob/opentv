@@ -488,13 +488,20 @@ fun SettingsNavRow(
     var focused by remember { mutableStateOf(false) }
     // The wrapper lets a selected row draw an accent bar pinned to its left edge — the "you are
     // here" mark, distinct from the focus ring that moves with the cursor.
+    //
+    // Collapsed, the drawer is a rail of equal squares: the tile is centred in the rail, and the
+    // selection lives on the tile itself (its fill, plus the bar inside the tile's own left edge).
+    // A selected row therefore keeps the same 40dp footprint as its neighbours — before this it
+    // carried a full-width pill that started left of the tiles and ended past them, so the rail
+    // read as uneven (maintainer's photo, 2026-10-18).
+    val tileSelected = selected && !expanded
     Box(modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .settingsFocus(
                     shape = SettingsShape.Row,
-                    selected = selected,
+                    selected = selected && expanded,
                     onFocusChange = { focused = it },
                 )
                 .focusable()
@@ -507,21 +514,43 @@ fun SettingsNavRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
         if (icon != null) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(SettingsShape.Tile)
-                    .background(tint.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(22.dp),
-                )
+            val tile: @Composable () -> Unit = {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(SettingsShape.Tile)
+                        .then(
+                            if (tileSelected) Modifier.background(AppTheme.palette.selectedFill)
+                            else Modifier,
+                        )
+                        .background(tint.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    if (tileSelected) {
+                        Box(
+                            Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 3.dp)
+                                .clip(SettingsShape.Pill)
+                                .background(AppTheme.primary)
+                                .width(4.dp)
+                                .height(26.dp),
+                        )
+                    }
+                }
             }
-            if (expanded) Spacer(Modifier.width(12.dp))
+            if (expanded) {
+                tile()
+                Spacer(Modifier.width(12.dp))
+            } else {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { tile() }
+            }
         }
         if (expanded) {
             SettingsRowText(
@@ -530,7 +559,7 @@ fun SettingsNavRow(
                 titleSize = titleSize,
                 titleWeight = titleWeight,
             )
-        } else {
+        } else if (icon == null) {
             Spacer(Modifier.weight(1f))
         }
         if (expanded) {
@@ -546,7 +575,7 @@ fun SettingsNavRow(
             }
         }
         }
-        if (selected) {
+        if (selected && expanded) {
             Box(
                 Modifier
                     .align(Alignment.CenterStart)
