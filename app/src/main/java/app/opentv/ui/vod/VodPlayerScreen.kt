@@ -351,6 +351,11 @@ fun VodPlayerScreen(
             scope.launch {
                 savePosition()
                 controller.release()
+                // The torrent is deliberately left to the engine here. Leaving the player - which
+                // BACK now does only on its second press - must not throw away what has already
+                // been downloaded, or coming back to the menu costs a fresh download from zero.
+                // The engine forgets the torrent itself after its 30-second no-reader timeout, and
+                // with the disk cache off nothing is written down, so "nothing is kept" still holds.
                 scope.cancel()
             }
         }
@@ -588,7 +593,16 @@ fun VodPlayerScreen(
 
     // Auto-hide when playing and not paused/scrubbing and no picker open. A growing recording dips in
     // and out of Buffering as it rides the write head, so for that case Buffering counts as "playing"
-    // here — otherwise a single hiccup would pin the transport bar on screen for the rest of the watch.
+    // here - otherwise a single hiccup would pin the transport bar on screen for the rest of the watch.
+    //
+    // Starting to play is itself the moment the timer should start: the screen opens while the stream
+    // is still buffering, so nothing has armed the timer by the time the first frame lands, and the
+    // bar used to sit there until the viewer pressed a key. A torrent makes that wait long enough to
+    // be the first thing anyone notices.
+    LaunchedEffect(state) {
+        if (state is PlayerController.State.Playing) signalInteraction()
+    }
+
     LaunchedEffect(Unit) {
         interactionEvents
             .onStart { emit(Unit) }
@@ -619,14 +633,15 @@ fun VodPlayerScreen(
     }
 
     BackHandler {
-        val activelyPlaying = state is PlayerController.State.Playing ||
-            (growingRec && state is PlayerController.State.Buffering)
         when {
             // A pending hand-over is the most immediate thing BACK can cancel: cancelling it means
             // "stay on this episode", which is a different intent from closing the controls.
             upNextVisible -> upNextVisible = false
             vodPanel != VodPanel.NONE -> vodPanel = VodPanel.NONE
-            controlsVisible && activelyPlaying && !paused -> controlsVisible = false
+            // BACK is the remote's menu key: the first press brings the transport up, the second
+            // one leaves. It used to close the player whenever the bar was hidden, which is exactly
+            // the moment someone reaches for the controls - and on a torrent that ended the play.
+            !controlsVisible -> reveal()
             else -> onBack()
         }
     }
@@ -790,21 +805,21 @@ fun VodPlayerScreen(
                 Modifier
                     .fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f))))
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
             ) {
                 // Frosted-glass sheet: a translucent rounded card with a hairline top edge over the
                 // scrim, so the transport reads as one floating panel instead of loose rows.
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(20.dp))
                         .background(Color.Black.copy(alpha = 0.72f))
                         .border(
                             1.dp,
                             Color.White.copy(alpha = 0.12f),
-                            RoundedCornerShape(24.dp),
+                            RoundedCornerShape(20.dp),
                         )
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
                 ) {
                 AnimatedContent(
                     targetState = vodPanel,
@@ -882,8 +897,8 @@ fun VodPlayerScreen(
                     if (!posterUrl.isNullOrBlank()) {
                         Box(
                             Modifier
-                                .size(58.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(6.dp))
                                 .background(Color.White.copy(alpha = 0.08f)),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -899,7 +914,7 @@ fun VodPlayerScreen(
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
-                        Spacer(Modifier.width(14.dp))
+                        Spacer(Modifier.width(12.dp))
                     }
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -927,20 +942,20 @@ fun VodPlayerScreen(
                                     color = badgeColor,
                                 )
                             }
-                            Spacer(Modifier.width(10.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text(
                                 text = item.title,
-                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 19.sp, fontWeight = FontWeight.SemiBold),
+                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
                                 color = Color.White,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
                         if (metaLine.isNotEmpty()) {
-                            Spacer(Modifier.height(3.dp))
+                            Spacer(Modifier.height(2.dp))
                             Text(
                                 text = metaLine,
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                                 color = Color.White.copy(alpha = 0.72f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -948,66 +963,72 @@ fun VodPlayerScreen(
                         }
                     }
                     if (streamInfo.hasVideo) {
-                        Spacer(Modifier.width(18.dp))
+                        Spacer(Modifier.width(14.dp))
                         StreamFormatReadout(streamInfo)
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(2.dp))
 
-                // Interactive Timeline Seekbar (Focusable, D-pad 10s intervals)
-                InteractiveVodTimeline(
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    bufferedMs = controller.player.bufferedPosition.coerceAtLeast(0L),
-                    focusRequester = timelineFocus,
-                    onSeekRelative = { delta ->
-                        seekRelative(delta)
-                        positionMs = controller.player.currentPosition
-                        signalInteraction()
-                    },
-                    onSeekTo = { targetMs ->
-                        controller.player.seekTo(targetMs)
-                        positionMs = targetMs
-                        signalInteraction()
-                    },
-                    onNavigateDown = {
-                        focusBar()
-                    },
-                    onTogglePlayPause = {
-                        paused = !paused
-                        controller.player.playWhenReady = !paused
-                        signalInteraction()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    accent = plexAccent,
-                )
-
-                // Timestamp labels: Elapsed / Total (-Remaining)
+                // Times ride on the same line as the seek bar rather than under it: the separate
+                // timestamp row was a third of the panel's height and said nothing the bar's ends
+                // cannot say. The widths are fixed so the bar does not shift as the minutes tick.
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = formatDuration(positionMs),
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                        modifier = Modifier.width(46.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
                         color = Color.White.copy(alpha = 0.85f),
                     )
+
+                    // Interactive Timeline Seekbar (Focusable, D-pad 10s intervals)
+                    InteractiveVodTimeline(
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        bufferedMs = controller.player.bufferedPosition.coerceAtLeast(0L),
+                        focusRequester = timelineFocus,
+                        onSeekRelative = { delta ->
+                            seekRelative(delta)
+                            positionMs = controller.player.currentPosition
+                            signalInteraction()
+                        },
+                        onSeekTo = { targetMs ->
+                            controller.player.seekTo(targetMs)
+                            positionMs = targetMs
+                            signalInteraction()
+                        },
+                        onNavigateDown = {
+                            focusBar()
+                        },
+                        onTogglePlayPause = {
+                            paused = !paused
+                            controller.player.playWhenReady = !paused
+                            signalInteraction()
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 12.dp),
+                        accent = plexAccent,
+                    )
+
                     val remaining = (durationMs - positionMs).coerceAtLeast(0L)
-                    val durationText = if (durationMs > 0L) {
-                        "${formatDuration(durationMs)}   (-${formatDuration(remaining)})"
-                    } else {
-                        formatDuration(durationMs)
-                    }
                     Text(
-                        text = durationText,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                        text = if (durationMs > 0L) {
+                            "${formatDuration(durationMs)}  (-${formatDuration(remaining)})"
+                        } else {
+                            formatDuration(durationMs)
+                        },
+                        modifier = Modifier.width(100.dp),
+                        textAlign = TextAlign.End,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
                         color = Color.White.copy(alpha = 0.85f),
                     )
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(6.dp))
 
                 // ---- Transport + option buttons ----
                 // One labelled row: transport on the near side of the divider, the things you set
@@ -1038,16 +1059,16 @@ fun VodPlayerScreen(
                     barButtons.forEachIndexed { index, button ->
                         if (index > 0) {
                             if (index == optionsStart && optionsStart > 0) {
-                                Spacer(Modifier.width(16.dp))
+                                Spacer(Modifier.width(12.dp))
                                 Box(
                                     Modifier
                                         .width(1.dp)
-                                        .height(30.dp)
+                                        .height(26.dp)
                                         .background(Color.White.copy(alpha = 0.18f)),
                                 )
-                                Spacer(Modifier.width(16.dp))
+                                Spacer(Modifier.width(12.dp))
                             } else {
-                                Spacer(Modifier.width(10.dp))
+                                Spacer(Modifier.width(6.dp))
                             }
                         }
                         when (button) {
@@ -1458,8 +1479,8 @@ private fun VodButtonCard(
     // Gold needs near-black ink; the theme's onFocusSurface is tuned for its own primary.
     val accentInk = if (accent != null) Color.Black else AppTheme.palette.onFocusSurface
     // Hero sizing for play/pause; option buttons stay compact so the row fits small panels.
-    val circle = if (isPrimary) 56.dp else 42.dp
-    val glyph = if (isPrimary) 28.dp else 19.dp
+    val circle = if (isPrimary) 48.dp else 38.dp
+    val glyph = if (isPrimary) 24.dp else 18.dp
     val bg = when {
         // An accented hero keeps its color under focus — the scale, white ring and black ink
         // already say "focused", and dropping to the cursor wash would erase the identity.
@@ -1489,13 +1510,13 @@ private fun VodButtonCard(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .widthIn(min = 58.dp)
+            .widthIn(min = 52.dp)
             .graphicsLayer { scaleX = focusScale; scaleY = focusScale }
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .clickable(onClick = onClick)
-            .padding(vertical = 2.dp),
+            .padding(vertical = 1.dp),
     ) {
         Box(
             modifier = Modifier
@@ -1519,10 +1540,10 @@ private fun VodButtonCard(
                 )
             }
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(3.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
             fontWeight = if (focused || isSelected || isPrimary) FontWeight.Bold else FontWeight.Medium,
             color = if (focused) Color.White else Color.White.copy(alpha = 0.85f),
             maxLines = 1,

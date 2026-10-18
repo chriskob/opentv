@@ -121,6 +121,79 @@ object ServiceLocator {
         val stremioClient: StremioClient by lazy { StremioClient(httpClient) }
 
         /**
+         * The torrent engine, bundled in this APK and run as a child process.
+         *
+         * Lazy because most sessions never touch it: constructing it costs nothing, but starting it
+         * spawns a process, opens peer connections and claims 64 MB of RAM, which is far too much to
+         * pay for on a box that only wanted to watch the guide.
+         */
+        val torrentEngine: app.opentv.torrent.TorrentEngine by lazy {
+            app.opentv.torrent.TorrentEngine(appContext, engineHttpClient)
+        }
+
+        /**
+         * A client for the engine on loopback, with timeouts of its own.
+         *
+         * The catalogue client's five-minute call timeout is right for a panel producing 40,000 rows
+         * and wrong for an engine on the same device: the status poll runs every second, so a wedged
+         * engine must fail in seconds rather than stall the poll for minutes. `rem` is the slowest
+         * call the engine serves — it waits for the torrent to close, up to five seconds — which is
+         * what the twenty-second read timeout covers. No cache: everything here is local state that
+         * changes every second.
+         */
+        private val engineHttpClient: OkHttpClient by lazy {
+            httpClient.newBuilder()
+                .cache(null)
+                .connectTimeout(3, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS)
+                .callTimeout(30, TimeUnit.SECONDS)
+                .build()
+        }
+
+        /**
+         * Talks to [torrentEngine]. The address is resolved per call, because the engine picks its
+         * port when it starts and the client outlives any single run of it.
+         */
+        val torrServerClient: app.opentv.data.remote.TorrServerClient by lazy {
+            app.opentv.data.remote.TorrServerClient(
+                baseUrl = { torrentEngine.baseUrl },
+                http = engineHttpClient,
+            )
+        }
+
+        /**
+         * The page a phone opens to add a torrent, served on the LAN for as long as the app runs —
+         * a magnet sent from a phone should not need anyone standing at the TV.
+         *
+         * The address is stable across visits (one saved key, one preferred port), so a Shortcuts
+         * action or a bookmark set up once keeps working. The socket itself is started and stopped
+         * with the app's composition.
+         */
+        private val phoneAddServerDelegate: Lazy<app.opentv.torrent.PhoneAddServer> = lazy {
+            app.opentv.torrent.PhoneAddServer(key = settings.phoneAddKey) { link ->
+                // The Torrents view model drains this queue and starts the torrent, wherever the
+                // viewer is; the phone waits here for its answer.
+                app.opentv.torrent.PhoneAddRequests.request(link)
+            }
+        }
+
+        /** The phone-add page; starting it is the composition's job. */
+        val phoneAddServer: app.opentv.torrent.PhoneAddServer by phoneAddServerDelegate
+
+        /**
+         * Stops the phone-add socket if this session ever opened it.
+         *
+         * Called on the way out with the other teardowns above. Guarded so a session that never
+         * composed the shell does not build the object just to destroy it — it is only a state
+         * flow, but the habit is the point.
+         */
+        fun stopPhoneAddServer() {
+            if (phoneAddServerDelegate.isInitialized()) {
+                runCatching { phoneAddServer.stop() }
+            }
+        }
+
+        /**
          * Shared keyless-weather client for the player header. Its station-id cache must
          * outlive a single player visit — a per-composition instance repaid the
          * zip→coords→points→stations→observation round trips on every entry.
@@ -244,6 +317,18 @@ object ServiceLocator {
             if (livePlayerDelegate.isInitialized()) {
                 runCatching { livePlayer.release() }
             }
+        }
+
+        /**
+         * Stops the bundled torrent engine, if this session ever started it.
+         *
+         * Called on the way out with the player teardown above. Unlike the players this needs no
+         * `isInitialized` guard: [app.opentv.torrent.TorrentEngine.stop] is a no-op when no process
+         * was started, and the object itself holds nothing but a state flow — constructing it in a
+         * session that never opened the Torrents tab costs nothing and starts nothing.
+         */
+        fun stopTorrentEngine() {
+            runCatching { torrentEngine.stop() }
         }
     }
 }

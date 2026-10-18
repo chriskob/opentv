@@ -31,7 +31,6 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
@@ -71,7 +70,6 @@ private enum class SettingsSection(
     DISPLAY(R.string.settings_display_title, R.string.settings_display_subtitle, Icons.Filled.Tune),
     RECORDINGS(R.string.settings_recording_title, R.string.settings_recording_subtitle, Icons.Filled.Storage),
     ADDONS(R.string.settings_addons_title, R.string.settings_addons_subtitle, Icons.Filled.Extension),
-    PROFILES(R.string.settings_profiles_title, R.string.settings_profiles_subtitle, Icons.Filled.Person),
     PARENTAL(R.string.settings_parental_title, R.string.settings_parental_subtitle, Icons.Filled.Lock),
     WEB_MANAGER(R.string.settings_webmanager_title, R.string.settings_webmanager_subtitle, Icons.Filled.Devices),
     ABOUT(R.string.settings_about_title, R.string.settings_about_subtitle, Icons.Filled.Info),
@@ -154,7 +152,6 @@ fun SettingsScreen(
                 SettingsSection.RECORDINGS -> RecordingSettingsScreen(onBack = refocusMenu)
                 SettingsSection.ADDONS -> StremioAddonsScreen(onBack = refocusMenu)
                 SettingsSection.WEB_MANAGER -> WebManagerScreen(onBack = refocusMenu)
-                SettingsSection.PROFILES -> ProfilesScreen(onBack = refocusMenu)
                 SettingsSection.PARENTAL -> ParentalControlsScreen(onBack = refocusMenu)
                 SettingsSection.ABOUT -> AboutScreen(onBack = refocusMenu)
             }

@@ -156,6 +156,15 @@ android {
             // classloader resource unread — the only way to lose them is to exclude them.
             excludes += "org/bouncycastle/**/*.properties"
         }
+        jniLibs {
+            // The bundled torrent engine is an executable wearing a library's name (see
+            // TorrentEngine for why). It has to be *extracted* to /data/app/<pkg>/lib/<abi>/ on
+            // install, because that is the only directory Android lets an app run a file from —
+            // the app's own data directory is W^X-blocked on Android 10+, and a library left
+            // mapped inside the APK cannot be exec'd at all. AGP's default packaging (libraries
+            // stored uncompressed and loaded straight from the APK) would silently break it.
+            useLegacyPackaging = true
+        }
     }
 
     testOptions {

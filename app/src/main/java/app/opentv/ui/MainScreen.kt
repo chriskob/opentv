@@ -26,10 +26,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tv
@@ -92,6 +92,8 @@ import app.opentv.data.model.Series
 import app.opentv.ui.channels.HomeScreen
 import app.opentv.ui.components.OpenTvLogo
 import app.opentv.ui.recordings.RecordingsScreen
+import app.opentv.ui.torrents.TorrentsScreen
+import app.opentv.ui.torrents.TorrentsViewModel
 import app.opentv.ui.vod.MoviesScreen
 import app.opentv.ui.vod.SeriesScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -107,6 +109,7 @@ enum class Tab(val labelRes: Int, val icon: ImageVector) {
     MOVIES(R.string.nav_movies, Icons.Filled.Movie),
     SHOWS(R.string.nav_shows, Icons.Filled.Tv),
     RECORDINGS(R.string.nav_recordings, Icons.Filled.FiberManualRecord),
+    TORRENTS(R.string.nav_torrents, Icons.Filled.Download),
 }
 
 private val RAIL_EXPANDED = 190.dp
@@ -142,11 +145,12 @@ fun MainScreen(
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPlex: () -> Unit,
-    onOpenProfiles: () -> Unit,
     onOpenMultiview: (Long) -> Unit = {},
     onPlayRecording: (Recording) -> Unit,
-    activeProfileName: String,
+    /** A torrent the user pasted; [mediaKey] is a `torrent:` key the player recognises. */
+    onPlayTorrent: (mediaKey: String, url: String, title: String) -> Unit,
     channelsViewModel: ChannelsViewModel = viewModel(),
+    torrentsViewModel: TorrentsViewModel = viewModel(),
 ) {
     // Content-type toggles: a switched-off type has its tab hidden here (and its sync skipped in
     // CatalogRepository). Recordings is never a content type, so it always stays — which also means
@@ -162,6 +166,9 @@ fun MainScreen(
             if (moviesEnabled) add(Tab.MOVIES)
             if (seriesEnabled) add(Tab.SHOWS)
             add(Tab.RECORDINGS)
+            // Torrents is not a content type either: a pasted magnet is a one-off watch, not a
+            // library, so it has nothing to switch off in settings and always gets a tab.
+            add(Tab.TORRENTS)
         }
     }
     // The default/home tab is the first visible one — Live TV normally, otherwise the first type
@@ -194,6 +201,8 @@ fun MainScreen(
             "shows" -> Tab.SHOWS
             "recordings" -> Tab.RECORDINGS
             "live" -> Tab.LIVE
+            // A magnet sent from a phone asks for this one (see OpenTvApp's phone-add observer).
+            "torrents" -> Tab.TORRENTS
             else -> null
         }
         // A type switched off in settings has no tab to open, so the request is dropped and the
@@ -279,8 +288,6 @@ fun MainScreen(
                     onOpenSearch = onOpenSearch,
                     onOpenSettings = onOpenSettings,
                     onOpenPlex = onOpenPlex,
-                    onOpenProfiles = onOpenProfiles,
-                    activeProfileName = activeProfileName,
                     requestFocusOnStart = navRailVisible,
                     onRailFocus = { railFocused = it },
                     onExitRight = {
@@ -329,6 +336,7 @@ fun MainScreen(
                         isSyncing = isSyncing,
                     )
                     Tab.RECORDINGS -> RecordingsScreen(onPlay = onPlayRecording)
+                    Tab.TORRENTS -> TorrentsScreen(viewModel = torrentsViewModel, onPlay = onPlayTorrent)
                 }
             }
         }
@@ -395,8 +403,6 @@ private fun NavRail(
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPlex: () -> Unit,
-    onOpenProfiles: () -> Unit,
-    activeProfileName: String,
     onRailFocus: (Boolean) -> Unit = {},
     onExitRight: () -> Unit = {},
     requestFocusOnStart: Boolean = false,
@@ -481,7 +487,6 @@ private fun NavRail(
         Spacer(Modifier.weight(1f))
 
         RailItem(Icons.Filled.Search, stringResource(R.string.nav_search), expanded, false, onOpenSearch)
-        RailItem(Icons.Filled.Person, activeProfileName, expanded, false, onOpenProfiles)
         RailItem(Icons.Filled.Settings, stringResource(R.string.nav_settings), expanded, false, onOpenSettings)
     }
 }

@@ -110,6 +110,41 @@ class PairingHttpTest {
     }
 
     @Test
+    fun `raw query keeps a magnet a shortcut never encoded in one piece`() {
+        // iOS Shortcuts builds "…&link=magnet:?xt=…&dn=…" as plain text. The magnet's own &, ?
+        // and = are not parameter separators, but a parsed query map splits on every &.
+        val line = "GET /add?t=abc&link=magnet:?xt=urn:btih:AAAA&dn=Big+Buck+Bunny&tr=udp://t:80 HTTP/1.1"
+
+        assertThat(PairingHttp.rawQuery(line))
+            .isEqualTo("t=abc&link=magnet:?xt=urn:btih:AAAA&dn=Big+Buck+Bunny&tr=udp://t:80")
+    }
+
+    @Test
+    fun `the last parameter is read to the end of the query`() {
+        val query = "t=abc&link=magnet:?xt=urn:btih:AAAA&dn=Big+Buck+Bunny&tr=udp://t:80"
+
+        // Pluses survive: this value is never form-encoded, so a + in it is a +, not a space.
+        assertThat(PairingHttp.trailingParam(query, "link"))
+            .isEqualTo("magnet:?xt=urn:btih:AAAA&dn=Big+Buck+Bunny&tr=udp://t:80")
+    }
+
+    @Test
+    fun `the last parameter is decoded when a shortcut did percent-encode it`() {
+        // The same magnet as the test above, encoded the way an app that does encode would send it.
+        val query = "t=abc&link=magnet%3A%3Fxt%3Durn%3Abtih%3AAAAA%26dn%3DBig%2BBunny"
+
+        assertThat(PairingHttp.trailingParam(query, "link"))
+            .isEqualTo("magnet:?xt=urn:btih:AAAA&dn=Big+Bunny")
+    }
+
+    @Test
+    fun `a missing or empty last parameter is null`() {
+        assertThat(PairingHttp.trailingParam("t=abc", "link")).isNull()
+        assertThat(PairingHttp.trailingParam("t=abc&link=", "link")).isNull()
+        assertThat(PairingHttp.trailingParam("t=abc&nolink=x", "link")).isNull()
+    }
+
+    @Test
     fun `responses carry a correct byte length for multibyte content`() {
         val response = PairingHttp.httpResponse("200 OK", "text/html", "café ☕")
         val text = String(response, Charsets.UTF_8)

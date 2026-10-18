@@ -176,10 +176,6 @@
     <string name="settings_group_playback">Odtwarzanie</string>
     <string name="settings_group_network">Sieć i udostępnianie</string>
     <string name="settings_group_system">System</string>
-    <string name="settings_profiles_title">Profile</string>
-    <string name="settings_profiles_subtitle">Historia oglądania i ulubione dla każdej osoby</string>
-    <string name="profiles_empty_title">Brak profili</string>
-    <string name="profiles_empty_message">Dodaj profil, aby każda osoba miała własną historię oglądania i ulubione.</string>
     <string name="settings_remote_title">Zdalne wsparcie i parowanie</string>
     <string name="settings_remote_subtitle">Edytuj, dodawaj i naprawiaj playlisty zdalnie</string>
     <string name="settings_providers_page_subtitle">Zarządzaj playlistami IPTV, serwerami Xtream codes i portalami</string>
@@ -188,7 +184,6 @@
     <string name="settings_recording_page_subtitle">Skonfiguruj pamięć DVR, udziały sieciowe (SMB), marginesy i silnik w tle</string>
     <string name="settings_sync_page_subtitle">Synchronizuj postępy oglądania między urządzeniami w sieci lokalnej</string>
     <string name="settings_addons_page_subtitle">Konfiguruj źródła filmów i seriali oraz manifesty Stremio</string>
-    <string name="settings_profiles_page_subtitle">Zarządzaj historią oglądania i ulubionymi dla wielu użytkowników</string>
     <string name="settings_parental_page_subtitle">Zarządzaj ochroną PIN i ukrywaj wrażliwe kategorie kanałów</string>
     <string name="settings_about_page_subtitle">Informacje o aplikacji OpenTV, aktualizacje i licencje open source</string>
     <string name="settings_appearance">Wygląd</string>
@@ -251,13 +246,6 @@
     <string name="parental_enter_pin">Wprowadź PIN</string>
     <string name="parental_wrong_pin">Nieprawidłowy PIN.</string>
     <string name="parental_unlock">Odblokuj</string>
-    <string name="profiles_new_heading">Nazwa nowego profilu</string>
-    <string name="profiles_rename_heading">Zmień nazwę profilu</string>
-    <string name="profiles_title">Kto ogląda?</string>
-    <string name="profiles_add">Dodaj profil</string>
-    <string name="profiles_active">Aktywny</string>
-    <string name="profiles_use">Użyj</string>
-    <string name="profiles_rename">Zmień nazwę</string>
     <string name="providers_add">Dodaj dostawcę</string>
     <string name="providers_empty">Brak dostawców. Dodaj usługę IPTV, za którą już płacisz, aby rozpocząć.</string>
     <string name="providers_remove_confirm">Usunąć?</string>
@@ -500,4 +488,37 @@
     <string name="settings_tmdb_save">Zapisz klucz</string>
     <string name="settings_tmdb_saved">Zapisano klucz TMDB</string>
     <string name="settings_tmdb_active">Aktywny</string>
+
+    <!-- ============================ Torrenty ============================ -->
+    <string name="nav_torrents">Torrenty</string>
+    <string name="tor_title">Torrenty</string>
+    <string name="tor_subtitle">Wklej link magnet, a zacznie się odtwarzać. Po zakończeniu oglądania nic nie zostaje.</string>
+    <string name="tor_paste_label">Link magnet</string>
+    <string name="tor_add_and_play">Dodaj i odtwórz</string>
+    <string name="tor_play">Odtwórz</string>
+    <string name="tor_remove_all">Usuń wszystko</string>
+    <string name="tor_empty">Nic nie wczytano</string>
+    <string name="tor_empty_hint">Wklej powyżej link magnet, aby go obejrzeć.</string>
+    <string name="tor_invalid">To nie wygląda na link magnet.</string>
+    <string name="tor_add_failed">Silnik odrzucił ten link: %1$s</string>
+    <string name="tor_engine_starting">Uruchamianie silnika torrentów…</string>
+    <string name="tor_engine_running">Silnik torrentów %1$s</string>
+    <string name="tor_engine_retry">Spróbuj ponownie</string>
+    <string name="tor_engine_failed">Silnik torrentów nie uruchomił się: %1$s</string>
+    <string name="tor_engine_unsupported">To urządzenie nie ma silnika torrentów: aplikacja zawiera go tylko dla 32-bitowych procesorów ARM.</string>
+    <string name="tor_engine_not_running">Silnik torrentów nie działa.</string>
+    <string name="tor_no_peers">Nikt jeszcze nie odpowiedział na ten link magnet. Może być martwy — pozostaje na liście, gdyby ktoś się pojawił.</string>
+    <string name="tor_finding_peers">Szukanie użytkowników</string>
+    <string name="tor_no_data">Nikt jeszcze nie wysyła wideo z tego torrenta, więc odtwarzacz tylko by się kręcił. Zostaje na liście — naciśnij Odtwórz, aby spróbować ponownie.</string>
+    <string name="tor_peers">Udostępniający: %1$d</string>
+    <string name="tor_state_waiting">Oczekiwanie na użytkowników</string>
+    <string name="tor_state_info">Wczytywanie torrenta</string>
+    <string name="tor_state_buffering">Buforowanie</string>
+    <string name="tor_state_ready">Gotowe</string>
+    <string name="tor_state_stopped">Zatrzymane</string>
+    <string name="tor_unplayable_container">To plik .%1$s, którego odtwarzacz nie obsługuje. Wybierz inny plik albo obejrzyj go w innym programie.</string>
+    <string name="tor_assurance_warning">Silnik torrentów nie dotrzymuje obietnic OpenTV: %1$s</string>
+    <string name="tor_phone_title">Dodaj z telefonu</string>
+    <string name="tor_phone_hint">Zeskanuj aparatem i wklej link magnet</string>
+    <string name="tor_phone_qr_description">Kod QR do dodania torrenta z telefonu</string>
 </resources>

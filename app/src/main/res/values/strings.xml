@@ -264,10 +264,6 @@
     <string name="settings_group_playback">Playback</string>
     <string name="settings_group_network">Network &amp; sharing</string>
     <string name="settings_group_system">System</string>
-    <string name="settings_profiles_title">Profiles</string>
-    <string name="settings_profiles_subtitle">Watch history and favorites per person</string>
-    <string name="profiles_empty_title">No profiles yet</string>
-    <string name="profiles_empty_message">Add a profile so each person keeps their own watch history and favorites.</string>
     <string name="settings_remote_title">Remote Support</string>
     <string name="settings_remote_subtitle">Edit, add or troubleshoot playlists remotely</string>
     <string name="settings_providers_page_subtitle">Manage connected IPTV playlists, Xtream codes servers and portals</string>
@@ -276,7 +272,6 @@
     <string name="settings_recording_page_subtitle">Configure DVR storage, network shares (SMB), padding and the background engine</string>
     <string name="settings_sync_page_subtitle">Sync watch progress across devices on your local network</string>
     <string name="settings_addons_page_subtitle">Configure movie and series stream providers and Stremio manifests</string>
-    <string name="settings_profiles_page_subtitle">Manage multi-user watch history and personalized favorites</string>
     <string name="settings_parental_page_subtitle">Manage PIN protection and hide sensitive channel categories</string>
     <string name="settings_about_page_subtitle">OpenTV application details, updates and open-source licenses</string>
 
@@ -371,15 +366,6 @@
     <string name="parental_enter_pin">Enter PIN</string>
     <string name="parental_wrong_pin">Wrong PIN.</string>
     <string name="parental_unlock">Unlock</string>
-
-    <!-- ============================ Profiles ============================ -->
-    <string name="profiles_new_heading">New profile name</string>
-    <string name="profiles_rename_heading">Rename profile</string>
-    <string name="profiles_title">Who\'s watching?</string>
-    <string name="profiles_add">Add profile</string>
-    <string name="profiles_active">Active</string>
-    <string name="profiles_use">Use</string>
-    <string name="profiles_rename">Rename</string>
 
     <!-- ============================ Providers ============================ -->
     <string name="providers_add">Add provider</string>
@@ -715,4 +701,37 @@
     <string name="plex_watched">Watched</string>
     <string name="plex_new_on">New on Plex</string>
     <string name="plex_new">New</string>
+
+    <!-- ============================ Torrents ============================ -->
+    <string name="nav_torrents">Torrents</string>
+    <string name="tor_title">Torrents</string>
+    <string name="tor_subtitle">Paste a magnet link and it starts playing. Nothing is kept once you stop watching.</string>
+    <string name="tor_paste_label">Magnet link</string>
+    <string name="tor_add_and_play">Add and play</string>
+    <string name="tor_play">Play</string>
+    <string name="tor_remove_all">Remove all</string>
+    <string name="tor_empty">Nothing loaded</string>
+    <string name="tor_empty_hint">Paste a magnet link above to watch it.</string>
+    <string name="tor_invalid">That does not look like a magnet link.</string>
+    <string name="tor_add_failed">The engine refused that link: %1$s</string>
+    <string name="tor_engine_starting">Starting the torrent engine…</string>
+    <string name="tor_engine_running">Torrent engine %1$s</string>
+    <string name="tor_engine_retry">Try again</string>
+    <string name="tor_engine_failed">The torrent engine did not start: %1$s</string>
+    <string name="tor_engine_unsupported">This device has no torrent engine: the app carries one for 32-bit ARM only.</string>
+    <string name="tor_engine_not_running">The torrent engine is not running.</string>
+    <string name="tor_no_peers">No peers have answered this magnet yet. It may be dead - it stays in the list in case they turn up.</string>
+  <string name="tor_no_data">Nobody is sending this torrent\'s video yet, so the player would only spin. It stays in the list - press Play to try again.</string>
+    <string name="tor_finding_peers">Looking for peers</string>
+    <string name="tor_peers">%1$d peers</string>
+    <string name="tor_state_waiting">Waiting for peers</string>
+    <string name="tor_state_info">Reading the torrent</string>
+    <string name="tor_state_buffering">Buffering</string>
+    <string name="tor_state_ready">Ready</string>
+    <string name="tor_state_stopped">Stopped</string>
+    <string name="tor_unplayable_container">This is a .%1$s file, which the player cannot open. Choose another file, or watch it with something else.</string>
+    <string name="tor_assurance_warning">The torrent engine is not keeping OpenTV\u2019s promises about it: %1$s</string>
+    <string name="tor_phone_title">Add from your phone</string>
+    <string name="tor_phone_hint">Scan with your camera, then paste a magnet</string>
+    <string name="tor_phone_qr_description">QR code to add a torrent from your phone</string>
 </resources>

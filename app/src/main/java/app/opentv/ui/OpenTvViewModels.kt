@@ -2783,55 +2783,6 @@ class VodViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 /**
- * Local viewing profiles. No accounts — just names on this device — with the active one stored in
- * [app.opentv.core.AppSettings] so the whole app agrees on whose watch history is in play.
- */
-class ProfilesViewModel(app: Application) : AndroidViewModel(app) {
-    private val graph = ServiceLocator.get(app)
-    private val settings = graph.settings
-
-    val profiles: StateFlow<List<Profile>> =
-        graph.profiles.observeAll()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    val activeProfileId: StateFlow<Long> = settings.activeProfileId
-
-    init {
-        // Fresh installs create the table empty (no migration runs), so seed the default profile.
-        viewModelScope.launch {
-            if (graph.profiles.all().isEmpty()) {
-                graph.profiles.insert(Profile(name = "Me", createdAtMillis = 0))
-            }
-        }
-    }
-
-    fun addProfile(name: String) {
-        viewModelScope.launch {
-            val id = graph.profiles.insert(
-                Profile(name = name.trim().ifBlank { "New profile" }, createdAtMillis = 0),
-            )
-            settings.setActiveProfile(id)
-        }
-    }
-
-    fun rename(id: Long, name: String) {
-        viewModelScope.launch { graph.profiles.rename(id, name.trim().ifBlank { "Profile" }) }
-    }
-
-    fun select(id: Long) { settings.setActiveProfile(id) }
-
-    fun remove(id: Long) {
-        // The base profile stays — there is always at least one to be.
-        if (id == 1L) return
-        viewModelScope.launch {
-            graph.profiles.deletePositions(id)
-            graph.profiles.delete(id)
-            if (settings.activeProfileId.value == id) settings.setActiveProfile(1L)
-        }
-    }
-}
-
-/**
  * Local, device-to-device watch-history sync — no servers of ours.
  *
  * One device shares (a short-lived LAN server behind a six-digit code); the other receives by

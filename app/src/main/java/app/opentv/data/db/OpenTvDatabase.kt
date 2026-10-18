@@ -439,6 +439,18 @@ abstract class OpenTvDatabase : RoomDatabase() {
                             connection.execSQL("PRAGMA wal_autocheckpoint=1000;")
                             connection.execSQL("PRAGMA wal_checkpoint(TRUNCATE);")
                         }
+                        /*
+                         * The one local profile used to be seeded by the Profiles screen's view
+                         * model. That screen is gone, but the row is still what recordings and
+                         * watch-history sync hang their profile id and name on, so it is ensured
+                         * here instead: a single "Me" profile whenever the table is empty.
+                         */
+                        runCatching {
+                            connection.execSQL(
+                                "INSERT INTO profiles (name, createdAtMillis) " +
+                                    "SELECT 'Me', 0 WHERE NOT EXISTS (SELECT 1 FROM profiles)",
+                            )
+                        }
                     }
                 })
                 .build()

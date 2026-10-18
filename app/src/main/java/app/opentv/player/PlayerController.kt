@@ -15,6 +15,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -33,6 +34,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+
+import app.opentv.data.remote.TorrServerClient
 
 /**
  * Owns the single [ExoPlayer] instance and everything about switching what it is playing.
@@ -187,15 +190,24 @@ class PlayerController(
     private fun watchForStall(request: Request) {
         stallJob?.cancel()
         stallUrl = request.url
+        // A torrent has no provider to blame. Saying "the provider is slow" would send the viewer
+        // looking at a service they never involved; the truth is that a swarm is not delivering.
+        val torrent = TorrServerClient.isEngineStreamUrl(request.url)
         stallJob = scope.launch {
             delay(STALL_WARN_MILLIS)
             val warned = _state.value
             if (warned is State.Buffering) {
                 _state.value = State.Stalled(
                     title = request.title,
-                    message = "Still waiting for this channel. The provider has accepted the " +
-                        "request but is not sending video yet — a slow or overloaded provider, " +
-                        "not a problem with this device.",
+                    message = if (torrent) {
+                        "Still receiving this torrent. The engine has it open, but the peers are " +
+                            "not sending fast enough yet — a thin swarm, not a problem with this " +
+                            "device."
+                    } else {
+                        "Still waiting for this channel. The provider has accepted the " +
+                            "request but is not sending video yet — a slow or overloaded provider, " +
+                            "not a problem with this device."
+                    },
                     canRetry = false,
                 )
             }
@@ -204,9 +216,14 @@ class PlayerController(
             if (still is State.Buffering || still is State.Stalled) {
                 _state.value = State.Error(
                     title = request.title,
-                    message = "This channel never started playing. The provider stopped sending " +
-                        "video, so there is nothing left to wait for — try again, or pick " +
-                        "another channel.",
+                    message = if (torrent) {
+                        "Nothing arrived for this torrent in time. Nobody in the swarm is sending " +
+                            "the video — try again, or pick a better-seeded magnet."
+                    } else {
+                        "This channel never started playing. The provider stopped sending " +
+                            "video, so there is nothing left to wait for — try again, or pick " +
+                            "another channel."
+                    },
                     canRetry = current != null,
                 )
             }
@@ -234,6 +251,16 @@ class PlayerController(
         setDefaultRequestProperties(mapOf("User-Agent" to DEFAULT_USER_AGENT))
     }
 
+    /**
+     * The torrent engine's stream endpoint, on Media3's own HTTP stack. See
+     * [EngineStreamDataSource] for why it is not the OkHttp one, and for the timeouts: a swarm can
+     * take a minute to deliver a piece the player is waiting on, which is slow rather than dead.
+     */
+    private val engineHttpFactory = DefaultHttpDataSource.Factory()
+        .setConnectTimeoutMs(30_000)
+        .setReadTimeoutMs(120_000)
+        .setDefaultRequestProperties(mapOf("User-Agent" to DEFAULT_USER_AGENT))
+
     private val dataSourceFactory: androidx.media3.datasource.DataSource.Factory =
         DefaultDataSource.Factory(context, httpFactory).let { default ->
             val custom = buildMap<String, androidx.media3.datasource.DataSource.Factory> {
@@ -252,8 +279,7 @@ class PlayerController(
      * second try. We retry them with backoff instead. 401 and 404 are not retried — those
      * genuinely will not fix themselves.
      */
-    private val loadErrorPolicy = object : DefaultLoadErrorHandlingPolicy() {
-        override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+    private val loadErrorPolicy = object : DefaultLoadErrorHandlingPolicy() {        override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
             val statusCode =
                 (info.exception as? HttpDataSource.InvalidResponseCodeException)?.responseCode
 
@@ -271,6 +297,12 @@ class PlayerController(
             if (errorCount > MAX_LOAD_RETRIES) C_TIME_UNSET
             else minOf(INITIAL_BACKOFF_MILLIS * (1L shl (errorCount - 1)), MAX_BACKOFF_MILLIS)
     }
+
+    /** Torrent plays build their source against [engineHttpFactory]; everything else keeps the
+     *  provider path it has always had. */
+    private val engineMediaSourceFactory =
+        DefaultMediaSourceFactory(EngineStreamDataSourceFactory(engineHttpFactory))
+            .setLoadErrorHandlingPolicy(loadErrorPolicy)
 
     /**
      * Held so captions can be turned on and off at runtime. Prefer the device language when
@@ -473,12 +505,23 @@ class PlayerController(
             if (!preserveRetry) consecutiveFailures = 0
             httpFactory.setDefaultRequestProperties(mapOf("User-Agent" to request.userAgent))
 
+            // A torrent is always a progressive file on the engine's loopback endpoint, and that
+            // endpoint is handled by Media3's HTTP source (see EngineStreamDataSource).
+            val torrent = TorrServerClient.isEngineStreamUrl(request.url)
+            if (torrent) {
+                engineHttpFactory.setDefaultRequestProperties(mapOf("User-Agent" to request.userAgent))
+            }
+
             val mediaItem = MediaItem.Builder()
                 .setUri(request.url)
                 .build()
 
             with(player) {
-                setMediaItem(mediaItem)
+                if (torrent) {
+                    setMediaSource(engineMediaSourceFactory.createMediaSource(mediaItem))
+                } else {
+                    setMediaItem(mediaItem)
+                }
                 if (!request.isLive && request.startPositionMillis > 0) {
                     seekTo(request.startPositionMillis)
                 }

@@ -50,6 +50,14 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
+    <!--
+      extractNativeLibs is load-bearing for the bundled torrent engine. The engine ships as
+      jniLibs/armeabi-v7a/libtorrserver.so and is run as a child process, and an app may only execute
+      a file the installer has extracted into its native library directory. AGP's newer default keeps
+      native libraries compressed inside the APK and maps them from there; a file inside an APK can
+      never be executed. app/build.gradle.kts sets the matching useLegacyPackaging. The full story is
+      in app/opentv/torrent/TorrentEngine.kt.
+    -->
     <application
         android:name=".OpenTvApp"
         android:allowBackup="true"
@@ -60,6 +68,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.OpenTV"
         android:usesCleartextTraffic="true"
+        android:extractNativeLibs="true"
         tools:targetApi="34">
 
         <!--

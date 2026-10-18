@@ -9,6 +9,7 @@ import android.content.Context
 import app.opentv.BuildConfig
 import app.opentv.data.model.StremioAddon
 import app.opentv.ui.theme.AppPalette
+import java.security.SecureRandom
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -1170,8 +1171,9 @@ class AppSettings private constructor(context: Context) {
     val requestedHomeTab: StateFlow<String?> = _requestedHomeTab.asStateFlow()
 
     /**
-     * Ask the tab shell to open [tab]: "movies", "shows", "recordings" or "live". A type that is
-     * switched off in settings has no tab, so the request is dropped rather than opening nothing.
+     * Ask the tab shell to open [tab]: "movies", "shows", "recordings", "live" or "torrents". A
+     * type that is switched off in settings has no tab, so the request is dropped rather than
+     * opening nothing.
      */
     fun requestHomeTab(tab: String) {
         _requestedHomeTab.value = tab
@@ -1181,6 +1183,23 @@ class AppSettings private constructor(context: Context) {
     fun consumeRequestedHomeTab() {
         _requestedHomeTab.value = null
     }
+
+    /**
+     * The permanent key of the phone-add page (see [app.opentv.torrent.PhoneAddServer]).
+     *
+     * One key, generated once and kept, so the address a phone shortcut or a bookmark saved keeps
+     * working between visits. The page is only reachable over the local network and only while the
+     * app is running; the key is what keeps a neighbour from adding torrents to someone's TV.
+     */
+    val phoneAddKey: String by lazy {
+        prefs.getString(KEY_PHONE_ADD_KEY, null) ?: newPhoneAddKey().also {
+            prefs.edit().putString(KEY_PHONE_ADD_KEY, it).apply()
+        }
+    }
+
+    private fun newPhoneAddKey(): String =
+        ByteArray(PHONE_ADD_KEY_BYTES).also(SecureRandom()::nextBytes)
+            .joinToString("") { "%02x".format(it) }
 
     companion object {
         /** +/- 12 hours. Beyond any real panel offset, and still one tap from either end. */
@@ -1235,6 +1254,10 @@ private const val KEY_UI_TRANSPARENCY = "ui_transparency_percent"
         private const val KEY_PIP_ON_HOME = "pip_on_home_enabled"
         private const val KEY_RESIZE_MODE = "player_resize_mode"
         private const val KEY_LANGUAGE = "language_tag"
+
+        /** The phone-add page's key: 128 bits, the same size as the pairing token. */
+        private const val KEY_PHONE_ADD_KEY = "phone_add_key"
+        private const val PHONE_ADD_KEY_BYTES = 16
 
         /**
          * Reads the saved language tag straight from prefs, for use in attachBaseContext before

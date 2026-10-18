@@ -74,7 +74,6 @@ import app.opentv.data.parser.displayTitle
 import app.opentv.ui.plex.PlexConnectScreen
 import app.opentv.ui.plex.PlexScreen
 import app.opentv.ui.MainScreen
-import app.opentv.ui.ProfilesViewModel
 import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.channels.ChannelManagerScreen
 import app.opentv.ui.channels.SearchScreen
@@ -88,7 +87,6 @@ import app.opentv.ui.settings.AboutScreen
 import app.opentv.ui.settings.AppSettingsScreen
 import app.opentv.ui.settings.EpgSettingsScreen
 import app.opentv.ui.settings.ParentalControlsScreen
-import app.opentv.ui.settings.ProfilesScreen
 import app.opentv.ui.settings.ProvidersScreen
 import app.opentv.ui.settings.StremioAddonsScreen
 import app.opentv.ui.settings.RecordingSettingsScreen
@@ -97,6 +95,7 @@ import app.opentv.ui.settings.SettingsScreen
 import app.opentv.ui.settings.WebManagerScreen
 import app.opentv.ui.theme.AppTheme
 import app.opentv.ui.theme.OpenTvTheme
+import app.opentv.ui.torrents.TorrentsViewModel
 import app.opentv.ui.vod.MovieDetailScreen
 import app.opentv.ui.vod.PersonScreen
 import app.opentv.ui.vod.SeriesDetailScreen
@@ -309,6 +308,13 @@ class MainActivity : ComponentActivity() {
                 val graph = ServiceLocator.get(this)
                 graph.stopLivePlayer()
                 graph.releaseLivePlayer()
+                // The torrent engine is a real child process, so it outlives this Activity unless it
+                // is told to stop — and a player that keeps a BitTorrent swarm alive after the app
+                // has closed is exactly the kind of thing people find in a router log a week later.
+                graph.stopTorrentEngine()
+                // The phone-add page's socket must not outlive the app either, or the port stays
+                // held by a process that appears to have exited.
+                graph.stopPhoneAddServer()
             }
             // Also clear the service locator singleton so a fresh process start builds a
             // clean graph. This matters on Fire OS which can restart the app process without
@@ -409,7 +415,6 @@ object Routes {
     const val PLEX = "plex"
     const val PLEX_CONNECT = "plex/connect"
     const val WEB_MANAGER = "web-manager"
-    const val PROFILES = "profiles"
     const val PARENTAL = "parental"
     const val SYNC = "sync"
     const val REC_SETTINGS = "recording-settings"
@@ -446,12 +451,12 @@ private fun OpenTvApp(isTelevision: Boolean) {
     val navController = rememberNavController()
     val sourcesViewModel: SourcesViewModel = viewModel()
     val vodViewModel: VodViewModel = viewModel()
-    val profilesViewModel: ProfilesViewModel = viewModel()
     val channelsViewModel: ChannelsViewModel = viewModel()
+    // App-scoped, not created by the Torrents screen: the phone-add server answers with links at any
+    // time while the app is open, so the one part of the app that can add and start a torrent has to
+    // exist whether or not that tab was ever shown.
+    val torrentsViewModel: TorrentsViewModel = viewModel()
     val sourcesUi by sourcesViewModel.ui.collectAsState()
-    val profiles by profilesViewModel.profiles.collectAsState()
-    val activeProfileId by profilesViewModel.activeProfileId.collectAsState()
-    val activeProfileName = profiles.firstOrNull { it.id == activeProfileId }?.name ?: "Me"
 
     // Until the saved sources have loaded from the database, we cannot tell a first run from a
     // returning user — and guessing "first run" drops a returning user on the setup screen and
@@ -536,6 +541,34 @@ private fun OpenTvApp(isTelevision: Boolean) {
             launchSingleTop = true
         }
         app.opentv.core.Startup.mark("resumeNavigateIssued")
+    }
+
+    // The phone-add page lives as long as the app does, not as long as the Torrents tab is open: a
+    // magnet sent from a phone should reach the TV from any screen. Its address is stable (one saved
+    // key, one preferred port), so a phone shortcut set up once keeps working until the app closes.
+    val phoneAddServer = bootGraph.phoneAddServer
+    androidx.compose.runtime.DisposableEffect(phoneAddServer) {
+        phoneAddServer.start()
+        onDispose { phoneAddServer.stop() }
+    }
+
+    // The arrival side of it: bring the tab shell forward and switch to Torrents wherever the viewer
+    // is, while the tab's view model — which drains the queue — adds and starts the torrent. Setup is
+    // deliberately left alone: there is no tab shell yet to switch to. The arrival count is watched
+    // rather than the queue: the view model drains the queue immediately, and Compose would only ever
+    // see it empty.
+    val phoneAddArrivals by app.opentv.torrent.PhoneAddRequests.arrivals.collectAsState()
+    LaunchedEffect(phoneAddArrivals) {
+        if (phoneAddArrivals == 0L) return@LaunchedEffect
+        val currentRoute = navController.currentBackStackEntry?.destination?.route
+        if (currentRoute != null && currentRoute != Routes.HOME && currentRoute != Routes.ADD_SOURCE) {
+            if (!navController.popBackStack(Routes.HOME, inclusive = false)) {
+                navController.navigate(Routes.HOME) {
+                    popUpTo(0) { inclusive = true }
+                }
+            }
+        }
+        bootSettings.requestHomeTab("torrents")
     }
 
     var activeReminderPrompt by remember { mutableStateOf<app.opentv.core.ReminderSignal?>(null) }
@@ -632,6 +665,7 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     hasSources = sourcesUi.sources.isNotEmpty(),
                     isSyncing = sourcesUi.syncing,
                     channelsViewModel = channelsViewModel,
+                    torrentsViewModel = torrentsViewModel,
                     onPlayChannel = { /* Handled in-place in HomeScreen */ },
                     onOpenMovie = { movie ->
                         navController.navigate(Routes.movieDetail(movie.id))
@@ -652,7 +686,6 @@ private fun OpenTvApp(isTelevision: Boolean) {
                         val second = bootSettings.lastChannelId.takeIf { it > 0L && it != channelId } ?: 0L
                         navController.navigate(Routes.multiview(channelId, second))
                     },
-                    onOpenProfiles = { navController.navigate(Routes.PROFILES) },
                     onPlayRecording = { rec ->
                         // A NAS recording plays straight off its smb:// locator and a USB one off
                         // its content:// document URI (Media3 reads both); an internal one through
@@ -686,14 +719,16 @@ private fun OpenTvApp(isTelevision: Boolean) {
                         )
                     },
                     onOpenPlex = { navController.navigate(Routes.PLEX) },
-                    activeProfileName = activeProfileName,
-                )
-            }
-
-            composable(Routes.PROFILES) {
-                ProfilesScreen(
-                    viewModel = profilesViewModel,
-                    onBack = { navController.popBackStack() },
+                    onPlayTorrent = { mediaKey, url, title ->
+                        // A torrent plays through the ordinary VOD player: by the time it gets here
+                        // the URL is a plain http://127.0.0.1:<port>/stream/... that ExoPlayer fetches
+                        // with Range requests like any other file. Nothing about the player needs to
+                        // know it is a torrent — except that leaving it should release the torrent,
+                        // which the player does from the key.
+                        navController.navigate(
+                            Routes.vodPlayer(mediaKey, url, title, "OpenTV/0.1 (Android)"),
+                        )
+                    },
                 )
             }
 

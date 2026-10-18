@@ -57,6 +57,42 @@ object PairingHttp {
         }.toMap()
     }
 
+    /**
+     * The raw query of a request target, exactly as it arrived.
+     *
+     * [parseRequestLine]'s map is the wrong way to read a value a phone built without encoding —
+     * iOS Shortcuts drops a whole magnet into `link=`, trackers and all — because the magnet's own
+     * `&` would split it apart. This hands back the query untouched for [trailingParam].
+     */
+    fun rawQuery(line: String): String {
+        val target = line.trim().split(' ').getOrNull(1) ?: return ""
+        return target.substringAfter('?', "")
+    }
+
+    /**
+     * The value of [name] in [raw], taken to the end of the string and percent-decoded.
+     *
+     * Everything after `name=` is the value: a magnet carries `&dn=` and `&tr=` of its own, and when
+     * nothing encoded them they are not parameter separators. `+` is kept as a plus — the
+     * form-encoded meaning of `+` does not apply to a value nothing form-encodes, and a magnet's
+     * display name may legitimately contain one (the hash and trackers never do, so at worst a name
+     * reads oddly for a swarmed history). Null when [name] is absent or its value is empty.
+     */
+    fun trailingParam(raw: String, name: String): String? {
+        val needle = "$name="
+        var at = raw.indexOf(needle)
+        while (at > 0 && raw[at - 1] != '&') {
+            at = raw.indexOf(needle, at + 1)
+        }
+        if (at < 0) return null
+        val value = raw.substring(at + needle.length)
+        if (value.isBlank()) return null
+        // A stray % that is not an escape makes URLDecoder throw; a raw magnet on the way to the
+        // engine is worth more than a strict decode, so the undecoded value is the fallback.
+        return runCatching { URLDecoder.decode(value.replace("+", "%2B"), "UTF-8") }
+            .getOrDefault(value)
+    }
+
     private fun decode(value: String): String =
         URLDecoder.decode(value.replace("+", "%20"), "UTF-8")
 
