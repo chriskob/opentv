@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.17.8
+
+- **BACK out of a torrent video returns to the torrents page again.** The tab restore added in
+  0.17.7 skips Torrents, and a torrent is the one play that goes straight from its tab into the
+  player with no detail screen in between - so leaving that player restored the last content tab
+  and live TV retuned the last channel, instead of the torrent's files and progress. The player
+  exit now asks for the Torrents tab, the same request the phone-add magnet flow uses. Search and
+  Settings still never land there.
+
 ## 0.17.7
 
 - **BACK from Search or Settings returns to the tab you were on, not the torrents box.** The shell
