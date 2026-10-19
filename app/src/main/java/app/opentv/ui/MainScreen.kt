@@ -91,6 +91,7 @@ import app.opentv.data.model.Channel
 import app.opentv.data.model.Movie
 import app.opentv.data.model.Recording
 import app.opentv.data.model.Series
+import app.opentv.torrent.TorrentMediaKey
 import app.opentv.ui.channels.HomeScreen
 import app.opentv.ui.components.OpenTvLogo
 import app.opentv.ui.recordings.RecordingsScreen
@@ -131,6 +132,20 @@ internal fun restoredTab(name: String, lastContentTab: Tab, homeTab: Tab): Tab {
     val restored = Tab.values().firstOrNull { it.name == name } ?: return homeTab
     return if (restored == Tab.TORRENTS) lastContentTab else restored
 }
+
+/**
+ * The tab a player exit should land on, from the media key the player was opened with; null when
+ * the exit wants no particular tab.
+ *
+ * Torrents is the one tab [savedTabName] can never write down, and the one tab that plays straight
+ * into the player with no detail screen in between — a magnet has no movie page to pop back to. So
+ * the return is requested on the way out ([app.opentv.core.AppSettings.requestHomeTab]): the shell
+ * is not composed behind a player destination, so a request made there is still pending when HOME
+ * returns. Without it, BACK out of a torrent video restored the last content tab and live TV
+ * retuned the last channel instead of the files-and-progress screen the viewer left.
+ */
+internal fun playerExitTabName(mediaKey: String): String? =
+    if (TorrentMediaKey.isTorrentKey(mediaKey)) "torrents" else null
 
 private val RAIL_EXPANDED = 190.dp
 /** Icon-only width, so the menu can stay on screen without stealing the guide's space. */

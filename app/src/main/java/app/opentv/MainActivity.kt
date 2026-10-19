@@ -74,6 +74,7 @@ import app.opentv.data.parser.displayTitle
 import app.opentv.ui.plex.PlexConnectScreen
 import app.opentv.ui.plex.PlexScreen
 import app.opentv.ui.MainScreen
+import app.opentv.ui.playerExitTabName
 import app.opentv.ui.SourcesViewModel
 import app.opentv.ui.channels.ChannelManagerScreen
 import app.opentv.ui.channels.SearchScreen
@@ -977,7 +978,17 @@ private fun OpenTvApp(isTelevision: Boolean) {
                     streamUrl = arg("url"),
                     title = arg("title"),
                     userAgent = arg("ua").ifEmpty { "OpenTV/0.1 (Android)" },
-                    onBack = { navController.popBackStack() },
+                    onBack = {
+                        // A torrent plays straight from the Torrents tab into this player — a
+                        // magnet has no detail screen in between — and the tab saver never
+                        // writes Torrents down (see MainScreen.savedTabName). Without a request
+                        // here, BACK restored the last content tab and live TV retuned the last
+                        // channel instead of the files-and-progress screen the viewer left.
+                        // Asked for on the way out: the shell is not composed behind this
+                        // destination, so the request is still pending when HOME returns.
+                        playerExitTabName(arg("key"))?.let(bootSettings::requestHomeTab)
+                        navController.popBackStack()
+                    },
                 )
             }
         }

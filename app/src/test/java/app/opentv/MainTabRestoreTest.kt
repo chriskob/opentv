@@ -5,7 +5,9 @@
  */
 package app.opentv
 
+import app.opentv.torrent.TorrentMediaKey
 import app.opentv.ui.Tab
+import app.opentv.ui.playerExitTabName
 import app.opentv.ui.restoredTab
 import app.opentv.ui.savedTabName
 import com.google.common.truth.Truth.assertThat
@@ -54,5 +56,24 @@ class MainTabRestoreTest {
     fun restore_unknownNamesFallBackToHome() {
         assertThat(restoredTab("SOMETHING_ELSE", Tab.RECORDINGS, Tab.MOVIES)).isEqualTo(Tab.MOVIES)
         assertThat(restoredTab("", Tab.RECORDINGS, Tab.MOVIES)).isEqualTo(Tab.MOVIES)
+    }
+
+    @Test
+    fun torrentPlayerExit_asksForTheTorrentsTab() {
+        // BACK from a video playing out of the Torrents tab returns to that tab's own screen —
+        // files and progress — by asking for it on the way out, since the saver never writes it.
+        // "torrents" is the name the shell's requestedHomeTab when() maps to Tab.TORRENTS.
+        assertThat(playerExitTabName(TorrentMediaKey.of("2ab5d1", 7))).isEqualTo("torrents")
+        assertThat(playerExitTabName(TorrentMediaKey.of("ABC", 0))).isEqualTo("torrents")
+    }
+
+    @Test
+    fun otherPlayerExits_askForNoTab() {
+        // Movies, recordings and Plex come back through the saver or their own route; only a
+        // torrent asks, so nothing else may be rerouted by this helper.
+        assertThat(playerExitTabName("movie:12")).isNull()
+        assertThat(playerExitTabName("rec:3")).isNull()
+        assertThat(playerExitTabName("plex:9")).isNull()
+        assertThat(playerExitTabName("")).isNull()
     }
 }
